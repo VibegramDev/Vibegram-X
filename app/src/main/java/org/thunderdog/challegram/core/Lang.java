@@ -3672,7 +3672,24 @@ public class Lang {
     return defaultLocale;
   }
 
+  private static final String UPSTREAM_APP_NAME = "Telegram X";
+
+  /**
+   * Cloud language packs are authored for the upstream app name.
+   * Replaces it with the name this build is branded with.
+   */
+  private static @Nullable TdApi.LanguagePackStringValueOrdinary rebrand (@Nullable TdApi.LanguagePackStringValueOrdinary string) {
+    if (string == null || string.value == null || BuildConfig.PROJECT_NAME.equals(UPSTREAM_APP_NAME) || !string.value.contains(UPSTREAM_APP_NAME)) {
+      return string;
+    }
+    return new TdApi.LanguagePackStringValueOrdinary(string.value.replace(UPSTREAM_APP_NAME, BuildConfig.PROJECT_NAME));
+  }
+
   public static @Nullable TdApi.LanguagePackStringValueOrdinary getStringValue (String key, @NonNull TdApi.LanguagePackInfo language) {
+    return rebrand(getStringValueImpl(key, language));
+  }
+
+  private static @Nullable TdApi.LanguagePackStringValueOrdinary getStringValueImpl (String key, @NonNull TdApi.LanguagePackInfo language) {
     String cacheKey = null;
     if (packId().equals(language.id)) {
       cacheKey = makeStringCacheKey(language.id, key);

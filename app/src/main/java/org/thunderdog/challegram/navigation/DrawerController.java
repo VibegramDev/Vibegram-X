@@ -1300,7 +1300,11 @@ public class DrawerController extends ViewController<Void> implements View.OnCli
         return;
       }
 
+      final boolean wasOpen = this.factor > 0f;
       this.factor = factor;
+      if (wasOpen != (factor > 0f)) {
+        context().onDrawerOpenChanged();
+      }
 
       View overlay = context().getOverlayView();
       contentView.setTranslationX(translation);

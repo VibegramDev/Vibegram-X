@@ -255,6 +255,12 @@ public class Theme {
         return ColorId.themeRed;
       case ThemeId.WHITE_BLACK:
         return ColorId.themeWhiteBlack;
+      case ThemeId.MONET_WHITE:
+        return ColorId.themeMonetWhite;
+      case ThemeId.MONET_DARK:
+        return ColorId.themeMonetDark;
+      case ThemeId.MONET_BLACK:
+        return ColorId.themeMonetBlack;
     }
     throw newError(themeId, "themeId");
   }

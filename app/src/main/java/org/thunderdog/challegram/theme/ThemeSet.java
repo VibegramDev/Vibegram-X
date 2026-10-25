@@ -22,12 +22,16 @@ import org.thunderdog.challegram.theme.builtin.ThemeClassic;
 import org.thunderdog.challegram.theme.builtin.ThemeCyan;
 import org.thunderdog.challegram.theme.builtin.ThemeDefault;
 import org.thunderdog.challegram.theme.builtin.ThemeGreen;
+import org.thunderdog.challegram.theme.builtin.ThemeMonetBlack;
+import org.thunderdog.challegram.theme.builtin.ThemeMonetDark;
+import org.thunderdog.challegram.theme.builtin.ThemeMonetWhite;
 import org.thunderdog.challegram.theme.builtin.ThemeNightBlack;
 import org.thunderdog.challegram.theme.builtin.ThemeNightBlue;
 import org.thunderdog.challegram.theme.builtin.ThemeOrange;
 import org.thunderdog.challegram.theme.builtin.ThemePink;
 import org.thunderdog.challegram.theme.builtin.ThemeRed;
 import org.thunderdog.challegram.theme.builtin.ThemeWhiteBlack;
+import org.thunderdog.challegram.unsorted.AppContext;
 import org.thunderdog.challegram.unsorted.Settings;
 
 public class ThemeSet {
@@ -86,6 +90,21 @@ public class ThemeSet {
     return theme;
   }
 
+  public static boolean isMonetTheme (@ThemeId int themeId) {
+    return themeId == ThemeId.MONET_WHITE || themeId == ThemeId.MONET_DARK || themeId == ThemeId.MONET_BLACK;
+  }
+
+  /** Drops cached Monet themes, so that they are rebuilt from the current system palette. */
+  public static void resetMonetThemes () {
+    synchronized (ThemeSet.class) {
+      if (builtinThemes != null) {
+        builtinThemes[ThemeId.MONET_WHITE - ThemeId.ID_MIN] = null;
+        builtinThemes[ThemeId.MONET_DARK - ThemeId.ID_MIN] = null;
+        builtinThemes[ThemeId.MONET_BLACK - ThemeId.ID_MIN] = null;
+      }
+    }
+  }
+
   private static @NonNull ThemeDelegate loadTheme (Settings prefs, @ThemeId int themeId) {
     switch (themeId) {
       case ThemeId.BLUE:
@@ -104,6 +123,13 @@ public class ThemeSet {
         return new ThemeRed();
       case ThemeId.WHITE_BLACK:
         return new ThemeWhiteBlack();
+
+      case ThemeId.MONET_WHITE:
+        return new ThemeMonet(new ThemeMonetWhite(), "white", AppContext.get());
+      case ThemeId.MONET_DARK:
+        return new ThemeMonet(new ThemeMonetDark(), "dark", AppContext.get());
+      case ThemeId.MONET_BLACK:
+        return new ThemeMonet(new ThemeMonetBlack(), "black", AppContext.get());
 
       case ThemeId.NIGHT_BLUE:
         return new ThemeNightBlue();

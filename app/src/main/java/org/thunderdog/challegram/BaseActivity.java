@@ -86,6 +86,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.InlineResult;
 import org.thunderdog.challegram.data.TGReaction;
 import org.thunderdog.challegram.mediaview.MediaViewController;
+import org.thunderdog.challegram.proxy.WebProxyTransport;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
 import org.thunderdog.challegram.navigation.BackPressMode;
 import org.thunderdog.challegram.navigation.DrawerController;
@@ -189,6 +190,13 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   private int currentOrientation;
   private boolean mHasSoftwareKeys;
+
+  /** The connection pill must not stay on top of the drawer */
+  public void onDrawerOpenChanged () {
+    if (statusBar != null) {
+      statusBar.updateVisible();
+    }
+  }
 
   public @Nullable DrawerController getDrawer () {
     return drawer;
@@ -1057,6 +1065,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   private void notifyActivityResume () {
+    WebProxyTransport.onForeground();
     for (ActivityListener listener : activityListeners) {
       listener.onActivityResume();
     }
@@ -1151,6 +1160,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       Tracer.onUiError(t);
       throw t;
     }
+    ThemeManager.instance().checkMonetPalette();
     checkAutoNightMode();
     setGestureNavigationEnabled(Screen.isGesturalNavigationEnabled(getResources()));
     Intents.revokeFileReadPermissions();
@@ -1347,6 +1357,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     setGestureNavigationEnabled(Screen.isGesturalNavigationEnabled(getResources()));
     currentOrientation = newConfig.orientation;
     Lang.checkLanguageCode();
+    ThemeManager.instance().checkMonetPalette();
     setSystemNightMode(newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK);
     if (needRecreate) {
       recreate();
@@ -1357,6 +1368,9 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   private final NavigationStack.ChangeListener navigationStackChangeListener = stack -> {
     notifyBackPressAvailabilityChanged();
+    if (statusBar != null) {
+      statusBar.updateVisible();
+    }
   };
 
   private final OnBackPressedCallback backPressedCallback = new OnBackPressedCallback(false) {

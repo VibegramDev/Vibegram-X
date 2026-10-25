@@ -45,8 +45,8 @@ import me.vkryl.core.MathUtils;
 import me.vkryl.core.reference.ReferenceList;
 
 public class ThemeManager implements FactorAnimator.Target, GlobalAccountListener {
-  public static final int DEFAULT_DARK_THEME = ThemeId.NIGHT_BLUE;
-  public static final int DEFAULT_LIGHT_THEME = ThemeId.CLASSIC;
+  public static final int DEFAULT_DARK_THEME = ThemeId.MONET_DARK;
+  public static final int DEFAULT_LIGHT_THEME = ThemeId.MONET_WHITE;
   public static final int DEFAULT_THEME = DEFAULT_DARK_THEME;
 
   public static final int CHAT_STYLE_UNKNOWN = 0;
@@ -111,6 +111,12 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
         return R.string.ThemePink;
       case ThemeId.WHITE_BLACK:
         return R.string.ThemeWhiteBlack;
+      case ThemeId.MONET_WHITE:
+        return R.string.ThemeMonetWhite;
+      case ThemeId.MONET_DARK:
+        return R.string.ThemeMonetDark;
+      case ThemeId.MONET_BLACK:
+        return R.string.ThemeMonetBlack;
     }
     throw Theme.newError(themeId, "themeId");
   }
@@ -133,6 +139,9 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
 
   public List<ThemeInfo> getBuiltinThemes () {
     int[] builtInThemeIds = BuildConfig.DEBUG ? new int[] {
+      ThemeId.MONET_WHITE,
+      ThemeId.MONET_DARK,
+      ThemeId.MONET_BLACK,
       ThemeId.CLASSIC,
       ThemeId.BLUE,
       ThemeId.RED,
@@ -145,6 +154,9 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
       ThemeId.BLACK_WHITE,
       ThemeId.WHITE_BLACK,
     } : new int[] {
+      ThemeId.MONET_WHITE,
+      ThemeId.MONET_DARK,
+      ThemeId.MONET_BLACK,
       ThemeId.CLASSIC,
       ThemeId.BLUE,
       ThemeId.RED,
@@ -496,6 +508,9 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
 
   public static int saveThemeId (@ThemeId int themeId) {
     switch (themeId) {
+      case ThemeId.MONET_WHITE:
+      case ThemeId.MONET_DARK:
+      case ThemeId.MONET_BLACK:
       case ThemeId.BLACK_WHITE:
       case ThemeId.NIGHT_BLUE:
       case ThemeId.BLUE:
@@ -521,7 +536,7 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
         }
       }
     }
-    return ThemeId.NIGHT_BLUE;
+    return DEFAULT_THEME;
   }
 
   public static int resolveCustomThemeId (int themeId) {
@@ -623,6 +638,9 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
   @ThemeId
   public static int restoreThemeId (Settings prefs, int savedThemeId, boolean allowCustom) {
     switch (savedThemeId) {
+      case ThemeId.MONET_WHITE:
+      case ThemeId.MONET_DARK:
+      case ThemeId.MONET_BLACK:
       case ThemeId.BLUE:
       case ThemeId.NIGHT_BLACK:
       case ThemeId.NIGHT_BLUE:
@@ -660,6 +678,22 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
 
   public ThemeDelegate getTheme (@ThemeId int themeId) {
     return ThemeSet.getOrLoadTheme(themeId, true);
+  }
+
+  /**
+   * Re-reads the Material You palette of the system. If it has changed (wallpaper, accent or style),
+   * Monet themes are rebuilt and the current one is re-applied.
+   */
+  public void checkMonetPalette () {
+    if (!MonetPalette.refresh(org.thunderdog.challegram.unsorted.AppContext.get())) {
+      return;
+    }
+    ThemeSet.resetMonetThemes();
+    ThemeDelegate current = currentThemeImpl(true);
+    if (current != null && ThemeSet.isMonetTheme(current.getId())) {
+      this._currentTheme = ThemeSet.getBuiltinTheme(current.getId());
+      notifyThemeColorsChanged(false, null);
+    }
   }
 
   public void notifyColorChanged (@ThemeId int themeId, @NonNull ColorState colorState, boolean isTemporaryChange) {

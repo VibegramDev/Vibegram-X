@@ -22,6 +22,7 @@ import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.theme.TGBackground;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeId;
+import org.thunderdog.challegram.theme.ThemeSet;
 import org.thunderdog.challegram.tool.UI;
 
 import java.util.ArrayList;
@@ -43,8 +44,40 @@ public class TdlibWallpaperManager {
   }
 
   public void ensureWallpaperAvailability () {
+    resetStockWallpaperForMonet(tdlib.settings().globalDaylightTheme());
+    resetStockWallpaperForMonet(tdlib.settings().globalNightTheme());
     fetchBackground(tdlib.settings().globalDaylightTheme(), false);
     fetchBackground(tdlib.settings().globalNightTheme(), false);
+  }
+
+  private static final int[] STOCK_PICTURE_THEMES = {
+    ThemeId.CLASSIC, ThemeId.BLUE, ThemeId.CYAN, ThemeId.RED, ThemeId.ORANGE, ThemeId.GREEN, ThemeId.PINK, ThemeId.WHITE_BLACK
+  };
+
+  /**
+   * Monet themes are monochrome: their chat background is a plain color of the theme.
+   * If the wallpaper kept for the theme is still a stock picture of one of the older built-in
+   * themes (nobody has picked it explicitly), replace it with an empty one.
+   */
+  private void resetStockWallpaperForMonet (@ThemeId int themeId) {
+    if (!ThemeSet.isMonetTheme(themeId)) {
+      return;
+    }
+    final int usageId = Theme.getWallpaperIdentifier(themeId);
+    TGBackground current = tdlib.settings().getWallpaper(usageId, true);
+    if (current == null || current.isEmpty()) {
+      return;
+    }
+    String name = extractWallpaperName(current.getName());
+    if (StringUtils.isEmpty(name)) {
+      return;
+    }
+    for (int stockThemeId : STOCK_PICTURE_THEMES) {
+      if (name.equals(extractWallpaperName(Theme.getDefaultWallpaper(stockThemeId)))) {
+        tdlib.settings().setWallpaper(TGBackground.newEmptyWallpaper(tdlib), true, usageId);
+        return;
+      }
+    }
   }
 
   private boolean needLoadWallpaper (@ThemeId int themeId) {
@@ -52,6 +85,7 @@ public class TdlibWallpaperManager {
   }
 
   public void onThemeSwitched (int oldThemeId, int newThemeId) {
+    resetStockWallpaperForMonet(newThemeId);
     int oldWallpaperUsageId = Theme.getWallpaperIdentifier(oldThemeId);
     int newWallpaperUsageId = Theme.getWallpaperIdentifier(newThemeId);
     if (oldWallpaperUsageId == newWallpaperUsageId) {

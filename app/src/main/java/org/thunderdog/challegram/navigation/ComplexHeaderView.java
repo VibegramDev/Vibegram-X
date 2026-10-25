@@ -66,6 +66,7 @@ import org.thunderdog.challegram.util.OptionDelegate;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.util.text.TextEntity;
+import org.thunderdog.challegram.widget.ProgressComponent;
 import org.thunderdog.challegram.widget.BaseView;
 import org.thunderdog.challegram.widget.EmojiStatusInfoView;
 import org.thunderdog.challegram.widget.PopupLayout;
@@ -477,6 +478,33 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     setText(title, subtitle);
   }
 
+  // Spinner in front of the subtitle (e.g. connection state)
+
+  private @Nullable ProgressComponent subtitleProgress;
+  private boolean subtitleLoading;
+
+  private int getSubtitleLoadingShift () {
+    return subtitleLoading ? Screen.dp(17f) : 0;
+  }
+
+  public void setSubtitleLoading (boolean loading) {
+    if (this.subtitleLoading == loading) {
+      return;
+    }
+    this.subtitleLoading = loading;
+    if (loading) {
+      if (subtitleProgress == null) {
+        subtitleProgress = new ProgressComponent(UI.getContext(getContext()), Screen.dp(5.5f));
+        subtitleProgress.setUseLargerPaint(Screen.dp(1.5f));
+      }
+      subtitleProgress.attachToView(this);
+    } else if (subtitleProgress != null) {
+      subtitleProgress.detachFromView(this);
+    }
+    layoutSubtext();
+    invalidate();
+  }
+
   private int innerLeftMargin, innerRightMargin, innerRightMarginStart = -1;
 
   private int getInnerRightMargin () {
@@ -702,7 +730,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       trimmedSubtitle = trimmedSubtitleExpanded = null;
     } else {
       TextColorSet colorSet = this::getSubtitleColor;
-      trimmedSubtitle = new Text.Builder(subtitle, getCurrentScaledTextMaxWidth(), Paints.robotoStyleProvider(14), colorSet)
+      trimmedSubtitle = new Text.Builder(subtitle, getCurrentScaledTextMaxWidth() - getSubtitleLoadingShift(), Paints.robotoStyleProvider(14), colorSet)
         .singleLine()
         .entities(subtitleEntities, null)
         .build();
@@ -994,13 +1022,22 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       }
 
       if (trimmedSubtitle != null) {
+        final int subtitleLeft = (int) baseTextLeft + (avatarExpandFactor < 1f ? getSubtitleLoadingShift() : 0);
+        if (subtitleLoading && subtitleProgress != null && avatarExpandFactor < 1f) {
+          final float cx = baseTextLeft + Screen.dp(6.5f);
+          final float cy = baseSubtitleTop + dy + trimmedSubtitle.getLineHeight() / 2f;
+          subtitleProgress.setBounds((int) cx - Screen.dp(6f), (int) cy - Screen.dp(6f), (int) cx + Screen.dp(6f), (int) cy + Screen.dp(6f));
+          subtitleProgress.forceColor(subtitleColor);
+          subtitleProgress.setAlpha(textAlpha * (1f - avatarExpandFactor));
+          subtitleProgress.draw(c);
+        }
         if (trimmedSubtitleExpanded != null && avatarExpandFactor > 0f) {
           if (avatarExpandFactor < 1f) {
-            trimmedSubtitle.draw(c, (int) baseTextLeft, (int) baseSubtitleTop + dy, null, textAlpha * (1f - avatarExpandFactor));
+            trimmedSubtitle.draw(c, subtitleLeft, (int) baseSubtitleTop + dy, null, textAlpha * (1f - avatarExpandFactor));
           }
           trimmedSubtitleExpanded.draw(c, (int) baseTextLeft, (int) baseSubtitleTop + dy, null, textAlpha * avatarExpandFactor);
         } else {
-          trimmedSubtitle.draw(c, (int) baseTextLeft, (int) baseSubtitleTop + dy, null, textAlpha);
+          trimmedSubtitle.draw(c, subtitleLeft, (int) baseSubtitleTop + dy, null, textAlpha);
         }
       }
 

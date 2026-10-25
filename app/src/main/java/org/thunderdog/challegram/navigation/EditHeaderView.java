@@ -109,7 +109,7 @@ public class EditHeaderView extends FrameLayoutFix implements RtlCheckListener, 
   public void checkRtl () {
     input.setGravity(Gravity.CENTER_VERTICAL | Lang.gravity());
     int leftMargin = Screen.dp(96f);
-    int rightMargin = Screen.dp(20f);
+    int rightMargin = endMargin;
     if (Views.setGravity(input, Gravity.CENTER_VERTICAL | Lang.gravity()) && Views.setMargins(input, Lang.rtl() ? rightMargin : leftMargin, 0, Lang.rtl() ? leftMargin : rightMargin, 0)) {
       Views.updateLayoutParams(input);
     }
@@ -119,7 +119,40 @@ public class EditHeaderView extends FrameLayoutFix implements RtlCheckListener, 
   @Override
   public void performDestroy () {
     receiver.requestFile(null);
+    input.performDestroy();
   }
+
+  private android.widget.ImageView emojiButton;
+
+  /**
+   * Adds an emoji button at the end of the input field and enables rendering of custom emoji inside of it.
+   */
+  public void enableCustomEmoji (org.thunderdog.challegram.telegram.Tdlib tdlib, android.view.View.OnClickListener emojiButtonListener) {
+    input.setTdlib(tdlib);
+    if (emojiButton == null) {
+      emojiButton = new android.widget.ImageView(getContext());
+      emojiButton.setScaleType(android.widget.ImageView.ScaleType.CENTER);
+      emojiButton.setImageResource(R.drawable.baseline_emoticon_outline_24);
+      emojiButton.setColorFilter(org.thunderdog.challegram.theme.Theme.getColor(ColorId.headerText));
+      emojiButton.setAlpha(.8f);
+      org.thunderdog.challegram.support.RippleSupport.setTransparentSelector(emojiButton);
+      FrameLayoutFix.LayoutParams p = FrameLayoutFix.newParams(Screen.dp(48f), Screen.dp(48f), Gravity.CENTER_VERTICAL | Lang.reverseGravity());
+      p.leftMargin = p.rightMargin = Screen.dp(8f);
+      emojiButton.setLayoutParams(p);
+      addView(emojiButton);
+      endMargin = Screen.dp(56f);
+      checkRtl();
+    }
+    emojiButton.setOnClickListener(emojiButtonListener);
+  }
+
+  public void setEmojiButtonIcon (@androidx.annotation.DrawableRes int iconRes) {
+    if (emojiButton != null) {
+      emojiButton.setImageResource(iconRes);
+    }
+  }
+
+  private int endMargin = Screen.dp(20f);
 
   @Override
   public void beforeTextChanged (CharSequence s, int start, int count, int after) { }

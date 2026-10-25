@@ -66,7 +66,13 @@ public class TextMedia implements Destroyable, TdlibEmojiManager.Watcher {
   private ImageFile imageFile;
   private GifFile gifFile;
 
+  private final boolean disableAnimations;
+
   public TextMedia (Text source, Tdlib tdlib, String keyId, long id, int size, long customEmojiId) {
+    this(source, tdlib, keyId, id, size, customEmojiId, false);
+  }
+
+  public TextMedia (Text source, Tdlib tdlib, String keyId, long id, int size, long customEmojiId, boolean disableAnimations) {
     if (tdlib == null)
       throw new IllegalArgumentException();
     this.source = source;
@@ -76,6 +82,7 @@ public class TextMedia implements Destroyable, TdlibEmojiManager.Watcher {
     this.width = size;
     this.height = size;
     this.customEmojiId = customEmojiId;
+    this.disableAnimations = disableAnimations;
     this.customEmoji = tdlib.emoji().findOrPostponeRequest(customEmojiId, this);
     if (customEmoji != null && !customEmoji.isNotFound()) {
       buildCustomEmoji(customEmoji);
@@ -92,6 +99,7 @@ public class TextMedia implements Destroyable, TdlibEmojiManager.Watcher {
     this.width = Screen.dp(icon.width);
     this.height = Screen.dp(icon.height);
     this.customEmojiId = 0;
+    this.disableAnimations = false;
 
     if (icon.document.minithumbnail != null) {
       miniThumbnail = new ImageFileLocal(icon.document.minithumbnail);
@@ -127,7 +135,11 @@ public class TextMedia implements Destroyable, TdlibEmojiManager.Watcher {
   }
 
   public static String keyForEmoji (long customEmojiId, int size) {
-    return "emoji_" + customEmojiId + "_" + size;
+    return keyForEmoji(customEmojiId, size, false);
+  }
+
+  public static String keyForEmoji (long customEmojiId, int size, boolean disableAnimations) {
+    return "emoji_" + customEmojiId + "_" + size + (disableAnimations ? "_static" : "");
   }
 
   private boolean isEmojiStatus;
@@ -157,6 +169,16 @@ public class TextMedia implements Destroyable, TdlibEmojiManager.Watcher {
     switch (sticker.format.getConstructor()) {
       case TdApi.StickerFormatTgs.CONSTRUCTOR:
       case TdApi.StickerFormatWebm.CONSTRUCTOR: {
+        if (disableAnimations && sticker.thumbnail != null) {
+          // Animations are disabled: show the static preview instead of playing the sticker
+          this.imageFile = TD.toImageFile(tdlib, sticker.thumbnail);
+          if (this.imageFile != null) {
+            this.imageFile.setSize(Math.max(width, height));
+            this.imageFile.setScaleType(ImageFile.FIT_CENTER);
+            this.imageFile.setNoBlur();
+            break;
+          }
+        }
         this.gifFile = new GifFile(tdlib, sticker);
         this.gifFile.setScaleType(GifFile.FIT_CENTER);
         this.gifFile.setOptimizationMode(GifFile.OptimizationMode.EMOJI);
@@ -218,7 +240,7 @@ public class TextMedia implements Destroyable, TdlibEmojiManager.Watcher {
   }
 
   public boolean isAnimatedCustomEmoji () {
-    return customEmoji != null && customEmoji.value != null && Td.isAnimated(customEmoji.value.format);
+    return customEmoji != null && customEmoji.value != null && Td.isAnimated(customEmoji.value.format) && (!disableAnimations || gifFile != null);
   }
 
   @Nullable

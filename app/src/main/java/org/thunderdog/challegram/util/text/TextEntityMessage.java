@@ -62,6 +62,7 @@ public class TextEntityMessage extends TextEntity {
   private final TdApi.TextEntity clickableEntity, spoilerEntity, emojiEntity, quoteEntity;
   private int flags;
   private ClickableSpan onClickListener;
+  private boolean forceDisableAnimations;
 
   private static boolean hasEntityType (List<TdApi.TextEntity> entities, @TdApi.TextEntityType.Constructors int typeConstructor) {
     if (entities != null) {
@@ -188,6 +189,7 @@ public class TextEntityMessage extends TextEntity {
   @Override
   public TextEntity createCopy () {
     TextEntityMessage copy = new TextEntityMessage(tdlib, needFakeBold, start, end, clickableEntity, spoilerEntity, emojiEntity, quoteEntity, flags, openParameters);
+    copy.forceDisableAnimations = forceDisableAnimations;
     if (customColorSet != null) {
       copy.setCustomColorSet(customColorSet);
     }
@@ -582,7 +584,12 @@ public class TextEntityMessage extends TextEntity {
 
   @Override
   public boolean forceDisableAnimations () {
-    return false;
+    return forceDisableAnimations;
+  }
+
+  public TextEntityMessage setForceDisableAnimations (boolean forceDisableAnimations) {
+    this.forceDisableAnimations = forceDisableAnimations;
+    return this;
   }
 
   @Override

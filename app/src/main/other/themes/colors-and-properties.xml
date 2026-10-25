@@ -3,8 +3,8 @@
   <settings>
     <source-theme>1</source-theme>
     <default-theme>
-      <light>11</light>
-      <dark>10</dark>
+      <light>12</light>
+      <dark>13</dark>
     </default-theme>
   </settings>
   <sections>
@@ -516,6 +516,10 @@
 
     <item name="themeBlackWhite" />
     <item name="themeWhiteBlack" />
+
+    <item name="themeMonetWhite" />
+    <item name="themeMonetDark" />
+    <item name="themeMonetBlack" />
 
     <!-- CONSTANT -->
 

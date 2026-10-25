@@ -24,6 +24,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.drinkless.tdlib.TdApi;
@@ -34,6 +35,7 @@ import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.proxy.WebProxy;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibContext;
 import org.thunderdog.challegram.theme.ColorId;
@@ -55,6 +57,7 @@ public class EditProxyController extends EditBaseController<EditProxyController.
   public static final int MODE_SOCKS5 = 1;
   public static final int MODE_MTPROTO = 2;
   public static final int MODE_HTTP = 3;
+  public static final int MODE_WEB = 4;
 
   public static class Args {
     public int mode;
@@ -65,6 +68,11 @@ public class EditProxyController extends EditBaseController<EditProxyController.
     }
 
     public Args (Settings.Proxy proxy) {
+      if (WebProxy.isWeb(proxy.proxy)) {
+        this.mode = MODE_WEB;
+        this.existingProxy = proxy;
+        return;
+      }
       switch (proxy.proxy.type.getConstructor()) {
         case TdApi.ProxyTypeSocks5.CONSTRUCTOR:
           this.mode = MODE_SOCKS5;
@@ -95,6 +103,8 @@ public class EditProxyController extends EditBaseController<EditProxyController.
         return Lang.getString(R.string.MtprotoProxy);
       case MODE_HTTP:
         return Lang.getString(R.string.HttpProxy);
+      case MODE_WEB:
+        return Lang.getString(R.string.WebProxy);
     }
     return "";
   }
@@ -151,7 +161,7 @@ public class EditProxyController extends EditBaseController<EditProxyController.
     final TdApi.Proxy proxy = localProxy != null ? localProxy.proxy : null;
     final int mode = getArgumentsStrict().mode;
 
-    int baseFillCount = 2;
+    int baseFillCount = mode == MODE_WEB ? 1 : 2;
 
     List<ListItem> items = new ArrayList<>();
     items.add(new ListItem(ListItem.TYPE_HEADER_PADDED, 0, 0, R.string.Connection));
@@ -159,9 +169,11 @@ public class EditProxyController extends EditBaseController<EditProxyController.
     items.add(server = new ListItem(ListItem.TYPE_EDITTEXT_NO_PADDING, R.id.edit_proxy_server, 0, R.string.UseProxyServer)
       .setStringValue(proxy != null ? proxy.server : "")
       .setInputFilters(new InputFilter[]{ new InputFilter.LengthFilter(255) }));
-    items.add((port = new ListItem(ListItem.TYPE_EDITTEXT_NO_PADDING, R.id.edit_proxy_port, 0, R.string.UseProxyPort)
-      .setStringValue(proxy != null ? Integer.toString(proxy.port) : "")
-      .setInputFilters(new InputFilter[] {new InputFilter.LengthFilter(255)})));
+    if (mode != MODE_WEB) {
+      items.add((port = new ListItem(ListItem.TYPE_EDITTEXT_NO_PADDING, R.id.edit_proxy_port, 0, R.string.UseProxyPort)
+        .setStringValue(proxy != null ? Integer.toString(proxy.port) : "")
+        .setInputFilters(new InputFilter[] {new InputFilter.LengthFilter(255)})));
+    }
     if (mode == MODE_HTTP) {
       items.add((tcpOnly = new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.edit_proxy_tcpOnly, 0, R.string.HttpProxyTransparent, R.id.edit_proxy_tcpOnly, false).setBoolValue(proxy != null && !((TdApi.ProxyTypeHttp) proxy.type).httpOnly)));
       baseFillCount++;
@@ -170,6 +182,8 @@ public class EditProxyController extends EditBaseController<EditProxyController.
 
     if (mode == MODE_HTTP) {
       items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.HttpProxyTransparentHint));
+    } else if (mode == MODE_WEB) {
+      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.WebProxyHint));
     }
 
     final int fillIndex, fillCount;
@@ -189,6 +203,7 @@ public class EditProxyController extends EditBaseController<EditProxyController.
         fillCount = 2;
         break;
       }
+      case MODE_WEB:
       case MODE_MTPROTO: {
         items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ProxyCredentials));
         items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
@@ -218,6 +233,7 @@ public class EditProxyController extends EditBaseController<EditProxyController.
         ListItem item = (ListItem) view.getTag();
         int itemId = item != null ? item.getId() : 0;
         if (itemId == R.id.edit_proxy_port ||
+          (mode == MODE_WEB && itemId == R.id.edit_proxy_server) ||
           itemId == R.id.edit_proxy_password ||
           itemId == R.id.edit_proxy_secret) {
           outRect.bottom = Screen.dp(12f);
@@ -253,11 +269,24 @@ public class EditProxyController extends EditBaseController<EditProxyController.
     }
   }
 
+  private static String trimmed (@Nullable ListItem item) {
+    final String value = item != null ? item.getStringValue() : null;
+    return value != null ? value.trim() : "";
+  }
+
+  private String secretValue () {
+    return trimmed(secret);
+  }
+
   private void checkDoneVisibility (int id) {
     if (id != 0) {
       adapter.updateEditTextById(id, false, false);
     }
-    final String server = this.server.getStringValue().trim();
+    final String server = trimmed(this.server);
+    if (getArgumentsStrict().mode == MODE_WEB) {
+      setDoneVisible(!server.isEmpty() && !secretValue().isEmpty());
+      return;
+    }
     final String port = this.port.getStringValue().trim();
     setDoneVisible(!server.isEmpty() && !port.isEmpty());
   }
@@ -293,6 +322,18 @@ public class EditProxyController extends EditBaseController<EditProxyController.
     }
   }
 
+  private void saveProxy (@NonNull TdApi.Proxy proxy) {
+    int proxyId = getArgumentsStrict().existingProxy != null ? getArgumentsStrict().existingProxy.id : Settings.PROXY_ID_NONE;
+    Settings.instance().addOrUpdateProxy(proxy, null, true, proxyId);
+    if (navigationController != null) {
+      ViewController<?> c = navigationController.getPreviousStackItem();
+      if (c != null && c.getId() != R.id.controller_proxyList) {
+        navigationController.getStack().insertBack(new SettingsProxyController(context, tdlib));
+      }
+    }
+    navigateBack();
+  }
+
   private void addProxy (@NonNull TdApi.Proxy proxy) {
     setInProgress(true);
     // Calling TDLib method just to validate input
@@ -306,16 +347,8 @@ public class EditProxyController extends EditBaseController<EditProxyController.
           .show(tdlib, errorText)
           .hideDelayed();
       } else {
-        int proxyId = getArgumentsStrict().existingProxy != null ? getArgumentsStrict().existingProxy.id : Settings.PROXY_ID_NONE;
         // Assuming values passed to AddProxy do not differ from the received TdApi.Proxy object
-        Settings.instance().addOrUpdateProxy(proxy, null, true, proxyId);
-        if (navigationController != null) {
-          ViewController<?> c = navigationController.getPreviousStackItem();
-          if (c != null && c.getId() != R.id.controller_proxyList) {
-            navigationController.getStack().insertBack(new SettingsProxyController(context, tdlib));
-          }
-        }
-        navigateBack();
+        saveProxy(proxy);
       }
     }));
   }
@@ -327,6 +360,23 @@ public class EditProxyController extends EditBaseController<EditProxyController.
 
   @Override
   protected boolean onDoneClick () {
+    if (getArgumentsStrict().mode == MODE_WEB) {
+      // TDLib cannot validate a WEB proxy, it is checked locally
+      final TdApi.Proxy webProxy = WebProxy.create(trimmed(this.server), secretValue());
+      if (webProxy == null) {
+        adapter.updateEditTextById(R.id.edit_proxy_server, false, true);
+        adapter.updateEditTextById(R.id.edit_proxy_secret, false, true);
+        context.tooltipManager()
+          .builder(getDoneButton())
+          .icon(R.drawable.baseline_warning_24)
+          .show(tdlib, Lang.getString(R.string.WebProxyInvalid))
+          .hideDelayed();
+        return false;
+      }
+      saveProxy(webProxy);
+      return true;
+    }
+
     final String server = this.server.getStringValue().trim();
     final String portRaw = this.port.getStringValue().trim();
     final String port = StringUtils.isNumeric(portRaw) ? portRaw : "";

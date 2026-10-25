@@ -124,6 +124,7 @@ import org.thunderdog.challegram.ui.SettingsNotificationController;
 import org.thunderdog.challegram.ui.SettingsPhoneController;
 import org.thunderdog.challegram.ui.SettingsPrivacyController;
 import org.thunderdog.challegram.ui.SettingsPrivacyKeyController;
+import org.thunderdog.challegram.proxy.WebProxy;
 import org.thunderdog.challegram.ui.SettingsProxyController;
 import org.thunderdog.challegram.ui.SettingsSessionsController;
 import org.thunderdog.challegram.ui.SettingsStickersAndEmojiController;
@@ -3488,6 +3489,21 @@ public class TdlibUi extends Handler {
         after.runWithBool(false);
       return;
     }
+    if (WebProxy.isWebProxyLink(rawUrl)) {
+      // TDLib does not know WEB proxies
+      final TdApi.Proxy webProxy = WebProxy.parseLink(rawUrl);
+      post(() -> {
+        if (webProxy != null) {
+          openProxyAlert(context, webProxy);
+        } else {
+          showLinkTooltip(tdlib, R.drawable.baseline_warning_24, Lang.getString(R.string.ProxyLinkUnsupported), openParameters);
+        }
+        if (after != null) {
+          after.runWithBool(webProxy != null);
+        }
+      });
+      return;
+    }
     AtomicReference<String> url = new AtomicReference<>(preProcessTelegramUrl(rawUrl));
     tdlib.send(new TdApi.GetInternalLinkType(url.get()), new Tdlib.ResultHandler<>() {
       @Override
@@ -4316,6 +4332,18 @@ public class TdlibUi extends Handler {
     return desc;
   }
 
+  public static StringBuilder newWebProxyDescription (String server) {
+    StringBuilder desc = new StringBuilder("<b>");
+    desc.append(Lang.getString(R.string.UseProxyServer));
+    desc.append(":</b> ");
+    desc.append(server);
+    desc.append("<br/><b>");
+    desc.append(Lang.getString(R.string.UseProxyType));
+    desc.append(":</b> ");
+    desc.append(Lang.getString(R.string.WebProxy));
+    return desc;
+  }
+
   private static void addProxyField (StringBuilder desc, String name, String value) {
     desc.append("<br/><b>");
     desc.append(name);
@@ -4360,7 +4388,8 @@ public class TdlibUi extends Handler {
       // unsupported proxy
       return;
     }
-    String proxyDescription = newProxyDescription(proxy.server, Integer.toString(proxy.port)).toString();
+    final boolean isWebProxy = WebProxy.isWeb(proxy);
+    String proxyDescription = (isWebProxy ? newWebProxyDescription(proxy.server) : newProxyDescription(proxy.server, Integer.toString(proxy.port))).toString();
 
     final SpannableStringBuilder msg = Strings.buildHtml(proxyDescription);
     msg.insert(0, "\n\n");
@@ -4369,7 +4398,10 @@ public class TdlibUi extends Handler {
     msg.setSpan(TD.newBoldSpan(title), 0, title.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     msg.append("\n\n");
     msg.append(Lang.getString(R.string.EnableProxyAlertHint));
-    if (proxy.type.getConstructor() == TdApi.ProxyTypeMtproto.CONSTRUCTOR) {
+    if (isWebProxy) {
+      msg.append("\n\n");
+      msg.append(Lang.getString(R.string.EnableProxyAlertHintWeb));
+    } else if (proxy.type.getConstructor() == TdApi.ProxyTypeMtproto.CONSTRUCTOR) {
       msg.append("\n\n");
       msg.append(Lang.getString(R.string.EnableProxyAlertHintMtproto));
     }
@@ -4559,21 +4591,24 @@ public class TdlibUi extends Handler {
 
     boolean showShowQr = tdlib.allowQrLoginCamera();
 
-    IntList ids = new IntList(showShowQr ? 4 : 3);
-    StringList strings = new StringList(showShowQr ? 4 : 3);
+    IntList ids = new IntList(showShowQr ? 5 : 4);
+    StringList strings = new StringList(showShowQr ? 5 : 4);
 
     ids.append(R.id.btn_proxyTelegram);
     ids.append(R.id.btn_proxySocks5);
     ids.append(R.id.btn_proxyHttp);
+    ids.append(R.id.btn_proxyWeb);
 
     if (needProxyHint) {
       strings.append(R.string.AddMtprotoProxy);
       strings.append(R.string.AddSocks5Proxy);
       strings.append(R.string.AddHttpProxy);
+      strings.append(R.string.AddWebProxy);
     } else {
       strings.append(R.string.MtprotoProxy);
       strings.append(R.string.Socks5Proxy);
       strings.append(R.string.HttpProxy);
+      strings.append(R.string.WebProxy);
     }
 
     if (showShowQr) {
@@ -4594,8 +4629,17 @@ public class TdlibUi extends Handler {
         EditProxyController e = new EditProxyController(context.context(), context.tdlib());
         e.setArguments(new EditProxyController.Args(EditProxyController.MODE_HTTP));
         c.navigateTo(e);
+      } else if (id == R.id.btn_proxyWeb) {
+        EditProxyController e = new EditProxyController(context.context(), context.tdlib());
+        e.setArguments(new EditProxyController.Args(EditProxyController.MODE_WEB));
+        c.navigateTo(e);
       } else if (id == R.id.btn_proxyQr) {
         postDelayed(() -> c.openInAppCamera(new ViewController.CameraOpenOptions().ignoreAnchor(true).noTrace(true).allowSystem(false).optionalMicrophone(true).qrModeSubtitle(R.string.ScanQRFullSubtitleProxy).mode(CameraController.MODE_QR).qrCodeListener((qrCode) -> {
+          final TdApi.Proxy webProxy = WebProxy.parseLink(qrCode);
+          if (webProxy != null) {
+            post(() -> openProxyAlert(context, webProxy));
+            return;
+          }
           context.tdlib().send(new TdApi.GetInternalLinkType(qrCode), (internalLinkType, error) -> {
             if (internalLinkType != null && internalLinkType.getConstructor() == TdApi.InternalLinkTypeProxy.CONSTRUCTOR) {
               TdApi.Proxy proxy = ((TdApi.InternalLinkTypeProxy) internalLinkType).proxy;

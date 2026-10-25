@@ -34,7 +34,7 @@ import org.thunderdog.challegram.telegram.Tdlib;
 
 @SuppressWarnings("ViewConstructor")
 public class CustomEmojiEditText extends EmojiEditText implements CustomEmojiSurfaceProvider {
-  private final @Nullable Tdlib tdlib;
+  private @Nullable Tdlib tdlib;
   private final RefreshRateLimiter refreshRateLimiter;
   private final ComplexMediaHolder<EmojiSpan> mediaHolder;
 
@@ -46,6 +46,41 @@ public class CustomEmojiEditText extends EmojiEditText implements CustomEmojiSur
     this.mediaHolder.setUpdateListener((usages, displayMediaKey) ->
       refreshRateLimiter.invalidate()
     );
+  }
+
+  /**
+   * Constructor for views inflated from XML: custom emoji are rendered only after {@link #setTdlib(Tdlib)} is called.
+   */
+  public CustomEmojiEditText (Context context) {
+    this(context, (Tdlib) null);
+  }
+
+  public CustomEmojiEditText (Context context, android.util.AttributeSet attrs) {
+    super(context, attrs);
+    this.tdlib = null;
+    this.refreshRateLimiter = new RefreshRateLimiter(this, Config.MAX_ANIMATED_EMOJI_REFRESH_RATE);
+    this.mediaHolder = new ComplexMediaHolder<>(this);
+    this.mediaHolder.setUpdateListener((usages, displayMediaKey) ->
+      refreshRateLimiter.invalidate()
+    );
+  }
+
+  public CustomEmojiEditText (Context context, android.util.AttributeSet attrs, int defStyleAttr) {
+    super(context, attrs, defStyleAttr);
+    this.tdlib = null;
+    this.refreshRateLimiter = new RefreshRateLimiter(this, Config.MAX_ANIMATED_EMOJI_REFRESH_RATE);
+    this.mediaHolder = new ComplexMediaHolder<>(this);
+    this.mediaHolder.setUpdateListener((usages, displayMediaKey) ->
+      refreshRateLimiter.invalidate()
+    );
+  }
+
+  public void setTdlib (@Nullable Tdlib tdlib) {
+    this.tdlib = tdlib;
+  }
+
+  public @Nullable Tdlib tdlib () {
+    return tdlib;
   }
 
   @Override

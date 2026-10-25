@@ -14,6 +14,9 @@
  */
 package org.thunderdog.challegram.component.base;
 
+import org.thunderdog.challegram.util.text.TextMedia;
+import org.thunderdog.challegram.emoji.CustomEmojiId;
+import android.text.Spanned;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -114,6 +117,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
   private CharSequence itemData;
   private CharSequence displayItemData;
   private Layout displayItemDataLayout;
+  private Text displayItemDataText;
   private EmojiStatusHelper emojiStatusHelper;
 
   private TogglerView togglerView;
@@ -511,8 +515,38 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     buildLayout(getMeasuredWidth(), getMeasuredHeight());
   }
 
+  private static final long NAME_MEDIA_KEY_OFFSET = 100;
+  private static final long NAME_MEDIA_KEY_COUNT = 100;
+
+  private static boolean hasCustomEmoji (CharSequence str) {
+    return str instanceof Spanned && ((Spanned) str).getSpans(0, str.length(), CustomEmojiId.class).length > 0;
+  }
+
+  private void onNameMediaInvalidated (Text text, @Nullable TextMedia specificMedia) {
+    if (displayItemNameText == text) {
+      if (!text.invalidateMediaContent(complexReceiver, specificMedia)) {
+        text.requestMedia(complexReceiver, NAME_MEDIA_KEY_OFFSET, NAME_MEDIA_KEY_COUNT);
+      }
+      invalidate();
+    }
+  }
+
   private void setDisplayItemName (CharSequence str, float availWidth, TextPaint paint, float textSize) {
-    if (allowMultiLineName) {
+    complexReceiver.clearReceiversRange(NAME_MEDIA_KEY_OFFSET, NAME_MEDIA_KEY_OFFSET + NAME_MEDIA_KEY_COUNT);
+    if (!allowMultiLineName && tdlib != null && hasCustomEmoji(str)) {
+      // Custom emoji can be drawn by Text only (Layout/drawText would show the fallback emoji)
+      displayItemName = str;
+      displayItemNameLayout = null;
+      displayItemNameWidth = 0;
+      Text[] holder = new Text[1];
+      displayItemNameText = holder[0] = new Text.Builder(tdlib, str, null, (int) availWidth, Paints.robotoStyleProvider(textSize), this, (text, specificMedia) -> onNameMediaInvalidated(text, specificMedia))
+        .singleLine()
+        .ignoreNewLines()
+        .noClickable()
+        .view(this)
+        .build();
+      displayItemNameText.requestMedia(complexReceiver, NAME_MEDIA_KEY_OFFSET, NAME_MEDIA_KEY_COUNT);
+    } else if (allowMultiLineName) {
       displayItemName = str;
       displayItemNameLayout = null;
       displayItemNameWidth = 0;
@@ -536,7 +570,35 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     checkEmojiListener();
   }
 
+  private static final long DATA_MEDIA_KEY_OFFSET = 200;
+
+  private void onDataMediaInvalidated (Text text, @Nullable TextMedia specificMedia) {
+    if (displayItemDataText == text) {
+      if (!text.invalidateMediaContent(complexReceiver, specificMedia)) {
+        text.requestMedia(complexReceiver, DATA_MEDIA_KEY_OFFSET, NAME_MEDIA_KEY_COUNT);
+      }
+      invalidate();
+    }
+  }
+
   private void setDisplayItemData (CharSequence str, float availWidth, TextPaint paint) {
+    complexReceiver.clearReceiversRange(DATA_MEDIA_KEY_OFFSET, DATA_MEDIA_KEY_OFFSET + NAME_MEDIA_KEY_COUNT);
+    if (tdlib != null && hasCustomEmoji(str)) {
+      // Custom emoji can be drawn by Text only (Layout/drawText would show the fallback emoji)
+      displayItemData = str;
+      displayItemDataLayout = null;
+      displayItemDataWidth = 0;
+      displayItemDataText = new Text.Builder(tdlib, str, null, (int) availWidth, Paints.robotoStyleProvider(16f), this, (text, specificMedia) -> onDataMediaInvalidated(text, specificMedia))
+        .singleLine()
+        .ignoreNewLines()
+        .noClickable()
+        .view(this)
+        .build();
+      displayItemDataText.requestMedia(complexReceiver, DATA_MEDIA_KEY_OFFSET, NAME_MEDIA_KEY_COUNT);
+      checkEmojiListener();
+      return;
+    }
+    displayItemDataText = null;
     str = TextUtils.ellipsize(str, paint, availWidth, TextUtils.TruncateAt.END);
     displayItemData = str;
     if (str instanceof String) {
@@ -732,9 +794,9 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     return isEnabled.getFloatValue();
   }
 
-  private static void drawText (Canvas c, CharSequence text, Layout layout, float x, float y, int textY, Paint paint, boolean rtl, int viewWidth, float textWidth, Text wrap, TextColorSet textColorSet, EmojiStatusHelper emojiStatusHelper) {
+  private static void drawText (Canvas c, CharSequence text, Layout layout, float x, float y, int textY, Paint paint, boolean rtl, int viewWidth, float textWidth, Text wrap, TextColorSet textColorSet, EmojiStatusHelper emojiStatusHelper, @Nullable ComplexReceiver receiver) {
     if (wrap != null) {
-      wrap.draw(c, (int) x, (int) (viewWidth - x), 0, textY, textColorSet != null ? textColorSet : TextColorSets.Regular.NEGATIVE);
+      wrap.draw(c, (int) x, (int) (viewWidth - x), 0, textY, textColorSet != null ? textColorSet : TextColorSets.Regular.NEGATIVE, 1f, receiver);
     } else if (layout != null) {
       c.save();
       c.translate(rtl ? viewWidth - U.maxWidth(layout) - x : x, y - paint.getTextSize() + Screen.dp(.8f));
@@ -907,10 +969,10 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
         if ((flags & FLAG_DATA_SUBTITLE) != 0) {
           subtitleColor = ColorUtils.alphaColor(Theme.getSubtitleAlpha(), subtitleColor);
         }
-        drawText(c, displayItemName, displayItemNameLayout, pLeft, pTop, (int) (pTop - Screen.dp(12f)), Paints.getRegularTextPaint(13f, subtitleColor), rtl, width, displayItemNameWidth, displayItemNameText, subtitleColorSet, emojiStatusHelper);
+        drawText(c, displayItemName, displayItemNameLayout, pLeft, pTop, (int) (pTop - Screen.dp(12f)), Paints.getRegularTextPaint(13f, subtitleColor), rtl, width, displayItemNameWidth, displayItemNameText, subtitleColorSet, emojiStatusHelper, complexReceiver);
       }
       if (displayItemData != null) {
-        drawText(c, displayItemData, displayItemDataLayout, pDataLeft, pDataTop,  (int) (pDataTop - Screen.dp(15f)), Paints.getTextPaint16(dataColor), rtl, width, displayItemDataWidth, null, null, emojiStatusHelper);
+        drawText(c, displayItemData, displayItemDataLayout, pDataLeft, pDataTop,  (int) (pDataTop - Screen.dp(15f)), Paints.getTextPaint16(dataColor), rtl, width, displayItemDataWidth, displayItemDataText, displayItemDataText != null ? this : null, emojiStatusHelper, complexReceiver);
       }
     } else if (type == TYPE_INFO_MULTILINE) {
       if (displayItemName != null) {
@@ -919,7 +981,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
           subtitleColor = ColorUtils.alphaColor(Theme.getSubtitleAlpha(), subtitleColor);
         }
         float top = (int) pDataTop - Screen.dp(13f) + text.getHeight() + Screen.dp(17f);
-        drawText(c, displayItemName, displayItemNameLayout, pLeft, (int) pDataTop - Screen.dp(13f) + text.getHeight() + Screen.dp(15f), (int) (top - Screen.dp(12f)), Paints.getRegularTextPaint(13f, subtitleColor), rtl, width, displayItemNameWidth, displayItemNameText, subtitleColorSet, emojiStatusHelper);
+        drawText(c, displayItemName, displayItemNameLayout, pLeft, (int) pDataTop - Screen.dp(13f) + text.getHeight() + Screen.dp(15f), (int) (top - Screen.dp(12f)), Paints.getRegularTextPaint(13f, subtitleColor), rtl, width, displayItemNameWidth, displayItemNameText, subtitleColorSet, emojiStatusHelper, complexReceiver);
       }
       if (text != null) {
         if (rtl) {
@@ -930,10 +992,10 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
       }
     } else {
       if (displayItemData != null) {
-        drawText(c, displayItemData, displayItemDataLayout, pDataLeft, pDataTop, (int) (pDataTop - Screen.dp(15)), Paints.getTextPaint16(dataColor), rtl, width, displayItemDataWidth, null, null, emojiStatusHelper);
+        drawText(c, displayItemData, displayItemDataLayout, pDataLeft, pDataTop, (int) (pDataTop - Screen.dp(15)), Paints.getTextPaint16(dataColor), rtl, width, displayItemDataWidth, displayItemDataText, displayItemDataText != null ? this : null, emojiStatusHelper, complexReceiver);
       }
       if (displayItemName != null) {
-        drawText(c, displayItemName, displayItemNameLayout, pLeft, pTop, (int) (pTop - Screen.dp(15f)), Paints.getTextPaint16(dataColor), rtl, width, displayItemNameWidth, displayItemNameText, this, emojiStatusHelper);
+        drawText(c, displayItemName, displayItemNameLayout, pLeft, pTop, (int) (pTop - Screen.dp(15f)), Paints.getTextPaint16(dataColor), rtl, width, displayItemNameWidth, displayItemNameText, this, emojiStatusHelper, complexReceiver);
       }
     }
     if (progressComponent != null) {

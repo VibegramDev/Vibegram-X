@@ -48,6 +48,7 @@ import com.google.firebase.FirebaseOptions;
 
 import org.drinkless.tdlib.Client;
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.proxy.WebProxy;
 import org.drinkmore.Tracer;
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.Log;
@@ -6292,10 +6293,16 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   public void setProxy (int proxyId, @Nullable TdApi.Proxy proxy) {
+    // WEB proxies are served locally, TDLib only sees a loopback MTProto proxy
+    final boolean isWebProxy = WebProxy.isWeb(proxy);
+    proxy = WebProxy.activate(proxy);
     if (proxy != null) {
       send(new TdApi.AddProxy(proxy, true, ""), (addedProxy, error) -> {
         if (addedProxy != null) {
           setEffectiveProxyId(proxyId);
+          if (isWebProxy) {
+            cleanupProxies(); // loopback port changes on every start
+          }
         }
       });
     } else {
@@ -6332,6 +6339,11 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   public void getProxyLink (@NonNull Settings.Proxy proxy, RunnableData<String> callback) {
     if (proxy.proxy == null)
       throw new IllegalArgumentException();
+    if (WebProxy.isWeb(proxy.proxy)) {
+      final String link = WebProxy.toLink(proxy.proxy);
+      ui().post(() -> callback.runWithData(link));
+      return;
+    }
     send(new TdApi.GetInternalLink(new TdApi.InternalLinkTypeProxy(proxy.proxy), true), (httpUrl, error) -> {
       String url;
       if (error != null) {
@@ -6357,14 +6369,17 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     proxy.pingMs = Settings.PROXY_TIME_LOADING;
     proxy.pingErrorCount = 0;
     notifyPingValueChanged(proxy);
+    // WEB proxies need their transport to be running while TDLib is pinging them
+    final WebProxy.Lease lease = WebProxy.lease(proxy.proxy);
     TdApi.Function<?> function = proxyId != Settings.PROXY_ID_NONE ?
-      new TdApi.AddProxy(proxy.proxy, false, "") :
+      new TdApi.AddProxy(lease.proxy, false, "") :
       new TdApi.PingProxy(null);
     AtomicLong uptimeMillis = new AtomicLong(SystemClock.uptimeMillis());
     client().send(function, new Client.ResultHandler() {
       @Override
       public void onResult (TdApi.Object result) {
         if (pingId != proxy.pingCount) {
+          lease.release();
           return;
         }
         long now = SystemClock.uptimeMillis();
@@ -6402,6 +6417,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
           default:
             throw new UnsupportedOperationException(result.toString());
         }
+        lease.release();
         proxy.pingMs = pingMs;
         notifyPingValueChanged(proxy);
         if (after != null) {
