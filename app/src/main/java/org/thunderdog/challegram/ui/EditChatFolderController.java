@@ -14,6 +14,7 @@
  */
 package org.thunderdog.challegram.ui;
 
+import org.thunderdog.challegram.tool.Keyboard;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Rect;
@@ -88,7 +89,7 @@ import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.StringUtils;
 import tgx.td.Td;
 
-public class EditChatFolderController extends EditBaseController<EditChatFolderController.Arguments> implements View.OnClickListener, View.OnLongClickListener, SelectChatsController.Delegate, ChatFoldersListener, ChatFolderListener {
+public class EditChatFolderController extends EditBaseController<EditChatFolderController.Arguments> implements View.OnClickListener, View.OnLongClickListener, SelectChatsController.Delegate, ChatFoldersListener, ChatFolderListener, org.thunderdog.challegram.widget.EmojiLayout.Listener {
 
   private static final int NO_CHAT_FOLDER_ID = 0;
   private static final int COLLAPSED_CHAT_COUNT = 3;
@@ -221,6 +222,10 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
   @SuppressWarnings("deprecation")
   protected void onCreateView (Context context, FrameLayoutFix contentView, RecyclerView recyclerView) {
     headerCell = new EditHeaderView(context, this);
+    // Custom (premium) emoji in the folder name: rendering inside the input + emoji picker button.
+    // Must be enabled before setInput(), otherwise custom emoji in the initial text degrade to plain emoji
+    this.emojiHostView = contentView;
+    headerCell.enableCustomEmoji(tdlib, v -> toggleEmojiPanel());
     headerCell.setInput(TD.toCharSequence(editedChatFolder.name));
     headerCell.setInputOptions(R.string.FolderNameHint, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
     headerCell.setOnPhotoClickListener(this::showIconSelector);
@@ -234,6 +239,12 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
       TdApi.ChatFolderName newName = new TdApi.ChatFolderName(formattedText, editedChatFolder.name.animateCustomEmoji);
       onTitleChanged(newName);
       return Unit.INSTANCE;
+    });
+    headerCell.getInputView().setOnTouchListener((v, event) -> {
+      if (event.getAction() == android.view.MotionEvent.ACTION_UP && emojiPanelShown) {
+        closeEmojiPanel(true);
+      }
+      return false;
     });
     setLockFocusView(headerCell.getInputView(), false /*StringUtils.isEmpty(editedChatFolder.title)*/);
     ((ComplexRecyclerView) recyclerView).setHeaderView(headerCell, this);
@@ -377,9 +388,115 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     }
   }
 
+  // Emoji panel
+
+  private FrameLayoutFix emojiHostView;
+  private FrameLayoutFix emojiPanel;
+  private org.thunderdog.challegram.widget.EmojiLayout emojiLayout;
+  private boolean emojiPanelShown;
+
+  private int emojiPanelHeight () {
+    return Keyboard.getSize() + extraBottomInsetWithoutIme;
+  }
+
+  @Override
+  protected void onBottomInsetChanged (int extraBottomInset, int extraBottomInsetWithoutIme, boolean isImeInset) {
+    super.onBottomInsetChanged(extraBottomInset, extraBottomInsetWithoutIme, isImeInset);
+    if (emojiPanel != null) {
+      emojiPanel.getLayoutParams().height = emojiPanelHeight();
+      emojiPanel.requestLayout();
+      emojiLayout.setExtraBottomInset(extraBottomInsetWithoutIme, extraBottomInsetWithoutIme);
+    }
+  }
+
+  private void toggleEmojiPanel () {
+    if (emojiPanelShown) {
+      closeEmojiPanel(true);
+    } else {
+      openEmojiPanel();
+    }
+  }
+
+  private void openEmojiPanel () {
+    if (emojiPanelShown || emojiHostView == null) {
+      return;
+    }
+    if (emojiPanel == null) {
+      emojiPanel = new FrameLayoutFix(context());
+      emojiPanel.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, emojiPanelHeight(), Gravity.BOTTOM));
+      emojiLayout = new org.thunderdog.challegram.widget.EmojiLayout(context());
+      emojiLayout.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+      emojiLayout.initWithMediasEnabled(this, false, this, this, false);
+      emojiLayout.setExtraBottomInset(extraBottomInsetWithoutIme, extraBottomInsetWithoutIme);
+      emojiPanel.addView(emojiLayout);
+      emojiHostView.addView(emojiPanel);
+    }
+    emojiPanel.getLayoutParams().height = emojiPanelHeight();
+    emojiPanel.setVisibility(View.VISIBLE);
+    emojiPanel.requestLayout();
+    emojiPanelShown = true;
+    Keyboard.hide(headerCell.getInputView());
+    headerCell.setEmojiButtonIcon(R.drawable.baseline_keyboard_24);
+  }
+
+  private void closeEmojiPanel (boolean showKeyboard) {
+    if (!emojiPanelShown) {
+      return;
+    }
+    emojiPanelShown = false;
+    if (emojiPanel != null) {
+      emojiPanel.setVisibility(View.GONE);
+    }
+    headerCell.setEmojiButtonIcon(R.drawable.baseline_emoticon_outline_24);
+    if (showKeyboard) {
+      Keyboard.show(headerCell.getInputView());
+    }
+  }
+
+  @Override
+  public void onEnterEmoji (String emoji) {
+    android.widget.EditText input = headerCell.getInputView();
+    int start = Math.max(0, Math.min(input.getSelectionStart(), input.getSelectionEnd()));
+    int end = Math.max(0, Math.max(input.getSelectionStart(), input.getSelectionEnd()));
+    android.text.SpannableString s = new android.text.SpannableString(emoji);
+    s.setSpan(org.thunderdog.challegram.emoji.Emoji.instance().newSpan(emoji, null), 0, s.length(), android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+    input.getText().replace(start, end, s);
+  }
+
+  @Override
+  public void onEnterCustomEmoji (org.thunderdog.challegram.component.sticker.TGStickerObj stickerObj) {
+    org.thunderdog.challegram.v.HeaderEditText input = (org.thunderdog.challegram.v.HeaderEditText) headerCell.getInputView();
+    TdApi.Sticker sticker = stickerObj.getSticker();
+    if (sticker == null) {
+      return;
+    }
+    int start = Math.max(0, Math.min(input.getSelectionStart(), input.getSelectionEnd()));
+    int end = Math.max(0, Math.max(input.getSelectionStart(), input.getSelectionEnd()));
+    String emoji = TD.stickerEmoji(sticker);
+    android.text.SpannableString s = new android.text.SpannableString(emoji);
+    s.setSpan(org.thunderdog.challegram.emoji.Emoji.instance().newCustomSpan(emoji, null, input, tdlib, Td.customEmojiId(sticker)), 0, s.length(), android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+    input.getText().replace(start, end, s);
+  }
+
+  @Override
+  public void onDeleteEmoji () {
+    android.widget.EditText input = headerCell.getInputView();
+    if (input.length() > 0) {
+      input.dispatchKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DEL));
+    }
+  }
+
+  @Override
+  public boolean isEmojiInputEmpty () {
+    return headerCell.getInputView().length() == 0;
+  }
+
   @Override
   public void destroy () {
     super.destroy();
+    if (emojiLayout != null) {
+      emojiLayout.destroy();
+    }
     tdlib.listeners().unsubscribeFromChatFoldersUpdates(this);
     tdlib.listeners().removeChatFolderListener(chatFolderId, this);
   }
@@ -536,6 +653,12 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
 
   @Override
   public boolean performOnBackPressed (boolean fromTop, boolean commit) {
+    if (emojiPanelShown) {
+      if (commit) {
+        closeEmojiPanel(false);
+      }
+      return true;
+    }
     if (hasUnsavedChanges()) {
       if (commit) {
         showUnsavedChangesPromptBeforeLeaving(/* onConfirm */ null);

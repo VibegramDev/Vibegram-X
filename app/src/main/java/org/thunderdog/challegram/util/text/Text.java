@@ -14,6 +14,8 @@
  */
 package org.thunderdog.challegram.util.text;
 
+import android.text.Spanned;
+import org.thunderdog.challegram.emoji.CustomEmojiId;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -398,6 +400,20 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       }
       if (entities == null) {
         entities = TextEntity.toEntities(in);
+      } else if (in instanceof Spanned) {
+        for (TextEntity entity : entities) {
+          if (entity instanceof TextEntityMessage && entity.isCustomEmoji()) {
+            CustomEmojiId[] ids = ((Spanned) in).getSpans(entity.start, entity.end, CustomEmojiId.class);
+            if (ids != null) {
+              for (CustomEmojiId id : ids) {
+                if (id.forceDisableAnimations()) {
+                  ((TextEntityMessage) entity).setForceDisableAnimations(true);
+                  break;
+                }
+              }
+            }
+          }
+        }
       }
       entities(entities, textMediaListener);
     }

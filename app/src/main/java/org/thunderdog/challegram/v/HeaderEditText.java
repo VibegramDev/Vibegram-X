@@ -38,11 +38,11 @@ import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.util.CharacterStyleFilter;
-import org.thunderdog.challegram.widget.EmojiEditText;
+import org.thunderdog.challegram.widget.CustomEmojiEditText;
 
 import me.vkryl.core.ColorUtils;
 
-public class HeaderEditText extends EmojiEditText implements ActionMode.Callback, RtlCheckListener {
+public class HeaderEditText extends CustomEmojiEditText implements ActionMode.Callback, RtlCheckListener {
   public HeaderEditText (Context context) {
     super(context);
     init();
