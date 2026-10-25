@@ -33,6 +33,7 @@ import android.widget.TextView;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.content.res.ResourcesCompat;
 
 import org.thunderdog.challegram.core.Lang;
@@ -59,6 +60,9 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
 
   private Callback callback;
   private CircleButton mainButton;
+  private @DrawableRes int mainButtonIcon;
+  private @Nullable StateListener stateListener;
+  private boolean mainButtonDetached;
   // private int rowsCount;
   private final FactorAnimator animator;
 
@@ -92,6 +96,43 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
   public void replaceMainButton (@IdRes int id, @DrawableRes int icon) {
     mainButton.setId(id);
     mainButton.replaceIcon(icon);
+    if (mainButtonIcon != icon) {
+      mainButtonIcon = icon;
+      if (stateListener != null) {
+        stateListener.onMainButtonIconChanged(icon);
+      }
+    }
+  }
+
+  @DrawableRes
+  public int getMainButtonIcon () {
+    return mainButtonIcon;
+  }
+
+  public boolean isHidden () {
+    return hidden;
+  }
+
+  /** Lets another view (e.g. the navigation rail) render the main button and its state. */
+  public interface StateListener {
+    void onMainButtonIconChanged (@DrawableRes int icon);
+    void onHiddenChanged (boolean hidden);
+    void onOpenFactorChanged (float factor);
+  }
+
+  public void setStateListener (@Nullable StateListener listener) {
+    this.stateListener = listener;
+  }
+
+  /**
+   * Hides the main button while keeping the menu: the button is rendered elsewhere,
+   * and the menu opens above the place where the main button would be.
+   */
+  public void setMainButtonDetached (boolean detached) {
+    if (this.mainButtonDetached != detached) {
+      this.mainButtonDetached = detached;
+      mainButton.setVisibility(detached ? View.INVISIBLE : View.VISIBLE);
+    }
   }
 
   // Views
@@ -113,6 +154,7 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     button.setLayoutParams(params);
     parent.addThemeInvalidateListener(button);
 
+    mainButtonIcon = resource;
     addView(mainButton = button);
   }
 
@@ -304,6 +346,9 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     if (mainButton != null && hidden && !forceHidden) {
       hidden = false;
       animateHideFactor(0f);
+      if (stateListener != null) {
+        stateListener.onHiddenChanged(false);
+      }
     }
   }
 
@@ -352,6 +397,9 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
       hideIfShowing();
       hidden = true;
       animateHideFactor(1f);
+      if (stateListener != null) {
+        stateListener.onHiddenChanged(true);
+      }
     }
   }
 
@@ -384,6 +432,9 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
       return;
     }
 
+    if (stateListener != null) {
+      stateListener.onOpenFactorChanged(factor);
+    }
     easeFactor = factor; // isOpen ? Anim.DECELERATE_INTERPOLATOR.getInterpolation(factor) : 1f - Anim.DECELERATE_INTERPOLATOR.getInterpolation(1f - factor);
     mainButton.setRotationFactor(Lang.rtl(), easeFactor);
     HeaderView headerView = UI.getHeaderView(getContext());

@@ -41,6 +41,9 @@ import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.ui.MainController;
+import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.widget.ShadowView;
@@ -77,6 +80,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   private NavigationProcessor processor;
 
   private RootLayout rootView;
+  private TabletNavigationLayout tabletLayout;
   private NavigationLayout contentWrapper;
   private HeaderView headerView;
   private ShadowView shadowView, shadowTop;
@@ -190,6 +194,160 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return headerView;
   }
 
+  public HeaderView getHeaderViewFor (ViewController<?> controller) {
+    return isTabletMaster(controller) ? tabletLayout.getMasterHeader() : headerView;
+  }
+
+  public boolean isTabletMaster (ViewController<?> controller) {
+    return tabletLayout != null && tabletLayout.getMain() == controller;
+  }
+
+  public boolean isTabletSplit () {
+    return tabletLayout != null && tabletLayout.isSplit();
+  }
+
+  public int getContentWidth () {
+    return isTabletSplit() ? tabletLayout.getDetailWidth() : rootView.getMeasuredWidth();
+  }
+
+  /** Whether the chat is opened in the right pane (also while its profile or another child screen is on top). */
+  public boolean isTabletChatOpened (Tdlib tdlib, long chatId) {
+    if (!isTabletSplit()) {
+      return false;
+    }
+    NavigationStack stack = getStack();
+    for (int i = stack.size() - 1; i > 0; i--) {
+      ViewController<?> c = stack.get(i);
+      if (c instanceof MessagesController) {
+        return c.tdlib() == tdlib && ((MessagesController) c).getChatId() == chatId;
+      }
+    }
+    return false;
+  }
+
+  public @Nullable ViewController<?> getDrawerController () {
+    return isTabletSplit() ? tabletLayout.getMain() : getCurrentStackItem();
+  }
+
+  void updateTabletLayout (int listWidth) {
+    if (isAnimating || isDestroyed) {
+      return;
+    }
+    ViewController<?> first = getStack().get(0);
+    MainController target = listWidth > 0 && first instanceof MainController && !first.isDestroyed() ? (MainController) first : null;
+    MainController previous = tabletLayout.getMain();
+    if (previous == target) {
+      return;
+    }
+    if (previous != null) {
+      if (previous.isFocused() && previous != getCurrentStackItem()) {
+        previous.onBlur();
+      }
+      tabletLayout.clearMain();
+      if (!previous.isDestroyed()) {
+        if (previous == getCurrentStackItem()) {
+          contentWrapper.addView(previous.getValue());
+          previous.attachNavigationController(this);
+          headerView.setTitle(previous);
+        } else {
+          removeChildWrapper(previous);
+        }
+      }
+    }
+    if (target != null) {
+      if (childWrappers == null || !childWrappers.contains(target)) {
+        addChildWrapper(target, 0);
+      }
+      tabletLayout.setMain(target);
+      if (!target.isFocused()) {
+        target.onFocus();
+        ViewController<?> current = getCurrentStackItem();
+        if (current != null && current != target && current.isFocused()) {
+          current.getValue().requestFocus();
+        }
+      }
+    }
+    if (previous != null && !previous.isDestroyed()) {
+      previous.checkNavigationBarLayout();
+    }
+    if (target != null) {
+      target.checkNavigationBarLayout();
+    }
+  }
+
+  /** Closes everything opened in the right pane, keeping the chat list. */
+  public boolean closeTabletDetail () {
+    if (!isTabletSplit() || isAnimating || getStackSize() < 2) {
+      return false;
+    }
+    NavigationStack stack = getStack();
+    while (stack.size() > 2) {
+      ViewController<?> c = stack.remove(1);
+      if (c != null) {
+        c.attachNavigationController(this);
+        c.destroy();
+        c.detachNavigationController();
+      }
+    }
+    return navigateBack();
+  }
+
+  private boolean navigateTablet (ViewController<?> controller, int mode) {
+    if (!isTabletSplit()) {
+      return false;
+    }
+    boolean forward = (mode & MODE_BACKWARD) == 0;
+    ViewController<?> previous = forward ? getPreviousStackItem() : getCurrentStackItem();
+    if (previous != null && previous.isFocused() && !isTabletMaster(previous)) {
+      previous.onBlur();
+    }
+    if (!isTabletMaster(controller)) {
+      // A reused controller may keep the end state of a single-pane transition
+      // (e.g. translated off-screen after closing a chat on the cover screen).
+      TabletNavigationLayout.resetTransition(controller.getValue());
+      addChildWrapper(controller);
+    }
+    if (previous != null && !isTabletMaster(previous)) {
+      removeChildWrapper(previous);
+    }
+    if (!forward) {
+      getStack().removeLast();
+      if (previous != null) {
+        previous.attachNavigationController(this);
+        previous.destroy();
+        previous.detachNavigationController();
+      }
+    } else if ((mode & MODE_REBASE) != 0) {
+      getStack().reset(this, (mode & MODE_ARG_SAVE_FIRST) != 0);
+    }
+    if (!isTabletMaster(controller)) {
+      headerView.setTitle(controller);
+      View customTitle = controller.getCustomHeaderCell();
+      if (customTitle != null) {
+        TabletNavigationLayout.resetTransition(customTitle);
+      }
+    }
+    if (isTabletMaster(controller) || HeaderView.getFloatingButtonId(controller) == 0) {
+      // setTitle() only shows the shared floating button; hide the one left from the previous screen
+      // (e.g. edit button of settings), as there's no switch animation in the split layout.
+      floatingButton.setHeightFactor(0f, 0f, false);
+    }
+    tabletLayout.updateVisibility();
+    tabletLayout.invalidateMaster();
+    MainController main = tabletLayout.getMain();
+    if (main != null) {
+      main.updateNavigationBarSelection();
+    }
+    tabletLayout.requestLayout();
+    setIsAnimating(false);
+    controller.executeAnimationReadyListeners();
+    if (!controller.isFocused()) {
+      controller.onFocus();
+    }
+    controller.onAfterShow();
+    return true;
+  }
+
   public void setShadowsVisibility (int visibility) {
     shadowTop.setVisibility(visibility);
     shadowView.setVisibility(visibility);
@@ -270,6 +428,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public void removeChildWrapper (ViewController<?> controller) {
+    if (isTabletMaster(controller)) {
+      tabletLayout.clearMain();
+    }
     if (controller == null)
       throw new NullPointerException();
 
@@ -289,6 +450,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public void removeChildren () {
+    if (tabletLayout != null) {
+      tabletLayout.clearMain();
+    }
     if (childWrappers != null) {
       for (int i = childWrappers.size() - 1; i >= 0; i--) {
         removeChildWrapper(childWrappers.get(i));
@@ -416,7 +580,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
     Lang.addLanguageListener(this);
 
-    return rootView;
+    tabletLayout = new TabletNavigationLayout(context, this, rootView);
+    getStack().addChangeListener(stack -> tabletLayout.requestLayout());
+    return tabletLayout;
   }
 
   public void addViewUnderHeader (View view) {
@@ -448,6 +614,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     if (c != null) {
       headerView.resetColors(c, null);
     }
+    if (tabletLayout != null) {
+      tabletLayout.updateColors();
+    }
     if (themeListeners != null) {
       themeListeners.onThemeColorsChanged(areTemp);
     }
@@ -466,6 +635,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   public void destroy () {
     isDestroyed = true;
+    if (tabletLayout != null) {
+      tabletLayout.clearMain();
+    }
     ThemeManager.instance().removeThemeListener(this);
     getStack().clear(this);
     clearChildWrappers();
@@ -551,6 +723,17 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public @BackPressMode int performOnBackPressed (boolean fromTop, boolean commit) {
+    HeaderView masterHeader = isTabletSplit() ? tabletLayout.getMasterHeader() : null;
+    if (masterHeader != null && (masterHeader.inSelectMode() || masterHeader.inSearchMode())) {
+      if (commit) {
+        if (masterHeader.inSelectMode()) {
+          masterHeader.closeSelectMode(true, true);
+        } else {
+          masterHeader.closeSearchMode(true, null);
+        }
+      }
+      return BackPressMode.CUSTOM_ACTION_PERFORMED;
+    }
     if (headerView.inSelectMode()) {
       if (commit) {
         headerView.closeSelectMode(true, true);
@@ -915,6 +1098,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   void navigate (final ViewController<?> controller, int mode) {
     hideContextualPopups();
+    if (navigateTablet(controller, mode)) {
+      return;
+    }
 
     final boolean forward = (mode & MODE_BACKWARD) != MODE_BACKWARD;
     final boolean fastAnimation;
@@ -981,6 +1167,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   private static final boolean USE_ASYNC_IN_STEP_2 = false;
 
   void animateNavigate (final ViewController<?> controller, int direction, final boolean forward, final int rebase, final boolean fastAnimation) {
+    // The animation may have been scheduled (waiting for messages) before the split layout appeared.
+    if (navigateTablet(controller, forward ? (rebase != 0 ? rebase : MODE_FORWARD) : MODE_BACKWARD)) {
+      return;
+    }
     final ViewController<?> left, right;
 
     if (forward) {
@@ -1097,6 +1287,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         ((android.view.ActionMode) actionMode).finish();
       }
       if (!animating) {
+        if (tabletLayout != null) {
+          tabletLayout.requestLayout();
+        }
         processor.checkRebaseMessage();
       }
     }
@@ -1243,7 +1436,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public boolean swipeNavigationEnabled () {
-    return swipeNavigationLocked == 0;
+    return swipeNavigationLocked == 0 && !isTabletSplit();
   }
 
   void forceClosePreview () {
@@ -1646,17 +1839,21 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     if (headerView != null) {
       headerView.onLanguagePackEvent(event, arg1);
     }
+    if (tabletLayout != null) {
+      tabletLayout.updateColors();
+    }
     // TODO more
   }
 
   private int bottomInset, bottomInsetWithoutIme;
 
   public void applyBottomInset (ViewController<?> controller) {
+    int effectiveBottomInset = isTabletMaster(controller) ? bottomInsetWithoutIme : bottomInset;
     if (controller.supportsBottomInset()) {
-      controller.setBottomInset(bottomInset, bottomInsetWithoutIme);
+      controller.setBottomInset(effectiveBottomInset, bottomInsetWithoutIme);
     } else {
       View view = controller.getValue();
-      Views.setPaddingBottom(view, bottomInset);
+      Views.setPaddingBottom(view, effectiveBottomInset);
     }
   }
 

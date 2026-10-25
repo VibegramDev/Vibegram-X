@@ -2066,6 +2066,17 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     // TODO force exit search/etc modes
   }
 
+  // A custom title belongs to only one HeaderView when moving between panes.
+  void detachControllerTitle (ViewController<?> controller) {
+    View customTitle = controller.getCustomHeaderCell();
+    if (customTitle != null && customTitle.getParent() == this) {
+      removeView(customTitle);
+      if (title == customTitle) {
+        title = null;
+      }
+    }
+  }
+
   public void setTitle (ViewController<?> item) {
     if (isOwningStack) {
       stack.resetSilently(item);

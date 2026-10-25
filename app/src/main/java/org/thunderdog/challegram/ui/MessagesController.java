@@ -8672,7 +8672,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (isInForceTouchMode()) {
       return Screen.currentWidth() - ForceTouchView.getMatchParentHorizontalMargin() * 2;
     } else {
-      return Screen.currentWidth();
+      int width = context.navigation().getContentWidth();
+      return width > 0 ? width : Screen.currentWidth();
     }
   }
 
