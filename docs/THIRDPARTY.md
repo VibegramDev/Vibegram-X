@@ -39,3 +39,7 @@
 * [Diff-Match-Patch](http://code.google.com/p/google-diff-match-patch/): [source code](/app/src/main/java/org/thunderdog/challegram/core/DiffMatchPatch.java)
 * [RTL View Pager](https://github.com/diego-gomez-olvera/RtlViewPager): [source code](/app/src/main/java/org/thunderdog/challegram/widget/rtl/RtlViewPager.java)
 * [svg-android](https://github.com/japgolly/svg-android): [source code](/app/src/main/java/org/thunderdog/challegram/loader/svg)
+## Telegram-Monet
+
+The Material You color mapping used by the built-in "Monet" themes (`app/src/main/assets/monet/`) is adapted from
+[Telegram-Monet](https://github.com/mi-g-alex/Telegram-Monet) by mi-g-alex et al., licensed under EPL-2.0.

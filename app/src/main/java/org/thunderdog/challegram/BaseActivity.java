@@ -1151,6 +1151,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       Tracer.onUiError(t);
       throw t;
     }
+    ThemeManager.instance().checkMonetPalette();
     checkAutoNightMode();
     setGestureNavigationEnabled(Screen.isGesturalNavigationEnabled(getResources()));
     Intents.revokeFileReadPermissions();
@@ -1347,6 +1348,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     setGestureNavigationEnabled(Screen.isGesturalNavigationEnabled(getResources()));
     currentOrientation = newConfig.orientation;
     Lang.checkLanguageCode();
+    ThemeManager.instance().checkMonetPalette();
     setSystemNightMode(newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK);
     if (needRecreate) {
       recreate();

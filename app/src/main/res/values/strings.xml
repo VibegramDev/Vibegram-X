@@ -2011,6 +2011,9 @@
   <string name="ThemePink">Pink</string>
   <string name="ThemeOrange">Orange</string>
   <string name="ThemeWhiteBlack">White-black</string>
+  <string name="ThemeMonetWhite">Monet (White)</string>
+  <string name="ThemeMonetDark">Monet (Dark)</string>
+  <string name="ThemeMonetBlack">Monet (Black)</string>
   <string name="ThemeGreen">Green</string>
   <string name="VideoMessages">Video messages</string>
   <string name="NoVideoMessages">No Video messages</string>

@@ -1,0 +1,41 @@
+# Monet (Black)
+#
+# Runtime template for a built-in Material You ("Monet") theme.
+# Syntax: `colorName: value`, one per line; `#` starts a comment.
+#   a1_/a2_/a3_<tone>   Android system accent palette 1/2/3 (tones 0,10,50,100..1000)
+#   n1_/n2_<tone>       Android system neutral palette 1/2
+#   <token><AA>         same, with an extra 2-digit hex alpha (n1_20091 = n1_200 @ 0x91)
+#   #RGB #RGBA #RRGGBB #RRGGBBAA   literal colors
+#   mix(A,B,P)          A blended towards B by P percent
+#   include: name       start from another template, then override
+# Token names follow Android's android.R.color.system_* resources, which follow the wallpaper.
+# Based on the color mapping from Telegram-Monet (https://github.com/mi-g-alex/Telegram-Monet, EPL-2.0).
+
+include: dark
+
+# True-black (AMOLED) surfaces; everything else comes from Monet (Dark)
+filling: n1_1000
+overlayFilling: n1_1000
+background: n1_1000
+headerBackground: n1_1000
+headerLightBackground: n1_1000
+passcode: n1_1000
+chatKeyboard: n1_1000
+chatBackground: n1_1000
+unread: n1_1000
+bubble_unread_noWallpaper: n1_1000
+fillingPressed: n1_900
+messageSwipeBackground: n1_900
+bubbleIn_background: n1_900
+bubbleIn_pressed: n2_800
+bubble_date_noWallpaper: n1_900
+bubble_button_noWallpaper: n1_900
+bubble_mediaReply_noWallpaper: n1_900
+bubble_mediaTime_noWallpaper: n1_900
+bubble_overlay_noWallpaper: n1_900
+iv_preBlockBackground: n1_900
+iv_textCodeBackground: n1_900
+iv_chatLinkBackground: n1_900
+ivHeader: n1_900
+seekEmpty: n1_900
+playerCoverPlaceholder: n1_900
