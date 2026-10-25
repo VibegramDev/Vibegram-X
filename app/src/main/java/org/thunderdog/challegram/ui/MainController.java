@@ -2988,7 +2988,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     ViewPagerTopView.Item item = buildSectionItem(pagerItemId, pagerItemPosition, chatList, sectionName, iconResource, chatFolderStyle);
     if (chatFolderStyle != ChatFolderStyle.ICON_ONLY && TD.hasCustomEmoji(chatFolderInfo.name.text) && !hasIconSpans(sectionName)) {
       // Rendered via Text, which is able to draw custom emoji; Layout-based path would show placeholder emoji only
-      item.setCustomEmojiText(tdlib, chatFolderInfo.name.text);
+      item.setCustomEmojiText(tdlib, chatFolderInfo.name.text, chatFolderInfo.name.animateCustomEmoji);
     }
     return item;
   }

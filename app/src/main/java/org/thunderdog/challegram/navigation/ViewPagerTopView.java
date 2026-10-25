@@ -73,6 +73,7 @@ import org.thunderdog.challegram.util.text.IconSpan;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.util.text.TextEntity;
+import org.thunderdog.challegram.util.text.TextEntityMessage;
 import org.thunderdog.challegram.util.text.TextMedia;
 import org.thunderdog.challegram.util.text.TextStyleProvider;
 
@@ -170,13 +171,15 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     private @Nullable Tdlib tdlib;
     private @Nullable TdApi.FormattedText formattedString;
+    private boolean animateCustomEmoji;
     private long mediaKeyOffset = -1;
     private @Nullable Text naturalLabel;
     private @Nullable Text customLabel;
 
-    public Item setCustomEmojiText (Tdlib tdlib, TdApi.FormattedText text) {
+    public Item setCustomEmojiText (Tdlib tdlib, TdApi.FormattedText text, boolean animate) {
       this.tdlib = tdlib;
       this.formattedString = text;
+      this.animateCustomEmoji = animate;
       return this;
     }
 
@@ -206,6 +209,13 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       }
       final Item item = this;
       TextEntity[] entities = TextEntity.valueOf(tdlib, formattedString.text, formattedString.entities, null);
+      if (entities != null && !animateCustomEmoji) {
+        for (TextEntity entity : entities) {
+          if (entity instanceof TextEntityMessage) {
+            ((TextEntityMessage) entity).setForceDisableAnimations(true);
+          }
+        }
+      }
       Text text = new Text.Builder(formattedString.text, Math.max(maxWidth, 1), owner.labelStyleProvider, owner.labelColorSet)
         .entities(entities, (t, specificMedia) -> owner.onLabelMediaInvalidated(item, t, specificMedia))
         .singleLine()
@@ -265,7 +275,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     @Override
     public boolean equals (Object obj) {
-      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && customEmojiEquals(((Item) obj).formattedString, formattedString);
+      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && customEmojiEquals(((Item) obj).formattedString, formattedString);
     }
 
     private int width, contentWidth;

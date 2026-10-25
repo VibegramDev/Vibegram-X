@@ -1287,8 +1287,9 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     part.setBidiEntity(getBidiEntity(start));
     part.setEmoji(info);
     if (entity != null && entity.tdlib != null && entity.isCustomEmoji()) {
-      part.attachToMedia(newOrExistingMedia(TextMedia.keyForEmoji(entity.getCustomEmojiId(), emojiSize), start, end, (keyId, id) ->
-        new TextMedia(this, entity.tdlib, keyId, id, emojiSize, entity.getCustomEmojiId())
+      final boolean disableAnimations = entity.forceDisableAnimations();
+      part.attachToMedia(newOrExistingMedia(TextMedia.keyForEmoji(entity.getCustomEmojiId(), emojiSize, disableAnimations), start, end, (keyId, id) ->
+        new TextMedia(this, entity.tdlib, keyId, id, emojiSize, entity.getCustomEmojiId(), disableAnimations)
       ));
     }
 
