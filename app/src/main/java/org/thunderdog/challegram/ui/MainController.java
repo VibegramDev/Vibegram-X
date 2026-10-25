@@ -33,6 +33,7 @@ import android.os.Parcelable;
 import android.os.SystemClock;
 import android.provider.ContactsContract;
 import android.text.Spannable;
+import android.text.Spanned;
 import android.text.SpannableString;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -2984,7 +2985,16 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private ViewPagerTopView.Item buildSectionItem (long pagerItemId, int pagerItemPosition, TdApi.ChatList chatList, TdApi.ChatFolderInfo chatFolderInfo, @ChatFolderStyle int chatFolderStyle) {
     CharSequence sectionName = getFolderSectionName(pagerItemId, TD.toCharSequence(chatFolderInfo.name), chatFolderStyle);
     int iconResource = TD.findFolderIcon(chatFolderInfo.icon, R.drawable.baseline_folder_24);
-    return buildSectionItem(pagerItemId, pagerItemPosition, chatList, sectionName, iconResource, chatFolderStyle);
+    ViewPagerTopView.Item item = buildSectionItem(pagerItemId, pagerItemPosition, chatList, sectionName, iconResource, chatFolderStyle);
+    if (chatFolderStyle != ChatFolderStyle.ICON_ONLY && TD.hasCustomEmoji(chatFolderInfo.name.text) && !hasIconSpans(sectionName)) {
+      // Rendered via Text, which is able to draw custom emoji; Layout-based path would show placeholder emoji only
+      item.setCustomEmojiText(tdlib, chatFolderInfo.name.text);
+    }
+    return item;
+  }
+
+  private static boolean hasIconSpans (CharSequence text) {
+    return text instanceof Spanned && ((Spanned) text).getSpans(0, text.length(), IconSpan.class).length > 0;
   }
 
   private ViewPagerTopView.Item buildSectionItem (long pagerItemId, int pagerItemPosition, TdApi.ChatList chatList, CharSequence sectionName, @DrawableRes int iconResource, @ChatFolderStyle int chatFolderStyle) {

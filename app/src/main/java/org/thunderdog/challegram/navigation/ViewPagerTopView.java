@@ -37,6 +37,7 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 
 import androidx.annotation.CheckResult;
+import androidx.annotation.ColorInt;
 import androidx.annotation.Dimension;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.FloatRange;
@@ -48,17 +49,21 @@ import androidx.core.view.ViewCompat;
 
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.U;
+import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.component.sticker.TGStickerObj;
+import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TGReaction;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.loader.ImageReceiver;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.telegram.TGLegacyManager;
+import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
+import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
@@ -66,6 +71,10 @@ import org.thunderdog.challegram.util.DrawableProvider;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.IconSpan;
 import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.util.text.TextColorSet;
+import org.thunderdog.challegram.util.text.TextEntity;
+import org.thunderdog.challegram.util.text.TextMedia;
+import org.thunderdog.challegram.util.text.TextStyleProvider;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -74,6 +83,7 @@ import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
+import me.vkryl.android.util.SingleViewProvider;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
@@ -155,9 +165,107 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       return icon;
     }
 
+    // Custom emoji support: when set, the label is laid out and drawn by Text
+    // (which knows how to load and render custom emoji) instead of android.text.Layout.
+
+    private @Nullable Tdlib tdlib;
+    private @Nullable TdApi.FormattedText formattedString;
+    private long mediaKeyOffset = -1;
+    private @Nullable Text naturalLabel;
+    private @Nullable Text customLabel;
+
+    public Item setCustomEmojiText (Tdlib tdlib, TdApi.FormattedText text) {
+      this.tdlib = tdlib;
+      this.formattedString = text;
+      return this;
+    }
+
+    boolean hasCustomEmojiText () {
+      return tdlib != null && formattedString != null && string != null;
+    }
+
+    private static boolean customEmojiEquals (@Nullable TdApi.FormattedText a, @Nullable TdApi.FormattedText b) {
+      if (a == null || b == null) {
+        return a == b;
+      }
+      if (!a.text.equals(b.text) || a.entities.length != b.entities.length) {
+        return false;
+      }
+      for (int i = 0; i < a.entities.length; i++) {
+        TdApi.TextEntity x = a.entities[i], y = b.entities[i];
+        if (x.offset != y.offset || x.length != y.length || !x.type.equals(y.type)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    private Text buildLabel (ViewPagerTopView owner, int maxWidth) {
+      if (mediaKeyOffset == -1) {
+        mediaKeyOffset = owner.allocateLabelMediaKeys();
+      }
+      final Item item = this;
+      TextEntity[] entities = TextEntity.valueOf(tdlib, formattedString.text, formattedString.entities, null);
+      Text text = new Text.Builder(formattedString.text, Math.max(maxWidth, 1), owner.labelStyleProvider, owner.labelColorSet)
+        .entities(entities, (t, specificMedia) -> owner.onLabelMediaInvalidated(item, t, specificMedia))
+        .singleLine()
+        .allBold()
+        .ignoreNewLines()
+        .noClickable()
+        .viewProvider(new SingleViewProvider(owner))
+        .build();
+      return text;
+    }
+
+    private void requestLabelMedia (ViewPagerTopView owner, Text text) {
+      text.requestMedia(owner.labelMediaReceiver, mediaKeyOffset, LABEL_MEDIA_KEYS_PER_ITEM);
+    }
+
+    private void setCustomLabel (ViewPagerTopView owner, @Nullable Text label) {
+      if (customLabel != null && customLabel != naturalLabel && customLabel != label) {
+        customLabel.performDestroy();
+      }
+      customLabel = label;
+      if (label != null) {
+        requestLabelMedia(owner, label);
+      }
+    }
+
+    private Text obtainNaturalLabel (ViewPagerTopView owner) {
+      if (naturalLabel == null) {
+        naturalLabel = buildLabel(owner, Screen.dp(1000f));
+      }
+      return naturalLabel;
+    }
+
+    void releaseLabels (ViewPagerTopView owner) {
+      if (customLabel != null && customLabel != naturalLabel) {
+        customLabel.performDestroy();
+      }
+      if (naturalLabel != null) {
+        naturalLabel.performDestroy();
+      }
+      customLabel = naturalLabel = null;
+      if (mediaKeyOffset != -1) {
+        owner.labelMediaReceiver.clearReceiversRange(mediaKeyOffset, mediaKeyOffset + LABEL_MEDIA_KEYS_PER_ITEM);
+      }
+    }
+
+    boolean hasLabel () {
+      return ellipsizedStringLayout != null || customLabel != null;
+    }
+
+    int getLabelHeight () {
+      return customLabel != null ? customLabel.getHeight() : ellipsizedStringLayout != null ? ellipsizedStringLayout.getHeight() : 0;
+    }
+
+    int getLabelWidth () {
+      return customLabel != null ? customLabel.getWidth() : ellipsizedStringLayout != null ? ellipsizedStringLayout.getWidth() : 0;
+    }
+
     @Override
     public boolean equals (Object obj) {
-      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter);
+      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && customEmojiEquals(((Item) obj).formattedString, formattedString);
     }
 
     private int width, contentWidth;
@@ -224,10 +332,19 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       return value;
     }
 
+    private @Nullable ViewPagerTopView owner;
+
+    private float measureLabel (TextPaint paint) {
+      if (hasCustomEmojiText() && owner != null) {
+        return obtainNaturalLabel(owner).getWidth();
+      }
+      return U.measureEmojiText(string, paint);
+    }
+
     @CheckResult
     private int measureWidth (TextPaint paint, @Px int horizontalSpacing, float labelFactor) {
       final int width;
-      final float labelWidth = string != null ? U.measureEmojiText(string, paint) * labelFactor : 0f;
+      final float labelWidth = string != null ? measureLabel(paint) * labelFactor : 0f;
       final float counterWidthWithSpacing = counter != null ? counter.getScaledWidth(horizontalSpacing) : 0f;
       final float iconWidth = iconRes != 0 ? Screen.dp(ICON_SIZE) : 0;
       final float iconWidthWithLabelSpacing = iconRes != 0 ? (iconWidth + horizontalSpacing * labelFactor) : 0;
@@ -262,6 +379,15 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     private int ellipsizedWidth;
 
     public void trimString (int availWidth, TextPaint paint) {
+      if (hasCustomEmojiText() && owner != null) {
+        ellipsizedStringLayout = null;
+        iconSpans = null;
+        Text natural = obtainNaturalLabel(owner);
+        Text label = natural.getWidth() <= availWidth ? natural : buildLabel(owner, availWidth);
+        setCustomLabel(owner, label);
+        ellipsizedWidth = label.getWidth();
+        return;
+      }
       if (string != null) {
         CharSequence ellipsizedString = TextUtils.ellipsize(string, paint, availWidth, TextUtils.TruncateAt.END);
         ellipsizedStringLayout = U.createLayout(ellipsizedString, availWidth, paint);
@@ -274,6 +400,13 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     }
 
     public void untrimString (TextPaint textPaint) {
+      if (hasCustomEmojiText() && owner != null) {
+        ellipsizedStringLayout = null;
+        iconSpans = null;
+        setCustomLabel(owner, obtainNaturalLabel(owner));
+        ellipsizedWidth = width;
+        return;
+      }
       if (string != null) {
         int textWidth = (int) Math.ceil(U.measureEmojiText(string, textPaint));
         if (ellipsizedStringLayout == null || !ellipsizedStringLayout.getText().equals(string) ||
@@ -336,6 +469,36 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   private @Px int itemPadding;
   private @Px int itemSpacing;
   private final ComplexReceiver complexReceiver;
+  private final ComplexReceiver labelMediaReceiver;
+  private final LabelColorSet labelColorSet = new LabelColorSet();
+  private final TextStyleProvider labelStyleProvider = new TextStyleProvider(Fonts.newRobotoStorage()).setTextSize(14f);
+  private long nextLabelMediaKey = 0;
+
+  private static final long LABEL_MEDIA_KEYS_PER_ITEM = 32;
+
+  private static final class LabelColorSet implements TextColorSet {
+    @ColorInt int color;
+
+    @Override
+    public int defaultTextColor () {
+      return color;
+    }
+  }
+
+  long allocateLabelMediaKeys () {
+    long offset = nextLabelMediaKey;
+    nextLabelMediaKey += LABEL_MEDIA_KEYS_PER_ITEM;
+    return offset;
+  }
+
+  void onLabelMediaInvalidated (Item item, Text text, @Nullable TextMedia specificMedia) {
+    if (item.customLabel == text) {
+      if (!text.invalidateMediaContent(labelMediaReceiver, specificMedia)) {
+        item.requestLabelMedia(this, text);
+      }
+      invalidate();
+    }
+  }
   private CounterAlphaProvider counterAlphaProvider = DEFAULT_COUNTER_ALPHA_PROVIDER;
 
   private @ColorId int fromTextColorId = ColorId.NONE, toTextColorId = ColorId.headerText;
@@ -349,6 +512,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     this.itemPadding = Screen.dp(DEFAULT_ITEM_PADDING);
     this.itemSpacing = Screen.dp(DEFAULT_ITEM_SPACING);
     this.complexReceiver = new ComplexReceiver(this);
+    this.labelMediaReceiver = new ComplexReceiver(this, Config.MAX_ANIMATED_EMOJI_REFRESH_RATE);
     setWillNotDraw(false);
     TGLegacyManager.instance().addEmojiListener(this);
   }
@@ -594,6 +758,13 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       }
     }
     removeAllViews();
+    if (this.items != null && this.items != items) {
+      for (Item oldItem : this.items) {
+        if (!items.contains(oldItem)) {
+          oldItem.releaseLabels(this);
+        }
+      }
+    }
     this.items = items;
     onUpdateItems();
 
@@ -719,6 +890,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   }
 
   private void measureItem (Item item, TextPaint paint) {
+    item.owner = this;
     item.calculateWidth(paint, itemSpacing);
   }
 
@@ -818,6 +990,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     final int availTextWidth = commonItemWidth - itemPadding * 2;
 
     for (Item item : items) {
+      item.owner = this;
       TextPaint textPaint = getItemTextPaint(item);
       if (!wrapContent && item.width < availTextWidth) {
         item.trimString(availTextWidth, textPaint);
@@ -1117,7 +1290,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
             }
             float textAlpha = counterAlphaProvider.getTextAlpha(item.counter, alphaFactor);
             float backgroundAlpha = counterAlphaProvider.getBackgroundAlpha(item.counter, alphaFactor);
-            if (item.ellipsizedStringLayout != null) {
+            if (item.hasLabel()) {
               int stringX;
               if (item.iconRes != 0) {
                 Drawable drawable = item.getIcon();
@@ -1126,7 +1299,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
               } else {
                 stringX = cx + horizontalPadding;
               }
-              int stringY = viewHeight / 2 - item.ellipsizedStringLayout.getHeight() / 2;
+              int stringY = viewHeight / 2 - item.getLabelHeight() / 2;
               drawLabel(c, item, stringX, stringY, color, itemSelectionFactor);
               item.counter.draw(c, cx + itemWidth - horizontalPadding - item.counter.getWidth() / 2f, viewHeight / 2f, Gravity.CENTER, textAlpha, backgroundAlpha, imageAlpha, item.provider, ColorId.NONE);
             } else if (item.imageReceiver != null) {
@@ -1140,9 +1313,9 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
               Drawable drawable = item.getIcon();
               Drawables.draw(c, drawable, cx + horizontalPadding, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
               item.counter.draw(c, cx + itemWidth - horizontalPadding - item.counter.getWidth() / 2f, viewHeight / 2f, Gravity.CENTER, textAlpha, backgroundAlpha, imageAlpha, item.provider, ColorId.NONE);
-              if (item.isAnimating() && item.oldItem != null && item.oldItem.ellipsizedStringLayout != null) {
+              if (item.isAnimating() && item.oldItem != null && item.oldItem.hasLabel()) {
                 int stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
-                int stringY = viewHeight / 2 - item.oldItem.ellipsizedStringLayout.getHeight() / 2;
+                int stringY = viewHeight / 2 - item.oldItem.getLabelHeight() / 2;
                 drawLabel(c, item, stringX, stringY, color, itemSelectionFactor);
               }
             } else {
@@ -1150,7 +1323,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
               float addX = -Math.min((itemWidth - counterWidth) / 2f + item.translationX, 0);
               item.counter.draw(c, cx + itemWidth / 2f + addX, viewHeight / 2f, Gravity.CENTER, textAlpha, backgroundAlpha, imageAlpha, item.provider, ColorId.NONE);
             }
-          } else if (item.ellipsizedStringLayout != null) {
+          } else if (item.hasLabel()) {
             int stringX;
             if (item.iconRes != 0) {
               Drawable drawable = item.getIcon();
@@ -1159,14 +1332,14 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
             } else {
               stringX = cx + itemWidth / 2 - contentWidth / 2;
             }
-            int stringY = viewHeight / 2 - item.ellipsizedStringLayout.getHeight() / 2;
+            int stringY = viewHeight / 2 - item.getLabelHeight() / 2;
             drawLabel(c, item, stringX, stringY, color, itemSelectionFactor);
           } else if (item.iconRes != 0) {
             Drawable drawable = item.getIcon();
             Drawables.draw(c, drawable, cx + itemWidth / 2 - drawable.getMinimumWidth() / 2, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
-            if (item.isAnimating() && item.oldItem != null && item.oldItem.ellipsizedStringLayout != null) {
+            if (item.isAnimating() && item.oldItem != null && item.oldItem.hasLabel()) {
               int stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
-              int stringY = viewHeight / 2 - item.oldItem.ellipsizedStringLayout.getHeight() / 2;
+              int stringY = viewHeight / 2 - item.oldItem.getLabelHeight() / 2;
               drawLabel(c, item, stringX, stringY, color, itemSelectionFactor);
             }
           }
@@ -1236,14 +1409,15 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   private void drawLabel (Canvas c, Item item, float x, float y, int color, float itemSelectionFactor) {
     Layout layout = item.ellipsizedStringLayout;
     Layout oldLayout = item.oldItem != null ? item.oldItem.ellipsizedStringLayout : null;
-    if (layout == null && oldLayout == null) {
+    Text customLabel = item.customLabel;
+    if (layout == null && oldLayout == null && customLabel == null) {
       return;
     }
     float labelFactor = getLabelFactorByItemSelectionFactor(itemSelectionFactor);
     if (labelFactor <= 0f) {
       return;
     }
-    float textWidth = layout != null ? getLabelWidth(item) : getLabelWidth(item.oldItem);
+    float textWidth = (layout != null || customLabel != null) ? getLabelWidth(item) : getLabelWidth(item.oldItem);
     float clipRight = x + textWidth * labelFactor;
     boolean isVisible = clipRight - x >= 1f;
     boolean clipText = labelFactor < 1f && isVisible;
@@ -1282,6 +1456,10 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
         layout.getPaint().setColor(color);
         layout.draw(c);
       }
+      if (customLabel != null) {
+        labelColorSet.color = color;
+        customLabel.draw(c, 0, 0, labelColorSet, 1f, labelMediaReceiver);
+      }
       c.translate(-x, -y);
     }
     if (clipText) {
@@ -1295,10 +1473,10 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   }
 
   private int getLabelWidth (Item item) {
-    if (item.ellipsizedStringLayout == null) {
+    if (!item.hasLabel()) {
       return 0;
     }
-    return Math.max(item.ellipsizedStringLayout.getWidth(), item.width - item.collapsedWidth);
+    return Math.max(item.getLabelWidth(), item.width - item.collapsedWidth);
   }
 
   private float getIconSpanAlpha (Item item) {
@@ -1417,17 +1595,20 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   protected void onAttachedToWindow () {
     super.onAttachedToWindow();
     complexReceiver.attach();
+    labelMediaReceiver.attach();
   }
 
   @Override
   protected void onDetachedFromWindow () {
     super.onDetachedFromWindow();
     complexReceiver.detach();
+    labelMediaReceiver.detach();
   }
 
   @Override
   public void performDestroy () {
     complexReceiver.performDestroy();
+    labelMediaReceiver.performDestroy();
   }
 
   private static class BackgroundView extends View {
