@@ -36,6 +36,7 @@ import androidx.annotation.StringRes;
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.navigation.DrawerController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.TdlibContext;
 import org.thunderdog.challegram.component.popups.ModernActionedLayout;
@@ -337,15 +338,31 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
 
   private boolean ignoreTranslation;
 
-  /** The pill would cover the first row ("Add proxy") of the screens where the proxy is configured */
+  /**
+   * The pill is shown only above the chat list. Other screens either show the state themselves
+   * (chats: header subtitle) or must not be covered by it (settings, proxy, drawer, ...).
+   */
   private boolean isOnProxyScreen () {
     final BaseActivity context = UI.getContext(getContext());
-    final ViewController<?> c = context != null ? context.navigation().getCurrentStackItem() : null;
-    return c != null && (c.getId() == R.id.controller_proxyList || c.getId() == R.id.controller_proxy);
+    if (context == null) {
+      return false;
+    }
+    final DrawerController drawer = context.getDrawer();
+    if (drawer != null && drawer.getFactor() > 0f) {
+      return true;
+    }
+    final ViewController<?> c = context.navigation().getCurrentStackItem();
+    return c != null && c.getId() != R.id.controller_main;
   }
 
   public void updateVisible () {
     boolean isKeyboardVisible = UI.getContext(getContext()).isKeyboardVisible();
+    if (state != ConnectionState.CONNECTED && isOnProxyScreen()) {
+      // The state is shown elsewhere on this screen: hide at once, without the usual delayed fade-out
+      isVisible = false;
+      forceFactor(0f);
+      return;
+    }
     setIsVisible(state != ConnectionState.CONNECTED && !isKeyboardVisible && !isOnProxyScreen(), ignoreTranslation = ignoreTranslation || isKeyboardVisible);
   }
 

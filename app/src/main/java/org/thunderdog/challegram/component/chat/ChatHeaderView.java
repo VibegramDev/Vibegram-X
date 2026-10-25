@@ -25,7 +25,10 @@ import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.navigation.ComplexHeaderView;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.telegram.ConnectionState;
+import org.thunderdog.challegram.telegram.GlobalConnectionListener;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.theme.ThemeDeprecated;
 import org.thunderdog.challegram.tool.Screen;
 
@@ -92,6 +95,8 @@ public class ChatHeaderView extends ComplexHeaderView {
 
   public void setChat (Tdlib tdlib, TdApi.Chat chat, @Nullable ThreadInfo messageThread) {
     this.tdlib = tdlib;
+    this.lastChat = chat;
+    this.lastThread = messageThread;
 
     if (chat == null) {
       setText("Debug controller", "nobody should find this view");
@@ -104,16 +109,18 @@ public class ChatHeaderView extends ComplexHeaderView {
     setShowFake(tdlib.chatFake(chat));
     setShowMute(tdlib.chatNeedsMuteIcon(chat));
     setShowLock(ChatId.isSecret(chat.id));
+    final boolean connected = isConnected();
+    setSubtitleLoading(!connected && connectionHasProgress());
     if (messageThread != null) {
       setEmojiStatus(null);
-      setText(messageThread.chatHeaderTitle(), !StringUtils.isEmpty(forcedSubtitle) ? forcedSubtitle : messageThread.chatHeaderSubtitle());
+      setText(messageThread.chatHeaderTitle(), currentSubtitle());
       setExpandedSubtitle(null);
       setUseRedHighlight(false);
       attachChatStatus(messageThread.getChatId(), messageThread.getMessageTopicId());
     } else {
       setEmojiStatus(tdlib.isSelfChat(chat) ? null : tdlib.chatUser(chat));
-      setText(tdlib.chatTitle(chat), !StringUtils.isEmpty(forcedSubtitle) ? forcedSubtitle : tdlib.status().chatStatus(chat));
-      setExpandedSubtitle(tdlib.status().chatStatusExpanded(chat));
+      setText(tdlib.chatTitle(chat), currentSubtitle());
+      setExpandedSubtitle(connected ? tdlib.status().chatStatusExpanded(chat) : null);
       setUseRedHighlight(tdlib.isRedTeam(chat.id));
       attachChatStatus(chat.id, null);
     }
@@ -122,11 +129,75 @@ public class ChatHeaderView extends ComplexHeaderView {
   // Updates (new)
 
   private Tdlib tdlib;
+  private TdApi.Chat lastChat;
+  private @Nullable ThreadInfo lastThread;
 
   public void updateUserStatus (TdApi.Chat chat) {
     if (StringUtils.isEmpty(forcedSubtitle)) {
-      setSubtitle(tdlib.status().chatStatus(chat));
-      setExpandedSubtitle(tdlib.status().chatStatusExpanded(chat));
+      lastChat = chat;
+      setSubtitle(currentSubtitle());
+      setExpandedSubtitle(isConnected() && lastThread == null ? tdlib.status().chatStatusExpanded(chat) : null);
     }
+  }
+
+  // Connection state: shown instead of the last seen status, with a spinner
+
+  private boolean isConnected () {
+    return tdlib == null || tdlib.connectionState() == ConnectionState.CONNECTED;
+  }
+
+  private boolean connectionHasProgress () {
+    return tdlib != null && tdlib.connectionState() != ConnectionState.WAITING_FOR_NETWORK;
+  }
+
+  private CharSequence currentSubtitle () {
+    if (!StringUtils.isEmpty(forcedSubtitle)) {
+      return forcedSubtitle;
+    }
+    if (!isConnected()) {
+      return tdlib.connectionStateText();
+    }
+    if (lastThread != null) {
+      return lastThread.chatHeaderSubtitle();
+    }
+    return tdlib.status().chatStatus(lastChat);
+  }
+
+  private void refreshConnection () {
+    if (lastChat == null || tdlib == null || !StringUtils.isEmpty(forcedSubtitle)) {
+      return;
+    }
+    setSubtitleLoading(!isConnected() && connectionHasProgress());
+    setSubtitle(currentSubtitle());
+    setExpandedSubtitle(isConnected() && lastThread == null ? tdlib.status().chatStatusExpanded(lastChat) : null);
+  }
+
+  private final GlobalConnectionListener connectionListener = new GlobalConnectionListener() {
+    @Override
+    public void onConnectionDisplayStatusChanged (Tdlib changed, boolean isCurrent) {
+      if (changed == tdlib) {
+        refreshConnection();
+      }
+    }
+
+    @Override
+    public void onConnectionStateChanged (Tdlib changed, int newState, boolean isCurrent) {
+      if (changed == tdlib) {
+        refreshConnection();
+      }
+    }
+  };
+
+  @Override
+  protected void onAttachedToWindow () {
+    super.onAttachedToWindow();
+    TdlibManager.instance().global().addConnectionListener(connectionListener);
+    refreshConnection();
+  }
+
+  @Override
+  protected void onDetachedFromWindow () {
+    super.onDetachedFromWindow();
+    TdlibManager.instance().global().removeConnectionListener(connectionListener);
   }
 }

@@ -191,6 +191,13 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   private int currentOrientation;
   private boolean mHasSoftwareKeys;
 
+  /** The connection pill must not stay on top of the drawer */
+  public void onDrawerOpenChanged () {
+    if (statusBar != null) {
+      statusBar.updateVisible();
+    }
+  }
+
   public @Nullable DrawerController getDrawer () {
     return drawer;
   }
