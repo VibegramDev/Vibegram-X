@@ -27,6 +27,7 @@ import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
@@ -35,6 +36,7 @@ import org.thunderdog.challegram.data.TGChat;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.loader.Receiver;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.receiver.RefreshRateLimiter;
 import org.thunderdog.challegram.support.RippleSupport;
@@ -54,6 +56,7 @@ import org.thunderdog.challegram.tool.Icons;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.PorterDuffPaint;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.ChatsController;
 import org.thunderdog.challegram.unsorted.Settings;
@@ -538,6 +541,17 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     return chat != null ? chat.getChatId() : 0;
   }
 
+  // Highlights the chat that is currently opened in the right pane of the tablet layout.
+  private boolean isOpenedInTabletLayout () {
+    long chatId = getChatId();
+    if (chatId == 0) {
+      return false;
+    }
+    BaseActivity context = UI.getContext(getContext());
+    NavigationController navigation = context != null ? context.navigation() : null;
+    return navigation != null && navigation.isTabletChatOpened(tdlib, chatId);
+  }
+
   public void invalidateTypingPart (boolean onlyIcon) {
     invalidate(); // TODO invalidate only needed part
   }
@@ -575,6 +589,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
     if (isDragging) {
       c.drawColor(ColorUtils.alphaColor(.8f, Theme.fillingColor()));
+    } else if (isOpenedInTabletLayout()) {
+      c.drawColor(ColorUtils.alphaColor(.15f, Theme.getColor(ColorId.controlActive)));
     }
 
     c.drawText(chat.getTime(), (rtl ? viewWidth - chat.getTimeLeft() - chat.getTimeWidth() : chat.getTimeLeft()), getTitleTop(chatListMode), timePaint);

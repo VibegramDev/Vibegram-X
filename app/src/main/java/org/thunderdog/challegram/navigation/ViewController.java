@@ -422,7 +422,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   protected void attachNavigationController (NavigationController navigationController) {
     setFlags(flags | FLAG_ATTACHED_TO_NAVIGATION);
     this.navigationController = navigationController;
-    this.headerView = navigationController.getHeaderView();
+    this.headerView = navigationController.getHeaderViewFor(this);
     this.floatingButton = navigationController.getFloatingButton();
     navigationController.applyBottomInset(this);
   }

@@ -129,6 +129,7 @@ import org.thunderdog.challegram.util.text.IconSpan;
 import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.widget.BubbleLayout;
 import org.thunderdog.challegram.widget.FillingSpace;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.ShadowView;
 import org.thunderdog.challegram.widget.SnackBar;
@@ -181,6 +182,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private FrameLayoutFix mainWrap;
   private FrameLayoutFix pagerWrap;
   private OverlayButtonWrap composeWrap;
+  private MainNavigationBar navigationBar;
+  private CounterChangeListener navigationCounterListener;
 
   @Override
   protected View onCreateView (Context context) {
@@ -197,6 +200,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     Views.setPaddingBottom(updateSnackBar, extraBottomInsetWithoutIme);
     updateBottomBarMargins();
     checkMargins();
+    checkNavigationBarLayout();
   }
 
   private void updateBottomBarMargins () {
@@ -223,6 +227,23 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     generateChatSearchView(mainWrap);
 
     contentView.addView(mainWrap);
+
+    navigationBar = new MainNavigationBar(context, this);
+    navigationBar.setUser(tdlib, tdlib.myUserId());
+    navigationBar.setCallback(this::onNavigationItemClick);
+    updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), false);
+    navigationCounterListener = new CounterChangeListener() {
+      @Override
+      public void onChatCounterChanged (@NonNull TdApi.ChatList chatList, TdlibCounter counter, boolean availabilityChanged, int totalCount, int unreadCount, int unreadUnmutedCount) {
+        updateNavigationCounter(chatList);
+      }
+
+      @Override
+      public void onMessageCounterChanged (@NonNull TdApi.ChatList chatList, TdlibCounter counter, int unreadCount, int unreadUnmutedCount) {
+        updateNavigationCounter(chatList);
+      }
+    };
+    tdlib.listeners().addTotalChatCounterListener(navigationCounterListener);
 
     UI.setSoftInputMode(UI.getContext(context), Config.DEFAULT_WINDOW_PARAMS);
 
@@ -263,6 +284,27 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       }, false);
     composeWrap.setCallback(this);
     contentView.addView(composeWrap);
+    // Above the compose overlay: in the phone layout the compose button lives in the navigation rail.
+    contentView.addView(navigationBar);
+    navigationBar.setComposeIcon(composeWrap.getMainButtonIcon());
+    navigationBar.setComposeVisible(!composeWrap.isHidden(), false);
+    composeWrap.setStateListener(new OverlayButtonWrap.StateListener() {
+      @Override
+      public void onMainButtonIconChanged (int icon) {
+        navigationBar.setComposeIcon(icon);
+      }
+
+      @Override
+      public void onHiddenChanged (boolean hidden) {
+        navigationBar.setComposeVisible(!hidden, true);
+      }
+
+      @Override
+      public void onOpenFactorChanged (float factor) {
+        navigationBar.setComposeOpenFactor(factor);
+      }
+    });
+    checkNavigationBarLayout();
 
     makeStartupChecks();
 
@@ -765,7 +807,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   public void onActivityResume () {
     super.onActivityResume();
     UI.startNotificationService();
-    showAnnoyingAlertsForCompliance(true);
+    // The permission dialog itself pauses and resumes the activity. Asking again on that resume
+    // creates an endless loop when the permission is denied permanently: the system answers instantly,
+    // the activity is paused every second and e.g. voice recording gets cancelled. The chat list stays
+    // focused in the tablet layout, so the loop is constant there.
+    boolean resumedFromPermissionRequest = notificationsRequestPending;
+    notificationsRequestPending = false;
+    showAnnoyingAlertsForCompliance(!resumedFromPermissionRequest);
   }
 
   private void makeStartupChecks () {
@@ -1009,13 +1057,135 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     checkPagerMargins();
     checkHeaderMargins();
     checkComposeWrapPaddings();
+    checkNavigationBarLayout();
   }
 
   private void checkComposeWrapPaddings () {
     if (composeWrap != null) {
       int paddingBottom = (displayTabsAtBottom() ? getHeaderHeight() : 0) + extraBottomInsetWithoutIme;
-      composeWrap.setPadding(composeWrap.getPaddingLeft(), composeWrap.getPaddingTop(), composeWrap.getPaddingRight(), paddingBottom);
+      int paddingSide = 0;
+      if (navigationBar != null) {
+        if (navigationBar.isBar()) {
+          paddingBottom += MainNavigationBar.getBarHeight();
+        } else {
+          // The main button is rendered by the rail. Align the hidden one with the rail's compose segment,
+          // so the menu opens right above it. OverlayButtonWrap places the 56dp button 16dp away from the edges.
+          int railCenter = MainNavigationBar.getRailMargin() + MainNavigationBar.getRailWidth() / 2;
+          int buttonCenter = Screen.dp(16f) + Screen.dp(56f) / 2;
+          paddingSide = Math.max(0, railCenter - buttonCenter);
+          paddingBottom += MainNavigationBar.getRailMargin() + navigationBar.getComposeCenterFromRailBottom() - buttonCenter;
+        }
+      }
+      composeWrap.setPadding(Lang.rtl() ? paddingSide : 0, composeWrap.getPaddingTop(), Lang.rtl() ? 0 : paddingSide, paddingBottom);
       composeWrap.setClipToPadding(paddingBottom == 0);
+    }
+  }
+
+  // Navigation bar
+
+  private boolean isTabletNavigationBar () {
+    return navigationController != null && navigationController.isTabletSplit() && navigationController.isTabletMaster(this);
+  }
+
+  /** Called when the chat list is moved into or out of the tablet split layout. */
+  public void checkNavigationBarLayout () {
+    if (navigationBar == null) {
+      return;
+    }
+    boolean isBar = isTabletNavigationBar();
+    navigationBar.setLayoutMode(isBar, extraBottomInsetWithoutIme, displayTabsAtBottom() ? getHeaderHeight() : 0);
+    if (composeWrap != null) {
+      composeWrap.setMainButtonDetached(!isBar);
+    }
+    Views.setBottomMargin(mainWrap, isBar ? MainNavigationBar.getBarHeight() : 0);
+    checkComposeWrapPaddings();
+    updateNavigationBarSelection();
+  }
+
+  /** Highlights the section opened in the right pane of the tablet layout. */
+  public void updateNavigationBarSelection () {
+    if (navigationBar != null) {
+      navigationBar.setSelectedItem(getTabletSection());
+    }
+  }
+
+  private int getTabletSection () {
+    if (!isTabletNavigationBar() || navigationController.getStackSize() < 2) {
+      return MainNavigationBar.ITEM_CHATS;
+    }
+    ViewController<?> section = navigationController.getStack().get(1);
+    if (section instanceof SettingsController) {
+      return MainNavigationBar.ITEM_SETTINGS;
+    }
+    if (section instanceof PeopleController) {
+      return MainNavigationBar.ITEM_CONTACTS;
+    }
+    return MainNavigationBar.ITEM_CHATS;
+  }
+
+  private void updateNavigationCounter (TdApi.ChatList chatList) {
+    if (chatList.getConstructor() != TdApi.ChatListMain.CONSTRUCTOR && chatList.getConstructor() != TdApi.ChatListArchive.CONSTRUCTOR) {
+      return;
+    }
+    executeOnUiThreadOptional(() -> {
+      if (navigationBar != null) {
+        updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), true);
+      }
+    });
+  }
+
+  private void onNavigationItemClick (int item) {
+    if (navigationController == null || navigationController.isAnimating() || context.isNavigationBusy()) {
+      return;
+    }
+    if (item == MainNavigationBar.ITEM_COMPOSE) {
+      // Same as pressing the floating compose button: opens the menu, or a call/contact on other tabs.
+      if (composeWrap != null && onOverlayButtonClick(composeWrap.getMainButtonId(), navigationBar)) {
+        composeWrap.close();
+      }
+      return;
+    }
+    if (composeWrap != null) {
+      composeWrap.close();
+    }
+    boolean isTablet = isTabletNavigationBar();
+    if (isTablet && item == getTabletSection() && item != MainNavigationBar.ITEM_CHATS && navigationController.getStackSize() == 2) {
+      return;
+    }
+    switch (item) {
+      case MainNavigationBar.ITEM_CHATS: {
+        if (isTablet && getTabletSection() != MainNavigationBar.ITEM_CHATS) {
+          // Close settings/contacts/profile, keep the chat list.
+          navigationController.closeTabletDetail();
+        } else {
+          onPagerItemClick(0);
+        }
+        break;
+      }
+      case MainNavigationBar.ITEM_CONTACTS: {
+        tdlib.contacts().startSyncIfNeeded(context, true, () -> {
+          PeopleController c = new PeopleController(context, tdlib);
+          c.setNeedSearch();
+          openNavigationSection(c);
+        });
+        break;
+      }
+      case MainNavigationBar.ITEM_SETTINGS: {
+        openNavigationSection(new SettingsController(context, tdlib));
+        break;
+      }
+    }
+  }
+
+  private void openNavigationSection (ViewController<?> c) {
+    if (isDestroyed() || navigationController == null) {
+      return;
+    }
+    if (isTabletNavigationBar()) {
+      // Replace whatever is opened in the right pane.
+      navigationController.setControllerAnimated(c, true, true);
+    } else {
+      navigateTo(c);
     }
   }
 
@@ -1130,6 +1300,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (chatListUnreadCountListener != null) {
       tdlib.listeners().removeTotalChatCounterListener(chatListUnreadCountListener);
       chatListUnreadCountListener = null;
+    }
+    if (navigationCounterListener != null) {
+      tdlib.listeners().removeTotalChatCounterListener(navigationCounterListener);
+      navigationCounterListener = null;
+    }
+    if (navigationBar != null) {
+      navigationBar.performDestroy();
     }
     if (defaultCounterListener != null) {
       tdlib.listeners().removeTotalChatCounterListener(defaultCounterListener);
@@ -1335,6 +1512,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private boolean notificationsRequested;
+  private boolean notificationsRequestPending;
 
   private void showAnnoyingAlertsForCompliance (boolean fromAppResume) {
     if (Config.ENABLE_BASELINE_PROFILE_HOOKS) {
@@ -1349,13 +1527,17 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         if (needNotifications && !notificationsRequested) {
           notificationsRequested = true;
         }
-        if (needNotifications && !context().permissions().requestPostNotifications(granted -> {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && granted) {
-            tdlib.notifications().onNotificationPermissionGranted();
+        if (needNotifications) {
+          if (context().permissions().requestPostNotifications(granted -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && granted) {
+              tdlib.notifications().onNotificationPermissionGranted();
+            }
+            syncContacts(null);
+          })) {
+            notificationsRequestPending = true;
+          } else {
+            syncContacts(null);
           }
-          syncContacts(null);
-        })) {
-          syncContacts(null);
         }
       }
     }, null, 1000L));

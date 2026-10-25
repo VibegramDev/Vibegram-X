@@ -17,7 +17,7 @@ msys2.dir=
 keystore.file=
 
 ## Package name
-app.id=org.example.tgx
+app.id=dev.vibegram.x
 
 ## Project name
 app.name=TGX Example

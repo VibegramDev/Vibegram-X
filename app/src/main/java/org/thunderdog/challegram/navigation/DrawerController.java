@@ -1055,7 +1055,7 @@ public class DrawerController extends ViewController<Void> implements View.OnCli
   }
 
   public void open () {
-    ViewController<?> c = UI.getCurrentStackItem(context());
+    ViewController<?> c = context.navigation().getDrawerController();
     if (c != null && c.useDrawer() && !c.isIntercepted()) {
       prepare();
       open(0f);
@@ -1222,7 +1222,7 @@ public class DrawerController extends ViewController<Void> implements View.OnCli
   // private int currentScreenWidth;
 
   public boolean isNeeded () {
-    ViewController<?> c = context.navigation().getCurrentStackItem();
+    ViewController<?> c = context.navigation().getDrawerController();
     return c != null && c.useDrawer();
   }
 
