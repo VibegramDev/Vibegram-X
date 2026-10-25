@@ -1868,6 +1868,13 @@
   <string name="AddMtprotoProxy">Add MTPROTO Proxy</string>
   <string name="AddHttpProxy">Add HTTP Proxy</string>
   <string name="HttpProxy">HTTP Proxy</string>
+  <string name="WebProxy">WEB Proxy</string>
+  <string name="AddWebProxy">Add WEB Proxy</string>
+  <string name="ProxyWeb">WEB %1$s</string>
+  <string name="WebProxyHint">A WEB proxy carries Telegram traffic through an HTTPS page of the proxy site, using a hidden WebView. Enter the host name, optionally followed by a path (host/path), and the secret: 32 hex digits, optionally preceded by dd. A current Android System WebView is required. The connection works while the app is running.</string>
+  <string name="WebProxyInvalid">The address or the secret is invalid. Use a host name (optionally with a path, no scheme or port) and a 32-digit hex secret.</string>
+  <string name="EnableProxyAlertHintWeb">Traffic goes through the HTTPS page of this site in a hidden WebView. It works only while the app is running and the site must provide the WEB proxy bridge.</string>
+  <string name="UseProxyType">Type</string>
   <string name="HttpProxyTransparent">Transparent TCP connection</string>
   <string name="HttpProxyTransparentHint">Enable if server supports transparent TCP connections via HTTP CONNECT method.\n\nWhen supported, it may improve connection speed dramatically. Try changing this option if this proxy doesn\'t work.</string>
   <string name="ProxyHttp">HTTP %1$s</string>

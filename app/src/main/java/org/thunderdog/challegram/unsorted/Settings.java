@@ -37,6 +37,7 @@ import org.drinkmore.Tracer;
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.proxy.WebProxy;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.config.Device;
@@ -4671,7 +4672,8 @@ public class Settings {
           type = socks5;
           break;
         }
-        case Proxy.TYPE_MTPROTO: {
+        case Proxy.TYPE_MTPROTO:
+        case Proxy.TYPE_WEB: { // WEB: server is "host[/path]", port is WebProxy.PORT
           type = new TdApi.ProxyTypeMtproto(blob.readString());
           break;
         }
@@ -4757,6 +4759,9 @@ public class Settings {
 
   private static byte[] serializeProxy (@NonNull TdApi.Proxy proxy) {
     @Proxy.Type int typeId = getProxyType(proxy.type);
+    if (typeId == Proxy.TYPE_MTPROTO && WebProxy.isWeb(proxy)) {
+      typeId = Proxy.TYPE_WEB;
+    }
 
     final Blob blob;
     int size = 0;
@@ -4772,6 +4777,7 @@ public class Settings {
 
         break;
       }
+      case Proxy.TYPE_WEB:
       case Proxy.TYPE_MTPROTO: {
         TdApi.ProxyTypeMtproto mtproto = (TdApi.ProxyTypeMtproto) proxy.type;
 
@@ -4800,6 +4806,7 @@ public class Settings {
         writeProxyCredentials(blob, socks5.username, socks5.password);
         break;
       }
+      case Proxy.TYPE_WEB:
       case Proxy.TYPE_MTPROTO: {
         TdApi.ProxyTypeMtproto mtproto = (TdApi.ProxyTypeMtproto) proxy.type;
 
@@ -5033,7 +5040,8 @@ public class Settings {
     @IntDef({
       TYPE_SOCKS5,
       TYPE_MTPROTO,
-      TYPE_HTTP
+      TYPE_HTTP,
+      TYPE_WEB
     })
     public @interface Type {
     }
@@ -5041,6 +5049,7 @@ public class Settings {
     private static final int TYPE_SOCKS5 = 1;
     private static final int TYPE_MTPROTO = 2;
     private static final int TYPE_HTTP = 3;
+    private static final int TYPE_WEB = 4;
 
     private static final int ORDER_UNSET = -1;
 
@@ -5090,7 +5099,8 @@ public class Settings {
       if (proxy == null) {
         return null;
       }
-      final String name = StringUtils.isEmpty(description) ? proxy.server + ":" + proxy.port : description;
+      final boolean isWeb = WebProxy.isWeb(proxy);
+      final String name = StringUtils.isEmpty(description) ? (isWeb ? proxy.server : proxy.server + ":" + proxy.port) : description;
       int stringRes;
       switch (proxy.type.getConstructor()) {
         case TdApi.ProxyTypeSocks5.CONSTRUCTOR: {
@@ -5103,7 +5113,7 @@ public class Settings {
           break;
         }
         case TdApi.ProxyTypeMtproto.CONSTRUCTOR:
-          stringRes = R.string.ProxyMtproto;
+          stringRes = isWeb ? R.string.ProxyWeb : R.string.ProxyMtproto;
           break;
         case TdApi.ProxyTypeHttp.CONSTRUCTOR:
           stringRes = R.string.ProxyHttp;

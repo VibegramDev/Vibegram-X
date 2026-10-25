@@ -337,9 +337,16 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
 
   private boolean ignoreTranslation;
 
+  /** The pill would cover the first row ("Add proxy") of the screens where the proxy is configured */
+  private boolean isOnProxyScreen () {
+    final BaseActivity context = UI.getContext(getContext());
+    final ViewController<?> c = context != null ? context.navigation().getCurrentStackItem() : null;
+    return c != null && (c.getId() == R.id.controller_proxyList || c.getId() == R.id.controller_proxy);
+  }
+
   public void updateVisible () {
     boolean isKeyboardVisible = UI.getContext(getContext()).isKeyboardVisible();
-    setIsVisible(state != ConnectionState.CONNECTED && !isKeyboardVisible, ignoreTranslation = ignoreTranslation || isKeyboardVisible);
+    setIsVisible(state != ConnectionState.CONNECTED && !isKeyboardVisible && !isOnProxyScreen(), ignoreTranslation = ignoreTranslation || isKeyboardVisible);
   }
 
   @Override

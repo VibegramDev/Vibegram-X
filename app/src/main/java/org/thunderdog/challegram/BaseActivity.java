@@ -86,6 +86,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.InlineResult;
 import org.thunderdog.challegram.data.TGReaction;
 import org.thunderdog.challegram.mediaview.MediaViewController;
+import org.thunderdog.challegram.proxy.WebProxyTransport;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
 import org.thunderdog.challegram.navigation.BackPressMode;
 import org.thunderdog.challegram.navigation.DrawerController;
@@ -1057,6 +1058,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   private void notifyActivityResume () {
+    WebProxyTransport.onForeground();
     for (ActivityListener listener : activityListeners) {
       listener.onActivityResume();
     }
@@ -1359,6 +1361,9 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   private final NavigationStack.ChangeListener navigationStackChangeListener = stack -> {
     notifyBackPressAvailabilityChanged();
+    if (statusBar != null) {
+      statusBar.updateVisible();
+    }
   };
 
   private final OnBackPressedCallback backPressedCallback = new OnBackPressedCallback(false) {

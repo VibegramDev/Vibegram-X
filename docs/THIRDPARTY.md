@@ -43,3 +43,8 @@
 
 The Material You color mapping used by the built-in "Monet" themes (`app/src/main/assets/monet/`) is adapted from
 [Telegram-Monet](https://github.com/mi-g-alex/Telegram-Monet) by mi-g-alex et al., licensed under EPL-2.0.
+
+## Telegram for Android (WEB proxy)
+
+The WEB proxy transport (`app/src/main/java/org/thunderdog/challegram/proxy/`) and the format of `webproxy` links are based on
+the WEB proxy implementation of [Telegram for Android](https://github.com/DrKLO/Telegram) (licensed under GNU GPL v. 2 or later).

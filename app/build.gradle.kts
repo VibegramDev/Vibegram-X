@@ -990,6 +990,10 @@ dependencies {
     libs.androidx.exifinterface.legacy,
     libs.androidx.exifinterface.latest
   )
+  flavorImplementation(
+    libs.androidx.webkit.legacy,
+    libs.androidx.webkit.latest
+  )
   implementation(libs.androidx.biometric)
   implementation(libs.androidx.palette)
   implementation(libs.androidx.collection)
