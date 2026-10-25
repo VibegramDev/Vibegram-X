@@ -17,13 +17,13 @@ msys2.dir=
 keystore.file=
 
 ## Package name
-app.id=org.example.tgx
+app.id=dev.vibegram.x
 
 ## Project name
-app.name=TGX Example
+app.name=Vibegram X
 
 ## Link to the app's website. If unavailable, link to the market page could be used.
-app.download_url=https://telegram.org/dlx
+app.download_url=https://github.com/VibegramDev/Vibegram-X
 
 ## Obtain credentials to access Telegram API:
 # https://core.telegram.org/api/obtaining_api_id

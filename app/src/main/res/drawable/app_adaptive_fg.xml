@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: Vibegram X arrow + sparkle -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="108dp"
+  android:height="108dp"
+  android:viewportWidth="1024"
+  android:viewportHeight="1024">
+  <!-- 0.9 keeps the artwork inside the 66dp adaptive icon safe zone -->
+  <group android:pivotX="512" android:pivotY="512" android:scaleX="0.9" android:scaleY="0.9">
+    <group android:pivotX="512" android:pivotY="511.5" android:scaleX="0.87381" android:scaleY="0.87381" android:translateY="0.5">
+      <path
+        android:pathData="M 663.32,382.19 L 678.41,406.34 L 693.50,430.50 L 363.41,855.08 L 436.86,557.28 L 137.00,492.75 Z"
+        android:fillColor="#EEDCFF"
+        android:strokeColor="#EEDCFF"
+        android:strokeWidth="12"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+      <path
+        android:pathData="M 667.45,168.92 C 749.78,300.68 797.81,331.73 859.57,293.14 C 797.81,331.73 804.67,388.51 887.00,520.27 C 804.67,388.51 756.64,357.46 694.88,396.05 C 756.64,357.46 749.78,300.68 667.45,168.92 Z"
+        android:fillColor="#E49BFF" />
+    </group>
+  </group>
+</vector>
