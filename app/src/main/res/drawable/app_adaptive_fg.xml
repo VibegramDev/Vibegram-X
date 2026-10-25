@@ -5,8 +5,8 @@
   android:height="108dp"
   android:viewportWidth="1024"
   android:viewportHeight="1024">
-  <!-- 0.9 keeps the artwork inside the 66dp adaptive icon safe zone -->
-  <group android:pivotX="512" android:pivotY="512" android:scaleX="0.9" android:scaleY="0.9">
+  <!-- 0.64: artwork radius ~24dp inside the 36dp visible mask radius, comfortably inside the 66dp safe zone -->
+  <group android:pivotX="512" android:pivotY="512" android:scaleX="0.64" android:scaleY="0.64">
     <group android:pivotX="512" android:pivotY="511.5" android:scaleX="0.87381" android:scaleY="0.87381" android:translateY="0.5">
       <path
         android:pathData="M 663.32,382.19 L 678.41,406.34 L 693.50,430.50 L 363.41,855.08 L 436.86,557.28 L 137.00,492.75 Z"
