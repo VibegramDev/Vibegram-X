@@ -15,12 +15,17 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Outline;
+import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.os.Build;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -30,10 +35,8 @@ import androidx.annotation.StringRes;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BaseActivity;
-import org.thunderdog.challegram.FillingDrawable;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.ConnectionState;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.GlobalConnectionListener;
@@ -45,6 +48,8 @@ import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.navigation.HeaderView;
+import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
@@ -58,28 +63,29 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
   private final ProgressComponentView progressView;
   private final TextView textView;
   private final LinearLayout statusWrap;
-  private final FillingDrawable backgroundDrawable;
 
   public NetworkStatusBarView (Context context) {
     super(context);
 
-    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.getStatusBarHeight()));
+    // The connection state is shown as a floating pill right below the header instead of the
+    // status bar strip, which is hidden by the camera cutout on modern devices.
+    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP));
     Screen.addStatusBarHeightListener(this);
 
-    int color = Theme.getColor(Config.STATUS_BAR_TEXT_COLOR_ID);
+    int color = Theme.getColor(ColorId.text);
 
     progressView = new ProgressComponentView(context);
     progressView.initSmall(1f);
     progressView.setProgressColor(color);
-    progressView.setLayoutParams(new LinearLayout.LayoutParams(Screen.dp(24f), ViewGroup.LayoutParams.MATCH_PARENT));
+    progressView.setLayoutParams(new LinearLayout.LayoutParams(Screen.dp(20f), ViewGroup.LayoutParams.MATCH_PARENT));
 
     textView = new NoScrollTextView(context);
-    textView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    textView.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
     textView.setGravity(Gravity.CENTER_VERTICAL);
     textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
     textView.setTextColor(color);
 
-    statusWrap = new LinearLayout(context);
+    statusWrap = new PillLayout(context);
     statusWrap.setOrientation(LinearLayout.HORIZONTAL);
     if (Lang.rtl()) {
       statusWrap.addView(textView);
@@ -88,11 +94,11 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
       statusWrap.addView(progressView);
       statusWrap.addView(textView);
     }
-    statusWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL));
+    statusWrap.setPadding(Screen.dp(14f), 0, Screen.dp(16f), 0);
+    statusWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(32f), Gravity.CENTER_HORIZONTAL));
 
     addView(statusWrap);
-    backgroundDrawable = ViewSupport.setThemedBackground(this, ColorId.statusBar);
-
+    updateOffset();
 
     TdlibManager.instance().global().addAccountListener(this);
     TdlibManager.instance().global().addConnectionListener(this);
@@ -126,56 +132,22 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
   public void onInsetsChanged (RootFrameLayout viewGroup, Rect effectiveInsets, Rect effectiveInsetsWithoutIme, Rect systemInsets, Rect systemInsetsWithoutIme, boolean isUpdate) { }
 
   @Override
-  public void onSecondaryInsetsChanged (RootFrameLayout viewGroup, boolean systemGesturesInsetsChanged, boolean displayCutoutInsetsChanged) {
-    if (Config.ADJUST_STATUS_BAR_TO_AVOID_DISPLAY_CUTOUT && displayCutoutInsetsChanged) {
-      applyTopInset(viewGroup, viewGroup.getDisplayCutoutTopInset());
-    }
-  }
+  public void onSecondaryInsetsChanged (RootFrameLayout viewGroup, boolean systemGesturesInsetsChanged, boolean displayCutoutInsetsChanged) { }
 
-  private int getFrameWidth () {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-      // TODO
-    }
-    return getResources().getDisplayMetrics().widthPixels;
-  }
-
-  private void applyTopInset (RootFrameLayout rootView, Rect rect) {
-    FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) statusWrap.getLayoutParams();
-    boolean updated;
-
-    if (rect.isEmpty()) {
-      updated = Views.setGravity(layoutParams, Gravity.CENTER_HORIZONTAL);
-      updated = Views.setMargins(layoutParams, 0, 0, 0, 0) || updated;
-    } else {
-      int width = getFrameWidth();
-      int distanceFromLeft = rect.left;
-      int distanceFromRight = width - rect.right;
-
-      if (distanceFromRight > distanceFromLeft) {
-        updated = Views.setGravity(layoutParams, Gravity.CENTER_HORIZONTAL);
-        updated = Views.setMargins(layoutParams, (rect.right + Screen.dp(12f)) / 2, 0, 0, 0) || updated;
-      }/* else if (distanceFromLeft == distanceFromRight) {
-        updated = Views.setGravity(layoutParams, Gravity.LEFT);
-        updated = Views.setMargins(layoutParams, Screen.dp(12f), 0, rect.left + Screen.dp(12f), 0) || updated;
-      }*/ else {
-        updated = Views.setGravity(layoutParams, Gravity.CENTER_HORIZONTAL);
-        updated = Views.setMargins(layoutParams, 0, 0, (rect.right + Screen.dp(12f)) / 2, 0) || updated;
-      }
-    }
-
-    if (updated) {
-      Views.updateLayoutParams(statusWrap);
-    }
+  private void updateOffset () {
+    int top = Screen.getStatusBarHeight() + Size.getHeaderPortraitSize() + Screen.dp(6f);
+    setPadding(0, top, 0, 0); // margins are ignored by RootFrameLayout
   }
 
   @Override
   public void onStatusBarHeightChanged (int newHeight) {
-    Views.setLayoutHeight(this, newHeight);
+    updateOffset();
   }
 
   public void addThemeListeners (ThemeListenerList list) {
-    list.addThemeColorListener(textView, Config.STATUS_BAR_TEXT_COLOR_ID);
-    list.addThemeColorListener(progressView, Config.STATUS_BAR_TEXT_COLOR_ID);
+    list.addThemeColorListener(textView, ColorId.text);
+    list.addThemeColorListener(progressView, ColorId.text);
+    list.addThemeInvalidateListener(statusWrap);
   }
 
   public void updateDirection () {
@@ -280,23 +252,22 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
   }
 
   private float getVisibilityFactor () {
-    return (ignoreTranslation ? 1f : factor);
+    return factor;
   }
 
   private void setFactor (float factor) {
     if (this.factor != factor) {
       this.factor = factor;
       statusWrap.setAlpha(factor);
-      statusWrap.setTranslationY(-Screen.getStatusBarHeight() + (int) ((float) Screen.getStatusBarHeight() * getVisibilityFactor()));
-      if (Config.USE_TRANSPARENT_STATUS_BAR && Settings.instance().useEdgeToEdge()) {
-        backgroundDrawable.setAlphaFactor(factor);
-      }
-      checkLowProfile();
+      statusWrap.setTranslationY(-Screen.dp(10f) * (1f - factor));
+      statusWrap.setScaleX(.92f + .08f * factor);
+      statusWrap.setScaleY(.92f + .08f * factor);
+      setVisibility(factor == 0f ? View.INVISIBLE : View.VISIBLE);
     }
   }
 
   private void checkLowProfile () {
-    setLowProfile(!isPaused && (isVisible || factor != 0f));
+    // The system status bar stays visible: the state is shown in-app, not over the status bar
   }
 
   private boolean inLowProfile;
@@ -384,4 +355,34 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
 
   @Override
   public void onActivityPermissionResult (int code, boolean granted) { }
+
+  private static class PillLayout extends LinearLayout {
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF rect = new RectF();
+
+    public PillLayout (Context context) {
+      super(context);
+      setWillNotDraw(false);
+      setElevation(Screen.dp(3f));
+      setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), view.getHeight() / 2f);
+        }
+      });
+    }
+
+    @Override
+    protected void onDraw (Canvas c) {
+      paint.setColor(androidx.core.graphics.ColorUtils.blendARGB(Theme.getColor(ColorId.filling), Theme.getColor(ColorId.text), .14f));
+      rect.set(0, 0, getWidth(), getHeight());
+      c.drawRoundRect(rect, getHeight() / 2f, getHeight() / 2f, paint);
+      paint.setColor(Theme.getColor(ColorId.separator));
+      paint.setStyle(Paint.Style.STROKE);
+      paint.setStrokeWidth(Screen.dp(.5f));
+      rect.inset(Screen.dp(.25f), Screen.dp(.25f));
+      c.drawRoundRect(rect, getHeight() / 2f, getHeight() / 2f, paint);
+      paint.setStyle(Paint.Style.FILL);
+    }
+  }
 }
