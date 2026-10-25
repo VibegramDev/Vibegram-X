@@ -1875,6 +1875,10 @@
   <string name="ProxyUsernameHint">Username</string>
   <string name="ProxyPasswordHint">Password</string>
   <string name="ProxySecretHint">Secret</string>
+  <string name="ProxyHintPill">%1$s · Tap for proxy</string>
+  <string name="ProxyHintInfo">The internet works, but Vibegram X still cannot connect to Telegram. A proxy may help.</string>
+  <string name="ProxyHintEnable">Enable saved proxy</string>
+  <string name="ProxyHintNotNow">Not now</string>
   <string name="ProxyInfo">Proxy servers may be helpful in accessing Telegram if there is no connection in a specific region.</string>
   <string name="ProxyErrorDetailed">Error (%1$s)</string>
   <string name="ProxyError">Error</string>

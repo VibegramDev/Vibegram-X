@@ -35,6 +35,10 @@ import androidx.annotation.StringRes;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BaseActivity;
+import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.telegram.TdlibContext;
+import org.thunderdog.challegram.component.popups.ModernActionedLayout;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.telegram.ConnectionState;
@@ -53,6 +57,9 @@ import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
+
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
@@ -176,6 +183,8 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
     TdlibManager.instance().global().removeAccountListener(this);
     UI.getContext(getContext()).removeActivityListener(this);
     removeCallbacks(this);
+    removeCallbacks(proxyTimer);
+    proxyProbeToken++;
     Screen.removeStatusBarHeightListener(this);
   }
 
@@ -195,8 +204,135 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
     this.tdlib = tdlib;
     this.state = tdlib.connectionState();
     progressView.setVisibility(state != ConnectionState.CONNECTED && state != ConnectionState.WAITING_FOR_NETWORK ? View.VISIBLE : View.GONE);
-    textView.setText(tdlib.connectionStateText());
+    checkProxyHint();
+    refreshText();
     updateVisible();
+  }
+
+  private void refreshText () {
+    if (tdlib == null) {
+      return;
+    }
+    CharSequence text = tdlib.connectionStateText();
+    if (proxyHintAvailable) {
+      text = Lang.getString(R.string.ProxyHintPill, text);
+    }
+    textView.setText(text);
+  }
+
+  // Proxy suggestion: Telegram has been connecting for a while, but the internet itself works.
+
+  private static final long PROXY_HINT_DELAY_MS = 10_000L;
+  private static final String CONNECTIVITY_CHECK_URL = "https://www.gstatic.com/generate_204";
+
+  private boolean proxyTimerScheduled, proxyHintAvailable, proxyHintShown;
+  private int proxyProbeToken;
+
+  private final Runnable proxyTimer = this::onProxyTimer;
+
+  private void onProxyTimer () {
+    proxyTimerScheduled = false;
+    if (!isConnectingState(state) || proxyHintAvailable) {
+      return;
+    }
+    final int token = ++proxyProbeToken;
+    new Thread(() -> {
+      boolean internetWorks = checkInternet();
+      post(() -> {
+        if (token == proxyProbeToken && internetWorks && isConnectingState(state)) {
+          proxyHintAvailable = true;
+          statusWrap.setClickable(true);
+          statusWrap.setOnClickListener(v -> showProxyDialog());
+          refreshText();
+          if (!proxyHintShown) {
+            proxyHintShown = true;
+            showProxyDialog();
+          }
+        }
+      });
+    }, "proxy-hint-probe").start();
+  }
+
+  private static boolean isConnectingState (@ConnectionState int state) {
+    return state == ConnectionState.CONNECTING || state == ConnectionState.CONNECTING_TO_PROXY;
+  }
+
+  private void checkProxyHint () {
+    if (isConnectingState(state)) {
+      if (!proxyTimerScheduled && !proxyHintAvailable && !proxyHintShown) {
+        proxyTimerScheduled = true;
+        postDelayed(proxyTimer, PROXY_HINT_DELAY_MS);
+      }
+    } else if (state == ConnectionState.CONNECTED) {
+      resetProxyHint();
+    } else {
+      // Waiting for network / updating: nothing to suggest right now
+      removeCallbacks(proxyTimer);
+      proxyTimerScheduled = false;
+      proxyProbeToken++;
+    }
+  }
+
+  private void resetProxyHint () {
+    removeCallbacks(proxyTimer);
+    proxyTimerScheduled = false;
+    proxyProbeToken++;
+    proxyHintShown = false;
+    if (proxyHintAvailable) {
+      proxyHintAvailable = false;
+      statusWrap.setOnClickListener(null);
+      statusWrap.setClickable(false);
+    }
+  }
+
+  /** Plain request outside of Telegram's connection (and its proxy): is the internet reachable at all? */
+  private static boolean checkInternet () {
+    HttpURLConnection connection = null;
+    try {
+      connection = (HttpURLConnection) new URL(CONNECTIVITY_CHECK_URL).openConnection();
+      connection.setInstanceFollowRedirects(false);
+      connection.setConnectTimeout(4000);
+      connection.setReadTimeout(4000);
+      connection.setUseCaches(false);
+      return connection.getResponseCode() == 204;
+    } catch (Throwable ignored) {
+      return false;
+    } finally {
+      if (connection != null) {
+        connection.disconnect();
+      }
+    }
+  }
+
+  private void showProxyDialog () {
+    final BaseActivity context = UI.getContext(getContext());
+    final ViewController<?> c = context.navigation().getCurrentStackItem();
+    if (c == null || tdlib == null || c instanceof org.thunderdog.challegram.ui.SettingsProxyController) {
+      return; // already where the user can fix it
+    }
+    final Tdlib tdlib = this.tdlib;
+    final Settings settings = Settings.instance();
+    final boolean canEnable = settings.hasProxyConfiguration() && !settings.checkProxySetting(Settings.PROXY_FLAG_ENABLED);
+    final int[] ids;
+    final String[] titles;
+    final int[] icons;
+    if (canEnable) {
+      ids = new int[] {R.id.btn_proxy, R.id.btn_settings, R.id.btn_cancel};
+      titles = new String[] {Lang.getString(R.string.ProxyHintEnable), Lang.getString(R.string.ProxySettings), Lang.getString(R.string.ProxyHintNotNow)};
+      icons = new int[] {R.drawable.baseline_check_circle_24, R.drawable.baseline_settings_24, R.drawable.baseline_cancel_24};
+    } else {
+      ids = new int[] {R.id.btn_settings, R.id.btn_cancel};
+      titles = new String[] {Lang.getString(R.string.ProxySettings), Lang.getString(R.string.ProxyHintNotNow)};
+      icons = new int[] {R.drawable.baseline_settings_24, R.drawable.baseline_cancel_24};
+    }
+    c.showOptions(Lang.getString(R.string.ProxyHintInfo), ids, titles, null, icons, (itemView, id) -> {
+      if (id == R.id.btn_proxy) {
+        settings.setProxySetting(Settings.PROXY_FLAG_ENABLED, true);
+      } else if (id == R.id.btn_settings) {
+        tdlib.ui().openProxySettings(new TdlibContext(context, tdlib), true);
+      }
+      return true;
+    });
   }
 
   private boolean ignoreTranslation;
