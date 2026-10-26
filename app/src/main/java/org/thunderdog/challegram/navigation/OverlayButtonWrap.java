@@ -82,12 +82,15 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
   private @DrawableRes int mainButtonIcon;
   private @Nullable StateListener stateListener;
   private final FactorAnimator animator;
+  private static final int EFFECTS_ANIMATOR_ID = 2;
+  private final FactorAnimator effectsAnimator;
 
   public OverlayButtonWrap (Context context) {
     super(context);
 
     // FAB menu motion: expressive fast spatial (position) + clamped alpha (effects, no overshoot).
     this.animator = new FactorAnimator(0, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration);
+    this.effectsAnimator = new FactorAnimator(EFFECTS_ANIMATOR_ID, this, M3.FAST_EFFECTS, M3.FAST_EFFECTS.duration);
 
     ViewUtils.setBackground(this, new OverlayBackground(this));
     setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -355,6 +358,7 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
       }
     }
     animator.animateTo(isOpen ? 1f : 0f);
+    effectsAnimator.animateTo(isOpen ? 1f : 0f);
   }
 
   private void setChildrenLayerType (int layerType) {
@@ -438,6 +442,8 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
   // Animation
 
   private float easeFactor;
+  /** Spatial open factor (may overshoot): FAB shape, item positions. easeFactor is the effects factor: colors, alpha, scrim. */
+  private float spatialFactor;
 
   @Override
   public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
@@ -445,40 +451,48 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
       setHideFactor(factor);
       return;
     }
-
-    float clamped = MathUtils.clamp(factor);
-    if (stateListener != null) {
-      stateListener.onOpenFactorChanged(clamped);
+    if (id == EFFECTS_ANIMATOR_ID) {
+      easeFactor = MathUtils.clamp(factor);
+      if (stateListener != null) {
+        stateListener.onOpenFactorChanged(easeFactor);
+      }
+      mainButton.setColorFactor(easeFactor);
+      HeaderView headerView = UI.getHeaderView(getContext());
+      if (headerView != null) {
+        headerView.setOverlayColor(calculateOverlayColor());
+      }
+    } else {
+      spatialFactor = factor;
+      mainButton.setOpenFactor(MathUtils.clamp(factor));
     }
-    easeFactor = clamped;
-    mainButton.setOpenFactor(clamped);
-    HeaderView headerView = UI.getHeaderView(getContext());
-    if (headerView != null) {
-      headerView.setOverlayColor(calculateOverlayColor());
-    }
+    updateMenuItems();
+    invalidate();
+  }
 
-    // Menu items, staggered from the FAB upwards: they slide along the y axis (spatial spring, may overshoot)
-    // and fade in (alpha is clamped, no overshoot).
+  /** Menu items, staggered from the FAB upwards: y offset follows the spatial spring, alpha the effects spring. */
+  private void updateMenuItems () {
     final int itemCount = getChildCount() - 1;
     final float stepFactor = itemCount > 0 ? 1f / (float) itemCount * .6f : 0f;
     for (int index = 0; index < itemCount; index++) {
       final float startFactor = stepFactor * index;
       final float range = 1f - startFactor;
-      final float itemFactor = range > 0f ? Math.max(0f, (factor - startFactor) / range) : factor;
-      final float alpha = MathUtils.clamp(itemFactor);
+      final float itemSpatial = range > 0f ? Math.max(0f, (spatialFactor - startFactor) / range) : spatialFactor;
+      final float itemAlpha = MathUtils.clamp(range > 0f ? (easeFactor - startFactor) / range : easeFactor);
 
       View v = getChildAt(index);
-      v.setEnabled(factor >= 1f);
-      v.setTranslationY(Screen.dp(ITEM_ENTER_OFFSET) * (1f - itemFactor));
+      // Clickable only when open and fully faded in; disabled immediately on close (no flicker on spring overshoot).
+      v.setEnabled(isOpen && easeFactor >= 1f);
+      v.setTranslationY(Screen.dp(ITEM_ENTER_OFFSET) * (1f - itemSpatial));
       //noinspection Range
-      v.setAlpha(alpha);
+      v.setAlpha(itemAlpha);
     }
-
-    invalidate();
   }
 
   @Override
   public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) {
+    if (id == EFFECTS_ANIMATOR_ID) {
+      return;
+    }
     if (Views.HARDWARE_LAYER_ENABLED) {
       if (finalFactor == 0f) {
         setChildrenLayerType(LAYER_TYPE_NONE);

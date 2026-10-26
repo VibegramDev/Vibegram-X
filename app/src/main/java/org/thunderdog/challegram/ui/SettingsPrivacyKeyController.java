@@ -857,6 +857,7 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
         textView.setSingleLine(false);
       }
     };
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
     switch (args.mode) {
       case Mode.USER_PRIVACY_SETTING: {

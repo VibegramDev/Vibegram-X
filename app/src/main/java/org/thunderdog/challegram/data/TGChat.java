@@ -814,6 +814,24 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     reactionsCounter.setCount(hasReactions ? Tdlib.CHAT_MARKED_AS_UNREAD : 0, !notificationsEnabled(), allowAnimation && needAnimateChanges());
     mentionCounter.setCount(hasMentions ? Tdlib.CHAT_MARKED_AS_UNREAD : 0, false, allowAnimation && needAnimateChanges());
     counter.setCount(hasMentions && unreadCount == 1 ? 0 : unreadCount, !notificationsEnabled(), allowAnimation && needAnimateChanges());
+    // Read/unread changes the title weight: re-layout it (width, ellipsis and the icons after it), not only redraw.
+    if (currentWidth > 0 && needEmphasizedTitle() != titleEmphasized) {
+      layoutTitle(false);
+      currentViews.invalidate();
+    }
+  }
+
+  private boolean titleEmphasized = true;
+
+  /** Real unread state only: a failed send (CHAT_FAILED) or an outgoing message unread by the peer is not "unread". */
+  private boolean needEmphasizedTitle () {
+    if (isArchive()) {
+      return getTotalUnreadCount() != 0;
+    }
+    if (chat == null || getSource() != null) {
+      return false;
+    }
+    return chat.unreadCount > 0 || chat.isMarkedAsUnread;
   }
 
   public boolean needAnimateChanges () {
@@ -937,14 +955,17 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       avail -= reactionsWidth + (reactionsWidth > 0 ? Screen.dp(3) : 0);
     }
 
-    if (changed || lastAvailWidth != avail) {
+    boolean emphasized = needEmphasizedTitle();
+    if (changed || lastAvailWidth != avail || emphasized != titleEmphasized) {
       lastAvailWidth = avail;
+      titleEmphasized = emphasized;
       if (StringUtils.isEmpty(title)) {
         trimmedTitle = null;
       } else {
+        // M3: emphasized (bold) title only for unread chats on Material You themes; legacy themes keep bold titles.
         trimmedTitle = new Text.Builder(title, avail, getTitleStyleProvider(listMode), isSecretChat() ? TextColorSets.Regular.SECURE : TextColorSets.Regular.NORMAL)
           .singleLine()
-          .allBold()
+          .allBold(emphasized)
           .clipTextArea()
           .build();
       }

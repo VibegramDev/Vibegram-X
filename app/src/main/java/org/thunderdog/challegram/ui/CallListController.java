@@ -186,7 +186,8 @@ public class CallListController extends RecyclerViewController<Void> implements
         if (messages != null && ((LinearLayoutManager) recyclerView.getLayoutManager()).findLastVisibleItemPosition() >= adapter.getItems().size() - 5) {
           loadMore();
         }
-        if (Settings.instance().chatFoldersEnabled() && getParentOrSelf() == CallListController.this) {
+        // Opened from the navigation dock as a standalone section: the new call button hides on scroll.
+        if (getParentOrSelf() == CallListController.this) {
           lastY += dy;
           if (dy < 0 && lastShowY - lastY >= Screen.getTouchSlop()) {
             setDoneVisible(true, true);
@@ -217,7 +218,7 @@ public class CallListController extends RecyclerViewController<Void> implements
   @Override
   public void onPrepareToShow () {
     super.onPrepareToShow();
-    if (Settings.instance().chatFoldersEnabled() && getParentOrSelf() == this) {
+    if (getParentOrSelf() == this) {
       setDoneIcon(R.drawable.baseline_phone_24);
       setDoneVisible(true, false);
     }

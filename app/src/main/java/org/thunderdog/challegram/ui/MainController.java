@@ -22,8 +22,10 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
@@ -84,7 +86,6 @@ import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.MenuMoreWrap;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.NavigationController;
-import org.thunderdog.challegram.navigation.OverlayButtonWrap;
 import org.thunderdog.challegram.navigation.RecyclerViewProvider;
 import org.thunderdog.challegram.navigation.SettingsWrap;
 import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
@@ -110,6 +111,7 @@ import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.ThemeDeprecated;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
@@ -120,6 +122,7 @@ import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.TGMimeType;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.unsorted.Passcode;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.unsorted.Test;
@@ -129,8 +132,14 @@ import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.IconSpan;
 import org.thunderdog.challegram.util.text.TextColorSet;
+import org.thunderdog.challegram.v.HeaderEditText;
+import org.thunderdog.challegram.widget.AvatarView;
+import org.thunderdog.challegram.widget.M3FolderRailView;
 import org.thunderdog.challegram.widget.BubbleLayout;
 import org.thunderdog.challegram.widget.FillingSpace;
+import org.thunderdog.challegram.widget.M3MainTitleView;
+import org.thunderdog.challegram.widget.M3SearchBarView;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.ShadowView;
@@ -143,7 +152,6 @@ import java.io.InputStreamReader;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -153,6 +161,7 @@ import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.BitwiseUtils;
+import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.ObjectUtils;
@@ -166,7 +175,7 @@ import tgx.td.ChatPosition;
 import tgx.td.Td;
 import tgx.td.TdConstants;
 
-public class MainController extends ViewPagerController<Void> implements Menu, MoreDelegate, OverlayButtonWrap.Callback, TdlibOptionListener, AppUpdater.Listener, ChatFoldersListener, GlobalCountersListener, Settings.ChatFolderSettingsListener {
+public class MainController extends ViewPagerController<Void> implements Menu, MoreDelegate, TdlibOptionListener, AppUpdater.Listener, ChatFoldersListener, GlobalCountersListener, Settings.ChatFolderSettingsListener {
   private static final long MAIN_PAGER_ITEM_ID = Long.MIN_VALUE;
   private static final long ARCHIVE_PAGER_ITEM_ID = Long.MIN_VALUE + 1;
   private static final long INVALID_PAGER_ITEM_ID = Long.MAX_VALUE;
@@ -183,8 +192,20 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private FrameLayoutFix mainWrap;
   private FrameLayoutFix pagerWrap;
-  private OverlayButtonWrap composeWrap;
   private MainNavigationBar navigationBar;
+  /** Tablet: fades the chat list into surface behind the floating bar. */
+  private M3BottomScrimView navigationScrim;
+  /** Tablet layout only: M3 search app bar, the search bar in place of the app bar title. */
+  private @Nullable M3SearchBarView searchBarView;
+  /** Tablet layout with chat folders only: the folder tabs take the title place, search is an app bar button. */
+  /** Phone: sections moved from the collapsed dock into the app bar while the chat list is scrolled. */
+  /**
+   * Every app bar menu filled for this screen. The tablet split layout has its own app bar for the left pane,
+   * so after folding/unfolding the visible menu may be an older one: buttons are updated in all of them.
+   */
+  private final List<LinearLayout> mainMenus = new ArrayList<>();
+  private final List<AvatarView> headerAvatarViews = new ArrayList<>();
+  private @Nullable M3MainTitleView titleView;
   private CounterChangeListener navigationCounterListener;
 
   @Override
@@ -196,9 +217,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   @Override
   protected void onBottomInsetChanged (int extraBottomInset, int extraBottomInsetWithoutIme, boolean isImeInset) {
     super.onBottomInsetChanged(extraBottomInset, extraBottomInsetWithoutIme, isImeInset);
-    if (composeWrap != null) {
-      checkComposeWrapPaddings();
-    }
+    updateChatListNavigationInset();
     Views.setPaddingBottom(updateSnackBar, extraBottomInsetWithoutIme);
     updateBottomBarMargins();
     checkMargins();
@@ -233,6 +252,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     navigationBar = new MainNavigationBar(context, this);
     navigationBar.setUser(tdlib, tdlib.myUserId());
     navigationBar.setCallback(this::onNavigationItemClick);
+    navigationBar.setCollapseListener(factor -> updateHeaderDockButtons());
     updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), false);
     navigationCounterListener = new CounterChangeListener() {
       @Override
@@ -249,63 +269,20 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
     UI.setSoftInputMode(UI.getContext(context), Config.DEFAULT_WINDOW_PARAMS);
 
-    composeWrap = new OverlayButtonWrap(context);
-    checkComposeWrapPaddings();
-    composeWrap.initWithList(this,
-      ColorId.circleButtonActive,
-      ColorId.circleButtonActiveIcon,
-      new int[]{
-        R.id.btn_float_compose,
-        R.id.btn_float_newSecretChat,
-        R.id.btn_float_newChannel,
-        R.id.btn_float_newGroup,
-        R.id.btn_float_newChat
-      }, new int[]{
-        R.drawable.baseline_create_24,
-        R.drawable.baseline_lock_24,
-        R.drawable.baseline_bullhorn_24,
-        R.drawable.baseline_group_24,
-        R.drawable.baseline_person_24
-      }, new int[]{
-        ColorId.circleButtonRegular,
-        ColorId.circleButtonNewSecret,
-        ColorId.circleButtonNewChannel,
-        ColorId.circleButtonNewGroup,
-        ColorId.circleButtonNewChat
-      }, new int[] {
-        ColorId.circleButtonRegularIcon,
-        ColorId.circleButtonNewSecretIcon,
-        ColorId.circleButtonNewChannelIcon,
-        ColorId.circleButtonNewGroupIcon,
-        ColorId.circleButtonNewChatIcon
-      }, new int[]{
-        R.string.NewSecretChat,
-        R.string.NewChannel,
-        R.string.NewGroup,
-        R.string.NewChat
-      }, false);
-    composeWrap.setCallback(this);
-    contentView.addView(composeWrap);
-    // Above the compose overlay: in the phone layout the compose button lives in the navigation rail.
+    navigationScrim = new M3BottomScrimView(context);
+    navigationScrim.setShapeProvider((view, out) -> {
+      if (navigationBar == null || !navigationBar.isBar() || navigationBar.getWidth() == 0) {
+        return false;
+      }
+      float left = navigationBar.getLeft() - view.getLeft();
+      float top = navigationBar.getTop() - view.getTop();
+      out.set(left, top, left + navigationBar.getWidth(), top + navigationBar.getHeight());
+      return true;
+    }, MainNavigationBar.getBarRadius());
+    addThemeInvalidateListener(navigationScrim);
+    contentView.addView(navigationScrim);
     contentView.addView(navigationBar);
-    navigationBar.setComposeIcon(composeWrap.getMainButtonIcon());
-    navigationBar.setComposeVisible(!composeWrap.isHidden(), false);
-    composeWrap.setStateListener(new OverlayButtonWrap.StateListener() {
-      @Override
-      public void onMainButtonIconChanged (int icon) {
-        navigationBar.setComposeIcon(icon);
-      }
-
-      @Override
-      public void onHiddenChanged (boolean hidden) {
-        navigationBar.setComposeVisible(!hidden, true);
-      }
-
-      @Override
-      public void onOpenFactorChanged (float factor) {
-        navigationBar.setComposeOpenFactor(factor);
-      }
-    });
+    navigationBar.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> navigationScrim.invalidate());
     checkNavigationBarLayout();
 
     makeStartupChecks();
@@ -345,9 +322,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         public void onSlideOffStart (View view, MotionEvent event, int index) {
           selectedPagerItemId = getPagerItemId(index);
           setMenuVisible(view, selectedPagerItemId, true);
-          if (composeWrap != null && displayTabsAtBottom()) {
-            composeWrap.hide();
-          }
         }
 
         @Override
@@ -433,44 +407,55 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private @Nullable ToggleHeaderView2 toggleHeaderView;
 
+  private M3MainTitleView getTitleView () {
+    if (titleView == null) {
+      titleView = new M3MainTitleView(context, tdlib, this, this::showEmojiStatusSelector, getMenuId());
+    }
+    return titleView;
+  }
+
+  private void showEmojiStatusSelector (M3MainTitleView view) {
+    int[] location = Views.getLocationInWindow(view);
+    EmojiStatusSelectorEmojiPage.Wrapper c = new EmojiStatusSelectorEmojiPage.Wrapper(context, tdlib, this, new EmojiStatusSelectorEmojiPage.AnimationsEmojiStatusSetDelegate() {
+      @Override
+      public void onAnimationStart () {
+        view.setIgnoreDrawEmojiStatus(true);
+      }
+
+      @Override
+      public void onAnimationEnd () {
+        view.setIgnoreDrawEmojiStatus(false);
+      }
+
+      @Override
+      public int getDestX () {
+        return location[0] + view.getEmojiLastDrawX() + Screen.dp(12);
+      }
+
+      @Override
+      public int getDestY () {
+        return location[1] + view.getEmojiLastDrawY() + Screen.dp(12);
+      }
+    });
+    c.show();
+  }
+
+  private M3SearchBarView getSearchBarView () {
+    if (searchBarView == null) {
+      searchBarView = new M3SearchBarView(context, this, () -> {
+        // Search bar: surfaceContainerHigh (m3.material.io/components/search); the app bar does not change on scroll.
+        return M3.surfaceContainerHigh();
+      }, BuildConfig.PROJECT_NAME, Lang.getString(R.string.Search), getMenuId());
+      searchBarView.setOnBarClickListener(v -> openMainSearch());
+    }
+    return searchBarView;
+  }
+
   @Override
   public View getCustomHeaderCell () {
-    if (displayTabsAtBottom()) {
-      if (useGlobalFilter()) {
-        if (toggleHeaderView == null) {
-          toggleHeaderView = new ToggleHeaderView2(context);
-          toggleHeaderView.setTextTop(17f);
-          toggleHeaderView.setTriangleTop(16f);
-          toggleHeaderView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f), Gravity.TOP, Screen.dp(56f), 0, Screen.dp(68f), 0));
-          toggleHeaderView.setOnClickListener(v -> showGlobalFilter());
-          toggleHeaderView.setOnLongClickListener(v -> applyGlobalFilter(FILTER_NONE));
-          toggleHeaderView.setTitle(Lang.getString(getGlobalFilterName(globalFilter)), /* animated */ false);
-          toggleHeaderView.setColorSet(new ToggleHeaderView2.ColorSet() {
-            @Override
-            public int titleColor () {
-              return getHeaderTextColor();
-            }
-
-            @SuppressLint("WrongConstant")
-            @Override
-            public int iconColorId () {
-              return getHeaderIconColorId();
-            }
-          });
-          addThemeInvalidateListener(toggleHeaderView);
-        }
-        return toggleHeaderView;
-      }
-      return null;
-    }
-    if (headerCell != null) {
-      View headerCellView = headerCell.getView();
-      if (bottomBar != null && headerCellView.getParent() == bottomBar) {
-        return null;
-      }
-      return headerCellView;
-    }
-    return null;
+    // Folder tabs are never in the app bar: they are at the bottom (phone), below the app bar or in a rail (tablet).
+    // The app bar shows the app name with the emoji status (phone) or the search bar labeled with the app name (tablet).
+    return isTabletNavigationBar() ? getSearchBarView() : getTitleView();
   }
 
   // Menu
@@ -534,9 +519,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       replaceSectionItem(pagerItemId, pagerItemPosition);
     }
     replaceController(pagerItemId, chatsController);
-    if (getCurrentPagerItemPosition() == pagerItemPosition) {
-      showComposeWrap(/* controller */ null);
-    }
     return pagerItemPosition;
   }
 
@@ -552,6 +534,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       getDefaultSectionItems().set(0, item);
     }
     headerCell.getTopView().setItemAt(pagerItemPosition, item, isFocused());
+    if (folderRail != null && hasFolders()) {
+      folderRail.setEntries(buildFolderRailEntries());
+    }
   }
 
   private @Nullable ViewPagerTopView.Item buildSectionItem (long pagerItemId, int pagerItemPosition) {
@@ -793,16 +778,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   @Override
   protected void handleLanguageDirectionChange () {
     super.handleLanguageDirectionChange();
-    if (composeWrap != null)
-      composeWrap.updateRtl();
     checkHeaderMargins();
-  }
-
-  public void setComposeAlpha (float alpha) {
-    if (composeWrap != null) {
-      composeWrap.close();
-      composeWrap.setAlpha(alpha);
-    }
   }
 
   @Override
@@ -829,43 +805,193 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   @Override
-  public void onBlur () {
-    super.onBlur();
-    if (composeWrap != null) {
-      composeWrap.close();
-    }
-  }
-
-  @Override
   protected boolean useCenteredTitle () {
     return true;
   }
 
   // Search
 
+  /** Opens the focused search of the chat list (dock search button on phones, search bar on tablets). */
+  private void openMainSearch () {
+    tdlib.checkDeadlocks(() -> runOnUiThreadOptional(() -> {
+      if (isFocused() && !inSearchMode() && navigationController != null && !navigationController.isAnimating() && (headerView == null || !headerView.isAnimating())) {
+        openSearchMode();
+      }
+    }));
+  }
+
   @Override
-  protected void onEnterSearchMode () {
-    super.onEnterSearchMode();
-    composeWrap.forceHide();
+  protected void applySearchTransformFactor (float factor, boolean isOpening) {
+    super.applySearchTransformFactor(factor, isOpening);
+    if (navigationBar != null) {
+      navigationBar.setSearchOpenFactor(factor);
+    }
+    updateDockCollapsed(true);
   }
 
   @Override
   protected void onLeaveSearchMode () {
     super.onLeaveSearchMode();
-    composeWrap.showIfWasHidden();
+    updateDockCollapsed(true);
   }
 
-  /*@Override
-  protected void onEnterSelectMode () {
-    super.onEnterSelectMode();
-    composeWrap.forceHide();
+  // Collapsed dock (phone)
+
+  /**
+   * Phone: while the current chat list is scrolled down, the dock collapses into the scroll to top button and
+   * its sections (except chats, the current one) move into the app bar next to the compose button.
+   * Search keeps the full dock, its item shows the close button.
+   */
+  private void updateDockCollapsed (boolean animated) {
+    if (navigationBar == null) {
+      return;
+    }
+    ChatsController c = getCurrentChatsController();
+    boolean collapsed = !isTabletNavigationBar() && !inSearchMode() && !inSelectMode() && c != null && c.isScrolledFromTop();
+    navigationBar.setCollapsed(collapsed, animated && isFocused());
+  }
+
+  private void updateHeaderDockButtons () {
+    boolean changed = updateHeaderDockButtonsImpl();
+    if (changed && titleView != null) {
+      // The title gives way to the actions: it measures itself against the visible menu width
+      // (a measure spec doesn't change when only the menu changes, so it must be re-measured explicitly).
+      titleView.requestLayout();
+    }
+  }
+
+  private boolean updateHeaderDockButtonsImpl () {
+    boolean changed = false;
+    boolean isTablet = isTabletNavigationBar();
+    float factor = navigationBar != null && !isTablet ? navigationBar.getCollapseFactor() : 0f;
+    // Tablet with chat folders: neither the dock nor the title has search.
+    // Tablet: search is always the search bar in the app bar.
+    float searchFactor = isTablet ? 0f : factor;
+    for (LinearLayout menu : mainMenus) {
+      for (int i = 0; i < menu.getChildCount(); i++) {
+        View button = menu.getChildAt(i);
+        int id = button.getId();
+        if (id == R.id.menu_btn_search) {
+          changed |= setHeaderDockButtonFactor(button, searchFactor);
+        } else if (id == R.id.menu_btn_calls || id == R.id.menu_btn_contacts || id == R.id.menu_btn_account) {
+          changed |= setHeaderDockButtonFactor(button, factor);
+        }
+      }
+    }
+    return changed;
+  }
+
+  /**
+   * The buttons come up from below (from the dock) and fade in.
+   * @return true if the visibility changed
+   */
+  private static boolean setHeaderDockButtonFactor (View button, float factor) {
+    int visibility = factor > 0f ? View.VISIBLE : View.GONE;
+    boolean changed = button.getVisibility() != visibility;
+    if (changed) {
+      button.setVisibility(visibility);
+    }
+    button.setAlpha(factor);
+    button.setTranslationY(Screen.dp(12f) * (1f - factor));
+    float scale = .7f + .3f * factor;
+    button.setScaleX(scale);
+    button.setScaleY(scale);
+    return changed;
+  }
+
+  private View newAccountHeaderButton (HeaderView header) {
+    FrameLayoutFix button = new FrameLayoutFix(context);
+    button.setId(R.id.menu_btn_account);
+    button.setBackgroundResource(ThemeDeprecated.headerSelector());
+    button.setLayoutParams(new ViewGroup.LayoutParams(Screen.dp(49f), ViewGroup.LayoutParams.MATCH_PARENT));
+    button.setContentDescription(Lang.getString(R.string.Settings));
+    button.setOnClickListener(v -> onNavigationItemClick(MainNavigationBar.ITEM_SETTINGS));
+    AvatarView avatarView = new AvatarView(context);
+    avatarView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(30f), Screen.dp(30f), Gravity.CENTER));
+    avatarView.setUser(tdlib, tdlib.myUserId(), false);
+    button.addView(avatarView);
+    headerAvatarViews.add(avatarView);
+    return button;
+  }
+
+  // Contained full-screen search (m3.material.io/components/search, ExpandedFullScreenContainedSearchBar):
+  // the whole view (app bar and results) is surfaceContainerLow, the search bar inside it stays surfaceContainerHigh.
+
+  @Override
+  protected int getSearchHeaderColor () {
+    return M3.surfaceContainerLow();
+  }
+
+  // Chat search uses the grey search header (legacy icon / text colors): the search bar takes onSurface
+  // (input text, leading icon; the clear button uses it too).
+
+  @Override
+  protected int getSearchHeaderIconColorId () {
+    return ColorId.headerIcon;
   }
 
   @Override
-  protected void onLeaveSelectMode () {
-    super.onLeaveSelectMode();
-    composeWrap.showIfWasHidden();
-  }*/
+  protected int getSearchTextColorId () {
+    return ColorId.headerText;
+  }
+
+  @Override
+  protected int getChatSearchContainerColor () {
+    return M3.surfaceContainerLow();
+  }
+
+  @Override
+  protected SearchEditTextDelegate genSearchHeader (HeaderView headerView) {
+    // Wrapper drawn behind the back and clear buttons of the app bar: draws the focused contained search bar
+    // (phone and tablet; same rounded container and height as the unfocused tablet bar, 8dp horizontal padding
+    // of the expanded full-screen search bar).
+    HeaderEditText editText = headerView.genSearchHeader(useLightSearchHeader(), this);
+    FrameLayoutFix wrap = new FrameLayoutFix(context) {
+      @Override
+      protected void onDraw (Canvas c) {
+        int margin = Screen.dp(8f);
+        int barHeight = Screen.dp(M3SearchBarView.BAR_HEIGHT);
+        int top = (getMeasuredHeight() - barHeight) / 2;
+        RectF rect = Paints.getRectF();
+        rect.set(margin, top, getMeasuredWidth() - margin, top + barHeight);
+        c.drawRoundRect(rect, barHeight / 2f, barHeight / 2f, Paints.fillingPaint(M3.surfaceContainerHigh()));
+      }
+    };
+    wrap.setWillNotDraw(false);
+    addThemeInvalidateListener(wrap);
+    wrap.addView(editText);
+    return new SearchEditTextDelegate() {
+      @NonNull
+      @Override
+      public View view () {
+        return wrap;
+      }
+
+      @NonNull
+      @Override
+      public HeaderEditText editView () {
+        return editText;
+      }
+    };
+  }
+
+  @Override
+  protected SearchEditTextDelegate getSearchHeaderView (HeaderView headerView) {
+    SearchEditTextDelegate delegate = super.getSearchHeaderView(headerView);
+    // ViewController applies the 68dp / 49dp text margins to view(): move them to the text field,
+    // so the wrapper spans the whole app bar.
+    View wrap = delegate.view();
+    FrameLayoutFix.LayoutParams wrapParams = (FrameLayoutFix.LayoutParams) wrap.getLayoutParams();
+    if (wrapParams != null && (wrapParams.leftMargin != 0 || wrapParams.rightMargin != 0)) {
+      FrameLayoutFix.LayoutParams editParams = (FrameLayoutFix.LayoutParams) delegate.editView().getLayoutParams();
+      editParams.leftMargin = wrapParams.leftMargin;
+      editParams.rightMargin = wrapParams.rightMargin;
+      delegate.editView().setLayoutParams(editParams);
+      wrapParams.leftMargin = wrapParams.rightMargin = 0;
+      wrap.setLayoutParams(wrapParams);
+    }
+    return delegate;
+  }
 
   @Override
   protected View getSearchAntagonistView () {
@@ -948,40 +1074,36 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return mainWrap;
   }
 
-  // Overlay wrap
+  // Compose menu (app bar button)
 
-  @Override
-  public boolean isIntercepted () {
-    return composeWrap != null && composeWrap.isShowing();
+  private void showComposeMenu () {
+    showMore(new int[] {
+      R.id.btn_float_newChat,
+      R.id.btn_float_newGroup,
+      R.id.btn_float_newChannel,
+      R.id.btn_float_newSecretChat
+    }, new String[] {
+      Lang.getString(R.string.NewChat),
+      Lang.getString(R.string.NewGroup),
+      Lang.getString(R.string.NewChannel),
+      Lang.getString(R.string.NewSecretChat)
+    }, new int[] {
+      R.drawable.baseline_person_24,
+      R.drawable.baseline_group_24,
+      R.drawable.baseline_bullhorn_24,
+      R.drawable.baseline_lock_24
+    }, 0);
   }
 
   @Override
-  public void dismissIntercept () {
-    if (composeWrap != null) {
-      composeWrap.close();
+  public void onMoreItemPressed (int id) {
+    if (!onComposeItemClick(id)) {
+      super.onMoreItemPressed(id);
     }
   }
 
-  @Override
-  public boolean onOverlayButtonClick (int id, View view) {
-    // TODO check if viewPager is scrolling
-    if (id == R.id.user) {
-      TdApi.User user = ((TdApi.User) view.getTag());
-      if (user != null) {
-        tdlib.ui().openPrivateChat(this, user.id, null);
-      }
-    } else if (id == R.id.btn_float_addContact) {
-      navigateTo(new PhoneController(context, tdlib).setMode(PhoneController.MODE_ADD_CONTACT));
-    } else if (id == R.id.btn_float_call) {
-      ContactsController c = new ContactsController(context, tdlib);
-      c.initWithMode(ContactsController.MODE_CALL);
-      navigateTo(c);
-    } else if (id == R.id.btn_float_compose) {
-      if (navigationController != null && headerView != null && !navigationController.isAnimating() && !headerView.isAnimating() && composeWrap != null) {
-        composeWrap.toggle();
-      }
-      return false;
-    } else if (id == R.id.btn_float_newChannel) {
+  private boolean onComposeItemClick (int id) {
+    if (id == R.id.btn_float_newChannel) {
       navigateTo(new CreateChannelController(context, tdlib));
     } else if (id == R.id.btn_float_newGroup) {
       ContactsController c = new ContactsController(context, tdlib);
@@ -995,6 +1117,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       ContactsController c = new ContactsController(context, tdlib);
       c.initWithMode(ContactsController.MODE_NEW_CHAT);
       navigateTo(c);
+    } else {
+      return false;
     }
     return true;
   }
@@ -1002,6 +1126,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   @Override
   public void onPageScrolled (int position, int actualPosition, float actualPositionOffset, int actualPositionOffsetPixels) {
     super.onPageScrolled(position, actualPosition, actualPositionOffset, actualPositionOffsetPixels);
+    if (folderRail != null) {
+      folderRail.setSelectionFactor(actualPosition + actualPositionOffset);
+    }
     if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL && displayTabsAtBottom()) {
       showBottomBar();
     }
@@ -1009,28 +1136,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   @Override
   public void onPageSelected (int position, int actualPosition) {
-    if (!inSearchMode()) {
-      composeWrap.show();
-    }
+    // Use the selected page itself: the "current" cached item may still point to the previous page here.
+    ViewController<?> selectedPage = getCachedControllerForPosition(position);
+    updateDockCollapsed(true);
     if (hasFolders()) {
-      if (composeWrap.getMainButtonId() != R.id.btn_float_compose) {
-        composeWrap.replaceMainButton(R.id.btn_float_compose, R.drawable.baseline_create_24);
-      }
       return;
-    }
-    switch (position) {
-      case POSITION_CHATS: {
-        composeWrap.replaceMainButton(R.id.btn_float_compose, R.drawable.baseline_create_24);
-        break;
-      }
-      case POSITION_CALLS: {
-        composeWrap.replaceMainButton(R.id.btn_float_call, R.drawable.baseline_phone_24);
-        break;
-      }
-      case POSITION_PEOPLE: {
-        composeWrap.replaceMainButton(R.id.btn_float_addContact, R.drawable.baseline_person_add_24);
-        break;
-      }
     }
     context.notifyBackPressAvailabilityChanged();
   }
@@ -1058,48 +1168,25 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private void checkMargins () {
     checkPagerMargins();
     checkHeaderMargins();
-    checkComposeWrapPaddings();
-    checkNavigationBarLayout();
-  }
-
-  private void checkComposeWrapPaddings () {
-    if (composeWrap != null) {
-      int paddingBottom = (displayTabsAtBottom() ? getHeaderHeight() : 0) + extraBottomInsetWithoutIme;
-      int paddingSide = 0;
-      if (navigationBar != null) {
-        if (navigationBar.isBar()) {
-          paddingBottom += MainNavigationBar.getBarHeight();
-        } else {
-          // The main button is rendered by the rail. Align the hidden one with the rail's compose segment,
-          // so the menu opens right above it. OverlayButtonWrap places the 56dp button 16dp away from the edges.
-          int railCenter = MainNavigationBar.getRailMargin() + MainNavigationBar.getRailWidth() / 2;
-          int buttonCenter = Screen.dp(16f) + Screen.dp(56f) / 2;
-          paddingSide = Math.max(0, railCenter - buttonCenter);
-          paddingBottom += MainNavigationBar.getRailMargin() + navigationBar.getComposeCenterFromRailBottom() - buttonCenter;
-        }
-      }
-      composeWrap.setPadding(Lang.rtl() ? paddingSide : 0, composeWrap.getPaddingTop(), Lang.rtl() ? 0 : paddingSide, paddingBottom);
-      composeWrap.setClipToPadding(paddingBottom == 0);
-      // Phone dock: the menu opens above the dock container (not the hidden 56dp button) and aligns with its edge.
-      composeWrap.setMenuOffset(navigationBar != null && !navigationBar.isBar() ? (MainNavigationBar.getRailWidth() - Screen.dp(56f)) / 2 : 0);
-    }
     updateChatListNavigationInset();
+    checkNavigationBarLayout();
   }
 
   /**
    * Extra bottom scroll space of chat lists, so the last chat can be scrolled above
-   * the phone dock / tablet FAB (M3: floating elements must not fully cover actionable content).
+   * the phone dock (M3: floating elements must not fully cover actionable content).
    */
   private int getChatListNavigationInset () {
     if (navigationBar == null) {
       return 0;
     }
     if (navigationBar.isBar()) {
-      // Tablet: the list already ends above the bar; leave room for the 56dp FAB and its 16dp margins.
-      return Screen.dp(56f) + Screen.dp(16f) * 2;
+      // Tablet: the list scrolls under the floating bar, the last chat can be scrolled above it.
+      return MainNavigationBar.getBarTotalHeight() + Screen.dp(8f);
     }
-    // Phone: floating dock at the bottom-end corner.
-    return MainNavigationBar.getRailMargin() + navigationBar.getRailHeight() + Screen.dp(8f);
+    // Phone: floating dock at the bottom-end corner, above the folders bar if there is one.
+    int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
+    return foldersBar + MainNavigationBar.getRailMargin() + navigationBar.getRailTotalHeight() + Screen.dp(8f);
   }
 
   private void updateChatListNavigationInset () {
@@ -1110,6 +1197,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       if (c instanceof ChatsController) {
         ((ChatsController) c).setNavigationInset(inset);
       }
+    }
+  }
+
+  public void onChatListScrolled (ChatsController c) {
+    if (c == getCurrentChatsController()) {
+      updateDockCollapsed(true);
     }
   }
 
@@ -1125,12 +1218,26 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return;
     }
     boolean isBar = isTabletNavigationBar();
-    navigationBar.setLayoutMode(isBar, extraBottomInsetWithoutIme, displayTabsAtBottom() ? getHeaderHeight() : 0);
-    if (composeWrap != null) {
-      composeWrap.setMainButtonDetached(!isBar);
+    boolean modeChanged = navigationBar.isBar() != isBar;
+    // Folders move between the bottom bar (phone) and the rail / strip below the app bar (tablet).
+    checkFoldersPlacement();
+    if (folderRail != null) {
+      folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
-    Views.setBottomMargin(mainWrap, isBar ? MainNavigationBar.getBarHeight() : 0);
-    checkComposeWrapPaddings();
+    navigationBar.setLayoutMode(isBar, extraBottomInsetWithoutIme, displayTabsAtBottom() ? getHeaderHeight() : 0);
+    if (navigationScrim != null) {
+      // Covers the bar, its margins and the fade above it.
+      int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + extraBottomInsetWithoutIme;
+      navigationScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, scrimHeight, Gravity.BOTTOM));
+      navigationScrim.setVisibility(isBar ? View.VISIBLE : View.GONE);
+    }
+    updateDockCollapsed(false);
+    updateHeaderDockButtons();
+    if (modeChanged && headerView != null && isFocused() && !inTransformMode() && navigationController != null && !navigationController.isAnimating()) {
+      // The app bar title switches between the app name (phone) and the search bar (tablet).
+      headerView.setTitle(this);
+    }
+    updateChatListNavigationInset();
     updateNavigationBarSelection();
   }
 
@@ -1152,6 +1259,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (section instanceof PeopleController) {
       return MainNavigationBar.ITEM_CONTACTS;
     }
+    if (section instanceof CallListController) {
+      return MainNavigationBar.ITEM_CALLS;
+    }
     return MainNavigationBar.ITEM_CHATS;
   }
 
@@ -1170,15 +1280,23 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (navigationController == null || navigationController.isAnimating() || context.isNavigationBusy()) {
       return;
     }
-    if (item == MainNavigationBar.ITEM_COMPOSE) {
-      // Same as pressing the floating compose button: opens the menu, or a call/contact on other tabs.
-      if (composeWrap != null && onOverlayButtonClick(composeWrap.getMainButtonId(), navigationBar)) {
-        composeWrap.close();
+    if (item == MainNavigationBar.ITEM_SCROLL_TOP) {
+      ChatsController c = getCurrentChatsController();
+      if (c != null) {
+        c.onScrollToTopRequested();
       }
       return;
     }
-    if (composeWrap != null) {
-      composeWrap.close();
+    if (item == MainNavigationBar.ITEM_SEARCH) {
+      // Phone dock: the search button opens the focused search and closes it while it is open.
+      if (inSearchMode()) {
+        if (headerView == null || !headerView.isAnimating()) {
+          closeSearchMode(null);
+        }
+      } else {
+        openMainSearch();
+      }
+      return;
     }
     boolean isTablet = isTabletNavigationBar();
     if (isTablet && item == getTabletSection() && item != MainNavigationBar.ITEM_CHATS && navigationController.getStackSize() == 2) {
@@ -1192,6 +1310,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         } else {
           onPagerItemClick(0);
         }
+        break;
+      }
+      case MainNavigationBar.ITEM_CALLS: {
+        openNavigationSection(new CallListController(context, tdlib));
         break;
       }
       case MainNavigationBar.ITEM_CONTACTS: {
@@ -1222,6 +1344,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void checkPagerMargins () {
+    if (pagerWrap != null) {
+      Views.setTopMargin(pagerWrap, displayTabsBelowSearch() ? getTopTabsBarHeight() : 0);
+    }
     if (!Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL && displayTabsAtBottom()) {
       Views.setBottomMargin(getViewPager(), getHeaderHeight());
       Views.setBottomMargin(pagerWrap, updateSnackBar != null ? Math.round(updateSnackBar.getHeight() * updateSnackBar.getVisibilityFactor()) : 0); // FIXME
@@ -1243,23 +1368,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       recyclerView.setLayoutParams(params);
     }
     int paddingLeft, paddingRight;
+    // The tabs are never inside the app bar, so there are no app bar buttons to leave room for.
+    paddingLeft = paddingRight = 0;
     if (displayTabsAtBottom()) {
-      paddingLeft = paddingRight = 0;
       recyclerView.setPadding(0, 0, 0, 0);
     } else {
       recyclerView.setClipToPadding(false);
       recyclerView.setPadding(Screen.dp(12), 0, Screen.dp(12), 0);
-      int menuWidth = Screen.dp(44f);
-      if (Passcode.instance().isEnabled()) {
-        menuWidth += Screen.dp(48f);
-      }
-      if (Lang.rtl()) {
-        paddingLeft = menuWidth;
-        paddingRight = Screen.dp(44f);
-      } else {
-        paddingLeft = Screen.dp(44f);
-        paddingRight = menuWidth;
-      }
     }
     if (headerCellView.getPaddingLeft() != paddingLeft || headerCellView.getPaddingRight() != paddingRight) {
       headerCellView.setPadding(paddingLeft, headerCellView.getPaddingTop(), paddingRight, headerCellView.getPaddingBottom());
@@ -1276,7 +1391,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         @Override
         public void onSnackBarTransition (SnackBar v, float factor) {
           float offsetBySnackBar = v.getMeasuredHeight() * factor;
-          composeWrap.setTranslationY(-offsetBySnackBar);
           boolean tabsAtBottom = displayTabsAtBottom();
           if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
             bottomBarOffsetBySnackBar = -offsetBySnackBar;
@@ -1340,6 +1454,14 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (navigationBar != null) {
       navigationBar.performDestroy();
     }
+    if (titleView != null) {
+      titleView.performDestroy();
+      titleView = null;
+    }
+    for (AvatarView avatarView : headerAvatarViews) {
+      avatarView.performDestroy();
+    }
+    headerAvatarViews.clear();
     if (defaultCounterListener != null) {
       tdlib.listeners().removeTotalChatCounterListener(defaultCounterListener);
       defaultCounterListener = null;
@@ -1575,14 +1697,17 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }, null, 1000L));
   }
 
+  // Side drawer is disabled (product decision): no menu button, no edge-swipe / programmatic opening.
+  // DrawerController stays in the code base unused. Search / select modes still get Back / Close.
+
   @Override
   protected int getBackButton () {
-    return BackHeaderButton.TYPE_MENU;
+    return BackHeaderButton.TYPE_NONE;
   }
 
   @Override
   protected boolean useDrawer () {
-    return true;
+    return false;
   }
 
   @Override
@@ -1607,47 +1732,37 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   @Override
+  protected boolean useHeaderShadowLine () {
+    // M3 app bar: no shadow line, it is separated from content by color on scroll (see getHeaderColor).
+    return false;
+  }
+
+  @Override
   protected int getMenuButtonsWidth () {
     return 0; // disable header margins
   }
 
-  public boolean showComposeWrap (ViewController<?> controller) {
-    if (!inSearchMode() && (controller == null || getCurrentPagerItem() == controller)) {
-      composeWrap.show();
-      return true;
+  /** Folders displayed at the bottom can hide on scroll ({@link Config#CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL}). */
+  private void showHideBottomBarOnScroll (ViewController<?> controller, boolean show) {
+    if (!Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL || getCurrentPagerItem() != controller) {
+      return;
     }
-    return false;
-  }
-
-  private boolean showHideCompose (ViewController<?> controller, boolean show) {
-    if (getCurrentPagerItem() == controller) {
-      if (show) {
-        if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
-          showBottomBar();
+    if (show) {
+      showBottomBar();
+    } else {
+      if (getCurrentPagerItemId() == MAIN_PAGER_ITEM_ID) {
+        ChatsController c = findMainChatsController();
+        if (c != null && c.isPullingArchive()) {
+          return;
         }
-        return showComposeWrap(null);
-      } else {
-        if (getCurrentPagerItemId() == MAIN_PAGER_ITEM_ID) {
-          ChatsController c = findMainChatsController();
-          if (c != null && c.isPullingArchive()) {
-            return false;
-          }
-        }
-        composeWrap.hide();
-        if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
-          hideBottomBar();
-        }
-        return true;
       }
+      hideBottomBar();
     }
-    return false;
   }
 
   // Controllers
 
   private static final int POSITION_CHATS = 0;
-  private static final int POSITION_CALLS = 1;
-  private static final int POSITION_PEOPLE = 2;
 
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({FILTER_NONE, FILTER_ARCHIVE, FILTER_PRIVATE, FILTER_GROUPS, FILTER_CHANNELS, FILTER_BOTS, FILTER_UNREAD})
@@ -1685,7 +1800,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   };
 
   private boolean useGlobalFilter () {
-    return displayTabsAtBottom();
+    // The app bar keeps the title / search bar, so the global filter toggle has no place: folders use their own filter menus.
+    return false;
   }
 
   private @Filter int getSelectedFilter (long pagerItemId) {
@@ -1714,7 +1830,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   @Override
   protected int getPagerItemCount () {
-    return hasFolders() ? pagerChatLists.size() : 2;
+    // Without folders the only page is the main chat list: calls are a section of the navigation dock.
+    return hasFolders() ? pagerChatLists.size() : 1;
   }
 
   protected long getPagerItemId (int position) {
@@ -1746,12 +1863,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       TdApi.ChatList chatList = pagerChatLists.get(index);
       showChatListOptions(chatList);
       return true;
-    } else if (Config.ENABLE_DELETE_CALL_HISTORY && index == POSITION_CALLS) {
-      ViewController<?> controller = getCachedControllerForPosition(index);
-      if (controller instanceof CallListController && ((CallListController) controller).hasRecentCalls()) {
-        tdlib.ui().showClearCallHistoryOptions(this);
-        return true;
-      }
     }
     return false;
   }
@@ -1801,11 +1912,14 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     boolean showAsArchive = (isMain && menuNeedArchive) || isArchive;
     if (hasFolders) {
       String source;
-      boolean iconOnly = chatFolderStyle == ChatFolderStyle.ICON_ONLY || (isMain && pagerItemPosition == 0);
+      boolean iconOnly = chatFolderStyle == ChatFolderStyle.ICON_ONLY;
       if (iconOnly) {
         source = "";
       } else if (showAsArchive) {
         source = Lang.getString(getArchiveSectionNameRes(FILTER_NONE, chatFolderStyle));
+      } else if (isMain && pagerItemPosition == 0) {
+        // First tab (all chats): icon with a short label.
+        source = Lang.getString(R.string.CategoryMainShort);
       } else {
         source = Lang.getString(getMainSectionNameRes(FILTER_NONE, /* hasFolders */ true));
       }
@@ -1961,10 +2075,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         public void onScrolled (@NonNull RecyclerView recyclerView, int dx, int dy) {
           lastY += dy;
           if (dy < 0 && lastShowY - lastY >= Screen.getTouchSlop()) {
-            showHideCompose(c, true);
+            showHideBottomBarOnScroll(c, true);
             lastShowY = lastY;
           } else if (lastY - lastShowY > Screen.getTouchSlopBig()) {
-            showHideCompose(c, false);
+            showHideBottomBarOnScroll(c, false);
             lastShowY = lastY;
           }
           if (Math.abs(lastY - lastShowY) > Screen.getTouchSlopBig()) {
@@ -1991,10 +2105,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     } else if (hasFolders()) {
       TdApi.ChatList chatList = pagerChatLists.get(position);
       c = newChatsController(chatList, getSelectedFilter(pagerItemId));
-    } else if (position == POSITION_CALLS) {
-      c = new CallListController(this.context, tdlib);
-    } else if (position == POSITION_PEOPLE) {
-      c = new PeopleController(this.context, tdlib);
     } else {
       throw new IllegalArgumentException("position == " + position);
     }
@@ -2018,8 +2128,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       throw new UnsupportedOperationException();
     }
     return new CharSequence[] {
-      getMenuSectionName(MAIN_PAGER_ITEM_ID, /* pagerItemPosition */ 0, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ false),
-      Lang.getString(R.string.Calls)/*, UI.getString(R.string.Contacts).toUpperCase()*/
+      getMenuSectionName(MAIN_PAGER_ITEM_ID, /* pagerItemPosition */ 0, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ false)
     };
   }
 
@@ -2075,11 +2184,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private List<ViewPagerTopView.Item> getDefaultSectionItems () {
     if (defaultSectionItems == null) {
-      String callsItem = Lang.getString(R.string.Calls);
-      defaultSectionItems = Arrays.asList(
-        getDefaultMainItem(),
-        new ViewPagerTopView.Item(callsItem)
-      );
+      // Not displayed (the app bar shows the title instead), still backs the pager adapter.
+      // Mutable: ViewPagerTopView keeps this list and replaces items in place (setItemAt), e.g. when the unread counter resizes.
+      defaultSectionItems = new ArrayList<>(1);
+      defaultSectionItems.add(getDefaultMainItem());
     }
     return defaultSectionItems;
   }
@@ -2096,11 +2204,26 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return R.id.menu_main;
   }
 
+
+
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_main) {
       header.addLockButton(menu);
-      header.addSearchButton(menu, this);
+      // Search moved to the navigation dock (phone) and the search bar (tablet).
+      header.addSearchButton(menu, this).setContentDescription(Lang.getString(R.string.Search));
+      // Phone: sections of the collapsed dock.
+      header.addButton(menu, R.id.menu_btn_calls, R.drawable.baseline_phone_24, 49f, this, getHeaderIconColorId())
+        .setContentDescription(Lang.getString(R.string.Calls));
+      header.addButton(menu, R.id.menu_btn_contacts, R.drawable.baseline_perm_contact_calendar_24, 49f, this, getHeaderIconColorId())
+        .setContentDescription(Lang.getString(R.string.Contacts));
+      header.addButton(menu, newAccountHeaderButton(header));
+      if (!mainMenus.contains(menu)) {
+        mainMenus.add(menu);
+      }
+      updateHeaderDockButtons();
+      header.addButton(menu, R.id.menu_btn_compose, R.drawable.baseline_create_24, 49f, this, getHeaderIconColorId())
+        .setContentDescription(Lang.getString(R.string.NewChat));
     } else if (id == R.id.menu_clear) {
       header.addClearButton(menu, getSearchHeaderIconColorId(), getSearchBackButtonResource());
     } else {
@@ -2110,19 +2233,14 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   @Override
   public void onMenuItemPressed (int id, View view) {
-    if (id == R.id.menu_btn_search) {
-      tdlib.checkDeadlocks(() -> runOnUiThreadOptional(() -> {
-        if (isFocused()) {
-          openSearchMode();
-        }
-      }));
-      /*case R.id.menu_btn_more: {
-        showMore(new int[] {
-          R.id.more_btn_settings,
-          R.id.more_btn_help
-        }, new String[] {Lang.getString(R.string.Settings), Lang.getString(R.string.Help)}, 0);
-        break;
-      }*/
+    if (id == R.id.menu_btn_compose) {
+      showComposeMenu();
+    } else if (id == R.id.menu_btn_search) {
+      openMainSearch();
+    } else if (id == R.id.menu_btn_calls) {
+      onNavigationItemClick(MainNavigationBar.ITEM_CALLS);
+    } else if (id == R.id.menu_btn_contacts) {
+      onNavigationItemClick(MainNavigationBar.ITEM_CONTACTS);
     } else if (id == R.id.menu_btn_clear) {
       clearSearchInput();
     } else {
@@ -2132,12 +2250,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   @Override
   public boolean performOnBackPressed (boolean fromTop, boolean commit) {
-    if (composeWrap != null && composeWrap.isShowing()) {
-      if (commit) {
-        composeWrap.close();
-      }
-      return true;
-    }
     if (commit) {
       if (scrollToFirstPosition()) {
         return true;
@@ -2926,6 +3038,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       float y = bottomBarOffsetByPlayer + bottomBarOffsetByScroll + bottomBarOffsetBySnackBar;
       bottomBar.setTranslationY(y);
       bottomBarSpace.setTranslationY(Math.max(0, y));
+      if (navigationBar != null && !navigationBar.isBar()) {
+        // Phone: the dock stands on the folders bar and goes down with it when it hides on scroll.
+        navigationBar.setTranslationY(Math.min(y, getHeaderHeight()));
+      }
     }
   }
 
@@ -2987,8 +3103,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (headerCell == null)
       return;
     ViewPagerHeaderViewCompact headerCellView = (ViewPagerHeaderViewCompact) headerCell.getView();
-    boolean hasFolders = hasFolders();
-    boolean displayTabsAtBottom = displayTabsAtBottom();
+    int placement = getFoldersPlacement();
+    appliedFoldersPlacement = placement;
+    boolean hasFolders = placement != FOLDERS_NONE;
+    boolean displayTabsAtBottom = placement == FOLDERS_BOTTOM;
     headerCell.getTopView().setAnimateItemChanges(!Settings.instance().needReduceMotion());
     headerCell.getTopView().setShowLabelOnActiveOnly(hasFolders && tdlib.settings().chatFolderStyle() == ChatFolderStyle.ICON_WITH_LABEL_ON_ACTIVE_FOLDER);
     headerCell.getTopView().setUseDarkBackground(displayTabsAtBottom);
@@ -2997,76 +3115,92 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     headerCell.getTopView().setItemPadding(Screen.dp(hasFolders ? ViewPagerTopView.COMPACT_ITEM_PADDING : ViewPagerTopView.DEFAULT_ITEM_PADDING));
     headerCell.getTopView().setItemSpacing(Screen.dp(hasFolders ? ViewPagerTopView.COMPACT_ITEM_SPACING : ViewPagerTopView.DEFAULT_ITEM_SPACING));
     headerCellView.setFadingEdgeLength(displayTabsAtBottom ? 0f : 16f);
+    headerCellView.setM3Divider(placement == FOLDERS_BELOW_SEARCH);
 
+    // Where the tabs go: the bottom bar (phone), the strip below the app bar (tablet) or nowhere (rail / no folders).
+    ViewGroup target;
     if (displayTabsAtBottom) {
-      if (bottomBar == null) {
-        ViewGroup parent = (ViewGroup) headerCellView.getParent();
-        if (parent != null) {
-          if (headerView != null && isFocused() && !inTransformMode()) {
-            headerView.setTitle(this);
-            View titleView = headerView.findViewById(getId());
-            if (titleView != null) {
-              titleView.setAlpha(1f);
-              titleView.setTranslationX(0);
-              titleView.setTranslationY(0);
-              titleView.setVisibility(View.VISIBLE);
-            }
-          } else {
-            parent.removeView(headerCellView);
-          }
-        }
-        int shadowHeight = Screen.dp(3f);
-        ShadowView shadowView = new ShadowView(context);
-        shadowView.setVerticalShadow(new int[]{0x00000000, 0x40000000}, null, shadowHeight);
-        shadowView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, shadowHeight));
-        Views.setTopMargin(headerCellView, shadowHeight - Screen.dp(1f));
-
-        ViewSupport.setThemedBackground(headerCellView, ColorId.headerLightBackground, this);
-        headerCell.getTopView().setSelectionColorId(ColorId.headerLightText, .9f);
-        headerCell.getTopView().setTextFromToColorId(ColorId.headerLightText, ColorId.headerLightText, PropertyId.SUBTITLE_ALPHA);
-
-        int headerHeight = getHeaderHeight();
-        bottomBar = new FrameLayoutFix(context);
-        bottomBar.addView(shadowView);
-        bottomBar.addView(headerCellView);
-        pagerWrap.addView(bottomBar, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, headerHeight + Views.getTopMargin(headerCellView), Gravity.BOTTOM));
-
-        bottomBarSpace = new FillingSpace(context);
-        bottomBarSpace.setThemedBackground(ColorId.headerLightBackground, this);
-        pagerWrap.addView(bottomBarSpace, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM));
-
-        updateBottomBarMargins();
-
-        if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
-          isBottomBarVisible.setValue(true, false);
-          invalidateBottomBarOffset();
-        }
+      target = ensureBottomBar(headerCellView);
+    } else if (placement == FOLDERS_BELOW_SEARCH) {
+      target = ensureTopTabsBar();
+    } else {
+      target = null;
+    }
+    ViewGroup parent = (ViewGroup) headerCellView.getParent();
+    if (parent != target) {
+      if (parent != null) {
+        parent.removeView(headerCellView);
       }
+      if (target != null) {
+        target.addView(headerCellView);
+      }
+    }
+    if (displayTabsAtBottom) {
+      Views.setTopMargin(headerCellView, Screen.dp(3f) - Screen.dp(1f));
+      // Folder tabs at the bottom = navigation area: surfaceContainer (M3 roles, every theme).
+      ViewUtils.setBackground(headerCellView, M3.roleDrawable(M3.SURFACE_CONTAINER));
+      addThemeInvalidateListener(headerCellView);
+      headerCell.getTopView().setSelectionColorId(ColorId.headerLightText, .9f);
+      headerCell.getTopView().setTextFromToColorId(ColorId.headerLightText, ColorId.headerLightText, PropertyId.SUBTITLE_ALPHA);
+    } else {
+      Views.setTopMargin(headerCellView, 0);
+      ViewUtils.setBackground(headerCellView, null);
+      headerCell.getTopView().setSelectionColorId(ColorId.headerTabActive);
+      headerCell.getTopView().setTextFromToColorId(ColorId.headerTabInactiveText, ColorId.headerTabActiveText);
+    }
+    if (target != null) {
       headerCellView.setAlpha(1f);
       headerCellView.setTranslationX(0f);
       headerCellView.setTranslationY(0f);
       headerCellView.setVisibility(View.VISIBLE);
       headerCellView.setScaleFactor(0f, 0f, 0f, false);
-    } else {
-      if (bottomBar != null) {
-        pagerWrap.removeView(bottomBar);
-        pagerWrap.removeView(bottomBarSpace);
-        bottomBarSpace.performDestroy();
-        bottomBar.removeView(headerCellView);
-        bottomBar = null;
-        bottomBarSpace = null;
-        if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
-          isBottomBarVisible.setValue(false, false);
-        }
-        headerCell.getTopView().setSelectionColorId(ColorId.headerTabActive);
-        headerCell.getTopView().setTextFromToColorId(ColorId.headerTabInactiveText, ColorId.headerTabActiveText);
-        ViewUtils.setBackground(headerCellView, null);
-        Views.setTopMargin(headerCellView, 0);
-        if (headerView != null && isFocused() && !inTransformMode()) {
-          headerView.setTitle(this);
-        }
+    }
+
+    if (!displayTabsAtBottom && bottomBar != null) {
+      pagerWrap.removeView(bottomBar);
+      pagerWrap.removeView(bottomBarSpace);
+      bottomBarSpace.performDestroy();
+      bottomBar = null;
+      bottomBarSpace = null;
+      if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
+        isBottomBarVisible.setValue(false, false);
+      }
+      if (navigationBar != null) {
+        navigationBar.setTranslationY(0f);
       }
     }
+    if (placement != FOLDERS_BELOW_SEARCH && topTabsBar != null) {
+      mainWrap.removeView(topTabsBar);
+      topTabsBar = null;
+    }
+    updateFolderRail();
+  }
+
+  private ViewGroup ensureBottomBar (ViewPagerHeaderViewCompact headerCellView) {
+    if (bottomBar == null) {
+      int shadowHeight = Screen.dp(3f);
+      ShadowView shadowView = new ShadowView(context);
+      shadowView.setVerticalShadow(new int[]{0x00000000, 0x40000000}, null, shadowHeight);
+      shadowView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, shadowHeight));
+
+      int headerHeight = getHeaderHeight();
+      bottomBar = new FrameLayoutFix(context);
+      bottomBar.addView(shadowView);
+      pagerWrap.addView(bottomBar, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, headerHeight + shadowHeight - Screen.dp(1f), Gravity.BOTTOM));
+
+      bottomBarSpace = new FillingSpace(context);
+      ViewUtils.setBackground(bottomBarSpace, M3.roleDrawable(M3.SURFACE_CONTAINER));
+      addThemeInvalidateListener(bottomBarSpace);
+      pagerWrap.addView(bottomBarSpace, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM));
+
+      updateBottomBarMargins();
+
+      if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
+        isBottomBarVisible.setValue(true, false);
+        invalidateBottomBarOffset();
+      }
+    }
+    return bottomBar;
   }
 
   private void checkMenu () {
@@ -3075,6 +3209,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       boolean displayTabsAtBottom = displayTabsAtBottom();
       int gravity = (displayTabsAtBottom ? Gravity.BOTTOM : Gravity.TOP) | Gravity.LEFT;
       int bottomMargin = displayTabsAtBottom ? getHeaderHeight() : 0;
+      // Tablet: the folder menu opens below the tab strip under the app bar.
+      int topMargin = displayTabsBelowSearch() ? getTopTabsBarHeight() : 0;
+      if (layoutParams.topMargin != topMargin) {
+        layoutParams.topMargin = topMargin;
+        menu.setLayoutParams(layoutParams);
+      }
       if (menu.setTop(!displayTabsAtBottom)) {
         menu.setDefaultPadding();
         menu.setPadding(menu.getPaddingLeft(), menu.getPaddingTop() + Screen.dp(14f), menu.getPaddingRight(), menu.getPaddingBottom() + Screen.dp(13f));
@@ -3086,8 +3226,144 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
   }
 
+  // Chat folders placement
+
+  /** No chat folders: the app bar shows the title (phone) or the search bar (tablet). */
+  private static final int FOLDERS_NONE = 0;
+  /** Phone: tabs at the bottom of the screen. */
+  private static final int FOLDERS_BOTTOM = 1;
+  /** Tablet: tabs below the app bar with the search bar. */
+  private static final int FOLDERS_BELOW_SEARCH = 2;
+  /** Tablet: navigation rail at the leading edge of the left pane. */
+  private static final int FOLDERS_SIDE = 3;
+
+  private int getFoldersPlacement () {
+    if (!hasFolders()) {
+      return FOLDERS_NONE;
+    }
+    if (!isTabletNavigationBar()) {
+      return FOLDERS_BOTTOM;
+    }
+    return tdlib.settings().displayTabletFoldersBelowSearch() ? FOLDERS_BELOW_SEARCH : FOLDERS_SIDE;
+  }
+
   private boolean displayTabsAtBottom () {
-    return hasFolders() && !tdlib.settings().displayFoldersAtTop();
+    return getFoldersPlacement() == FOLDERS_BOTTOM;
+  }
+
+  private boolean displayTabsBelowSearch () {
+    return getFoldersPlacement() == FOLDERS_BELOW_SEARCH;
+  }
+
+  private int appliedFoldersPlacement = -1;
+
+  /** Moves the folder tabs when the placement changes (folders added/removed, setting, fold/unfold). */
+  private void checkFoldersPlacement () {
+    if (headerCell == null || pagerWrap == null) {
+      return;
+    }
+    if (appliedFoldersPlacement != getFoldersPlacement()) {
+      checkTabs();
+      checkMenu();
+      checkPagerMargins();
+      checkHeaderMargins();
+      updateChatListNavigationInset();
+    }
+  }
+
+  // Tablet: folders rail
+
+  private @Nullable M3FolderRailView folderRail;
+
+  /** Rail shown by the tablet layout at the leading edge of the left pane, or null. */
+  public @Nullable View getTabletFolderRail () {
+    return getFoldersPlacement() == FOLDERS_SIDE ? folderRail : null;
+  }
+
+  private void updateFolderRail () {
+    boolean needRail = getFoldersPlacement() == FOLDERS_SIDE;
+    if (needRail && folderRail == null) {
+      folderRail = new M3FolderRailView(context);
+      folderRail.setListener(new ViewPagerTopView.OnItemClickListener() {
+        @Override
+        public void onPagerItemClick (int index) {
+          MainController.this.onPagerItemClick(index);
+        }
+
+        @Override
+        public boolean onPagerItemLongClick (int index) {
+          return MainController.this.onPagerItemLongClick(index);
+        }
+      });
+      addThemeInvalidateListener(folderRail);
+    }
+    if (folderRail != null) {
+      if (needRail) {
+        folderRail.setEntries(buildFolderRailEntries());
+        folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
+        ViewPager pager = getViewPager();
+        if (pager != null) {
+          folderRail.setSelectionFactor(pager.getCurrentItem());
+        }
+      }
+    }
+    if (navigationController != null) {
+      navigationController.updateTabletFolderRail();
+    }
+  }
+
+  private List<M3FolderRailView.Entry> buildFolderRailEntries () {
+    List<M3FolderRailView.Entry> entries = new ArrayList<>(pagerChatLists.size());
+    for (int position = 0; position < pagerChatLists.size(); position++) {
+      TdApi.ChatList chatList = pagerChatLists.get(position);
+      ViewPagerTopView.Item item = position < pagerSections.size() ? pagerSections.get(position) : null;
+      Counter counter = item != null ? item.counter : null;
+      CharSequence label;
+      int iconRes;
+      // The rail always shows an icon and a label, whatever the folder style of the tabs is.
+      if (TD.isChatListMain(chatList)) {
+        label = Lang.getString(menuNeedArchive ? R.string.CategoryArchive : R.string.CategoryMainShort);
+        iconRes = menuNeedArchive ? R.drawable.baseline_archive_24 : R.drawable.baseline_forum_24;
+      } else if (TD.isChatListArchive(chatList)) {
+        label = Lang.getString(R.string.CategoryArchive);
+        iconRes = R.drawable.baseline_archive_24;
+      } else if (TD.isChatListFolder(chatList)) {
+        TdApi.ChatFolderInfo info = tdlib.chatFolderInfo(((TdApi.ChatListFolder) chatList).chatFolderId);
+        label = info != null ? Emoji.instance().replaceEmoji(TD.toCharSequence(info.name)) : "";
+        iconRes = TD.findFolderIcon(info != null ? info.icon : null, R.drawable.baseline_folder_24);
+      } else {
+        label = "";
+        iconRes = R.drawable.baseline_folder_24;
+      }
+      entries.add(new M3FolderRailView.Entry(label, iconRes, counter));
+    }
+    return entries;
+  }
+
+  // Tablet: tabs below the search bar
+
+  private @Nullable FrameLayoutFix topTabsBar;
+
+  private int getTopTabsBarHeight () {
+    return Size.getHeaderPortraitSize();
+  }
+
+  private FrameLayoutFix ensureTopTabsBar () {
+    if (topTabsBar == null) {
+      // Same color as the app bar above it (also when it changes with scroll).
+      topTabsBar = new FrameLayoutFix(context) {
+        @Override
+        protected void onDraw (Canvas c) {
+          c.drawColor(getHeaderColor());
+        }
+      };
+      topTabsBar.setWillNotDraw(false);
+      topTabsBar.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getTopTabsBarHeight(), Gravity.TOP));
+      addThemeInvalidateListener(topTabsBar);
+      // Below the search results, which cover it while searching.
+      mainWrap.addView(topTabsBar, mainWrap.indexOfChild(pagerWrap) + 1);
+    }
+    return topTabsBar;
   }
 
   private void initPagerSections () {
@@ -3180,7 +3456,15 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       checkTabs();
       checkMenu();
       checkMargins();
+      updateHeaderDockButtons();
+      if (headerView != null && isFocused() && !inTransformMode()) {
+        // The app bar switches between the title (no folders) and the folder tabs.
+        headerView.setTitle(this);
+      }
       showFoldersSetupSuggestion();
+    }
+    if (folderRail != null || getFoldersPlacement() == FOLDERS_SIDE) {
+      updateFolderRail();
     }
   }
 
@@ -3258,6 +3542,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
           topView.invalidate();
         }
       }
+      if (folderRail != null) {
+        folderRail.invalidateItems();
+      }
     };
   }
 
@@ -3294,16 +3581,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
   }
 
+  /** M3 badge of the folder tabs (every theme): error / onError; muted chats fade to a neutral outlined badge. */
   public static class UnreadCounterColorSet implements TextColorSet {
     private @Nullable Counter counter;
-    private final FutureBool displayTabsAtBottom;
 
-    public UnreadCounterColorSet (FutureBool displayTabsAtBottom) {
-      this.displayTabsAtBottom = displayTabsAtBottom;
-    }
-
-    private static UnreadCounterColorSet create(MainController parent) {
-      return new UnreadCounterColorSet(parent::displayTabsAtBottom);
+    private static UnreadCounterColorSet create (MainController parent) {
+      return new UnreadCounterColorSet();
     }
 
     public void setCounter (@Nullable Counter counter) {
@@ -3313,39 +3596,19 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     @ColorInt
     @Override
     public int defaultTextColor () {
-      if (M3.isDynamicTheme()) {
-        // M3 badge: error / onError; muted chats fade to a neutral outlined badge.
-        return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
-      }
-      return counter != null ? ColorUtils.fromToArgb(foregroundColor(), backgroundColor(), counter.getMuteFactor()) : foregroundColor();
+      return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
     }
 
     @ColorInt
     @Override
     public int backgroundColor (boolean isPressed) {
-      if (M3.isDynamicTheme()) {
-        return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), M3.error()) : M3.error();
-      }
-      return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), backgroundColor()) : backgroundColor();
+      return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), M3.error()) : M3.error();
     }
 
     @ColorInt
     @Override
     public int outlineColor (boolean isPressed) {
-      if (M3.isDynamicTheme()) {
-        return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.onSurfaceVariant(), counter.getMuteFactor()) : Color.TRANSPARENT;
-      }
-      return counter != null ? backgroundColor() : Color.TRANSPARENT;
-    }
-
-    @ColorInt
-    private int foregroundColor () {
-      return Theme.getColor(displayTabsAtBottom.getBoolValue() ? ColorId.headerLightBackground : ColorId.headerBackground);
-    }
-
-    @ColorInt
-    private int backgroundColor() {
-      return Theme.getColor(displayTabsAtBottom.getBoolValue() ? ColorId.headerLightText : ColorId.headerText);
+      return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.onSurfaceVariant(), counter.getMuteFactor()) : Color.TRANSPARENT;
     }
   }
 
@@ -3392,10 +3655,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private void onFoldersAppearanceChanged () {
     if (hasFolders()) {
-      if (!displayTabsAtBottom() && globalFilter != FILTER_NONE) {
+      if (!useGlobalFilter() && globalFilter != FILTER_NONE) {
         applyGlobalFilter(FILTER_NONE);
       }
       updatePagerSections(false);
+      // Tablet folders placement setting: in the split layout this screen stays visible, so apply right away.
+      checkFoldersPlacement();
     }
   }
 

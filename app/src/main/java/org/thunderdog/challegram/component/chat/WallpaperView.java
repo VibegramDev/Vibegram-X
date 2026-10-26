@@ -28,6 +28,7 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.theme.ChatStyleChangeListener;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.TGBackground;
@@ -273,6 +274,10 @@ public class WallpaperView extends View implements ThemeChangeListener, ChatStyl
   }
 
   private static int getWallpaperBackground (ThemeDelegate theme) {
+    if (theme == ThemeManager.instance().currentTheme()) {
+      // No wallpaper: chats use the same background as every other screen (M3 surface).
+      return M3.surface();
+    }
     return ColorUtils.compositeColor(theme.getColor(ColorId.background), theme.getColor(ColorId.bubble_chatBackground));
   }
 

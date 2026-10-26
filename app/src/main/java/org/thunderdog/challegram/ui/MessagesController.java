@@ -25,6 +25,7 @@ import android.content.res.Configuration;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.location.Location;
 import android.location.LocationManager;
 import android.media.MediaMetadataRetriever;
@@ -205,6 +206,7 @@ import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.ColorState;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.TGBackground;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeManager;
@@ -243,6 +245,8 @@ import org.thunderdog.challegram.widget.EmojiPacksInfoView;
 import org.thunderdog.challegram.widget.FillingSpace;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.KeyboardFrameLayout;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.ProgressComponentView;
@@ -271,10 +275,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.util.ClickHelper;
 import me.vkryl.android.widget.FrameLayoutFix;
+import me.vkryl.core.ColorUtils;
 import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.MathUtils;
@@ -334,6 +340,14 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private MessagesLayout contentView;
   private LinearLayout bottomWrap;
+  /** Composer (input field, reply bar and the space below them): surfaceContainer like the dock, rounded when floating. */
+  private final M3.RoleShape inputBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
+  private final M3.RoleShape replyBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
+  private final M3.RoleShape bottomSpaceBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
+  /** Tablet: the composer floats like the main screen bar (same margins, height and radius). */
+  private boolean composerFloating, composerLayoutApplied;
+  /** Floating composer: fade and shadow, identical to the tablet dock. */
+  private @Nullable M3BottomScrimView composerScrim;
   private FillingSpace bottomSpace;
   private MessagesRecyclerView messagesView;
 
@@ -628,8 +642,37 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  /** Floating composer: the message list goes down to the bottom edge, its padding keeps messages above the fade. */
+  private int getFloatingComposerInset () {
+    return composerFloating && bottomWrap != null ? bottomWrap.getMeasuredHeight() + M3BottomScrimView.getFadeHeight() : 0;
+  }
+
+  /** Bounds of the floating composer (reply bar + input field) in the coordinates of the scrim. */
+  private boolean getComposerShape (M3BottomScrimView view, RectF out) {
+    if (!composerFloating || inputView == null || bottomWrap == null || bottomWrap.getVisibility() != View.VISIBLE || inputView.getVisibility() != View.VISIBLE || inputView.getWidth() == 0) {
+      return false;
+    }
+    float wrapTop = bottomWrap.getTop() + bottomWrap.getTranslationY() - view.getTop();
+    float top = wrapTop + inputView.getTop();
+    float replyOffset = getReplyOffset();
+    if (replyOffset > 0f) {
+      top -= replyOffset;
+    }
+    out.set(inputView.getLeft(), top, inputView.getRight(), wrapTop + inputView.getBottom());
+    return true;
+  }
+
+  private void invalidateComposerScrim () {
+    if (composerScrim != null && composerFloating) {
+      composerScrim.invalidate();
+    }
+  }
+
   private void updateMessagesViewInset () {
-    int inset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? 0 : extraBottomInset;
+    if (messagesView == null) {
+      return;
+    }
+    int inset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? getFloatingComposerInset() : extraBottomInset;
     int appliedInset = Views.getAppliedBottomInset(messagesView);
     if (inset != appliedInset) {
       manager.maintainScrollPositionAndOffset(() -> {
@@ -740,7 +783,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     bottomSpace = new FillingSpace(context);
     bottomSpace.setLayoutParams(params);
-    bottomSpace.setThemedBackground(ColorId.filling, this);
+    ViewUtils.setBackground(bottomSpace, bottomSpaceBackground);
 
     params = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
@@ -758,6 +801,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
       protected void onLayout (boolean changed, int l, int t, int r, int b) {
         super.onLayout(changed, l, t, r, b);
         updateButtonsY();
+        if (composerFloating && lastHeight != b - t) {
+          lastHeight = b - t;
+          post(MessagesController.this::updateMessagesViewInset);
+        }
       }
     };
     bottomWrap.setId(R.id.msg_bottom);
@@ -798,7 +845,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       addThemeHintTextColorListener(inputView, ColorId.textPlaceholder);
       inputView.setLinkTextColor(Theme.textLinkColor());
       addThemeLinkTextColorListener(inputView, ColorId.textLink);
-      ViewSupport.setThemedBackground(inputView, ColorId.filling, this);
+      ViewUtils.setBackground(inputView, inputBackground);
       inputView.setHighlightColor(Theme.fillingTextSelectionColor());
       addThemeHighlightColorListener(inputView, ColorId.textSelectionHighlight);
       bindLocaleChanger(inputView.setController(this));
@@ -815,7 +862,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       params.addRule(RelativeLayout.ALIGN_TOP, R.id.msg_bottom);
 
       replyBarView = new ReplyBarView(context(), tdlib);
-      ViewSupport.setThemedBackground(replyBarView, ColorId.filling, this);
+      ViewUtils.setBackground(replyBarView, replyBackground);
       replyBarView.setId(R.id.msg_bottomReply);
       replyBarView.setAnimationsDisabled(true);
       replyBarView.initWithCallback(this, this);
@@ -1099,6 +1146,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
     bottomShadowView.setAlignBottom();
     addThemeInvalidateListener(bottomShadowView);
     bottomShadowView.setId(R.id.msg_bottomShadow);
+    // M3: the composer is separated by its container color, no divider line.
+    bottomShadowView.setAlpha(0f);
+    // Composer backgrounds paint M3 roles at draw time.
+    addThemeInvalidateListener(bottomSpace);
+    if (inputView != null) {
+      addThemeInvalidateListener(inputView);
+    }
+    if (replyBarView != null) {
+      addThemeInvalidateListener(replyBarView);
+    }
 
     params = new RelativeLayout.LayoutParams(Screen.dp(55f), Screen.dp(49f));
     params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
@@ -1452,12 +1509,27 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (wallpaperViewBlurPreview != null) {
       contentView.addView(wallpaperViewBlurPreview);
     }
-    if (!inPreviewMode) {
-      contentView.addView(replyBarView);
+    if (previewMode == PREVIEW_MODE_NONE && inputView != null) {
+      // Messages under the composer: on the tablet they scroll under the floating composer and fade out.
+      contentView.addView(messagesView);
+      composerScrim = new M3BottomScrimView(context);
+      composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+      composerScrim.setVisibility(View.GONE);
+      addThemeInvalidateListener(composerScrim);
+      contentView.addView(composerScrim);
+      if (!inPreviewMode) {
+        contentView.addView(replyBarView);
+      }
+      contentView.addView(bottomSpace);
+      contentView.addView(bottomWrap);
+    } else {
+      if (!inPreviewMode) {
+        contentView.addView(replyBarView);
+      }
+      contentView.addView(bottomSpace);
+      contentView.addView(bottomWrap);
+      contentView.addView(messagesView);
     }
-    contentView.addView(bottomSpace);
-    contentView.addView(bottomWrap);
-    contentView.addView(messagesView);
     contentView.addView(bottomShadowView);
 
     contentView.addView(topBar);
@@ -1478,6 +1550,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       contentView.addView(searchControlsLayout);
 
       addStaticListeners();
+      applyComposerContentColors();
     }
 
     if (backgroundParamsView != null) {
@@ -6943,6 +7016,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (replyBarView != null) {
       replyBarView.setTranslationY(y + keyboardOffset);
     }
+    updateInputCorners();
+    invalidateComposerScrim();
     checkScrollButtonOffsets();
     onMessagesFrameChanged();
   }
@@ -7614,9 +7689,145 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private float prevButtonsY;
 
-  private void updateButtonsY () {
-    float y = bottomWrap.getTop() + (inputView != null ? inputView.getBottom() : Screen.dp(49f)) - Screen.dp(49f) - getKeyboardOffset();
+  /**
+   * Content of the composer on its surfaceContainer, as in the dock: text onSurface, placeholder and icons
+   * onSurfaceVariant. Applied after the theme listeners, which still set the default ColorId colors.
+   */
+  private void applyComposerContentColors () {
+    if (inputView == null || previewMode != PREVIEW_MODE_NONE) {
+      return;
+    }
+    final int content = M3.onSurfaceVariant();
+    final int placeholder = M3.onSurfaceVariant();
+    inputView.setTextColor(M3.onSurface());
+    inputView.setHintTextColor(placeholder);
+    inputView.getPlaceholderPaint().setColor(placeholder);
+    inputView.invalidate();
+    if (emojiButton != null) {
+      emojiButton.setColorFilter(content);
+    }
+    for (ImageView button : new ImageView[] {mediaButton, cameraButton, scheduleButton, commandButton}) {
+      if (button != null) {
+        button.setColorFilter(content);
+      }
+    }
+    if (recordButton != null) {
+      recordButton.setIconColor(content);
+    }
+    if (replyBarView != null) {
+      for (int i = 0; i < replyBarView.getChildCount(); i++) {
+        View child = replyBarView.getChildAt(i);
+        if (child instanceof ImageView) {
+          ((ImageView) child).setColorFilter(content);
+        }
+      }
+    }
+  }
 
+  private void invalidateComposerBackground () {
+    if (inputView != null) {
+      inputView.invalidate();
+    }
+    if (replyBarView != null) {
+      replyBarView.invalidate();
+    }
+    if (bottomSpace != null) {
+      bottomSpace.invalidate();
+    }
+  }
+
+  /** Buttons are 49dp tall; in the floating composer (64dp, like the tablet bar) they are centered. */
+  private int getComposerButtonInset () {
+    return composerFloating ? (MainNavigationBar.getBarHeight() - Screen.dp(49f)) / 2 : 0;
+  }
+
+  /**
+   * Tablet (chat in the right pane): the composer floats with the margins, height and corner radius of the main
+   * screen bar. Phone: attached to the bottom edge. Called by {@link MessagesLayout} before measuring.
+   */
+  public void checkComposerLayout () {
+    if (inputView == null || bottomWrap == null || previewMode != PREVIEW_MODE_NONE) {
+      return;
+    }
+    boolean floating = navigationController != null && navigationController.isTabletSplit() && !navigationController.isTabletMaster(this);
+    if (composerLayoutApplied && composerFloating == floating) {
+      return;
+    }
+    composerLayoutApplied = true;
+    composerFloating = floating;
+    final int margin = floating ? MainNavigationBar.getBarMargin() : 0;
+    final float radius = floating ? MainNavigationBar.getBarRadius() : 0f;
+
+    LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
+    inputParams.leftMargin = inputParams.rightMargin = inputParams.bottomMargin = margin;
+    inputView.setLayoutParams(inputParams);
+    inputView.setMinimumHeight(floating ? MainNavigationBar.getBarHeight() : Screen.dp(49f));
+    int verticalPadding = Screen.dp(12f) + getComposerButtonInset();
+    inputView.setPadding(inputView.getPaddingLeft(), verticalPadding, inputView.getPaddingRight(), verticalPadding);
+    updateInputCorners();
+
+    if (replyBarView != null) {
+      RelativeLayout.LayoutParams replyParams = (RelativeLayout.LayoutParams) replyBarView.getLayoutParams();
+      replyParams.leftMargin = replyParams.rightMargin = margin;
+      replyBarView.setLayoutParams(replyParams);
+      // Slides out from behind the input field: rounded top merges with the field into one container.
+      replyBackground.setRadii(radius, 0f);
+    }
+    // Floating: the space below the composer shows the chat background.
+    ViewUtils.setBackground(bottomSpace, floating ? null : bottomSpaceBackground);
+    // Floating: messages scroll under the composer (bottom padding keeps the last one above it).
+    RelativeLayout.LayoutParams listParams = (RelativeLayout.LayoutParams) messagesView.getLayoutParams();
+    if (floating) {
+      Views.removeRule(listParams, RelativeLayout.ABOVE);
+      listParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+    } else {
+      Views.removeRule(listParams, RelativeLayout.ALIGN_PARENT_BOTTOM);
+      listParams.addRule(RelativeLayout.ABOVE, R.id.msg_bottom);
+    }
+    messagesView.setLayoutParams(listParams);
+    if (composerScrim != null) {
+      composerScrim.setShapeProvider(floating ? this::getComposerShape : null, MainNavigationBar.getBarRadius());
+      composerScrim.setVisibility(floating ? View.VISIBLE : View.GONE);
+    }
+    messagesView.post(this::updateMessagesViewInset);
+
+    setComposerButtonMargin(emojiButton, margin, Lang.rtl());
+    setComposerButtonMargin(attachButtons, margin, !Lang.rtl());
+    setComposerButtonMargin(sendButton, margin, !Lang.rtl());
+    RelativeLayout.LayoutParams senderParams = (RelativeLayout.LayoutParams) messageSenderButton.getLayoutParams();
+    senderParams.leftMargin = senderParams.rightMargin = margin;
+    messageSenderButton.setLayoutParams(senderParams);
+    invalidateComposerBackground();
+  }
+
+  /** Floating composer: the input field loses its top corners while the reply bar slides out above it. */
+  private void updateInputCorners () {
+    if (inputView == null) {
+      return;
+    }
+    float radius = composerFloating ? MainNavigationBar.getBarRadius() : 0f;
+    float replyFactor = replyBarView != null && replyBarView.getLayoutParams() != null && replyBarView.getLayoutParams().height > 0 ?
+      MathUtils.clamp(getReplyOffset() / replyBarView.getLayoutParams().height) : 0f;
+    inputBackground.setRadii(radius * (1f - replyFactor), radius);
+  }
+
+  private static void setComposerButtonMargin (View view, int margin, boolean right) {
+    if (view == null) {
+      return;
+    }
+    RelativeLayout.LayoutParams params = (RelativeLayout.LayoutParams) view.getLayoutParams();
+    if (right) {
+      params.rightMargin = margin;
+    } else {
+      params.leftMargin = margin;
+    }
+    view.setLayoutParams(params);
+  }
+
+  private void updateButtonsY () {
+    float y = bottomWrap.getTop() + (inputView != null ? inputView.getBottom() : Screen.dp(49f)) - Screen.dp(49f) - getComposerButtonInset() - getKeyboardOffset();
+
+    invalidateComposerScrim();
     sendButton.setTranslationY(y);
     emojiButton.setTranslationY(y);
     attachButtons.setTranslationY(y);
@@ -11268,7 +11479,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     int year = c.get(Calendar.YEAR);
     int monthOfYear = c.get(Calendar.MONTH);
     int dayOfMonth = c.get(Calendar.DAY_OF_MONTH);
-    final DatePickerDialog datePickerDialog = new DatePickerDialog(context(), Theme.dialogTheme(), (view, year1, month, dayOfMonth1) -> {
+    final DatePickerDialog datePickerDialog = new DatePickerDialog(context(), Theme.pickerDialogTheme(), (view, year1, month, dayOfMonth1) -> {
       Calendar c1 = Calendar.getInstance();
       c1.set(Calendar.YEAR, year1);
       c1.set(Calendar.MONTH, month);
@@ -12701,6 +12912,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void onThemeColorsChanged (boolean areTemp, ColorState state) {
     super.onThemeColorsChanged(areTemp, state);
+    applyComposerContentColors();
     if (attachedFiles != null) {
       attachedFiles.getThemeProvider().onThemeColorsChanged(areTemp);
     }

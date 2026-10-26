@@ -13,11 +13,20 @@
 package org.thunderdog.challegram.theme;
 
 import android.content.res.Resources;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorFilter;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PixelFormat;
+import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.animation.Interpolator;
 
 import androidx.annotation.ColorInt;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.tool.UI;
 
@@ -49,9 +58,11 @@ public final class M3 {
   public static final float ELEVATION_LEVEL1 = 1f;
   public static final float ELEVATION_LEVEL2 = 3f;
   public static final float ELEVATION_LEVEL3 = 6f;
+  public static final float ELEVATION_LEVEL4 = 8f;
 
   // State layer opacities (StateTokens)
   public static final float STATE_PRESSED = .10f;
+  public static final float STATE_DRAGGED = .16f;
 
   // Roles
   public static final int
@@ -81,6 +92,7 @@ public final class M3 {
   private static boolean hasCache;
 
   public static @ColorInt int surface () { return get(SURFACE); }
+  public static @ColorInt int surfaceContainerLowest () { return get(SURFACE_CONTAINER_LOWEST); }
   public static @ColorInt int onSurface () { return get(ON_SURFACE); }
   public static @ColorInt int onSurfaceVariant () { return get(ON_SURFACE_VARIANT); }
   public static @ColorInt int surfaceContainerLow () { return get(SURFACE_CONTAINER_LOW); }
@@ -99,8 +111,84 @@ public final class M3 {
   public static @ColorInt int error () { return get(ERROR); }
   public static @ColorInt int onError () { return get(ON_ERROR); }
 
+  /**
+   * Background that paints a role of the current scheme at draw time (no theme ColorId exists for M3 roles).
+   * The owner must invalidate the view on theme changes ({@code ViewController.addThemeInvalidateListener}).
+   */
+  public static Drawable roleDrawable (int role) {
+    return new Drawable() {
+      @Override
+      public void draw (@NonNull Canvas c) {
+        c.drawColor(get(role));
+      }
+
+      @Override
+      public void setAlpha (int alpha) { }
+
+      @Override
+      public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+      @Override
+      public int getOpacity () {
+        return PixelFormat.OPAQUE;
+      }
+    };
+  }
+
+  /**
+   * Rounded background that paints a role of the current scheme at draw time, with separate radii for the top and
+   * the bottom corners. The owner must invalidate the view on theme changes.
+   */
+  public static final class RoleShape extends Drawable {
+    private final int role;
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path path = new Path();
+    private final RectF rect = new RectF();
+    private final float[] radii = new float[8];
+    private float topRadius, bottomRadius;
+
+    public RoleShape (int role) {
+      this.role = role;
+    }
+
+    public void setRadii (float topRadius, float bottomRadius) {
+      if (this.topRadius != topRadius || this.bottomRadius != bottomRadius) {
+        this.topRadius = topRadius;
+        this.bottomRadius = bottomRadius;
+        invalidateSelf();
+      }
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      paint.setColor(get(role));
+      if (topRadius == 0f && bottomRadius == 0f) {
+        c.drawRect(getBounds(), paint);
+        return;
+      }
+      rect.set(getBounds());
+      radii[0] = radii[1] = radii[2] = radii[3] = topRadius;
+      radii[4] = radii[5] = radii[6] = radii[7] = bottomRadius;
+      path.reset();
+      path.addRoundRect(rect, radii, Path.Direction.CW);
+      c.drawPath(path, paint);
+    }
+
+    @Override
+    public void setAlpha (int alpha) { }
+
+    @Override
+    public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+    @Override
+    public int getOpacity () {
+      return PixelFormat.TRANSLUCENT;
+    }
+  }
+
   public static synchronized @ColorInt int get (int role) {
-    final int filling = Theme.fillingColor();
+    // Raw preset value: Theme.fillingColor() is itself mapped to surface (Theme.chromeColor).
+    final int filling = ThemeManager.instance().currentTheme().getColor(ColorId.filling);
     final int accent = Theme.getColor(ColorId.iconActive);
     final int text = Theme.textAccentColor();
     final int themeId = ThemeManager.instance().currentThemeId();
@@ -121,11 +209,6 @@ public final class M3 {
 
   private static boolean isMonet (int themeId) {
     return themeId == ThemeId.MONET_WHITE || themeId == ThemeId.MONET_DARK || themeId == ThemeId.MONET_BLACK;
-  }
-
-  /** True for the built-in Material You (Monet) themes, where color roles come from the system. */
-  public static boolean isDynamicTheme () {
-    return isMonet(ThemeManager.instance().currentThemeId());
   }
 
   private static void compute (int themeId, boolean dark, int filling, int accent, int text) {
@@ -240,6 +323,8 @@ public final class M3 {
   public static final Spring DEFAULT_SPATIAL = new Spring(SPRING_DEFAULT_SPATIAL_STIFFNESS, SPRING_DEFAULT_SPATIAL_DAMPING);
   /** "Default effects" spring: color and opacity, no overshoot. */
   public static final Spring DEFAULT_EFFECTS = new Spring(SPRING_DEFAULT_EFFECTS_STIFFNESS, SPRING_DEFAULT_EFFECTS_DAMPING);
+  /** Expressive "fast effects" spring: color and opacity of small components, no overshoot. */
+  public static final Spring FAST_EFFECTS = new Spring(3800f, 1f);
 
   /**
    * Damped spring (unit mass) expressed as a time interpolator, so it can drive the existing

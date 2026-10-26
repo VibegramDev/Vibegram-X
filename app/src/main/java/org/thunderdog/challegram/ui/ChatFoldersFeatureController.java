@@ -387,7 +387,7 @@ public class ChatFoldersFeatureController extends SinglePageBottomSheetViewContr
     }
 
     private Counter buildUnreadCounter (TdApi.ChatList chatList) {
-      UnreadCounterColorSet unreadCounterColorSet = new UnreadCounterColorSet(FALSE);
+      UnreadCounterColorSet unreadCounterColorSet = new UnreadCounterColorSet();
       Counter unreadCounter = new Counter.Builder()
         .textSize(12f)
         .backgroundPadding(4f)

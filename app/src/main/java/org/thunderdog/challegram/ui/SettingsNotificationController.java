@@ -1313,6 +1313,7 @@ public class SettingsNotificationController extends RecyclerViewController<Setti
     }
 
     adapter.setItems(items, hasOptions);
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
 
     tdlib.listeners().subscribeToSettingsUpdates(this);

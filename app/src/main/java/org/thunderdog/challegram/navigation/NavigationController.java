@@ -229,6 +229,13 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return isTabletSplit() ? tabletLayout.getMain() : getCurrentStackItem();
   }
 
+  /** The main screen shows or hides its chat folders rail in the left pane. */
+  public void updateTabletFolderRail () {
+    if (tabletLayout != null) {
+      tabletLayout.updateFolderRail();
+    }
+  }
+
   void updateTabletLayout (int listWidth) {
     if (isAnimating || isDestroyed) {
       return;
@@ -249,6 +256,8 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
           contentWrapper.addView(previous.getValue());
           previous.attachNavigationController(this);
           headerView.setTitle(previous);
+          // Its app bar title (the app name on the phone) may be left hidden by the last single-pane transition.
+          headerView.resetTitleTransition(previous);
         } else {
           removeChildWrapper(previous);
         }
@@ -322,10 +331,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     }
     if (!isTabletMaster(controller)) {
       headerView.setTitle(controller);
-      View customTitle = controller.getCustomHeaderCell();
-      if (customTitle != null) {
-        TabletNavigationLayout.resetTransition(customTitle);
-      }
+      // No header animation here: show the title and the back button even if the last
+      // single-pane transition faded them out (e.g. back from a chat to the list on the cover screen).
+      headerView.resetTitleTransition(controller);
     }
     if (isTabletMaster(controller) || HeaderView.getFloatingButtonId(controller) == 0) {
       // setTitle() only shows the shared floating button; hide the one left from the previous screen

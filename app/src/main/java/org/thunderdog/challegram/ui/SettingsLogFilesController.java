@@ -75,6 +75,7 @@ public class SettingsLogFilesController extends RecyclerViewController<SettingsL
       buildCells();
       getFiles();
     }
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
     Log.addOutputListener(this);
   }

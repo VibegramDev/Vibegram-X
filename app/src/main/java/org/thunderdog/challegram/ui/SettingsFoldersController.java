@@ -103,6 +103,7 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
 
   private SettingsAdapter adapter;
   private ItemTouchHelper itemTouchHelper;
+  private M3SettingsGroupDecoration groupDecoration;
 
   public SettingsFoldersController (Context context, Tdlib tdlib) {
     super(context, tdlib);
@@ -283,9 +284,10 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
         view.setIconAlpha(iconAlpha);
         view.setDisabledAlpha(disabledAlpha);
         if (item.getId() == R.id.btn_chatFolderStyle) {
+          // Phone: always at the bottom. Tablet: rail at the side or tabs below the search bar.
           int positionRes;
-          if (tdlib.settings().displayFoldersAtTop()) {
-            positionRes = R.string.ChatFoldersPositionTop;
+          if (navigationController != null && navigationController.isTabletSplit()) {
+            positionRes = tdlib.settings().displayTabletFoldersBelowSearch() ? R.string.ChatFoldersPositionBelowSearch : R.string.ChatFoldersPositionSide;
           } else {
             positionRes = R.string.ChatFoldersPositionBottom;
           }
@@ -316,7 +318,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
       }
     };
     adapter.setItems(items, false);
-    recyclerView.addItemDecoration(new ItemDecoration());
+    // M3 segmented groups; folder rows and recommended folders are custom SettingView rows on the filling color.
+    // The 2dp gaps replace the folder separators the screen used to draw itself.
+    groupDecoration = M3SettingsGroupDecoration.attach(recyclerView, adapter, ListItem.TYPE_CUSTOM - TYPE_CHAT_FOLDER, ListItem.TYPE_CUSTOM - TYPE_RECOMMENDED_CHAT_FOLDER);
     recyclerView.setAdapter(adapter);
     addThemeInvalidateListener(recyclerView);
 
@@ -439,7 +443,10 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     } else if (v.getId() == R.id.btn_chatFolderStyle) {
       int chatFolderStyle = tdlib.settings().chatFolderStyle();
       ListItem[] items = new ListItem[] {
-        new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_displayFoldersAtTop, 0, R.string.DisplayFoldersAtTheTop, tdlib.settings().displayFoldersAtTop()),
+        // Phone: folders are always at the bottom of the screen. Tablet: choice of the side rail or tabs below the search bar.
+        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_tabletFoldersSide, 0, R.string.TabletFoldersSide, R.id.btn_tabletFoldersPosition, !tdlib.settings().displayTabletFoldersBelowSearch()),
+        new ListItem(ListItem.TYPE_SEPARATOR_FULL),
+        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_tabletFoldersBelowSearch, 0, R.string.TabletFoldersBelowSearch, R.id.btn_tabletFoldersPosition, tdlib.settings().displayTabletFoldersBelowSearch()),
         new ListItem(ListItem.TYPE_SHADOW_BOTTOM).setTextColorId(ColorId.background),
         new ListItem(ListItem.TYPE_SHADOW_TOP).setTextColorId(ColorId.background),
         new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_iconWithLabelOnActiveFolder, 0, R.string.IconWithLabelOnActiveFolder2, R.id.btn_chatFolderStyle, chatFolderStyle == ChatFolderStyle.ICON_WITH_LABEL_ON_ACTIVE_FOLDER),
@@ -465,9 +472,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
           } else {
             style = ChatFolderStyle.LABEL_ONLY;
           }
-          boolean displayFoldersAtTop = result.get(R.id.btn_displayFoldersAtTop) != 0;
+          boolean tabletBelowSearch = result.get(R.id.btn_tabletFoldersPosition) == R.id.btn_tabletFoldersBelowSearch;
           tdlib.settings().setChatFolderStyle(style);
-          tdlib.settings().setDisplayFoldersAtTop(displayFoldersAtTop);
+          tdlib.settings().setDisplayTabletFoldersBelowSearch(tabletBelowSearch);
           adapter.updateValuedSettingById(R.id.btn_chatFolderStyle);
         });
       showSettings(settings);
@@ -953,6 +960,13 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     public void onCompleteMovement (int fromPosition, int toPosition) {
       reorderChatFolders();
     }
+
+    @Override
+    public void onDragStateChanged (RecyclerView.ViewHolder viewHolder, boolean isDragging) {
+      if (groupDecoration != null) {
+        groupDecoration.setDragged(viewHolder.itemView, isDragging);
+      }
+    }
   }
 
   private class ChatFolderOnTouchListener implements View.OnTouchListener {
@@ -967,47 +981,6 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
         }
       }
       return false;
-    }
-  }
-
-  private static class ItemDecoration extends RecyclerView.ItemDecoration {
-    @Override
-    public void onDrawOver (@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-      boolean isRtl = Lang.rtl();
-      int separatorColor = Theme.separatorColor();
-      int separatorHeight = Math.max(1, Screen.dp(.5f));
-      Paint sepratorPaint = Paints.fillingPaint(separatorColor);
-      int startOffset = Screen.dp(72f);
-      int childCount = parent.getChildCount();
-      for (int i = 0; i < childCount; i++) {
-        View child = parent.getChildAt(i);
-        if (!isChatFolder(child) || isDragging(child)) {
-          continue;
-        }
-        int layoutPosition = parent.getChildLayoutPosition(child);
-        if (layoutPosition == RecyclerView.NO_POSITION) {
-          continue;
-        }
-        RecyclerView.ViewHolder next = parent.findViewHolderForLayoutPosition(layoutPosition + 1);
-        if (next == null || isChatFolder(next.itemView) && isDragging(next.itemView)) {
-          continue;
-        }
-        int bottom = child.getBottom();
-        int top = bottom - separatorHeight;
-        if (isRtl) {
-          c.drawRect(0, top, child.getWidth() - startOffset, bottom, sepratorPaint);
-        } else {
-          c.drawRect(startOffset, top, child.getWidth(), bottom, sepratorPaint);
-        }
-      }
-    }
-
-    private boolean isChatFolder (View view) {
-      return view.getId() == R.id.chatFolder;
-    }
-
-    private boolean isDragging (View view) {
-      return view.getTranslationY() != 0f;
     }
   }
 

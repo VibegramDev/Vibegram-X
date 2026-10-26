@@ -673,6 +673,7 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
     }
 
     adapter.setItems(items, true);
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
 
     tdlib.wallpaper().getBackgrounds(null, Theme.isDark());
@@ -1155,7 +1156,7 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       final boolean isOn = id == R.id.btn_autoNightModeScheduled_timeOn;
       final int time = isOn ? Settings.instance().getNightModeScheduleOn() : Settings.instance().getNightModeScheduleOff();
 
-      TimePickerDialog timePickerDialog = new TimePickerDialog(context(), Theme.dialogTheme(), (view, hourOfDay, minute) -> {
+      TimePickerDialog timePickerDialog = new TimePickerDialog(context(), Theme.pickerDialogTheme(), (view, hourOfDay, minute) -> {
         final int newTime = BitwiseUtils.mergeTimeToInt(hourOfDay, minute, 0);
         if (time != newTime) {
           Settings.instance().setNightModeSchedule(newTime, isOn);

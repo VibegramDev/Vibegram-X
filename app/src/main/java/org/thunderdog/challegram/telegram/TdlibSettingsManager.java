@@ -1381,4 +1381,14 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
     int options = BitwiseUtils.setFlag(chatFolderOptions(), ChatFolderOptions.DISPLAY_AT_TOP, displayFoldersAtTop);
     setChatFolderOptions(options);
   }
+
+  /** Tablet layout: folders below the search bar (true) or in the navigation rail at the side (false, default). */
+  public boolean displayTabletFoldersBelowSearch () {
+    return BitwiseUtils.hasFlag(chatFolderOptions(), ChatFolderOptions.TABLET_DISPLAY_BELOW_SEARCH);
+  }
+
+  public void setDisplayTabletFoldersBelowSearch (boolean belowSearch) {
+    int options = BitwiseUtils.setFlag(chatFolderOptions(), ChatFolderOptions.TABLET_DISPLAY_BELOW_SEARCH, belowSearch);
+    setChatFolderOptions(options);
+  }
 }

@@ -60,6 +60,7 @@ import org.thunderdog.challegram.tool.PorterDuffPaint;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.ui.M3SettingsGroupDecoration;
 import org.thunderdog.challegram.util.DrawModifier;
 import org.thunderdog.challegram.util.EmojiStatusHelper;
 import org.thunderdog.challegram.util.text.Counter;
@@ -190,7 +191,8 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     if (togglerView == null) {
       togglerView = new TogglerView(getContext());
       togglerView.init(isEnabled());
-      FrameLayout.LayoutParams params = FrameLayoutFix.newParams(Screen.dp(66f), Screen.dp(48f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
+      // M3: 72dp = 52dp track + 16dp trailing space (every theme).
+      FrameLayout.LayoutParams params = FrameLayoutFix.newParams(Screen.dp(TOGGLER_WIDTH), Screen.dp(48f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
       params.leftMargin = Screen.dp(4f);
       params.bottomMargin = Screen.dp(3f);
       togglerView.setLayoutParams(params);
@@ -322,6 +324,8 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
   private int measurePaddingLeft () {
     return forcedPaddingLeft != 0 ? forcedPaddingLeft : Screen.dp(icon == null ? 16f : 73f);
   }
+
+  private static final float TOGGLER_WIDTH = 72f;
 
   @SuppressWarnings ("Range")
   @Override
@@ -635,7 +639,8 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     float availWidth;
 
     if (type == TYPE_RADIO) {
-      availWidth = totalWidth - paddingLeft - paddingRight - paddingRight - Screen.dp(38f);
+      // M3 switch track is wider than the legacy toggler: reserve more space for the text.
+      availWidth = totalWidth - paddingLeft - paddingRight - paddingRight - Screen.dp(50f);
     } else {
       availWidth = totalWidth - paddingLeft - paddingRight;
     }
@@ -872,7 +877,12 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     super.draw(c);
     if (removeHelper != null) {
       removeHelper.restore(c);
+      // Swipe-to-remove background: keep it inside the M3 segment shape (rounded corners) on segmented lists.
+      boolean clipped = M3SettingsGroupDecoration.clipToSegment(this, c);
       removeHelper.draw(c);
+      if (clipped) {
+        c.restore();
+      }
     }
   }
 

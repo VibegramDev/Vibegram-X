@@ -82,6 +82,7 @@ import org.thunderdog.challegram.telegram.TdlibContext;
 import org.thunderdog.challegram.telegram.TdlibDelegate;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
@@ -988,11 +989,12 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return Theme.getColor(getSelectHeaderColorId());
   }
 
-  protected final int getSearchHeaderColor () {
+  protected int getSearchHeaderColor () {
     return Theme.getColor(getSearchHeaderColorId());
   }
 
-  protected final int getHeaderColor () {
+  protected int getHeaderColor () {
+    // The app bar keeps one color on scroll (owner's decision, no surface -> surfaceContainer change).
     return Theme.getColor(getHeaderColorId());
   }
 
@@ -1379,6 +1381,18 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return true;
   }
 
+  /**
+   * Whether the drop shadow line is drawn below the app bar. Unlike {@link #useDropShadow()}
+   * it doesn't affect the ongoing call / player bars. M3 app bars have no shadow line.
+   */
+  protected boolean useHeaderShadowLine () {
+    return true;
+  }
+
+  public final boolean needHeaderShadowLine () {
+    return useHeaderShadowLine();
+  }
+
   protected boolean useDropPlayer () {
     return true;
   }
@@ -1655,8 +1669,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     };
     ll.setOrientation(LinearLayout.VERTICAL);
     ll.setGravity(Gravity.CENTER_HORIZONTAL);
-    int pad = Screen.dp(16f);
-    ll.setPadding(pad, pad, pad, pad);
+    // M3 dialog: content aligned with the 24dp container padding, 16dp below the headline.
+    ll.setPadding(Screen.dp(24f), Screen.dp(16f), Screen.dp(24f), 0);
 
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL);
     ll.addView(inputView, params);
@@ -2548,12 +2562,10 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     }
 
     optionsWrap.setInfo(this, tdlib(), options.info, false, options.maxLineCount);
-    optionsWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+    optionsWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
 
-    ShadowView shadowView = new ShadowView(context);
-    shadowView.setSimpleTopShadow(true);
-    optionsWrap.addView(shadowView, 0);
-    addThemeInvalidateListener(shadowView);
+    // M3 modal bottom sheet (replaces the legacy top shadow at index 0 with a spacer).
+    optionsWrap.setM3Sheet(this);
 
     // Item generation
     View.OnClickListener onClickListener;
@@ -2571,9 +2583,24 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
         }
       };
     }
-    int totalHeight = shadowView.getLayoutParams().height + optionsWrap.getTextHeight() + extraBottomInsetWithoutIme;
+    int totalHeight = Screen.dp(OptionsLayout.M3_TOP_SPACE) + optionsWrap.getTextHeight() + extraBottomInsetWithoutIme;
     int index = 0;
     for (OptionItem item : options.items) {
+      if (item == OptionItem.SEPARATOR && optionsWrap.isM3Sheet()) {
+        // M3: groups inside the sheet are split by a full-width outlineVariant divider with 8dp around it.
+        View divider = new View(context) {
+          @Override
+          protected void onDraw (Canvas c) {
+            c.drawRect(0, Screen.dp(8f), getMeasuredWidth(), Screen.dp(8f) + Math.max(1, Screen.dp(1f)), Paints.fillingPaint(M3.outlineVariant()));
+          }
+        };
+        divider.setWillNotDraw(false);
+        addThemeInvalidateListener(divider);
+        optionsWrap.addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(17f)));
+        index++;
+        totalHeight += Screen.dp(17f);
+        continue;
+      }
       if (item == OptionItem.SEPARATOR) {
         ShadowView shadowViewBottom = new ShadowView(context);
         shadowViewBottom.setSimpleBottomTransparentShadow(false);
@@ -2624,14 +2651,11 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
 
     OptionsLayout optionsWrap = new OptionsLayout(context(), this, forcedTheme);
     optionsWrap.setInfo(this, tdlib(), title, isTitle, maxLineCount);
-    optionsWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+    optionsWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
     totalHeight += optionsWrap.getTextHeight();
 
-    ShadowView shadowView = new ShadowView(context);
-    shadowView.setSimpleTopShadow(true);
-    optionsWrap.addView(shadowView, 0);
-    addThemeInvalidateListener(shadowView);
-    totalHeight += shadowView.getLayoutParams().height;
+    optionsWrap.setM3Sheet(this);
+    totalHeight += Screen.dp(OptionsLayout.M3_TOP_SPACE);
 
     totalHeight += popUpBuilder.onBuildPopUp(popupLayout, optionsWrap);
     totalHeight += extraBottomInsetWithoutIme;

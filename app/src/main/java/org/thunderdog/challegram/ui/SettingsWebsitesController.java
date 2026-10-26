@@ -150,6 +150,8 @@ public class SettingsWebsitesController extends RecyclerViewController<SettingsP
       }));
     }
 
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+
     recyclerView.setAdapter(adapter);
   }
 

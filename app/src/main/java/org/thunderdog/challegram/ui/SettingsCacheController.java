@@ -272,6 +272,7 @@ public class SettingsCacheController extends RecyclerViewController<SettingsData
     headerSize = items.size();
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, R.id.btn_clearCacheHint, 0, R.string.ClearCacheHint));
     adapter.setItems(items, false);
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
 
     if (fastStats == null) {

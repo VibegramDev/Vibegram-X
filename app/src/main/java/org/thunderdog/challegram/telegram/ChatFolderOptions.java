@@ -20,7 +20,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
 @Retention(RetentionPolicy.SOURCE)
-@IntDef(value = {ChatFolderOptions.DISPLAY_AT_TOP}, flag = true)
+@IntDef(value = {ChatFolderOptions.DISPLAY_AT_TOP, ChatFolderOptions.TABLET_DISPLAY_BELOW_SEARCH}, flag = true)
 public @interface ChatFolderOptions {
   int DISPLAY_AT_TOP = 1;
+  /** Tablet: folders as tabs below the app bar with the search bar instead of the navigation rail at the side. */
+  int TABLET_DISPLAY_BELOW_SEARCH = 1 << 1;
 }

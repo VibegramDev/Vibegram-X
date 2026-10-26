@@ -11,7 +11,8 @@
 # Token names follow Android's android.R.color.system_* resources, which follow the wallpaper.
 # Based on the color mapping from Telegram-Monet (https://github.com/mi-g-alex/Telegram-Monet, EPL-2.0).
 
-# Surfaces are pure white (tone 100) with a barely tinted page background (tone ~98).
+# Surfaces: rows are pure white (surfaceContainerLowest, tone 100); the page is the M3 surfaceContainer role
+# (tone ~94 on Android 14+), so segmented settings groups stand out without shadows.
 # Content
 filling: n1_0
 separator: #0000
@@ -54,7 +55,7 @@ textNegative: a3_600
 textSearchQueryHighlight: a1_600
 
 # Background
-background: mix(n1_10,n1_50,30)
+background: sys(surface_container_light,mix(n1_10,n1_50,30))
 background_text: n1_600
 background_textLight: n1_600
 background_icon: n1_500
@@ -74,7 +75,7 @@ headerIcon: a1_600
 
 headerTabActive: a1_600
 headerTabActiveText: a1_600
-headerTabInactiveText: a2_700
+headerTabInactiveText: n2_700
 
 headerLightBackground: n1_0
 headerLightText: a1_600

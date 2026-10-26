@@ -23,6 +23,7 @@ import android.view.KeyEvent;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
@@ -50,6 +51,26 @@ public class MaterialEditText extends CustomEmojiEditText implements FactorAnima
   public void setForceColorId (int colorId) {
     if (this.forceColorId != colorId) {
       this.forceColorId = colorId;
+      invalidate();
+      if (parent != null) {
+        parent.invalidate();
+      }
+    }
+  }
+
+  public int getForceColorId () {
+    return forceColorId;
+  }
+
+  private boolean outlined;
+
+  /**
+   * M3 outlined text field: the parent {@link MaterialEditTextGroup} draws the container outline,
+   * so the legacy underline is not drawn.
+   */
+  void setOutlined (boolean outlined) {
+    if (this.outlined != outlined) {
+      this.outlined = outlined;
       invalidate();
     }
   }
@@ -85,6 +106,11 @@ public class MaterialEditText extends CustomEmojiEditText implements FactorAnima
     }
   }
 
+  /** Focus factor: 0 = unfocused, 1 = focused. */
+  public float getActiveFactor () {
+    return factor;
+  }
+
   @Override
   public final boolean onKeyDown(int keyCode, KeyEvent e) {
     return (keyCode == KeyEvent.KEYCODE_ENTER && enterKeyListener != null && enterKeyListener.onEnterPressed(this)) || super.onKeyDown(keyCode, e);
@@ -112,7 +138,8 @@ public class MaterialEditText extends CustomEmojiEditText implements FactorAnima
 
   private void animateActiveFactor (float toFactor) {
     if (activeAnimator == null) {
-      activeAnimator = new FactorAnimator(ACTIVE_ANIMATOR, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 120l, factor);
+      // M3: focus colour and outline width are effects (no overshoot).
+      activeAnimator = new FactorAnimator(ACTIVE_ANIMATOR, this, M3.FAST_EFFECTS, M3.FAST_EFFECTS.duration, factor);
     } else {
       activeAnimator.forceFactor(factor);
     }
@@ -141,6 +168,10 @@ public class MaterialEditText extends CustomEmojiEditText implements FactorAnima
     }
   }
 
+  public float getErrorFactor () {
+    return errorFactor;
+  }
+
   private float goodFactor;
 
   public void setGoodFactor (float factor) {
@@ -148,6 +179,10 @@ public class MaterialEditText extends CustomEmojiEditText implements FactorAnima
       this.goodFactor = factor;
       invalidate();
     }
+  }
+
+  public float getGoodFactor () {
+    return goodFactor;
   }
 
   private boolean isPassword;
@@ -165,12 +200,20 @@ public class MaterialEditText extends CustomEmojiEditText implements FactorAnima
     if (this.lineDisabled != isDisabled) {
       this.lineDisabled = isDisabled;
       invalidate();
+      if (parent != null) {
+        // Fields without a line (list-row inputs) keep the legacy layout, see MaterialEditTextGroup.
+        parent.onLineDisabledChanged();
+      }
     }
+  }
+
+  public boolean isLineDisabled () {
+    return lineDisabled;
   }
 
   @Override
   protected void onDraw (Canvas c) {
-    if (!lineDisabled) {
+    if (!lineDisabled && !outlined) {
       final int width = getMeasuredWidth();
       final int height = getMeasuredHeight();
       final int size = Screen.dp(2f);

@@ -164,6 +164,7 @@ public class SettingsStickersAndEmojiController extends RecyclerViewController<S
         }
       }
     };
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
 
     List<ListItem> items = new ArrayList<>();

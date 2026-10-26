@@ -712,6 +712,8 @@ public class ThemeListController extends RecyclerViewController<ThemeListControl
               }
             };
             editText.setHint(R.string.Demo);
+            // Preview of the theme's input line colours (inputActive/inputInactive): keep the legacy underline.
+            editText.setOutlinedEnabled(false);
             editText.getEditText().setEnabled(false);
             editText.getEditText().getLayoutParams().height = Screen.dp(40f);
             editText.setLayoutParams(lp);

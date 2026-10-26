@@ -15,22 +15,29 @@
 package org.thunderdog.challegram.navigation;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Canvas;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
+import android.graphics.ColorFilter;
+import android.graphics.Outline;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.view.animation.Interpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.annotation.ColorInt;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
@@ -38,9 +45,9 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.support.RippleSupport;
-import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeDelegate;
 import org.thunderdog.challegram.theme.ThemeListenerList;
@@ -67,7 +74,16 @@ import tgx.td.Td;
 
 public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
   public static final int ITEM_HEIGHT = 48;
+  /** Transparent margin around the container (room for the shadow; anchoring math relies on it). */
   public static final int PADDING = 8;
+  /** M3 vertical menu: inner padding between the container edge and the items (SegmentedMenuTokens.GroupPadding). */
+  public static final int INSET = 4;
+  /** M3 menu container width limits (112dp..280dp). */
+  public static final int MIN_WIDTH = 112, MAX_WIDTH = 280;
+  /** Horizontal padding of an item and the gap between its leading icon and label. */
+  public static final int ITEM_PADDING = 12;
+  /** Start of the label inside an item: padding + 24dp icon + gap. */
+  public static final int ITEM_TEXT_START = ITEM_PADDING + 24 + ITEM_PADDING;
 
   public static final float START_SCALE = .56f;
 
@@ -121,17 +137,23 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
     this.themeListeners = themeProvider;
     this.forcedTheme = forcedTheme;
 
-    setMinimumWidth(Screen.dp(196f));
-    Drawable drawable;
-    if (forcedTheme != null) {
-      drawable = ViewSupport.getDrawableFilter(getContext(), R.drawable.bg_popup_fixed, new PorterDuffColorFilter(forcedTheme.getColor(ColorId.overlayFilling), PorterDuff.Mode.MULTIPLY));
-    } else {
-      drawable = ViewSupport.getDrawableFilter(getContext(), R.drawable.bg_popup_fixed, new PorterDuffColorFilter(Theme.headerFloatBackgroundColor(), PorterDuff.Mode.MULTIPLY));
+    // M3 vertical menu (standard): surfaceContainerLow container, CornerLarge (16dp), Level2 elevation (3dp).
+    setMinimumWidth(Screen.dp(MIN_WIDTH + PADDING * 2));
+    ViewUtils.setBackground(this, new ContainerDrawable(this));
+    int padding = Screen.dp(PADDING + INSET);
+    setPadding(padding, padding, padding, padding);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          int margin = Screen.dp(PADDING);
+          outline.setRoundRect(margin, margin, view.getWidth() - margin, view.getHeight() - margin, Screen.dp(M3.CORNER_LARGE));
+        }
+      });
+      setElevation(Screen.dp(M3.ELEVATION_LEVEL2));
     }
-    ViewUtils.setBackground(this, drawable);
 
     if (themeProvider != null && forcedTheme == null) {
-      themeProvider.addThemeSpecialFilterListener(drawable, ColorId.overlayFilling);
       themeProvider.addThemeInvalidateListener(this);
     }
 
@@ -206,7 +228,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
     }
 
     final int maxWidth = Screen.dp(250);
-    final int textRightOffset = Screen.dp(menuItem.isLocked ? 41 : 17);
+    final int textRightOffset = Screen.dp(menuItem.isLocked ? ITEM_PADDING + 24 : ITEM_PADDING);
     final Drawable finalIcon = menuItem.iconResId != 0 ? Drawables.get(getResources(), menuItem.iconResId) : menuItem.icon;
     final AvatarReceiver receiver = (menuItem.messageSenderId != null && menuItem.iconResId == 0) ?
       complexAvatarReceiver.getAvatarReceiver(Td.getSenderId(menuItem.messageSenderId)) : null;
@@ -226,7 +248,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
         if (menuItem.isLocked) {
           Drawable icon = Drawables.get(getResources(), R.drawable.baseline_lock_16);
           if (icon != null) {
-            float x = getMeasuredWidth() - Screen.dp(17 + 16);
+            float x = getMeasuredWidth() - Screen.dp(ITEM_PADDING + 16);
             float y = (getMeasuredHeight() - icon.getMinimumHeight()) / 2f;
             Drawables.draw(canvas, icon, x, y, PorterDuffPaint.get(ColorId.text));
           }
@@ -245,7 +267,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
           }
 
           // TODO move into SimplestCheckbox
-          int checkBoxCenterX = Screen.dp(29f);
+          int checkBoxCenterX = Screen.dp(ITEM_PADDING + 12);
           int progressCy = getMeasuredHeight() / 2;
           int progressRadius = Screen.dp(9f);
           RectF rectF = Paints.getRectF();
@@ -261,14 +283,14 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
 
           SimplestCheckBox.draw(
             canvas,
-            Screen.dp(29f), getMeasuredHeight() / 2,
+            Screen.dp(ITEM_PADDING + 12), getMeasuredHeight() / 2,
             selectionFactor, null, null,
             fillingColor, checkColor,
             SimplestCheckBox.MODE_NORMAL, 1f
           );
         } else if (finalIcon != null) {
           canvas.save();
-          canvas.translate(Screen.dp(29) - finalIcon.getMinimumWidth() / 2f, (getMeasuredHeight() - finalIcon.getMinimumHeight()) / 2f);
+          canvas.translate(Screen.dp(ITEM_PADDING + 12) - finalIcon.getMinimumWidth() / 2f, (getMeasuredHeight() - finalIcon.getMinimumHeight()) / 2f);
           if (menuItem.iconResId == 0) {
             finalIcon.draw(canvas);
           } else {
@@ -292,7 +314,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
     }
     frameLayout.setWillNotDraw(false);
     if (receiver != null) {
-      receiver.setBounds(Screen.dp(19), Screen.dp(ITEM_HEIGHT / 2f - 10), Screen.dp(39), Screen.dp(ITEM_HEIGHT / 2f + 10));
+      receiver.setBounds(Screen.dp(ITEM_PADDING + 2), Screen.dp(ITEM_HEIGHT / 2f - 10), Screen.dp(ITEM_PADDING + 22), Screen.dp(ITEM_HEIGHT / 2f + 10));
       receiver.setUpdateListener(r -> frameLayout.invalidate());
     }
 
@@ -305,10 +327,10 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
     titleTextItem.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(ITEM_HEIGHT)));
     if (!StringUtils.isEmpty(menuItem.subtitle)) {
       titleTextItem.setGravity(Gravity.TOP | Lang.gravity());
-      titleTextItem.setPadding(Screen.dp(59f), Screen.dp(5f), textRightOffset, 0);
+      titleTextItem.setPadding(Screen.dp(ITEM_TEXT_START), Screen.dp(5f), textRightOffset, 0);
     } else {
       titleTextItem.setGravity(Gravity.CENTER_HORIZONTAL | Lang.gravity());
-      titleTextItem.setPadding(Screen.dp(59f), 0, textRightOffset, 0);
+      titleTextItem.setPadding(Screen.dp(ITEM_TEXT_START), 0, textRightOffset, 0);
       titleTextItem.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL | Lang.gravity()));
     }
     titleTextItem.setMaxWidth(maxWidth);
@@ -323,7 +345,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
       subtitleTextItem.setSingleLine(true);
       subtitleTextItem.setEllipsize(TextUtils.TruncateAt.END);
       subtitleTextItem.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(ITEM_HEIGHT)));
-      subtitleTextItem.setPadding(Screen.dp(59f), 0, textRightOffset, Screen.dp(8f));
+      subtitleTextItem.setPadding(Screen.dp(ITEM_TEXT_START), 0, textRightOffset, Screen.dp(8f));
       subtitleTextItem.setMaxWidth(maxWidth);
 
       if (forcedTheme != null) {
@@ -357,7 +379,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
     }
 
     Views.setClickable(frameLayout);
-    RippleSupport.setTransparentSelector(frameLayout);
+    setItemStateLayer(frameLayout);
     itemsLayout.addView(frameLayout);
     frameLayout.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
     frameLayout.setTag(frameLayout.getMeasuredWidth());
@@ -383,8 +405,8 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
     menuItem.setEllipsize(TextUtils.TruncateAt.END);
     menuItem.setOnClickListener(listener);
     menuItem.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(ITEM_HEIGHT)));
-    menuItem.setPadding(Screen.dp(17f), 0, Screen.dp(17f), 0);
-    menuItem.setCompoundDrawablePadding(Screen.dp(18f));
+    menuItem.setPadding(Screen.dp(ITEM_PADDING), 0, Screen.dp(ITEM_PADDING), 0);
+    menuItem.setCompoundDrawablePadding(Screen.dp(ITEM_PADDING));
     icon = iconRes != 0 ? Drawables.get(getResources(), iconRes) : icon;
     if (icon != null) {
       if (forcedTheme != null) {
@@ -405,7 +427,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
       }
     }
     Views.setClickable(menuItem);
-    RippleSupport.setTransparentSelector(menuItem);
+    setItemStateLayer(menuItem);
     itemsLayout.addView(menuItem);
     menuItem.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
     menuItem.setTag(menuItem.getMeasuredWidth());
@@ -428,7 +450,8 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
         maxWidth = Math.max(maxWidth, (Integer) v.getTag());
       }
     }
-    return Math.max(getMinimumWidth(), maxWidth + padding + padding);
+    int extra = (padding + Screen.dp(INSET)) * 2;
+    return Math.min(Screen.dp(MAX_WIDTH + PADDING * 2), Math.max(getMinimumWidth(), maxWidth + extra));
   }
 
   private boolean shouldPivotBottom;
@@ -454,7 +477,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
         total += itemHeight;
       }
     }
-    return total + padding + padding;
+    return total + (padding + Screen.dp(INSET)) * 2;
   }
 
   private @Nullable Runnable pendingAction;
@@ -484,7 +507,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
     int innerX = sourceX - location[0];
     int innerY = sourceY - location[1];
 
-    int index = Math.floorDiv(innerY - Screen.dp(PADDING), Screen.dp(ITEM_HEIGHT));
+    int index = Math.floorDiv(innerY - Screen.dp(PADDING + INSET), Screen.dp(ITEM_HEIGHT));
     setSelectedIndex(index == MathUtils.clamp(index, 0, getChildCount() - 1) ? index : -1);
 
     // Log.i("HAPTIC INNER", String.format("INDEX %d", index));
@@ -527,23 +550,142 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated {
         cy - Screen.dp(4.5f),
         cx + Screen.dp(4.5f),
         cy + Screen.dp(4.5f),
-        Paints.fillingPaint(Theme.fillingColor())
+        Paints.fillingPaint(getContainerColor())
       );
       canvas.restore();
     }
 
     if (lastSelectedIndex != -1 && itemsLayout == this) {
       int childCount = getChildCount();
+      int inset = Screen.dp(PADDING + INSET);
       for (int i = 0; i < childCount; i++) {
         final float alpha = MathUtils.clamp(1f - Math.abs(factorAnimator.getFactor() - i));
-        if (alpha > 0f) {
-          canvas.drawRect(Screen.dp(PADDING), Screen.dp(PADDING + ITEM_HEIGHT * i), getMeasuredWidth() - Screen.dp(PADDING), Screen.dp(PADDING + ITEM_HEIGHT * (i + 1)), Paints.fillingPaint(ColorUtils.alphaColor(alpha * 0.05f, Theme.getColor(ColorId.text))));
+        View child = getChildAt(i);
+        if (alpha > 0f && child != null && child.getVisibility() == View.VISIBLE) {
+          // M3 pressed state layer: rounded plaque inside the container (onSurface 10%).
+          RectF rectF = Paints.getRectF();
+          rectF.set(inset, inset + Screen.dp(ITEM_HEIGHT) * i, getMeasuredWidth() - inset, inset + Screen.dp(ITEM_HEIGHT) * (i + 1));
+          float radius = Screen.dp(itemCornerRadius(child));
+          canvas.drawRoundRect(rectF, radius, radius, Paints.fillingPaint(ColorUtils.alphaColor(alpha * M3.STATE_PRESSED, getOnContainerColor())));
         }
       }
     }
 
 
     super.onDraw(canvas);
+  }
+
+  // M3 container and item state layer
+
+  @ColorInt int getContainerColor () {
+    return forcedTheme != null ? forcedTheme.getColor(ColorId.overlayFilling) : M3.surfaceContainerLow();
+  }
+
+  @ColorInt int getOnContainerColor () {
+    return forcedTheme != null ? forcedTheme.getColor(ColorId.text) : M3.onSurface();
+  }
+
+  /** Outer corners of the first/last visible item are concentric with the container (16 - 4 = 12dp), inner ones 4dp. */
+  private float itemCornerRadius (View child) {
+    return isEdgeItem(child, true) || isEdgeItem(child, false) ? M3.CORNER_MEDIUM : M3.CORNER_EXTRA_SMALL;
+  }
+
+  private boolean isEdgeItem (View child, boolean first) {
+    ViewGroup parent = (ViewGroup) child.getParent();
+    if (parent == null) {
+      return false;
+    }
+    int count = parent.getChildCount();
+    int index = parent.indexOfChild(child);
+    int step = first ? -1 : 1;
+    for (int i = index + step; i >= 0 && i < count; i += step) {
+      if (parent.getChildAt(i).getVisibility() != View.GONE) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private void setItemStateLayer (View item) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      int color = ColorUtils.alphaColor(M3.STATE_PRESSED, getOnContainerColor());
+      ViewUtils.setBackground(item, new android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(color), null, new ItemMaskDrawable(item)));
+      if (themeListeners != null && forcedTheme == null) {
+        themeListeners.addThemeInvalidateListener(item);
+      }
+    } else {
+      RippleSupport.setTransparentSelector(item);
+    }
+  }
+
+  /** Mask of the item state layer: first/last items get 12dp outer corners, the rest 4dp. */
+  private final class ItemMaskDrawable extends Drawable {
+    private final View item;
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF rect = new RectF();
+    private final float[] radii = new float[8];
+    private final android.graphics.Path path = new android.graphics.Path();
+
+    ItemMaskDrawable (View item) {
+      this.item = item;
+      paint.setColor(0xffffffff);
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      float small = Screen.dp(M3.CORNER_EXTRA_SMALL), large = Screen.dp(M3.CORNER_MEDIUM);
+      float top = isEdgeItem(item, true) ? large : small;
+      float bottom = isEdgeItem(item, false) ? large : small;
+      radii[0] = radii[1] = radii[2] = radii[3] = top;
+      radii[4] = radii[5] = radii[6] = radii[7] = bottom;
+      rect.set(getBounds());
+      path.reset();
+      path.addRoundRect(rect, radii, android.graphics.Path.Direction.CW);
+      c.drawPath(path, paint);
+    }
+
+    @Override
+    public void setAlpha (int alpha) { }
+
+    @Override
+    public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+    @Override
+    public int getOpacity () {
+      return PixelFormat.TRANSLUCENT;
+    }
+  }
+
+  /** Container: rounded rect inset by {@link #PADDING} (the margin keeps the shadow and the anchoring math). */
+  private static final class ContainerDrawable extends Drawable {
+    private final MenuMoreWrap menu;
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF rect = new RectF();
+
+    ContainerDrawable (MenuMoreWrap menu) {
+      this.menu = menu;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      int margin = Screen.dp(PADDING);
+      rect.set(getBounds());
+      rect.inset(margin, margin);
+      float radius = Screen.dp(M3.CORNER_LARGE);
+      paint.setColor(menu.getContainerColor());
+      c.drawRoundRect(rect, radius, radius, paint);
+    }
+
+    @Override
+    public void setAlpha (int alpha) { }
+
+    @Override
+    public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+    @Override
+    public int getOpacity () {
+      return PixelFormat.TRANSLUCENT;
+    }
   }
 
   @Override

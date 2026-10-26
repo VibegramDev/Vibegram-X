@@ -39,6 +39,8 @@ import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Size;
@@ -503,6 +505,32 @@ public class ViewPagerHeaderViewCompact extends FrameLayoutFix implements PagerH
   @Override
   public View getView () {
     return this;
+  }
+
+  private boolean m3Divider;
+
+  /**
+   * M3 primary tabs: "The container is defined by a divider on the bottom edge" (m3.material.io/components/tabs).
+   * 1dp outlineVariant, drawn under the active indicator. Opt-in (main screen only), Monet themes only.
+   */
+  public void setM3Divider (boolean enabled) {
+    if (this.m3Divider != enabled) {
+      this.m3Divider = enabled;
+      invalidate();
+    }
+  }
+
+  @Override
+  protected void dispatchDraw (Canvas c) {
+    if (m3Divider) {
+      int height = Math.max(1, Screen.dp(1f));
+      // Align with the tab strip (where the active indicator is drawn), not with the taller cell:
+      // the part of the cell below the strip is outside the visible app bar.
+      // Tabs displayed at the bottom draw their indicator at the top: the divider follows it.
+      int top = getTopView().isDrawSelectionAtTop() ? recyclerView.getTop() : recyclerView.getBottom() - height;
+      c.drawRect(0, top, getWidth(), top + height, Paints.fillingPaint(M3.outlineVariant()));
+    }
+    super.dispatchDraw(c);
   }
 
   @Override

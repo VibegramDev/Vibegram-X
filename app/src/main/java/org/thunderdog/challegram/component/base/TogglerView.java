@@ -16,50 +16,60 @@ package org.thunderdog.challegram.component.base;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.ColorFilter;
-import android.graphics.Paint;
-import android.graphics.PixelFormat;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 
-import androidx.annotation.IntRange;
-import androidx.annotation.NonNull;
+import androidx.annotation.ColorInt;
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
-import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 
 import me.vkryl.android.AnimatorUtils;
-import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.core.ColorUtils;
 
+/**
+ * Material 3 switch (m3.material.io/components/switch), the same in every theme: track 52x32dp,
+ * handle 16dp off / 24dp on / 28dp pressed, no shadow. Colors follow the M3 switch tokens
+ * (androidx.compose.material3.tokens.SwitchTokens), disabled colors are translucent over the row.
+ *
+ * Variants of the original Telegram X toggler:
+ * - negative state (allowed / denied, e.g. member permissions): "icon on selected and unselected switch",
+ *   an X when off and a check when on, 24dp handle in both states;
+ * - lock (the user can't change the value): drawn as a disabled switch. The handle icon must only communicate
+ *   the selection ("Avoid using more ambiguous or non-binary icons"), so there is no lock glyph in the handle.
+ */
 public class TogglerView extends View implements FactorAnimator.Target, TooltipOverlayView.LocationProvider {
-  private Paint circlePaint;
+  private static final int ANIMATOR_DISABLE = 1;
+  private static final int ANIMATOR_PRESS = 2;
 
-  private final BoolAnimator isEnabled = new BoolAnimator(0, (id, factor, fraction, callee) -> {
-    updateOrigX();
-    invalidate();
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      invalidateOutline();
-    }
-  }, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
-  private BoolAnimator isDisabled;
+  private static final float TRACK_WIDTH = 52f, TRACK_HEIGHT = 32f, TRACK_OUTLINE = 2f, TRAILING_SPACE = 16f;
+  private static final float HANDLE_UNSELECTED = 16f, HANDLE_SELECTED = 24f, HANDLE_PRESSED = 28f, ICON_SIZE = 16f;
+  private static final float DISABLED_TRACK_OPACITY = .12f, DISABLED_CONTENT_OPACITY = .38f;
 
-  private boolean useNegativeState;
+  private final BoolAnimator isEnabled = new BoolAnimator(0, (id, factor, fraction, callee) -> invalidate(), AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
+  private @Nullable BoolAnimator isDisabled;
+  /** The handle grows to 28dp while the row is pressed (pressed state is dispatched by the parent row). */
+  private @Nullable BoolAnimator isPressedAnimator;
+
+  private boolean useNegativeState, showLock;
+  private @Nullable Drawable checkIcon, closeIcon;
+
+  private final RectF trackRect = new RectF();
+  private float handleX, handleY, handleRadius;
 
   public TogglerView (Context context) {
     super(context);
@@ -67,77 +77,40 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
 
   public void init (boolean isEnabled) {
     setRadioEnabled(isEnabled, false);
-    initDrawingItems();
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      setOutlineProvider(new android.view.ViewOutlineProvider() {
-        @Override
-        @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-        public void getOutline (View view, android.graphics.Outline outline) {
-          outline.setRoundRect((int) (origX - origRadius), (int) (origY - origRadius), (int) (origX + origRadius), (int) (origY + origRadius), origRadius);
-        }
-      });
-      setElevation(Math.max(1, Screen.dp(.5f)));
-      setTranslationZ(Math.max(1, Screen.dp(.5f)));
-      ViewUtils.setBackground(this, new Drawable() {
-        @Override
-        public void draw (@NonNull Canvas c) {
-          final int fromBackgroundColor;
-          final int toBackgroundColor;
-          if (useNegativeState) {
-            fromBackgroundColor = Theme.getColor(ColorId.togglerNegativeBackground);
-            toBackgroundColor = Theme.getColor(ColorId.togglerPositiveBackground);
-          } else {
-            fromBackgroundColor = Theme.togglerInactiveFillingColor();
-            toBackgroundColor = Theme.togglerActiveFillingColor();
-          }
-          final boolean isDisabled = !useNegativeState && TogglerView.this.isDisabled();
-          c.drawRoundRect(fillingRect, fillRadius, fillRadius, Paints.fillingPaint(ColorUtils.fromToArgb(fromBackgroundColor, toBackgroundColor, isDisabled ? 0f : TogglerView.this.isEnabled.getFloatValue())));
-        }
-
-        @Override
-        public void setAlpha (@IntRange(from = 0, to = 255) int i) {
-
-        }
-
-        @Override
-        public void setColorFilter (@Nullable ColorFilter colorFilter) {
-
-        }
-
-        @Override
-        @SuppressWarnings("deprecation")
-        public int getOpacity () {
-          return PixelFormat.UNKNOWN;
-        }
-      });
-    } else {
-      setLayerType(LAYER_TYPE_SOFTWARE, circlePaint);
-    }
-    buildLayout();
   }
 
+  /** Allowed / denied switch: X and check icons in the handle. */
   public TogglerView setUseNegativeState (boolean useNegativeState) {
     if (this.useNegativeState != useNegativeState) {
       this.useNegativeState = useNegativeState;
+      if (useNegativeState && checkIcon == null) {
+        checkIcon = Drawables.get(getResources(), R.drawable.baseline_check_18);
+        closeIcon = Drawables.get(getResources(), R.drawable.baseline_close_18);
+      }
       invalidate();
     }
     return this;
   }
 
-  private void initDrawingItems () {
-    circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG | Paint.FILTER_BITMAP_FLAG);
-    circlePaint.setStyle(Paint.Style.FILL);
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-      float radius = Math.max(1, Screen.dpf(.5f));
-      circlePaint.setShadowLayer(radius, 0f, radius, 0x7a000000);
+  /** The value can't be changed by the user: drawn as a disabled switch. */
+  public void setShowLock (boolean showLock) {
+    if (this.showLock != showLock) {
+      this.showLock = showLock;
+      invalidate();
     }
   }
 
-  private boolean isDisabled () {
-    return this.isDisabled != null && this.isDisabled.getValue();
+  @Override
+  public void setPressed (boolean pressed) {
+    super.setPressed(pressed);
+    if (isPressedAnimator == null) {
+      if (!pressed) {
+        return;
+      }
+      isPressedAnimator = new BoolAnimator(ANIMATOR_PRESS, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration);
+    }
+    isPressedAnimator.setValue(pressed, getWidth() > 0);
   }
-
-  private static final int ANIMATOR_DISABLE = 1;
 
   public void setDisabled (boolean isDisabled, boolean animated) {
     if (this.isDisabled != null || isDisabled) {
@@ -145,19 +118,6 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
         this.isDisabled = new BoolAnimator(ANIMATOR_DISABLE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 168l);
       }
       this.isDisabled.setValue(isDisabled, animated);
-    }
-  }
-
-  private boolean showLock;
-  private Drawable lockDrawable;
-
-  public void setShowLock (boolean showLock) {
-    if (this.showLock != showLock) {
-      this.showLock = showLock;
-      if (lockDrawable == null) {
-        lockDrawable = Drawables.get(getResources(), R.drawable.baseline_lock_14);
-      }
-      invalidate();
     }
   }
 
@@ -169,7 +129,9 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
   public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
     switch (id) {
       case ANIMATOR_DISABLE:
+      case ANIMATOR_PRESS:
         invalidate();
+        break;
     }
   }
 
@@ -180,134 +142,103 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
     return isEnabled.toggleValue(animated);
   }
 
-  /*public boolean isAnimating () {
-    return isAnimating;
-  }*/
-
   public boolean isEnabled () {
     return isEnabled.getValue();
-  }
-
-  private RectF fillingRect;
-  private float fillRadius;
-  private float minX, maxX, diffX, origX, origY, origRadius;
-
-  private int currentWidth;
-
-  @Override
-  protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
-    super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-    int width = getMeasuredWidth();
-    if (currentWidth != width) {
-      currentWidth = width;
-      buildLayout();
-    }
   }
 
   public void checkRtl (boolean allowLayout) {
     if (Views.setGravity(this, (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL) && allowLayout) {
       Views.updateLayoutParams(this);
-      if (currentWidth > 0) {
-        buildLayout();
-        invalidate();
-      }
+      invalidate();
     }
   }
 
-  private void buildLayout () {
-    if (fillingRect == null) {
-      fillingRect = new RectF();
-    }
-
-    int start = Screen.dp(58f);
-    int left = Screen.dp(4f);
-    int right = left + Screen.dp(34f);
-
-    fillingRect.left = currentWidth - start + left;
-    fillingRect.right = currentWidth - start + right;
-
-    int top = Screen.dp(20f);
-    int bottom = top + Screen.dp(14f);
-
-    fillingRect.top = top;
-    fillingRect.bottom = bottom;
-
-    origRadius = Screen.dpf(10f);
-    fillRadius = Screen.dp(7f);
-    float offset = Screen.dp(3f);
-
-    minX = fillingRect.left - offset + origRadius;
-    maxX = fillingRect.right + offset - origRadius;
-    diffX = maxX - minX;
-    origY = fillingRect.top - offset + origRadius;
-    updateOrigX();
+  private float disabledFactor () {
+    return showLock ? 1f : isDisabled != null ? isDisabled.getFloatValue() : 0f;
   }
 
-  private void updateOrigX () {
-    float factor = this.isEnabled.getFloatValue();
-    if (Lang.rtl()) {
-      origX = factor == 0f ? maxX : factor == 1f ? minX : maxX - factor * diffX;
-    } else {
-      origX = factor == 0f ? minX : factor == 1f ? maxX : minX + factor * diffX;
+  private float pressedFactor () {
+    return isPressedAnimator != null ? isPressedAnimator.getFloatValue() * (1f - disabledFactor()) : 0f;
+  }
+
+  /** Track and handle geometry for the current state. */
+  private void layoutSwitch () {
+    final float checked = isEnabled.getFloatValue();
+    final float trackWidth = Screen.dp(TRACK_WIDTH), trackHeight = Screen.dp(TRACK_HEIGHT);
+    final float trailing = Math.min(Screen.dp(TRAILING_SPACE), Math.max(0f, getWidth() - trackWidth));
+    float cy = getHeight() / 2f;
+    ViewGroup.LayoutParams params = getLayoutParams();
+    if (params instanceof ViewGroup.MarginLayoutParams) {
+      // Center on the row, not on a view shifted by its margins.
+      ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+      cy += (margins.bottomMargin - margins.topMargin) / 2f;
     }
+    float left = Lang.rtl() ? trailing : getWidth() - trailing - trackWidth;
+    trackRect.set(left, cy - trackHeight / 2f, left + trackWidth, cy + trackHeight / 2f);
+
+    final float selected = Screen.dp(HANDLE_SELECTED);
+    float diameter = useNegativeState ? selected : Screen.dp(HANDLE_UNSELECTED) + (selected - Screen.dp(HANDLE_UNSELECTED)) * checked;
+    diameter += (Screen.dp(HANDLE_PRESSED) - diameter) * pressedFactor();
+    handleRadius = diameter / 2f;
+    float startX = trackRect.left + trackHeight / 2f, endX = trackRect.right - trackHeight / 2f;
+    handleX = Lang.rtl() ? endX - (endX - startX) * checked : startX + (endX - startX) * checked;
+    handleY = cy;
   }
 
   @Override
   public void getTargetBounds (View targetView, Rect outRect) {
+    layoutSwitch();
     final int bound = Screen.dp(2f);
-    outRect.set((int) (origX - origRadius - bound), (int) (origY - origRadius - bound), (int) (origX + origRadius + bound), (int) (origY + origRadius + bound));
+    outRect.set((int) (handleX - handleRadius - bound), (int) (handleY - handleRadius - bound), (int) (handleX + handleRadius + bound), (int) (handleY + handleRadius + bound));
   }
 
   @Override
-  public void onDraw (Canvas c) {
-    final float factor = this.isEnabled.getFloatValue();
-    updateOrigX();
-    final int fromBackgroundColor, fromColor;
-    final int toBackgroundColor, toColor;
-    int checkColor;
-    if (useNegativeState) {
-      fromBackgroundColor = Theme.getColor(ColorId.togglerNegativeBackground); // ThemeRed.getColor(ColorId.togglerFillingActive);
-      fromColor = Theme.getColor(ColorId.togglerNegative); // ThemeRed.getColor(ColorId.togglerActive);
-      toBackgroundColor = Theme.getColor(ColorId.togglerPositiveBackground); // ThemeBase.getColor(ColorId.togglerFillingActive);
-      toColor = Theme.getColor(ColorId.togglerPositive); // ThemeBase.getColor(ColorId.togglerActive);
-      checkColor = ColorUtils.fromToArgb(Theme.getColor(ColorId.togglerNegativeContent), Theme.getColor(ColorId.togglerPositiveContent), isEnabled.getFloatValue());
-    } else {
-      fromBackgroundColor = Theme.togglerInactiveFillingColor();
-      fromColor = Theme.togglerInactiveColor();
-      toBackgroundColor = Theme.togglerActiveFillingColor();
-      toColor = Theme.togglerActiveColor();
-      checkColor = 0;
+  protected void onDraw (Canvas c) {
+    layoutSwitch();
+    final float checked = isEnabled.getFloatValue();
+    final float disabled = disabledFactor();
+    final float pressed = pressedFactor();
+    final float radius = trackRect.height() / 2f;
+
+    // Track: surfaceContainerHighest + outline (off) -> primary (on); disabled: onSurface / surfaceContainerHighest at 12%.
+    int track = ColorUtils.fromToArgb(M3.surfaceContainerHighest(), M3.primary(), checked);
+    int disabledTrack = ColorUtils.alphaColor(DISABLED_TRACK_OPACITY, ColorUtils.fromToArgb(M3.surfaceContainerHighest(), M3.onSurface(), checked));
+    c.drawRoundRect(trackRect, radius, radius, Paints.fillingPaint(ColorUtils.fromToArgb(track, disabledTrack, disabled)));
+    if (checked < 1f) {
+      int outline = ColorUtils.fromToArgb(M3.outline(), ColorUtils.alphaColor(DISABLED_TRACK_OPACITY, M3.onSurface()), disabled);
+      float stroke = Screen.dp(TRACK_OUTLINE);
+      trackRect.inset(stroke / 2f, stroke / 2f);
+      c.drawRoundRect(trackRect, radius - stroke / 2f, radius - stroke / 2f, Paints.getProgressPaint(ColorUtils.alphaColor(1f - checked, outline), stroke));
+      trackRect.inset(-stroke / 2f, -stroke / 2f);
     }
 
-    final float disableFactor = !useNegativeState && this.isDisabled != null ? this.isDisabled.getFloatValue() : 0f;
+    // Handle: outline -> onPrimary, pressed onSurfaceVariant -> primaryContainer; disabled: onSurface 38% -> surface.
+    int handle = ColorUtils.fromToArgb(
+      ColorUtils.fromToArgb(M3.outline(), M3.onPrimary(), checked),
+      ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.primaryContainer(), checked),
+      pressed
+    );
+    int disabledHandle = ColorUtils.fromToArgb(ColorUtils.alphaColor(DISABLED_CONTENT_OPACITY, M3.onSurface()), M3.surface(), checked);
+    c.drawCircle(handleX, handleY, handleRadius, Paints.fillingPaint(ColorUtils.fromToArgb(handle, disabledHandle, disabled)));
 
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-      c.drawRoundRect(fillingRect, fillRadius, fillRadius, Paints.fillingPaint(ColorUtils.fromToArgb(fromBackgroundColor, toBackgroundColor, factor * (1f - disableFactor))));
+    // Icons: surfaceContainerHighest X (off) -> onPrimaryContainer check (on); disabled at 38%.
+    if (useNegativeState && checkIcon != null && closeIcon != null) {
+      int icon = ColorUtils.fromToArgb(M3.surfaceContainerHighest(), M3.onPrimaryContainer(), checked);
+      int disabledIcon = ColorUtils.alphaColor(DISABLED_CONTENT_OPACITY, ColorUtils.fromToArgb(M3.surfaceContainerHighest(), M3.onSurface(), checked));
+      int iconColor = ColorUtils.fromToArgb(icon, disabledIcon, disabled);
+      drawIcon(c, closeIcon, ColorUtils.alphaColor(1f - checked, iconColor));
+      drawIcon(c, checkIcon, ColorUtils.alphaColor(checked, iconColor));
     }
-    circlePaint.setColor(ColorUtils.fromToArgb(fromColor, toColor, factor * (1f - disableFactor)));
-    c.drawCircle(origX, origY, origRadius, circlePaint);
+  }
 
-    if (showLock) {
-      Drawables.draw(c, lockDrawable, origX - lockDrawable.getMinimumWidth() / 2f, origY - lockDrawable.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(checkColor));
-    } else if (useNegativeState) {
-      Paint strokePaint = Paints.getProgressPaint(checkColor, Screen.dp(2f));
-
-      int lineWidth = (int) (origRadius * .75f);
-      int linePart = lineWidth / 2;
-
-      /*c.save();
-      c.rotate(-90f * (1f - factor), origX, origY);*/
-
-      int offsetGlobal = (int) (Screen.dp(.5f) * factor);
-      int offsetGlobalY = (int) (Screen.dp(.5f) * factor);
-      int offsetX1 = (int) (Screen.dp(1.5f) * factor);
-      c.drawLine(origX - linePart + offsetX1, origY + linePart + offsetGlobalY, origX + linePart + offsetX1, origY - linePart + offsetGlobalY, strokePaint);
-      int offsetX = (int) (Screen.dp(-3.5f) * factor);
-      int offsetY = (int) (Screen.dp(3f) * factor);
-      int removeLeft = (int) (Screen.dp(.5f) * factor);
-      c.drawLine(origX - linePart + offsetX + offsetGlobal + removeLeft, origY - linePart + offsetY + offsetGlobalY + removeLeft, origX + linePart * (1f - factor) + offsetX + offsetGlobal, origY + linePart * (1f - factor) + offsetY + offsetGlobalY, strokePaint);
-
-      // c.restore();
+  private void drawIcon (Canvas c, Drawable icon, @ColorInt int color) {
+    if (Color.alpha(color) == 0 || icon.getMinimumWidth() <= 0) {
+      return;
     }
+    float scale = Screen.dp(ICON_SIZE) / (float) icon.getMinimumWidth();
+    c.save();
+    c.scale(scale, scale, handleX, handleY);
+    Drawables.draw(c, icon, handleX - icon.getMinimumWidth() / 2f, handleY - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(color));
+    c.restore();
   }
 }

@@ -72,9 +72,9 @@ headerBackground: sys(surface_dark,n1_900)
 headerText: n1_50
 headerIcon: a1_100
 
-headerTabActive: a1_100
-headerTabActiveText: a1_100
-headerTabInactiveText: n1_200
+headerTabActive: a1_200
+headerTabActiveText: a1_200
+headerTabInactiveText: n2_200
 
 headerLightBackground: sys(surface_dark,n1_900)
 headerLightText: a1_100
