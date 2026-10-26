@@ -8,8 +8,6 @@ import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 
-import org.thunderdog.challegram.R;
-import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Screen;
@@ -73,6 +71,9 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     main = controller;
     if (main == null) {
       return;
+    }
+    if (navigation.getCurrentStackItem() == main) {
+      leaveTransformModes(navigation.getHeaderView(), main);
     }
     master = new NavigationLayout(getContext());
     master.setLayoutParams(FrameLayoutFix.newParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -141,10 +142,25 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     view.setVisibility(VISIBLE);
   }
 
+  /**
+   * Search and selection modes can't move to another app bar: the search field (or the selection counter) stays
+   * in the app bar it was opened in, while the new one shows the regular title. Leave them, without animation,
+   * before the main screen changes its app bar (entering or leaving the split layout).
+   */
+  private static void leaveTransformModes (HeaderView header, ViewController<?> controller) {
+    if (controller.inSearchMode()) {
+      header.closeSearchMode(false, null);
+    }
+    if (controller.inSelectMode()) {
+      header.closeSelectMode(false, false);
+    }
+  }
+
   void clearMain () {
     if (main == null) {
       return;
     }
+    leaveTransformModes(masterHeader, main);
     master.removeView(main.getValue());
     if (folderRail != null) {
       removeView(folderRail);
@@ -165,7 +181,6 @@ final class TabletNavigationLayout extends FrameLayoutFix {
   void updateColors () {
     empty.setBackgroundColor(Theme.backgroundColor());
     empty.setTextColor(Theme.textDecentColor());
-    empty.setText(Lang.getString(R.string.SelectChat));
     divider.setBackgroundColor(Theme.getColor(ColorId.separator));
     if (main != null) {
       masterHeader.resetColors(main, null);

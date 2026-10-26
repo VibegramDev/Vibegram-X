@@ -21,6 +21,7 @@ import android.view.View;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -179,6 +180,8 @@ public class RemoveHelper implements FactorAnimator.Target {
     default boolean canDropOver (RecyclerView recyclerView, RecyclerView.ViewHolder current, RecyclerView.ViewHolder target) {
       return true;
     }
+    /** The row was picked up for dragging ({@code true}) or released ({@code false}, before it settles). */
+    default void onDragStateChanged (RecyclerView.ViewHolder viewHolder, boolean isDragging) { }
   }
 
   public static ItemTouchHelper attach (RecyclerView recyclerView, final Callback callback) {
@@ -228,6 +231,31 @@ public class RemoveHelper implements FactorAnimator.Target {
 
       private int dragFrom = -1;
       private int dragTo = -1;
+      private RecyclerView.ViewHolder draggingHolder;
+
+      @Override
+      public void onSelectedChanged (@Nullable RecyclerView.ViewHolder viewHolder, int actionState) {
+        super.onSelectedChanged(viewHolder, actionState);
+        if (!(callback instanceof ExtendedCallback)) {
+          return;
+        }
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
+          dispatchDragEnd();
+          draggingHolder = viewHolder;
+          ((ExtendedCallback) callback).onDragStateChanged(viewHolder, true);
+        } else if (actionState == ItemTouchHelper.ACTION_STATE_IDLE) {
+          // Released: report it right away, the row then settles into place.
+          dispatchDragEnd();
+        }
+      }
+
+      private void dispatchDragEnd () {
+        if (draggingHolder != null) {
+          RecyclerView.ViewHolder holder = draggingHolder;
+          draggingHolder = null;
+          ((ExtendedCallback) callback).onDragStateChanged(holder, false);
+        }
+      }
 
       @Override
       public void onMoved (RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, int fromPos, RecyclerView.ViewHolder target, int toPos, int x, int y) {
@@ -268,6 +296,9 @@ public class RemoveHelper implements FactorAnimator.Target {
       @Override
       public void clearView(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder) {
         super.clearView(recyclerView, viewHolder);
+        if (viewHolder == draggingHolder) {
+          dispatchDragEnd();
+        }
         if (dragFrom != -1 && dragTo != -1 && dragFrom != dragTo) {
           reallyMoved(dragFrom, dragTo);
         }

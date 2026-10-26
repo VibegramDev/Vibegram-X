@@ -1309,7 +1309,9 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
     if (preview != title) {
       if (preview.getParent() != null) {
-        removeView(preview);
+        // A reused header view (e.g. the search field of the main screen) may still be in another app bar
+        // after the main screen moved between the split and single-pane layouts.
+        ((ViewGroup) preview.getParent()).removeView(preview);
       }
       if (forward) {
         addView(preview, BACK_BUTTON_ON_TOP ? 0 : 1);
@@ -2179,6 +2181,26 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     }
 
     item.executeAnimationReadyListeners();
+  }
+
+  /**
+   * Puts the title of {@code item} (already set by {@link #setTitle}) and the back button into their resting state.
+   * An animated transition leaves the outgoing title (custom header cells are reused) and a faded-out back button
+   * with their end values: transparent and moved away. Only the next animated transition restores them, so the
+   * animation-less tablet split paths (detail push/pop, entering/leaving split on fold/unfold) must call this.
+   */
+  public void resetTitleTransition (ViewController<?> item) {
+    if (title != null) {
+      title.setTranslationX(0f);
+      if (!item.usePopupMode()) {
+        title.setTranslationY(0f);
+      }
+      title.setAlpha(1f);
+      title.setVisibility(View.VISIBLE);
+    }
+    backButton.setTranslationX(0f);
+    backButton.setTranslationY(0f);
+    backButton.setAlpha(1f);
   }
 
   private float currentX, currentY;

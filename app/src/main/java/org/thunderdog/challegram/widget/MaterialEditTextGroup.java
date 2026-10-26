@@ -15,6 +15,12 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.Region;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -38,6 +44,7 @@ import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
@@ -51,6 +58,7 @@ import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 
 @SuppressWarnings("ViewConstructor")
@@ -125,6 +133,7 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
   public void setInputEnabled (boolean enabled) {
     editText.setEnabled(enabled);
     setTextColorId(enabled ? ColorId.text : ColorId.textLight);
+    invalidate();
   }
 
   public interface NextCallback {
@@ -137,11 +146,13 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
     this.nextCallback = forceNextButton;
   }
 
+  private boolean needHint;
+
   private void init (Context context, Tdlib tdlib, boolean needHint) {
+    this.needHint = needHint;
     FrameLayoutFix.LayoutParams params;
 
     params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    params.topMargin = Screen.dp(needHint ? 20f : 8f);
 
     editText = new MaterialEditText(context, tdlib) {
       @Override
@@ -153,22 +164,20 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
         return conn;
       }
     };
+    editText.setParent(this);
     editText.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
     editText.setTypeface(Fonts.getRobotoRegular());
     editText.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
-    editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
     editText.setBackgroundResource(R.drawable.transparent);
     editText.setTextColor(Theme.getColor(textColorId));
     editText.setHintTextColor(Theme.textPlaceholderColor());
     editText.setLayoutParams(params);
     editText.addTextChangedListener(this);
-    editText.setPadding(Screen.dp(1.5f), Screen.dp(8f), Screen.dp(1.5f), Screen.dp(9f));
     // editText.setMinimumHeight(Screen.dp(40f));
     addView(editText);
 
     if (needHint) {
       params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(40f));
-      params.topMargin = Screen.dp(20f);
 
       hintView = new NoScrollTextView(context) {
         @Override
@@ -179,6 +188,8 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
           } else {
             setPivotX(0f);
           }
+          // Outlined: the label scales around its vertical centre, which moves onto the top outline.
+          setPivotY(outlined ? getMeasuredHeight() / 2f : 0f);
         }
       };
       hintView.setPivotY(0f);
@@ -186,14 +197,216 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       hintView.setSingleLine(true);
       hintView.setEllipsize(TextUtils.TruncateAt.END);
       hintView.setTextColor(Theme.textPlaceholderColor());
-      hintView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
-      hintView.setPadding(Screen.dp(1.5f), 0, Screen.dp(1.5f), 0);
       hintView.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
       hintView.setLayoutParams(params);
       addView(hintView);
     }
 
     editText.setOnFocusChangeListener(this);
+    applyFieldLayout();
+  }
+
+  // M3 outlined text field (OutlinedTextFieldTokens): 56dp container, 4dp corners,
+  // outline 1dp `outline` -> 2dp `primary` when focused, label body large -> body small on the top outline.
+
+  private static final float OUTLINED_HEIGHT = 56f;
+  private static final float OUTLINED_PADDING = 16f;
+  private static final float OUTLINED_TEXT_SIZE = 16f; // body large
+  private static final float OUTLINED_LABEL_SCALE = 12f / 16f; // body small / body large
+  private static final float OUTLINED_LABEL_GAP = 4f; // OutlinedTextFieldInnerPadding
+  private static final float SUPPORTING_TOP_PADDING = 4f;
+  private static final float SUPPORTING_LINE_HEIGHT = 16f; // body small
+
+  private boolean outlinedEnabled = true;
+  private boolean outlined;
+  private boolean lengthCounterReduceOffset;
+
+  /**
+   * Outlined (M3) look is used by every field that has a line. Fields with {@link MaterialEditText#setLineDisabled}
+   * (inputs that are list rows themselves: poll options, folder name, descriptions) keep the legacy layout.
+   */
+  public void setOutlinedEnabled (boolean enabled) {
+    if (this.outlinedEnabled != enabled) {
+      this.outlinedEnabled = enabled;
+      applyFieldLayout();
+    }
+  }
+
+  public boolean isOutlined () {
+    return outlined;
+  }
+
+  void onLineDisabledChanged () {
+    applyFieldLayout();
+  }
+
+  private int outlinedBoxTop () {
+    // Half of the floating label (body small line, 16dp) sits above the outline.
+    return needHint ? Screen.dp(SUPPORTING_LINE_HEIGHT / 2f) : 0;
+  }
+
+  private void applyFieldLayout () {
+    final boolean outlined = outlinedEnabled && !editText.isLineDisabled();
+    this.outlined = outlined;
+    editText.setOutlined(outlined);
+    final boolean hasCounter = lengthCounter != null;
+
+    FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) editText.getLayoutParams();
+    if (outlined) {
+      params.topMargin = outlinedBoxTop();
+      params.bottomMargin = hasCounter ? Screen.dp(SUPPORTING_TOP_PADDING + SUPPORTING_LINE_HEIGHT) : 0;
+      editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, OUTLINED_TEXT_SIZE);
+      editText.setMinimumHeight(Screen.dp(OUTLINED_HEIGHT));
+      int padding = Screen.dp(OUTLINED_PADDING);
+      editText.setPadding(padding, padding, padding, padding);
+    } else {
+      params.topMargin = Screen.dp(needHint ? 20f : 8f);
+      params.bottomMargin = 0;
+      editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
+      editText.setMinimumHeight(0);
+      int counterPadding = hasCounter ? Screen.dp(32f) : 0;
+      editText.setPadding(Screen.dp(1.5f) + (isRtl ? counterPadding : 0), Screen.dp(8f), Screen.dp(1.5f) + (isRtl ? 0 : counterPadding), Screen.dp(9f));
+    }
+    editText.setLayoutParams(params);
+
+    if (hintView != null) {
+      params = (FrameLayoutFix.LayoutParams) hintView.getLayoutParams();
+      if (outlined) {
+        params.height = Screen.dp(OUTLINED_HEIGHT);
+        params.topMargin = outlinedBoxTop();
+        params.leftMargin = params.rightMargin = Screen.dp(OUTLINED_PADDING);
+        hintView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, OUTLINED_TEXT_SIZE);
+        hintView.setPadding(0, 0, 0, 0);
+      } else {
+        params.height = Screen.dp(40f);
+        params.topMargin = Screen.dp(20f);
+        params.leftMargin = hasCounter && isRtl ? Screen.dp(40f) : 0;
+        params.rightMargin = hasCounter && !isRtl ? Screen.dp(40f) : 0;
+        hintView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
+        hintView.setPadding(Screen.dp(1.5f), 0, Screen.dp(1.5f), 0);
+        hintView.setTextColor(Theme.textPlaceholderColor());
+      }
+      hintView.setLayoutParams(params);
+    }
+
+    if (lengthCounter != null) {
+      params = (FrameLayoutFix.LayoutParams) lengthCounter.getLayoutParams();
+      if (outlined) {
+        // M3: character counter is supporting text below the container, at the end.
+        params.gravity = Gravity.BOTTOM | (isRtl ? Gravity.LEFT : Gravity.RIGHT);
+        params.topMargin = 0;
+        params.leftMargin = params.rightMargin = Screen.dp(OUTLINED_PADDING);
+        lengthCounter.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12f);
+      } else {
+        params.gravity = isRtl ? Gravity.LEFT : Gravity.RIGHT;
+        params.topMargin = lengthCounterReduceOffset ? Screen.dp(19f) : Screen.dp(20f) + Screen.dp(11f);
+        params.leftMargin = params.rightMargin = Screen.dp(6f);
+        lengthCounter.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
+      }
+      lengthCounter.setLayoutParams(params);
+    }
+
+    updateScale();
+    invalidate();
+  }
+
+  private final Paint outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final RectF outlineRect = new RectF();
+
+  private float labelProgress () {
+    return factor * (1f - reverseScaleFactor);
+  }
+
+  private int outlineColor (float focus) {
+    int forceColorId = editText.getForceColorId();
+    if (!editText.isEnabled()) {
+      return ColorUtils.alphaColor(.12f, M3.onSurface());
+    }
+    int color = forceColorId != 0 ? Theme.getColor(forceColorId) : ColorUtils.fromToArgb(M3.outline(), M3.primary(), focus);
+    float good = editText.getGoodFactor();
+    if (good != 0f)
+      color = ColorUtils.fromToArgb(color, Theme.getColor(ColorId.inputPositive), good);
+    float error = editText.getErrorFactor();
+    if (error != 0f)
+      color = ColorUtils.fromToArgb(color, M3.error(), error);
+    return color;
+  }
+
+  private int labelColor (float focus) {
+    if (!editText.isEnabled()) {
+      return ColorUtils.alphaColor(.38f, M3.onSurface());
+    }
+    int color = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.primary(), focus);
+    float good = editText.getGoodFactor();
+    if (good != 0f)
+      color = ColorUtils.fromToArgb(color, Theme.getColor(ColorId.inputPositive), good);
+    float error = editText.getErrorFactor();
+    if (error != 0f)
+      color = ColorUtils.fromToArgb(color, M3.error(), error);
+    return color;
+  }
+
+  private int caretColor;
+
+  /** M3: caret is `primary` (`error` in the error state). Text cursor drawables can be set from API 29. */
+  private void updateCaretColor () {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      int color = editText.getErrorFactor() >= .5f ? M3.error() : M3.primary();
+      if (caretColor != color) {
+        caretColor = color;
+        GradientDrawable caret = new GradientDrawable();
+        caret.setColor(color);
+        caret.setSize(Screen.dp(2f), Screen.dp(OUTLINED_TEXT_SIZE));
+        editText.setTextCursorDrawable(caret);
+      }
+    }
+  }
+
+  @Override
+  protected void dispatchDraw (Canvas c) {
+    if (outlined && editText.getVisibility() == View.VISIBLE) {
+      final float focus = editText.getForceColorId() != 0 ? 1f : MathUtils.clamp(editText.getActiveFactor());
+      if (hintView != null) {
+        int labelColor = labelColor(focus);
+        if (hintView.getCurrentTextColor() != labelColor) {
+          hintView.setTextColor(labelColor);
+        }
+      }
+      updateCaretColor();
+
+      final float strokeWidth = Screen.dp(1f) + (editText.isEnabled() ? Screen.dp(1f) * focus : 0f);
+      final float left = editText.getLeft() + editText.getTranslationX();
+      final float top = editText.getTop();
+      final float right = editText.getRight() + editText.getTranslationX();
+      final float bottom = editText.getBottom();
+      outlineRect.set(left + strokeWidth / 2f, top + strokeWidth / 2f, right - strokeWidth / 2f, bottom - strokeWidth / 2f);
+      outlinePaint.setStyle(Paint.Style.STROKE);
+      outlinePaint.setStrokeWidth(strokeWidth);
+      outlinePaint.setColor(outlineColor(focus));
+      final float radius = Screen.dp(M3.CORNER_EXTRA_SMALL);
+
+      // Cutout in the top outline under the floating label; it grows with the label progress.
+      final float progress = hintView != null && !StringUtils.isEmpty(hintView.getText()) ? Math.max(0f, labelProgress()) : 0f;
+      final boolean needCutout = progress > 0f;
+      int saveCount = -1;
+      if (needCutout) {
+        float textWidth = Math.min(hintView.getPaint().measureText(hintView.getText().toString()), hintView.getWidth()) * OUTLINED_LABEL_SCALE;
+        float labelCenter = isRtl ? hintView.getRight() - textWidth / 2f : hintView.getLeft() + textWidth / 2f;
+        float halfWidth = textWidth * progress / 2f + Screen.dp(OUTLINED_LABEL_GAP);
+        float halfHeight = Screen.dp(SUPPORTING_LINE_HEIGHT / 2f);
+        saveCount = c.save();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          c.clipOutRect(labelCenter - halfWidth, top - halfHeight, labelCenter + halfWidth, top + halfHeight);
+        } else {
+          c.clipRect(labelCenter - halfWidth, top - halfHeight, labelCenter + halfWidth, top + halfHeight, Region.Op.DIFFERENCE);
+        }
+      }
+      c.drawRoundRect(outlineRect, radius, radius, outlinePaint);
+      if (needCutout) {
+        c.restoreToCount(saveCount);
+      }
+    }
+    super.dispatchDraw(c);
   }
 
   private boolean isRtl;
@@ -204,6 +417,9 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       editText.setGravity(Gravity.CENTER_VERTICAL | (rtl ? Gravity.RIGHT : Gravity.LEFT));
       if (hintView != null)
         hintView.setGravity(Gravity.CENTER_VERTICAL | (rtl ? Gravity.RIGHT : Gravity.LEFT));
+      if (outlined) {
+        applyFieldLayout();
+      }
     }
   }
 
@@ -250,39 +466,25 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
 
   public void onInputActiveFactorChange (float factor) {
     if (lengthCounter != null) {
-      lengthCounter.setAlpha(factor);
+      lengthCounter.setAlpha(MathUtils.clamp(factor));
+    }
+    if (outlined) {
+      invalidate();
     }
   }
 
   public void addLengthCounter (boolean reduceOffset) {
     if (lengthCounter == null) {
-      editText.setParent(this);
-
-      FrameLayoutFix.LayoutParams params;
-      params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-      params.topMargin = reduceOffset ? Screen.dp(19f) : Screen.dp(20f) + Screen.dp(11f);
-      params.leftMargin = params.rightMargin = Screen.dp(6f);
-      params.gravity = isRtl ? Gravity.LEFT : Gravity.RIGHT;
+      this.lengthCounterReduceOffset = reduceOffset;
 
       lengthCounter = new NoScrollTextView(getContext());
       lengthCounter.setTextColor(Theme.textDecentColor());
-      lengthCounter.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
       lengthCounter.setTypeface(Fonts.getRobotoRegular());
       lengthCounter.setAlpha(0f);
-      lengthCounter.setLayoutParams(params);
-
-      params = hintView != null ? (FrameLayoutFix.LayoutParams) hintView.getLayoutParams() : null;
-      if (isRtl) {
-        if (params != null)
-          params.leftMargin = Screen.dp(40f);
-        editText.setPadding(editText.getPaddingLeft() + Screen.dp(32f), editText.getPaddingTop(), editText.getPaddingRight(), editText.getPaddingBottom());
-      } else {
-        if (params != null)
-          params.rightMargin = Screen.dp(40f);
-        editText.setPadding(editText.getPaddingLeft(), editText.getPaddingTop(), editText.getPaddingRight() + Screen.dp(32f), editText.getPaddingBottom());
-      }
+      lengthCounter.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
       addView(lengthCounter);
+      applyFieldLayout();
     }
   }
 
@@ -295,6 +497,7 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       if (hintView != null)
         themeProvider.addThemeTextColorListener(hintView, ColorId.textPlaceholder);
       themeProvider.addThemeInvalidateListener(editText);
+      themeProvider.addThemeInvalidateListener(this);
       themeProvider.addThemeHighlightColorListener(editText, ColorId.textSelectionHighlight);
       themeProvider.addThemeHintTextColorListener(editText, ColorId.textPlaceholder);
       if (lengthCounter != null) {
@@ -625,11 +828,20 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
 
   private void updateScale () {
     if (hintView != null) {
-      final float scaleFactor = factor * (1f - reverseScaleFactor);
-      float scale = 1f - .23076923f * scaleFactor;
-      hintView.setScaleX(scale);
-      hintView.setScaleY(scale);
-      hintView.setTranslationY((float) -Screen.dp(20f) * scaleFactor);
+      final float scaleFactor = labelProgress();
+      if (outlined) {
+        float scale = 1f - (1f - OUTLINED_LABEL_SCALE) * scaleFactor;
+        hintView.setScaleX(scale);
+        hintView.setScaleY(scale);
+        // Label centre moves from the container centre onto the top outline.
+        hintView.setTranslationY(-Screen.dp(OUTLINED_HEIGHT / 2f) * scaleFactor);
+        invalidate();
+      } else {
+        float scale = 1f - .23076923f * scaleFactor;
+        hintView.setScaleX(scale);
+        hintView.setScaleY(scale);
+        hintView.setTranslationY((float) -Screen.dp(20f) * scaleFactor);
+      }
     }
   }
 
@@ -639,6 +851,14 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
   private void animateFactor (float toFactor) {
     if (animator == null) {
       animator = new FactorAnimator(ANIMATOR_FACTOR, this, AnimatorUtils.DECELERATE_INTERPOLATOR, DURATION, factor);
+    }
+    if (outlined) {
+      // M3 text field: label progress uses the fast spatial spring.
+      animator.setInterpolator(M3.FAST_SPATIAL);
+      animator.setDuration(M3.FAST_SPATIAL.duration);
+    } else {
+      animator.setInterpolator(AnimatorUtils.DECELERATE_INTERPOLATOR);
+      animator.setDuration(DURATION);
     }
     animator.animateTo(toFactor);
   }
@@ -681,10 +901,14 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       }
       case ANIMATOR_ERROR: {
         editText.setErrorFactor(factor);
+        if (outlined)
+          invalidate();
         break;
       }
       case ANIMATOR_GOOD: {
         editText.setGoodFactor(factor);
+        if (outlined)
+          invalidate();
         break;
       }
       case ANIMATOR_TEXT_ALPHA: {

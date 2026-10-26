@@ -606,7 +606,8 @@ public class PasswordController extends ViewController<PasswordController.Args> 
 
     params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     params.leftMargin = params.rightMargin = Screen.dp(16f);
-    params.topMargin = topMargin + Screen.dp(60f) + Screen.dp(14f);
+    // Outlined field: 8dp label half + 56dp container (was a 60dp underlined field).
+    params.topMargin = topMargin + Screen.dp(64f) + Screen.dp(14f);
 
     hintView = new NoScrollTextView(context);
     hintView.setMovementMethod(LinkMovementMethod.getInstance());

@@ -22,6 +22,7 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 
 import androidx.annotation.CallSuper;
+import androidx.annotation.ColorInt;
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -47,6 +48,7 @@ import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.ListItem;
+import org.thunderdog.challegram.ui.M3SearchContainerDecoration;
 import org.thunderdog.challegram.ui.SettingHolder;
 import org.thunderdog.challegram.ui.SettingsAdapter;
 import org.thunderdog.challegram.v.CustomRecyclerView;
@@ -158,6 +160,14 @@ public abstract class TelegramViewController<T> extends ViewController<T> {
     }
   }
 
+  /**
+   * Container color of the chat search view drawn instead of the theme background (M3 contained full-screen search),
+   * or 0 to keep the legacy background. Must be consistent for the controller.
+   */
+  protected @ColorInt int getChatSearchContainerColor () {
+    return 0;
+  }
+
   protected final CustomRecyclerView generateChatSearchView (@Nullable ViewGroup parent) {
     final boolean noChatSearch = (getChatSearchFlags() & SearchManager.FLAG_NO_CHATS) != 0;
     chatSearchViewport = tdlib.messageViewer().createViewport(new TdApi.MessageSourceSearch(), this);
@@ -212,8 +222,14 @@ public abstract class TelegramViewController<T> extends ViewController<T> {
         }
       }
     });
-    chatSearchView.setBackgroundColor(Theme.backgroundColor());
-    addThemeBackgroundColorListener(chatSearchView, ColorId.background);
+    int containerColor = getChatSearchContainerColor();
+    if (containerColor != 0) {
+      M3SearchContainerDecoration.attach(chatSearchView, this::getChatSearchContainerColor);
+      addThemeInvalidateListener(chatSearchView);
+    } else {
+      chatSearchView.setBackgroundColor(Theme.backgroundColor());
+      addThemeBackgroundColorListener(chatSearchView, ColorId.background);
+    }
     chatSearchView.setLayoutManager(new LinearLayoutManager(context(), RecyclerView.VERTICAL, false));
     if (parent != null) {
       chatSearchView.setAlpha(0f);

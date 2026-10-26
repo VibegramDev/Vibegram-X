@@ -111,6 +111,7 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.telegram.TdlibMessageViewer;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3Dialogs;
 import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
@@ -764,10 +765,8 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     if (!patchAlertButton(dialog.getButton(DialogInterface.BUTTON_NEGATIVE), theme, ColorId.textNeutral))
       patchAlertButton(dialog.findViewById(android.R.id.button3), theme, ColorId.textNeutral);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      Drawable drawable = dialog.getWindow().getDecorView().getBackground();
-      if (drawable != null) {
-        drawable.setColorFilter(new PorterDuffColorFilter(theme.getColor(ColorId.overlayFilling), PorterDuff.Mode.SRC_IN));
-      }
+      // M3 basic dialog: 28dp surfaceContainerHigh container, 280..560dp, M3 type and actions.
+      M3Dialogs.apply(context, dialog, theme);
     }
     return dialog;
   }
@@ -1346,6 +1345,9 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   @Override
   public void onConfigurationChanged (@NonNull Configuration newConfig)  {
     super.onConfigurationChanged(newConfig);
+    // Moving to another display (fold / unfold) resets the window's system bar appearance to the theme default
+    // after this callback: re-apply ours once the change is processed.
+    getWindow().getDecorView().post(this::updateWindowDecorSystemUiVisibility);
     boolean needRecreate = Screen.checkDensity();
     navigation.configurationChanged(newConfig);
     if (isPasscodeShowing && passcodeController != null) {
@@ -3538,7 +3540,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       updateNavigationBarColor();
     }
     closeThumbnails(ThemeController.class);
-    if (oldTheme.needLightStatusBar() != newTheme.needLightStatusBar()) {
+    if (oldTheme.needLightStatusBar() != newTheme.needLightStatusBar() || oldTheme.isDark() != newTheme.isDark()) {
       updateWindowDecorSystemUiVisibility();
     }
     if (oldTheme.isDark() != newTheme.isDark()) {

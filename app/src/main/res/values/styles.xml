@@ -4,6 +4,9 @@
   <style name="AppTheme.Dark" parent="@android:style/Theme.NoTitleBar" />
   <style name="DialogTheme" parent="@android:style/Theme.Dialog" />
   <style name="DialogThemeDark" parent="@android:style/Theme.Dialog" />
+  <!-- M3 alert dialogs (Theme.dialogTheme()); Material-based on API 21+, see values-v21. -->
+  <style name="M3DialogTheme" parent="@style/DialogTheme" />
+  <style name="M3DialogThemeDark" parent="@style/DialogThemeDark" />
 
   <style name="WhiteRecyclerTheme" parent="@style/AppTheme" />
 

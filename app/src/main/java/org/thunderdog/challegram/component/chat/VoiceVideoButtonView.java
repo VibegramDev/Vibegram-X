@@ -113,8 +113,18 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
 
   private Paint paint;
 
+  private int iconColor;
+
+  /** Icon color of the composer (M3 content color of its container), 0 for the default theme color. */
+  public void setIconColor (int color) {
+    if (this.iconColor != color) {
+      this.iconColor = color;
+      invalidate();
+    }
+  }
+
   private Paint getIconPaint () {
-    int color = Theme.getColor(ColorId.circleButtonRegularIcon);
+    int color = iconColor != 0 ? iconColor : Theme.getColor(ColorId.circleButtonRegularIcon);
     if (paint == null || paint.getColor() != color)
       paint = Paints.createPorterDuffPaint(paint, color);
     return paint;
@@ -129,7 +139,7 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
     final float videoFactor = inVideoMode.getFloatValue();
     final float searchFactor = inSearchMode.getFloatValue();
 
-    final Paint paint = hasTouchControls ? Paints.getIconGrayPorterDuffPaint() : getIconPaint();
+    final Paint paint = hasTouchControls && iconColor == 0 ? Paints.getIconGrayPorterDuffPaint() : getIconPaint();
     final int savedAlpha = paint.getAlpha();
     final float generalFactor = (1f - sendFactor);
     if (generalFactor > 0f) {

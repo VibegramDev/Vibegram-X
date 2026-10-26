@@ -441,7 +441,9 @@ public class EditChatFolderInviteLinkController extends EditBaseController<EditC
         MaterialEditTextGroup editTextGroup = (MaterialEditTextGroup) frameLayout.getChildAt(0);
         MaterialEditText editText = editTextGroup.getEditText();
         editText.setLineDisabled(false);
-        editText.setPadding(0, editText.getPaddingTop(), 0, editText.getPaddingBottom());
+        if (!editTextGroup.isOutlined()) {
+          editText.setPadding(0, editText.getPaddingTop(), 0, editText.getPaddingBottom());
+        }
 
         int startMargin = Screen.dp(58f);
         if (Lang.rtl()) {

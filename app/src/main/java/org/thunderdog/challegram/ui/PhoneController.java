@@ -70,6 +70,7 @@ import org.thunderdog.challegram.util.CustomTypefaceSpan;
 import org.thunderdog.challegram.util.NoUnderlineClickableSpan;
 import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.util.text.Highlight;
+import org.thunderdog.challegram.widget.MaterialEditText;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 
@@ -325,7 +326,8 @@ public class PhoneController extends EditBaseController<Void> implements Setting
     recyclerView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
     FrameLayoutFix countryWrap = new FrameLayoutFix(context);
-    countryWrap.setPadding(Screen.dp(16f), Screen.dp(12f), Screen.dp(16f), 0);
+    // M3 outlined field is 8dp (floating label half) + 56dp tall: 8dp top padding keeps it inside the 72dp header.
+    countryWrap.setPadding(Screen.dp(16f), Screen.dp(8f), Screen.dp(16f), 0);
     countryWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, headerHeight, Gravity.TOP));
 
     countryView = new MaterialEditTextGroup(context, tdlib);
@@ -410,23 +412,27 @@ public class PhoneController extends EditBaseController<Void> implements Setting
 
         FrameLayoutFix.LayoutParams params;
 
-        params = FrameLayoutFix.newParams(Screen.dp(18f), Screen.dp(40f));
-        params.topMargin = Screen.dp(20f);
+        // M3 outlined fields: "+" is the prefix inside the calling code field (prefix colour onSurfaceVariant),
+        // the code field is 81dp wide, 8dp before the number field.
+        params = FrameLayoutFix.newParams(Screen.dp(12f), Screen.dp(56f));
+        params.topMargin = Screen.dp(8f);
+        params.leftMargin = Screen.dp(16f);
         TextView plusView = new NoScrollTextView(context);
         plusView.setText("+");
-        plusView.setTextColor(Theme.textAccentColor());
-        addThemeTextAccentColorListener(plusView);
+        plusView.setTextColor(Theme.textDecentColor());
+        addThemeTextDecentColorListener(plusView);
         plusView.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
-        plusView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
+        plusView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
         plusView.setLayoutParams(params);
         numberWrap.addView(plusView);
 
-        params = FrameLayoutFix.newParams(Screen.dp(50f), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT);
-        params.leftMargin = Screen.dp(18f);
+        params = FrameLayoutFix.newParams(Screen.dp(81f), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT);
 
         codeView = new MaterialEditTextGroup(context, tdlib);
         codeView.addThemeListeners(PhoneController.this);
         codeView.setLayoutParams(params);
+        MaterialEditText codeEditText = codeView.getEditText();
+        codeEditText.setPadding(codeEditText.getPaddingLeft() + Screen.dp(12f), codeEditText.getPaddingTop(), codeEditText.getPaddingRight(), codeEditText.getPaddingBottom());
         codeView.getEditText().setId(R.id.login_code);
         codeView.getEditText().setNextFocusDownId(R.id.login_phone);
         codeView.getEditText().setInputType(InputType.TYPE_CLASS_PHONE);

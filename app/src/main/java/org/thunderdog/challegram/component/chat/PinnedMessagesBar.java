@@ -54,6 +54,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
@@ -250,6 +251,15 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
   }
 
   private boolean ignoreAlbums;
+  private boolean transparentBackground;
+
+  /** The bar is placed on a container that paints its own background (message composer). */
+  public void setTransparentBackground () {
+    this.transparentBackground = true;
+    ViewUtils.setBackground(this, null);
+    ViewUtils.setBackground(recyclerView, null);
+    invalidate();
+  }
 
   public void setIgnoreAlbums (boolean ignoreAlbums) {
     this.ignoreAlbums = ignoreAlbums;
@@ -273,6 +283,9 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
 
   @Override
   protected void onDraw (Canvas c) {
+    if (transparentBackground) {
+      return;
+    }
     c.drawRect(0, getRecyclerHeight(), getMeasuredWidth(), getMeasuredHeight(), Paints.fillingPaint(Theme.fillingColor()));
   }
 

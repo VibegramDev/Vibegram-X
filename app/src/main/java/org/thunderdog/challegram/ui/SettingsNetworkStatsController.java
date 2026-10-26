@@ -117,6 +117,7 @@ public class SettingsNetworkStatsController extends RecyclerViewController<Setti
       }));
     }
     adapter.setItems(items, false);
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
   }
 }

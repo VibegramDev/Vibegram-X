@@ -139,6 +139,7 @@ import org.thunderdog.challegram.widget.BubbleLayout;
 import org.thunderdog.challegram.widget.FillingSpace;
 import org.thunderdog.challegram.widget.M3MainTitleView;
 import org.thunderdog.challegram.widget.M3SearchBarView;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.ShadowView;
@@ -192,6 +193,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private FrameLayoutFix mainWrap;
   private FrameLayoutFix pagerWrap;
   private MainNavigationBar navigationBar;
+  /** Tablet: fades the chat list into surface behind the floating bar. */
+  private M3BottomScrimView navigationScrim;
   /** Tablet layout only: M3 search app bar, the search bar in place of the app bar title. */
   private @Nullable M3SearchBarView searchBarView;
   /** Tablet layout with chat folders only: the folder tabs take the title place, search is an app bar button. */
@@ -266,7 +269,20 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
     UI.setSoftInputMode(UI.getContext(context), Config.DEFAULT_WINDOW_PARAMS);
 
+    navigationScrim = new M3BottomScrimView(context);
+    navigationScrim.setShapeProvider((view, out) -> {
+      if (navigationBar == null || !navigationBar.isBar() || navigationBar.getWidth() == 0) {
+        return false;
+      }
+      float left = navigationBar.getLeft() - view.getLeft();
+      float top = navigationBar.getTop() - view.getTop();
+      out.set(left, top, left + navigationBar.getWidth(), top + navigationBar.getHeight());
+      return true;
+    }, MainNavigationBar.getBarRadius());
+    addThemeInvalidateListener(navigationScrim);
+    contentView.addView(navigationScrim);
     contentView.addView(navigationBar);
+    navigationBar.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> navigationScrim.invalidate());
     checkNavigationBarLayout();
 
     makeStartupChecks();
@@ -427,9 +443,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private M3SearchBarView getSearchBarView () {
     if (searchBarView == null) {
       searchBarView = new M3SearchBarView(context, this, () -> {
-        // Search app bar: the search bar changes color with the app bar on scroll,
-        // surface container high on surface container would blend in (m3.material.io/components/search).
-        return ColorUtils.fromToArgb(M3.surfaceContainerHigh(), M3.surfaceContainerHighest(), headerScrollFactor);
+        // Search bar: surfaceContainerHigh (m3.material.io/components/search); the app bar does not change on scroll.
+        return M3.surfaceContainerHigh();
       }, BuildConfig.PROJECT_NAME, Lang.getString(R.string.Search), getMenuId());
       searchBarView.setOnBarClickListener(v -> openMainSearch());
     }
@@ -899,18 +914,42 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return button;
   }
 
+  // Contained full-screen search (m3.material.io/components/search, ExpandedFullScreenContainedSearchBar):
+  // the whole view (app bar and results) is surfaceContainerLow, the search bar inside it stays surfaceContainerHigh.
+
+  @Override
+  protected int getSearchHeaderColor () {
+    return M3.surfaceContainerLow();
+  }
+
+  // Chat search uses the grey search header (legacy icon / text colors): the search bar takes onSurface
+  // (input text, leading icon; the clear button uses it too).
+
+  @Override
+  protected int getSearchHeaderIconColorId () {
+    return ColorId.headerIcon;
+  }
+
+  @Override
+  protected int getSearchTextColorId () {
+    return ColorId.headerText;
+  }
+
+  @Override
+  protected int getChatSearchContainerColor () {
+    return M3.surfaceContainerLow();
+  }
+
   @Override
   protected SearchEditTextDelegate genSearchHeader (HeaderView headerView) {
-    // Wrapper drawn behind the back and clear buttons of the app bar: on tablets it draws the focused
-    // contained search bar (same rounded container and height as the unfocused one, focused margins 12dp).
+    // Wrapper drawn behind the back and clear buttons of the app bar: draws the focused contained search bar
+    // (phone and tablet; same rounded container and height as the unfocused tablet bar, 8dp horizontal padding
+    // of the expanded full-screen search bar).
     HeaderEditText editText = headerView.genSearchHeader(useLightSearchHeader(), this);
     FrameLayoutFix wrap = new FrameLayoutFix(context) {
       @Override
       protected void onDraw (Canvas c) {
-        if (!isTabletNavigationBar()) {
-          return;
-        }
-        int margin = Screen.dp(12f);
+        int margin = Screen.dp(8f);
         int barHeight = Screen.dp(M3SearchBarView.BAR_HEIGHT);
         int top = (getMeasuredHeight() - barHeight) / 2;
         RectF rect = Paints.getRectF();
@@ -1099,7 +1138,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   public void onPageSelected (int position, int actualPosition) {
     // Use the selected page itself: the "current" cached item may still point to the previous page here.
     ViewController<?> selectedPage = getCachedControllerForPosition(position);
-    setHeaderScrolled(selectedPage instanceof ChatsController && ((ChatsController) selectedPage).isScrolledFromTop());
     updateDockCollapsed(true);
     if (hasFolders()) {
       return;
@@ -1143,8 +1181,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return 0;
     }
     if (navigationBar.isBar()) {
-      // Tablet: the list already ends above the bar, nothing floats over it.
-      return 0;
+      // Tablet: the list scrolls under the floating bar, the last chat can be scrolled above it.
+      return MainNavigationBar.getBarTotalHeight() + Screen.dp(8f);
     }
     // Phone: floating dock at the bottom-end corner, above the folders bar if there is one.
     int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
@@ -1162,60 +1200,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
   }
 
-  // M3 app bar color on scroll: surface at rest, surfaceContainer when content scrolls under it (no shadow).
-
-  private boolean headerScrolled;
-  private float headerScrollFactor;
-  private FactorAnimator headerScrollAnimator;
-
   public void onChatListScrolled (ChatsController c) {
     if (c == getCurrentChatsController()) {
-      setHeaderScrolled(c.isScrolledFromTop());
       updateDockCollapsed(true);
-    }
-  }
-
-  private void setHeaderScrolled (boolean scrolled) {
-    if (this.headerScrolled == scrolled) {
-      return;
-    }
-    this.headerScrolled = scrolled;
-    if (headerScrollAnimator == null) {
-      headerScrollAnimator = new FactorAnimator(0, (id, factor, fraction, callee) -> {
-        headerScrollFactor = factor;
-        applyHeaderColor();
-      }, M3.DEFAULT_EFFECTS, M3.DEFAULT_EFFECTS.duration, headerScrollFactor);
-    }
-    headerScrollAnimator.animateTo(scrolled ? 1f : 0f);
-  }
-
-  @Override
-  protected int getHeaderColor () {
-    int color = super.getHeaderColor();
-    if (headerScrollFactor > 0f && !inSearchMode() && !inSelectMode()) {
-      // M3 app bar on scroll: surface -> surfaceContainer, in every theme (see M3.scrolledAppBarColor).
-      return ColorUtils.fromToArgb(color, M3.scrolledAppBarColor(color), headerScrollFactor);
-    }
-    return color;
-  }
-
-  private void applyHeaderColor () {
-    if (isDestroyed() || navigationController == null || navigationController.isAnimating() || inSearchMode() || inSelectMode()) {
-      return;
-    }
-    if (navigationController.getCurrentStackItem() != this && !navigationController.isTabletMaster(this)) {
-      return;
-    }
-    HeaderView header = navigationController.getHeaderViewFor(this);
-    if (header != null) {
-      header.getFilling().setColor(getHeaderColor());
-      header.invalidate();
-    }
-    if (searchBarView != null) {
-      searchBarView.invalidateColors();
-    }
-    if (topTabsBar != null) {
-      topTabsBar.invalidate();
     }
   }
 
@@ -1238,7 +1225,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
     navigationBar.setLayoutMode(isBar, extraBottomInsetWithoutIme, displayTabsAtBottom() ? getHeaderHeight() : 0);
-    Views.setBottomMargin(mainWrap, isBar ? MainNavigationBar.getBarHeight() : 0);
+    if (navigationScrim != null) {
+      // Covers the bar, its margins and the fade above it.
+      int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + extraBottomInsetWithoutIme;
+      navigationScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, scrimHeight, Gravity.BOTTOM));
+      navigationScrim.setVisibility(isBar ? View.VISIBLE : View.GONE);
+    }
     updateDockCollapsed(false);
     updateHeaderDockButtons();
     if (modeChanged && headerView != null && isFocused() && !inTransformMode() && navigationController != null && !navigationController.isAnimating()) {
@@ -3145,7 +3137,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
     if (displayTabsAtBottom) {
       Views.setTopMargin(headerCellView, Screen.dp(3f) - Screen.dp(1f));
-      ViewSupport.setThemedBackground(headerCellView, ColorId.headerLightBackground, this);
+      // Folder tabs at the bottom = navigation area: surfaceContainer (M3 roles, every theme).
+      ViewUtils.setBackground(headerCellView, M3.roleDrawable(M3.SURFACE_CONTAINER));
+      addThemeInvalidateListener(headerCellView);
       headerCell.getTopView().setSelectionColorId(ColorId.headerLightText, .9f);
       headerCell.getTopView().setTextFromToColorId(ColorId.headerLightText, ColorId.headerLightText, PropertyId.SUBTITLE_ALPHA);
     } else {
@@ -3195,7 +3189,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       pagerWrap.addView(bottomBar, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, headerHeight + shadowHeight - Screen.dp(1f), Gravity.BOTTOM));
 
       bottomBarSpace = new FillingSpace(context);
-      bottomBarSpace.setThemedBackground(ColorId.headerLightBackground, this);
+      ViewUtils.setBackground(bottomBarSpace, M3.roleDrawable(M3.SURFACE_CONTAINER));
+      addThemeInvalidateListener(bottomBarSpace);
       pagerWrap.addView(bottomBarSpace, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM));
 
       updateBottomBarMargins();

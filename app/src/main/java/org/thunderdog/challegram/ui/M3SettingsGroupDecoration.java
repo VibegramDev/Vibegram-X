@@ -15,26 +15,36 @@ package org.thunderdog.challegram.ui;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
+import android.graphics.Outline;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Region;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
+import android.os.Build;
 import android.view.View;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
+import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.ThemeChangeListener;
+import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 
 import java.util.List;
 
+import me.vkryl.android.animator.BoolAnimator;
+import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 
 /**
  * Material 3 Expressive segmented list for settings screens (opt-in per screen, every theme:
@@ -47,30 +57,82 @@ import me.vkryl.core.ColorUtils;
  * Group boundaries are computed from the adapter model, not from visible views. Row backgrounds are wrapped
  * (the original drawable is kept inside the wrapper) and restored when a row is detached (recycling), so a
  * holder reused for a row type outside the group gets its own background back.
+ *
+ * Gaps and segment fills are painted with the current theme colors at draw time; on a theme change
+ * (including the animated switch on the Themes screen) the list and its rows are redrawn, otherwise
+ * the RecyclerView display list would keep the gaps of the previous theme.
  */
-public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration implements RecyclerView.OnChildAttachStateChangeListener {
+public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration implements RecyclerView.OnChildAttachStateChangeListener, ThemeChangeListener, View.OnAttachStateChangeListener {
   private static final int KIND_OTHER = 0, KIND_CARD = 1, KIND_SEPARATOR = 2, KIND_HIDDEN = 3, KIND_TEXT = 4;
   private static final float GROUP_INSET = 16f;
   private static final float SEGMENT_GAP = 2f; // ListTokens.SegmentedGap
   private static final float SEPARATOR_HEIGHT = 1f; // SettingHolder TYPE_SEPARATOR height
 
   private final SettingsAdapter adapter;
+  private final RecyclerView recyclerView;
+  private final int[] customCardViewTypes;
 
-  private M3SettingsGroupDecoration (SettingsAdapter adapter) {
+  private M3SettingsGroupDecoration (RecyclerView recyclerView, SettingsAdapter adapter, int[] customCardViewTypes) {
+    this.recyclerView = recyclerView;
     this.adapter = adapter;
+    this.customCardViewTypes = customCardViewTypes;
   }
 
-  /** Call before {@code setAdapter}. Every row type of the screen must be classified in {@link #kindAt}. */
-  public static M3SettingsGroupDecoration attach (RecyclerView recyclerView, SettingsAdapter adapter) {
-    M3SettingsGroupDecoration decoration = new M3SettingsGroupDecoration(adapter);
+  /**
+   * Call before {@code setAdapter}. Every row type of the screen must be classified in {@link #kindAt}.
+   *
+   * @param customCardViewTypes screen-specific view types ({@code ListItem.TYPE_CUSTOM - x}) whose rows sit on the
+   *                            filling color and become segments; other custom types are left untouched.
+   */
+  public static M3SettingsGroupDecoration attach (RecyclerView recyclerView, SettingsAdapter adapter, int... customCardViewTypes) {
+    M3SettingsGroupDecoration decoration = new M3SettingsGroupDecoration(recyclerView, adapter, customCardViewTypes);
     recyclerView.addItemDecoration(decoration);
     recyclerView.addOnChildAttachStateChangeListener(decoration);
+    // Listen to theme changes only while the list is on screen.
+    recyclerView.addOnAttachStateChangeListener(decoration);
+    if (ViewCompat.isAttachedToWindow(recyclerView)) {
+      ThemeManager.instance().addThemeListener(decoration);
+    }
     return decoration;
+  }
+
+  @Override
+  public void onViewAttachedToWindow (@NonNull View view) {
+    ThemeManager.instance().addThemeListener(this);
+    // The theme may have changed while the screen was in the back stack.
+    redraw();
+  }
+
+  @Override
+  public void onViewDetachedFromWindow (@NonNull View view) {
+    ThemeManager.instance().removeThemeListener(this);
+  }
+
+  @Override
+  public boolean needsTempUpdates () {
+    return true;
+  }
+
+  @Override
+  public void onThemeColorsChanged (boolean areTemp, @Nullable ColorState state) {
+    redraw();
+  }
+
+  private void redraw () {
+    recyclerView.invalidate();
+    for (int i = 0; i < recyclerView.getChildCount(); i++) {
+      View view = recyclerView.getChildAt(i);
+      Drawable background = view.getBackground();
+      if (background instanceof SegmentBackground) {
+        background.invalidateSelf();
+      }
+    }
   }
 
   /** Segment container: surfaceContainerLowest on the light page (surfaceContainer), surfaceContainerHigh on the dark page (surface). */
   private static int cardColor () {
-    return Theme.isDark() ? M3.surfaceContainerHigh() : M3.surfaceContainerLowest();
+    // Cards on the surface page: one containment level up (owner's choice of the literal M3 scheme).
+    return M3.surfaceContainer();
   }
 
   private int kindAt (int position) {
@@ -78,7 +140,16 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
     if (position < 0 || position >= items.size()) {
       return KIND_OTHER;
     }
-    switch (items.get(position).getViewType()) {
+    int viewType = items.get(position).getViewType();
+    if (viewType <= ListItem.TYPE_CUSTOM) {
+      for (int customViewType : customCardViewTypes) {
+        if (customViewType == viewType) {
+          return KIND_CARD;
+        }
+      }
+      return KIND_OTHER;
+    }
+    switch (viewType) {
       // SettingView rows (SettingHolder)
       case ListItem.TYPE_SETTING:
       case ListItem.TYPE_VALUED_SETTING:
@@ -102,6 +173,16 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       case ListItem.TYPE_RADIO_OPTION_WITH_AVATAR:
       // CustomTextView on the filling color (wrap content): a non-clickable segment
       case ListItem.TYPE_INFO:
+      // Other rows on the filling color: sliders (SliderWrapView), sessions and websites (RelativeLayout),
+      // chats and users (BetterChatView, UserView), cache entries (DoubleTextView)
+      case ListItem.TYPE_SLIDER:
+      case ListItem.TYPE_SLIDER_BRIGHTNESS:
+      case ListItem.TYPE_SESSION:
+      case ListItem.TYPE_SESSION_WITH_AVATAR:
+      case ListItem.TYPE_CHAT_BETTER:
+      case ListItem.TYPE_USER:
+      case ListItem.TYPE_DOUBLE_TEXTVIEW_ROUNDED:
+      case ListItem.TYPE_CHECKBOX_OPTION_DOUBLE_LINE:
         return KIND_CARD;
       case ListItem.TYPE_SEPARATOR:
       case ListItem.TYPE_SEPARATOR_FULL:
@@ -118,9 +199,31 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       // 4dp spacer painted with the page color, full-screen placeholder text (loading error): not part of a group.
       case ListItem.TYPE_EMPTY_OFFSET_SMALL:
       case ListItem.TYPE_EMPTY:
+      // Full-width "no other sessions / no websites" placeholders on the page color.
+      case ListItem.TYPE_SESSIONS_EMPTY:
+      case ListItem.TYPE_WEBSITES_EMPTY:
+      // Bottom spacer (PaddingView): transparent, or the filling color, which is the page color (Theme.chromeColor).
+      case ListItem.TYPE_PADDING:
         return KIND_OTHER;
     }
     return KIND_OTHER;
+  }
+
+  /**
+   * Height of the spacer rows (shadows painted with the page color, 4dp offsets) above the first row of the list,
+   * or -1 if there is any other row above the given position.
+   */
+  private int leadingSpace (int position) {
+    List<ListItem> items = adapter.getItems();
+    int height = 0;
+    for (int i = 0; i < position && i < items.size(); i++) {
+      int viewType = items.get(i).getViewType();
+      if (viewType != ListItem.TYPE_EMPTY_OFFSET_SMALL && kindAt(i) != KIND_HIDDEN) {
+        return -1;
+      }
+      height += SettingHolder.measureHeightForType(viewType);
+    }
+    return height;
   }
 
   /** Whether the row at position continues the group in the given direction (another row, maybe after a separator). */
@@ -142,7 +245,12 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       case KIND_CARD: {
         outRect.left = outRect.right = inset;
         int previous = kindAt(position - 1);
-        if (previous == KIND_CARD) {
+        int leading = leadingSpace(position);
+        if (leading != -1) {
+          // The list starts with a group (no section header above it): keep it off the app bar
+          // by the same 16dp as the side margins (our choice), counting spacer rows already there.
+          outRect.top = Math.max(0, inset - leading);
+        } else if (previous == KIND_CARD) {
           outRect.top = Screen.dp(SEGMENT_GAP);
         } else if (previous == KIND_SEPARATOR && kindAt(position - 2) == KIND_CARD) {
           // The separator row itself (painted with the page color) is part of the gap.
@@ -178,6 +286,26 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
   public void onDrawOver (@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
     // Separators and shadows become gaps of the page color.
     int pageColor = Theme.backgroundColor();
+    // A lifted (dragged) row floats above the list: never paint the gaps over it.
+    boolean clipped = false;
+    for (int i = 0; i < parent.getChildCount(); i++) {
+      View view = parent.getChildAt(i);
+      Drawable background = view.getBackground();
+      if (background instanceof SegmentBackground && ((SegmentBackground) background).isLifted()) {
+        if (!clipped) {
+          c.save();
+          clipped = true;
+        }
+        float dx = view.getTranslationX(), dy = view.getTranslationY();
+        float left = view.getLeft() + dx, top = view.getTop() + dy, right = view.getRight() + dx, bottom = view.getBottom() + dy;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          c.clipOutRect(left, top, right, bottom);
+        } else {
+          //noinspection deprecation
+          c.clipRect(left, top, right, bottom, Region.Op.DIFFERENCE);
+        }
+      }
+    }
     for (int i = 0; i < parent.getChildCount(); i++) {
       View view = parent.getChildAt(i);
       int position = parent.getChildAdapterPosition(view);
@@ -190,6 +318,9 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
         c.drawRect(view.getLeft() + dx, view.getTop() + dy, view.getRight() + dx, view.getBottom() + dy, Paints.fillingPaint(pageColor));
       }
     }
+    if (clipped) {
+      c.restore();
+    }
   }
 
   @Override
@@ -199,6 +330,39 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
   public void onChildViewDetachedFromWindow (@NonNull View view) {
     // A recycled holder may be reused for another row type or after a theme switch: give it back its own background.
     restore(view);
+  }
+
+  /**
+   * Dragged state of a reorderable segment (call when ItemTouchHelper picks the row up and when it is released).
+   * M3 list item tokens (ListItemTokens): dragged container shape CornerLarge (16dp on every corner),
+   * elevation Level4 (8dp), state layer onSurface 16%. Corners follow the fast spatial spring,
+   * elevation and the state layer the fast effects spring.
+   */
+  public void setDragged (View view, boolean isDragged) {
+    Drawable background = view.getBackground();
+    if (!(background instanceof SegmentBackground)) {
+      int position = recyclerView.getChildAdapterPosition(view);
+      if (!isDragged || position == RecyclerView.NO_POSITION || kindAt(position) != KIND_CARD) {
+        return;
+      }
+      applySegment(view, isConnected(position, -1), isConnected(position, 1));
+      background = view.getBackground();
+    }
+    ((SegmentBackground) background).setDragged(view, isDragged);
+  }
+
+  /**
+   * Clips the canvas to the segment shape of the view, if the view is a segment. Used by rows that draw over their
+   * whole bounds (swipe-to-remove background of {@code SettingView}). Returns whether {@link Canvas#save()} was called.
+   */
+  public static boolean clipToSegment (View view, Canvas c) {
+    Drawable background = view.getBackground();
+    if (background instanceof SegmentBackground) {
+      c.save();
+      c.clipPath(((SegmentBackground) background).content.buildPath());
+      return true;
+    }
+    return false;
   }
 
   private static void applySegment (View view, boolean connectedTop, boolean connectedBottom) {
@@ -211,12 +375,15 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       segment = new SegmentBackground(background);
       view.setBackground(segment);
     }
-    segment.setShape(connectedTop, connectedBottom);
+    if (segment.setShape(connectedTop, connectedBottom) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      view.invalidateOutline();
+    }
   }
 
   private static void restore (View view) {
     Drawable background = view.getBackground();
     if (background instanceof SegmentBackground) {
+      ((SegmentBackground) background).resetDragged(view);
       view.setBackground(((SegmentBackground) background).original);
     }
   }
@@ -226,10 +393,15 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
   }
 
   /** Segment fill + M3 state layer (pressed 10% of onSurface), clipped to the segment shape. */
-  private static final class SegmentBackground extends RippleDrawable {
+  private static final class SegmentBackground extends RippleDrawable implements FactorAnimator.Target {
+    private static final int ANIMATOR_SHAPE = 0, ANIMATOR_LIFT = 1;
+
     final @Nullable Drawable original;
     private final SegmentShape content, mask;
     private int currentRippleColor;
+
+    private @Nullable View draggedView;
+    private @Nullable BoolAnimator shapeAnimator, liftAnimator;
 
     SegmentBackground (@Nullable Drawable original) {
       this(original, new SegmentShape(true), new SegmentShape(false));
@@ -243,8 +415,10 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       this.currentRippleColor = rippleColor();
     }
 
-    void setShape (boolean connectedTop, boolean connectedBottom) {
-      if (content.setShape(connectedTop, connectedBottom) | mask.setShape(connectedTop, connectedBottom)) {
+    /** Returns whether the shape changed (the view outline must be rebuilt). */
+    boolean setShape (boolean connectedTop, boolean connectedBottom) {
+      boolean changed = content.setShape(connectedTop, connectedBottom) | mask.setShape(connectedTop, connectedBottom);
+      if (changed) {
         invalidateSelf();
       }
       int color = rippleColor();
@@ -252,12 +426,67 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
         currentRippleColor = color;
         setColor(ColorStateList.valueOf(color));
       }
+      return changed;
+    }
+
+    void setDragged (View view, boolean isDragged) {
+      this.draggedView = view;
+      if (shapeAnimator == null || liftAnimator == null) {
+        if (!isDragged) {
+          return;
+        }
+        shapeAnimator = new BoolAnimator(ANIMATOR_SHAPE, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration);
+        liftAnimator = new BoolAnimator(ANIMATOR_LIFT, this, M3.FAST_EFFECTS, M3.FAST_EFFECTS.duration);
+      }
+      shapeAnimator.setValue(isDragged, true);
+      liftAnimator.setValue(isDragged, true);
+    }
+
+    void resetDragged (View view) {
+      if (shapeAnimator != null) {
+        shapeAnimator.setValue(false, false);
+      }
+      if (liftAnimator != null) {
+        liftAnimator.setValue(false, false);
+      }
+      content.setDragFactors(0f, 0f);
+      mask.setDragFactors(0f, 0f);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.setTranslationZ(0f);
+      }
+      draggedView = null;
+    }
+
+    boolean isLifted () {
+      return content.liftFactor > 0f || content.shapeFactor > 0f;
+    }
+
+    @Override
+    public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
+      View view = draggedView;
+      if (id == ANIMATOR_SHAPE) {
+        content.setDragFactors(factor, content.liftFactor);
+        mask.setDragFactors(factor, mask.liftFactor);
+        if (view != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.invalidateOutline();
+        }
+      } else {
+        content.setDragFactors(content.shapeFactor, factor);
+        if (view != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.setTranslationZ(Screen.dp(M3.ELEVATION_LEVEL4) * factor);
+        }
+      }
+      invalidateSelf();
     }
   }
 
   private static final class SegmentShape extends Drawable {
     private final boolean isContent;
     private boolean connectedTop, connectedBottom;
+    /** 0 = resting segment, 1 = dragged (16dp on every corner); may overshoot (spatial spring). */
+    private float shapeFactor;
+    /** Dragged state layer (onSurface 16%) and elevation, 0..1. */
+    private float liftFactor;
     private final Path path = new Path();
     private final RectF rect = new RectF();
     private final float[] radii = new float[8];
@@ -275,18 +504,47 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       return false;
     }
 
-    @Override
-    public void draw (@NonNull Canvas c) {
+    void setDragFactors (float shapeFactor, float liftFactor) {
+      this.shapeFactor = shapeFactor;
+      this.liftFactor = liftFactor;
+    }
+
+    Path buildPath () {
       float outer = Screen.dp(M3.CORNER_LARGE);
       float inner = Screen.dp(M3.CORNER_EXTRA_SMALL);
-      float top = connectedTop ? inner : outer;
-      float bottom = connectedBottom ? inner : outer;
+      Rect bounds = getBounds();
+      float maxRadius = Math.min(bounds.width(), bounds.height()) / 2f;
+      float top = MathUtils.clamp(MathUtils.fromTo(connectedTop ? inner : outer, outer, shapeFactor), 0f, maxRadius);
+      float bottom = MathUtils.clamp(MathUtils.fromTo(connectedBottom ? inner : outer, outer, shapeFactor), 0f, maxRadius);
       radii[0] = radii[1] = radii[2] = radii[3] = top;
       radii[4] = radii[5] = radii[6] = radii[7] = bottom;
-      rect.set(getBounds());
+      rect.set(bounds);
       path.reset();
       path.addRoundRect(rect, radii, Path.Direction.CW);
+      return path;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      Path path = buildPath();
       c.drawPath(path, Paints.fillingPaint(isContent ? cardColor() : 0xFFFFFFFF));
+      if (isContent && liftFactor > 0f) {
+        c.drawPath(path, Paints.fillingPaint(ColorUtils.alphaColor(M3.STATE_DRAGGED * MathUtils.clamp(liftFactor), M3.onSurface())));
+      }
+    }
+
+    /** Outline for the elevation shadow of a dragged segment. */
+    @Override
+    public void getOutline (@NonNull Outline outline) {
+      Path path = buildPath();
+      if (radii[0] == radii[4]) {
+        outline.setRoundRect(getBounds(), radii[0]);
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        outline.setPath(path);
+      } else {
+        //noinspection deprecation
+        outline.setConvexPath(path);
+      }
     }
 
     @Override

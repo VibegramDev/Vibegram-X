@@ -932,7 +932,7 @@ public class TdlibUi extends Handler {
     }
     infiniteView.initWithItems(ttlOptions, foundIndex);
 
-    final AlertDialog.Builder builder = new AlertDialog.Builder(context, useDarkMode ? R.style.DialogThemeDark : Theme.dialogTheme());
+    final AlertDialog.Builder builder = new AlertDialog.Builder(context, useDarkMode ? R.style.M3DialogThemeDark : Theme.dialogTheme());
     builder.setTitle(Lang.getString(R.string.MessageLifetime));
     if (message != 0) {
       builder.setMessage(Lang.getString(message));

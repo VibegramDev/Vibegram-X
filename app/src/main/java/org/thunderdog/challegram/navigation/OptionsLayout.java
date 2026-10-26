@@ -31,6 +31,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
+import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -38,6 +39,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeDelegate;
 import org.thunderdog.challegram.theme.ThemeListenerList;
@@ -50,6 +52,7 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.widget.CustomTextView;
 import org.thunderdog.challegram.widget.EmojiTextView;
+import org.thunderdog.challegram.widget.M3Sheets;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 
 import me.vkryl.android.ViewUtils;
@@ -87,6 +90,11 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     ViewUtils.setBackground(this, new Drawable() {
       @Override
       public void draw (@NonNull Canvas c) {
+        if (m3Sheet) {
+          // M3 sheet container; the shape (28dp top corners) is applied by the outline clip.
+          c.drawColor(getContainerColor());
+          return;
+        }
         View view = getChildAt(0);
         int height = view != null ? view.getMeasuredHeight() : 0;
         if (height > 0)
@@ -117,6 +125,34 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     }
   }
 
+  private boolean m3Sheet;
+
+  /**
+   * M3 modal bottom sheet look (used by {@link ViewController#showOptions} and {@link ViewController#showPopup}):
+   * surfaceContainerLow container, 28dp top corners, width up to 640dp (centered, 56dp margins in wide windows).
+   * Index 0 keeps a top spacer instead of the legacy top shadow, so callers inserting views at index 1 still work.
+   */
+  public void setM3Sheet (ViewController<?> themeProvider) {
+    this.m3Sheet = true;
+    View spacer = new View(getContext());
+    spacer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(M3_TOP_SPACE)));
+    addView(spacer, 0);
+    M3Sheets.setOutline(this, () -> 0);
+    if (forcedTheme == null && themeProvider != null) {
+      themeProvider.addThemeInvalidateListener(this);
+    }
+  }
+
+  public static final float M3_TOP_SPACE = 8f;
+
+  public boolean isM3Sheet () {
+    return m3Sheet;
+  }
+
+  public @ColorInt int getContainerColor () {
+    return forcedTheme != null ? forcedTheme.getColor(ColorId.filling) : M3.surfaceContainerLow();
+  }
+
   @Override
   public void onApplyMarginInsets (View child, FrameLayout.LayoutParams params, Rect legacyInsets, Rect insets, Rect insetsWithoutIme) {
     Views.setMargins(params, insets.left, 0, insets.right, 0);
@@ -125,6 +161,9 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
 
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+    if (m3Sheet) {
+      widthMeasureSpec = M3Sheets.measureSpec(widthMeasureSpec);
+    }
     super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
     int currentHeight = getMeasuredHeight();

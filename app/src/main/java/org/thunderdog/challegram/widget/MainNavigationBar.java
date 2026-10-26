@@ -86,6 +86,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private static final float RAIL_ITEM_SIZE = 56f;
   private static final float RAIL_PADDING = 6f;
   private static final float BAR_HEIGHT = 64f;
+  /** Center of the icon (and the active indicator) from the top of the tablet bar. */
+  private static final float BAR_ICON_CENTER_Y = 23f;
   private static final float ICON_SIZE = 24f;
   private static final float AVATAR_SIZE = 28f;
   /** Active indicator (and pressed state layer) size. */
@@ -187,7 +189,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
         @Override
         public void getOutline (View view, Outline outline) {
           if (isBar) {
-            outline.setRect(0, 0, view.getWidth(), view.getHeight());
+            outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), getBarRadius());
           } else {
             outline.setRoundRect(0, getRailTop(), view.getWidth(), view.getHeight(), getRailRadius());
           }
@@ -310,13 +312,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return unreadCounter != null ? unreadCounter.getMuteFactor() : 0f;
   }
 
-  /**
-   * Tablet bar: surfaceContainer (M3 navigation area role).
-   * Phone dock floats above the list: one tonal step more in dark themes, where shadows are barely visible;
-   * surfaceContainer in light themes, where the shadow separates it and the indicator keeps its contrast.
-   */
+  /** Tablet bar and phone dock: surfaceContainer (M3 navigation area role). */
   private int containerColor () {
-    return isBar || !Theme.isDark() ? M3.surfaceContainer() : M3.surfaceContainerHigh();
+    return M3.surfaceContainer();
   }
 
   /**
@@ -341,6 +339,27 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   public static int getBarHeight () {
     return Screen.dp(BAR_HEIGHT);
+  }
+
+  /**
+   * Tablet bar floats above the chat list (M3 Expressive floating toolbar look): full corner radius,
+   * small margins at the sides and the bottom (our choice: 12dp).
+   */
+  public static int getBarMargin () {
+    return Screen.dp(12f);
+  }
+
+  /**
+   * Corner radius concentric with the active indicator: indicator radius (16dp) + its distance to the top edge
+   * (icon center 23dp - 16dp = 7dp) = 23dp.
+   */
+  public static float getBarRadius () {
+    return Screen.dp(BAR_ICON_CENTER_Y);
+  }
+
+  /** Space taken at the bottom of the chat list pane by the floating tablet bar (without the system inset). */
+  public static int getBarTotalHeight () {
+    return getBarHeight() + getBarMargin();
   }
 
   public static int getRailWidth () {
@@ -390,8 +409,11 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     int padding = Screen.dp(RAIL_PADDING);
     FrameLayoutFix.LayoutParams params;
     if (isBar) {
-      params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight() + bottomInset, Gravity.BOTTOM);
-      setPadding(0, 0, 0, bottomInset);
+      params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
+      params.leftMargin = params.rightMargin = getBarMargin();
+      params.bottomMargin = getBarMargin() + bottomInset;
+      // Keeps the outer labels away from the rounded ends.
+      setPadding(Screen.dp(8f), 0, Screen.dp(8f), 0);
     } else {
       params = FrameLayoutFix.newParams(getRailWidth(), getRailHeight(), Gravity.BOTTOM | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT));
       params.leftMargin = params.rightMargin = getRailMargin();
@@ -428,8 +450,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     updateCollapsedViews();
     Views.setTopMargin(avatarView, getIconCenterY() - Screen.dp(AVATAR_SIZE) / 2);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      // Tablet bar: soft shadow drawn by M3BottomScrimView (same as the floating message composer).
       setElevation(isBar ? 0 : Screen.dp(4f));
-      setClipToOutline(!isBar);
+      setClipToOutline(true);
       invalidateOutline();
     }
     if (modeChanged) {
@@ -439,13 +462,13 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   }
 
   private int getIconCenterY () {
-    return isBar ? Screen.dp(23f) : Screen.dp(RAIL_ITEM_SIZE) / 2;
+    return isBar ? Screen.dp(BAR_ICON_CENTER_Y) : Screen.dp(RAIL_ITEM_SIZE) / 2;
   }
 
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
     if (isBar) {
-      int width = MeasureSpec.getSize(widthMeasureSpec);
+      int width = MeasureSpec.getSize(widthMeasureSpec) - getPaddingLeft() - getPaddingRight();
       int itemWidth = width / items.length;
       for (int i = 0; i < items.length; i++) {
         FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) items[i].getLayoutParams();
@@ -469,15 +492,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   @Override
   protected void onDraw (Canvas c) {
     int fillingColor = containerColor();
-    if (isBar) {
-      c.drawRect(0, 0, getWidth(), getHeight(), Paints.fillingPaint(fillingColor));
-      c.drawRect(0, 0, getWidth(), Math.max(1, Screen.dp(.5f)), Paints.fillingPaint(Theme.separatorColor()));
-    } else {
+    {
       RectF rect = Paints.getRectF();
       rect.set(0, getRailTop(), getWidth(), getHeight());
-      float radius = getRailRadius();
+      float radius = isBar ? getBarRadius() : getRailRadius();
       c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(fillingColor));
-      if (needOutlineStroke()) {
+      if (!isBar && needOutlineStroke()) {
         c.drawRoundRect(rect, radius, radius, Paints.strokeSmallPaint(Theme.separatorColor()));
       }
     }

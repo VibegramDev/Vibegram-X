@@ -76,6 +76,10 @@ public class SeparatorView extends View {
     this.forcedFillingColor = filling;
   }
 
+  public int getForcedFillingColor () {
+    return forcedFillingColor;
+  }
+
   @Override
   public boolean onTouchEvent (MotionEvent event) {
     super.onTouchEvent(event);

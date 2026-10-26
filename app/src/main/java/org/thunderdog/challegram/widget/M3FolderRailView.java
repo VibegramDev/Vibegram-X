@@ -42,6 +42,7 @@ import androidx.annotation.Nullable;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewPagerTopView;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.ThemeInvalidateListener;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
@@ -61,7 +62,7 @@ import me.vkryl.core.MathUtils;
  * Selection follows the pager position, so it moves together with page swipes like the tabs do.
  * Scrolls vertically when the folders don't fit.
  */
-public class M3FolderRailView extends FrameLayoutFix {
+public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateListener {
   public static final float RAIL_WIDTH = 80f;
   private static final float ITEM_HEIGHT = 64f;
   private static final float ITEM_SPACING = 4f;
@@ -178,6 +179,12 @@ public class M3FolderRailView extends FrameLayoutFix {
   }
 
   /** Counters and theme: the items draw their own state. */
+  /** Theme change: the items draw M3 roles themselves, invalidating the rail alone does not redraw them. */
+  @Override
+  public void onThemeInvalidate (boolean isTempUpdate) {
+    invalidateItems();
+  }
+
   public void invalidateItems () {
     invalidate();
     for (ItemView item : items) {

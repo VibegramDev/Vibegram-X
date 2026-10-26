@@ -103,6 +103,7 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
 
   private SettingsAdapter adapter;
   private ItemTouchHelper itemTouchHelper;
+  private M3SettingsGroupDecoration groupDecoration;
 
   public SettingsFoldersController (Context context, Tdlib tdlib) {
     super(context, tdlib);
@@ -317,7 +318,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
       }
     };
     adapter.setItems(items, false);
-    recyclerView.addItemDecoration(new ItemDecoration());
+    // M3 segmented groups; folder rows and recommended folders are custom SettingView rows on the filling color.
+    // The 2dp gaps replace the folder separators the screen used to draw itself.
+    groupDecoration = M3SettingsGroupDecoration.attach(recyclerView, adapter, ListItem.TYPE_CUSTOM - TYPE_CHAT_FOLDER, ListItem.TYPE_CUSTOM - TYPE_RECOMMENDED_CHAT_FOLDER);
     recyclerView.setAdapter(adapter);
     addThemeInvalidateListener(recyclerView);
 
@@ -957,6 +960,13 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     public void onCompleteMovement (int fromPosition, int toPosition) {
       reorderChatFolders();
     }
+
+    @Override
+    public void onDragStateChanged (RecyclerView.ViewHolder viewHolder, boolean isDragging) {
+      if (groupDecoration != null) {
+        groupDecoration.setDragged(viewHolder.itemView, isDragging);
+      }
+    }
   }
 
   private class ChatFolderOnTouchListener implements View.OnTouchListener {
@@ -971,47 +981,6 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
         }
       }
       return false;
-    }
-  }
-
-  private static class ItemDecoration extends RecyclerView.ItemDecoration {
-    @Override
-    public void onDrawOver (@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-      boolean isRtl = Lang.rtl();
-      int separatorColor = Theme.separatorColor();
-      int separatorHeight = Math.max(1, Screen.dp(.5f));
-      Paint sepratorPaint = Paints.fillingPaint(separatorColor);
-      int startOffset = Screen.dp(72f);
-      int childCount = parent.getChildCount();
-      for (int i = 0; i < childCount; i++) {
-        View child = parent.getChildAt(i);
-        if (!isChatFolder(child) || isDragging(child)) {
-          continue;
-        }
-        int layoutPosition = parent.getChildLayoutPosition(child);
-        if (layoutPosition == RecyclerView.NO_POSITION) {
-          continue;
-        }
-        RecyclerView.ViewHolder next = parent.findViewHolderForLayoutPosition(layoutPosition + 1);
-        if (next == null || isChatFolder(next.itemView) && isDragging(next.itemView)) {
-          continue;
-        }
-        int bottom = child.getBottom();
-        int top = bottom - separatorHeight;
-        if (isRtl) {
-          c.drawRect(0, top, child.getWidth() - startOffset, bottom, sepratorPaint);
-        } else {
-          c.drawRect(startOffset, top, child.getWidth(), bottom, sepratorPaint);
-        }
-      }
-    }
-
-    private boolean isChatFolder (View view) {
-      return view.getId() == R.id.chatFolder;
-    }
-
-    private boolean isDragging (View view) {
-      return view.getTranslationY() != 0f;
     }
   }
 

@@ -423,9 +423,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
         // c.drawCircle(startX, y, Screen.dp(2f), Paints.fillingPaint(0xaaff0000));
         c.restore();
       }
-      if (shadowLineFactor > 0f) {
-        ShadowView.drawDropShadow(c, 0, width, (int) shadowTop, dropShadowAlpha * shadowLineFactor);
-      }
+      // M3: no drop shadow under the app bar (shadowLineFactor is kept for callers but no longer drawn).
     } else {
       if (fillFactor == 1f) {
         c.drawRect(0f, 0f, width, fillingBottom, Paints.fillingPaint(color));
