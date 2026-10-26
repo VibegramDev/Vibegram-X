@@ -477,7 +477,17 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
   @Override
   protected void onBottomInsetChanged (int extraBottomInset, int extraBottomInsetWithoutIme, boolean isImeInset) {
     super.onBottomInsetChanged(extraBottomInset, extraBottomInsetWithoutIme, isImeInset);
-    Views.applyBottomInset(chatsView, extraBottomInset);
+    Views.applyBottomInset(chatsView, extraBottomInset + navigationInset);
+  }
+
+  private int navigationInset;
+
+  /** Extra bottom scroll space, so the last chat can be scrolled above the main screen dock / FAB. */
+  public void setNavigationInset (int inset) {
+    if (this.navigationInset != inset) {
+      this.navigationInset = inset;
+      Views.applyBottomInset(chatsView, extraBottomInset + inset);
+    }
   }
 
   @Override
@@ -496,7 +506,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
         adapter.notifyLastItemChanged();
       }
     });
-    Views.applyBottomInset(chatsView, extraBottomInset);
+    Views.applyBottomInset(chatsView, extraBottomInset + navigationInset);
     chatsView.setItemAnimator(null);
     if (isInForceTouchMode()) {
       chatsView.setVerticalScrollBarEnabled(false);

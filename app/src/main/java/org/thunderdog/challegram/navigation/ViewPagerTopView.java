@@ -23,6 +23,7 @@ import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
@@ -92,7 +93,7 @@ import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.Destroyable;
 
 public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener, View.OnClickListener, View.OnLongClickListener, Destroyable, TGLegacyManager.EmojiLoadListener, FactorAnimator.Target {
-  public static final @Dimension(unit = Dimension.DP) float SELECTION_HEIGHT = 2f;
+  public static final @Dimension(unit = Dimension.DP) float SELECTION_HEIGHT = 3f; // M3 PrimaryNavigationTabTokens.ActiveIndicatorHeight
   public static final @Dimension(unit = Dimension.DP) float ICON_SIZE = 24f;
   public static final @Dimension(unit = Dimension.DP) float DEFAULT_ITEM_PADDING = 19f;
   public static final @Dimension(unit = Dimension.DP) float COMPACT_ITEM_PADDING = 10f;
@@ -1258,10 +1259,25 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       int selectionHeight = Screen.dp(SELECTION_HEIGHT);
       int selectionLeft = rtl ? this.totalWidth - this.selectionLeft - this.selectionWidth : this.selectionLeft;
       int selectionRight = selectionLeft + this.selectionWidth;
+      // M3 primary tab indicator: content width (min 24dp), 3dp, rounded corners facing the label.
+      int contentInset = Math.max(0, Math.min(itemPadding, (this.selectionWidth - Screen.dp(24f)) / 2));
+      selectionLeft += contentInset;
+      selectionRight -= contentInset;
       int selectionTop = this.drawSelectionAtTop ? 0 : viewHeight - selectionHeight;
       int selectionBottom = selectionTop + selectionHeight;
 
-      c.drawRect(selectionLeft, selectionTop, selectionRight, selectionBottom, Paints.fillingPaint(disabledFactor == 0f ? selectionColor : ColorUtils.fromToArgb(selectionColor, textFromColor, disabledFactor)));
+      final int finalSelectionColor = disabledFactor == 0f ? selectionColor : ColorUtils.fromToArgb(selectionColor, textFromColor, disabledFactor);
+      float indicatorRadius = selectionHeight;
+      RectF indicatorRect = Paints.getRectF();
+      if (this.drawSelectionAtTop) {
+        indicatorRect.set(selectionLeft, selectionTop - indicatorRadius, selectionRight, selectionBottom);
+      } else {
+        indicatorRect.set(selectionLeft, selectionTop, selectionRight, selectionBottom + indicatorRadius);
+      }
+      c.save();
+      c.clipRect(selectionLeft, selectionTop, selectionRight, selectionBottom);
+      c.drawRoundRect(indicatorRect, indicatorRadius, indicatorRadius, Paints.fillingPaint(finalSelectionColor));
+      c.restore();
 
       int cx = rtl ? totalWidth : 0;
       int itemIndex = 0;

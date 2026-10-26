@@ -40,6 +40,8 @@ import java.util.regex.Pattern;
  */
 public final class ThemeMonet implements ThemeDelegate {
   private static final Pattern MIX = Pattern.compile("^mix\\((.+),(.+),(\\d+)\\)$");
+  /** sys(role,fallback): Android 14+ system color role (android.R.color.system_<role>), fallback for older systems. */
+  private static final Pattern SYS = Pattern.compile("^sys\\((\\w+),(.+)\\)$");
   private static final Pattern ALPHA = Pattern.compile("^[0-9A-Fa-f]{2}$");
 
   private static Map<String, Integer> colorIdsByName;
@@ -148,6 +150,11 @@ public final class ThemeMonet implements ThemeDelegate {
 
   static @ColorInt int resolve (String value, int[][] palette) {
     value = value.trim();
+    Matcher sys = SYS.matcher(value);
+    if (sys.matches()) {
+      int color = systemRole(sys.group(1));
+      return color != 0 ? color : resolve(sys.group(2), palette);
+    }
     Matcher mix = MIX.matcher(value);
     if (mix.matches()) {
       int a = resolve(mix.group(1), palette);
@@ -194,6 +201,21 @@ public final class ThemeMonet implements ThemeDelegate {
 
   private static int lerp (int a, int b, float p) {
     return Math.round(a + (b - a) * p);
+  }
+
+  /** Material 3 dynamic color role from the system (Android 14+), or 0 when unavailable. */
+  private static @ColorInt int systemRole (String role) {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      return 0;
+    }
+    try {
+      Context context = org.thunderdog.challegram.unsorted.AppContext.get();
+      android.content.res.Resources res = context.getResources();
+      int id = res.getIdentifier("system_" + role, "color", "android");
+      return id != 0 ? res.getColor(id, null) | 0xFF000000 : 0;
+    } catch (Throwable t) {
+      return 0;
+    }
   }
 
   private static @ColorInt int parseLiteral (String hex) {

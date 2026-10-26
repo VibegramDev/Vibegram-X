@@ -685,6 +685,8 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
    * Monet themes are rebuilt and the current one is re-applied.
    */
   public void checkMonetPalette () {
+    // System color roles may change with the palette or the contrast level.
+    M3.invalidate();
     if (!MonetPalette.refresh(org.thunderdog.challegram.unsorted.AppContext.get())) {
       return;
     }

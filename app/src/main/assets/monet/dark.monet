@@ -7,17 +7,18 @@
 #   <token><AA>         same, with an extra 2-digit hex alpha (n1_20091 = n1_200 @ 0x91)
 #   #RGB #RGBA #RRGGBB #RRGGBBAA   literal colors
 #   mix(A,B,P)          A blended towards B by P percent
+#   sys(role,F)         Android 14+ Material 3 color role android.R.color.system_<role>, F on older systems
 #   include: name       start from another template, then override
 # Token names follow Android's android.R.color.system_* resources, which follow the wallpaper.
 # Based on the color mapping from Telegram-Monet (https://github.com/mi-g-alex/Telegram-Monet, EPL-2.0).
 
 # Content
-filling: n1_900
+filling: sys(surface_dark,n1_900)
 separator: #0000
 fillingPressed: n2_800
 placeholder: #FFFFFF0F
 previewBackground: #0009
-overlayFilling: n1_900
+overlayFilling: sys(surface_dark,n1_900)
 fillingNegative: a3_600
 fillingPositive: a1_100
 fillingPositiveContent: n1_900
@@ -53,7 +54,7 @@ textNegative: a3_100
 textSearchQueryHighlight: a2_200
 
 # Background
-background: n1_900
+background: sys(surface_dark,n1_900)
 background_text: n1_200
 background_textLight: n1_200
 background_icon: n1_300
@@ -67,7 +68,7 @@ iconNegative: #EF5350
 
 
 # Header
-headerBackground: n1_900
+headerBackground: sys(surface_dark,n1_900)
 headerText: n1_50
 headerIcon: a1_100
 
@@ -75,7 +76,7 @@ headerTabActive: a1_100
 headerTabActiveText: a1_100
 headerTabInactiveText: n1_200
 
-headerLightBackground: n1_900
+headerLightBackground: sys(surface_dark,n1_900)
 headerLightText: a1_100
 headerLightIcon: a1_100
 
@@ -95,7 +96,7 @@ statusBarContent: a2_200
 profileSectionActive: a1_100
 profileSectionActiveContent: a1_100
 
-passcode: n1_900
+passcode: sys(surface_dark,n1_900)
 passcodeIcon: a1_100
 passcodeText: n1_50
 
@@ -255,14 +256,15 @@ badge: a1_100
 badgeText: n1_900
 badgeFailed: a3_200
 badgeFailedText: n1_900
-badgeMuted: a2_600
-badgeMutedText: n1_900
+# M3 contrast: muted counter = secondaryContainer / onSecondaryContainer (tones 30 / 90, ~7:1)
+badgeMuted: a2_700
+badgeMutedText: a2_100
 
 chatSendButton: a1_100
-chatKeyboard: n1_900
+chatKeyboard: sys(surface_dark,n1_900)
 chatKeyboardButton: n1_500
 
-chatBackground: n1_900
+chatBackground: sys(surface_dark,n1_900)
 chatSeparator: #0000
 unread: n1_900
 unreadText: a1_100

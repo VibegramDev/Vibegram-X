@@ -109,6 +109,7 @@ import org.thunderdog.challegram.telegram.TdlibOptionListener;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
@@ -579,7 +580,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       if (filter == FILTER_NONE && !menuNeedArchive) {
         item = getDefaultMainItem();
       } else {
-        CharSequence sectionName = getMenuSectionName(pagerItemId, pagerItemPosition, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ true);
+        CharSequence sectionName = getMenuSectionName(pagerItemId, pagerItemPosition, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ false);
         item = new ViewPagerTopView.Item(sectionName);
       }
     }
@@ -1079,6 +1080,36 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       }
       composeWrap.setPadding(Lang.rtl() ? paddingSide : 0, composeWrap.getPaddingTop(), Lang.rtl() ? 0 : paddingSide, paddingBottom);
       composeWrap.setClipToPadding(paddingBottom == 0);
+      // Phone dock: the menu opens above the dock container (not the hidden 56dp button) and aligns with its edge.
+      composeWrap.setMenuOffset(navigationBar != null && !navigationBar.isBar() ? (MainNavigationBar.getRailWidth() - Screen.dp(56f)) / 2 : 0);
+    }
+    updateChatListNavigationInset();
+  }
+
+  /**
+   * Extra bottom scroll space of chat lists, so the last chat can be scrolled above
+   * the phone dock / tablet FAB (M3: floating elements must not fully cover actionable content).
+   */
+  private int getChatListNavigationInset () {
+    if (navigationBar == null) {
+      return 0;
+    }
+    if (navigationBar.isBar()) {
+      // Tablet: the list already ends above the bar; leave room for the 56dp FAB and its 16dp margins.
+      return Screen.dp(56f) + Screen.dp(16f) * 2;
+    }
+    // Phone: floating dock at the bottom-end corner.
+    return MainNavigationBar.getRailMargin() + navigationBar.getRailHeight() + Screen.dp(8f);
+  }
+
+  private void updateChatListNavigationInset () {
+    int inset = getChatListNavigationInset();
+    int count = getPagerItemCount();
+    for (int position = 0; position < count; position++) {
+      ViewController<?> c = getCachedControllerForPosition(position);
+      if (c instanceof ChatsController) {
+        ((ChatsController) c).setNavigationInset(inset);
+      }
     }
   }
 
@@ -1727,6 +1758,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private ChatsController newChatsController (TdApi.ChatList chatList, @Filter int filter) {
     ChatsController chats = new ChatsController(this.context, tdlib).setParent(this);
+    chats.setNavigationInset(getChatListNavigationInset());
     ChatFilter chatFilter;
     switch (filter) {
       case FILTER_NONE:
@@ -1986,8 +2018,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       throw new UnsupportedOperationException();
     }
     return new CharSequence[] {
-      getMenuSectionName(MAIN_PAGER_ITEM_ID, /* pagerItemPosition */ 0, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ true),
-      Lang.uppercase(Lang.getString(R.string.Calls))/*, UI.getString(R.string.Contacts).toUpperCase()*/
+      getMenuSectionName(MAIN_PAGER_ITEM_ID, /* pagerItemPosition */ 0, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ false),
+      Lang.getString(R.string.Calls)/*, UI.getString(R.string.Contacts).toUpperCase()*/
     };
   }
 
@@ -1997,7 +2029,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private ViewPagerTopView.Item getDefaultMainItem () {
     if (defaultMainItem == null) {
-      CharSequence mainItem = getMenuSectionName(MAIN_PAGER_ITEM_ID, 0, false, ChatFolderStyle.LABEL_ONLY,  /* upperCase */ true);
+      CharSequence mainItem = getMenuSectionName(MAIN_PAGER_ITEM_ID, 0, false, ChatFolderStyle.LABEL_ONLY,  /* upperCase */ false);
       UnreadCounterColorSet unreadCounterColorSet = UnreadCounterColorSet.create(this);
       Counter unreadCounter = new Counter.Builder()
         .textSize(12f)
@@ -2043,7 +2075,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private List<ViewPagerTopView.Item> getDefaultSectionItems () {
     if (defaultSectionItems == null) {
-      String callsItem = Lang.uppercase(Lang.getString(R.string.Calls));
+      String callsItem = Lang.getString(R.string.Calls);
       defaultSectionItems = Arrays.asList(
         getDefaultMainItem(),
         new ViewPagerTopView.Item(callsItem)
@@ -3281,18 +3313,28 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     @ColorInt
     @Override
     public int defaultTextColor () {
+      if (M3.isDynamicTheme()) {
+        // M3 badge: error / onError; muted chats fade to a neutral outlined badge.
+        return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
+      }
       return counter != null ? ColorUtils.fromToArgb(foregroundColor(), backgroundColor(), counter.getMuteFactor()) : foregroundColor();
     }
 
     @ColorInt
     @Override
     public int backgroundColor (boolean isPressed) {
+      if (M3.isDynamicTheme()) {
+        return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), M3.error()) : M3.error();
+      }
       return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), backgroundColor()) : backgroundColor();
     }
 
     @ColorInt
     @Override
     public int outlineColor (boolean isPressed) {
+      if (M3.isDynamicTheme()) {
+        return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.onSurfaceVariant(), counter.getMuteFactor()) : Color.TRANSPARENT;
+      }
       return counter != null ? backgroundColor() : Color.TRANSPARENT;
     }
 

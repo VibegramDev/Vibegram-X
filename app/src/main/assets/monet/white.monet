@@ -252,12 +252,14 @@ chatListIcon: a1_600
 chatListVerify: a1_600
 ticks: a1_600
 ticksRead: a1_600
-badge: a1_500
+# M3 contrast: unmuted counter = primary / near-white (tones 40 / 95, ~5.7:1)
+badge: a1_600
 badgeText: n1_50
 badgeFailed: a3_600
 badgeFailedText: n1_50
-badgeMuted: a2_400
-badgeMutedText: n1_50
+# M3 contrast: muted counter = secondaryContainer / onSecondaryContainer (tones 80 / 10, ~10:1)
+badgeMuted: a2_200
+badgeMutedText: a2_900
 
 chatSendButton: a1_600
 chatKeyboard: mix(n1_10,n1_50,30)
