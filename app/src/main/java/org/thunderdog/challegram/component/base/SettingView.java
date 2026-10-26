@@ -52,6 +52,7 @@ import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.telegram.TGLegacyManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PorterDuffColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
@@ -190,7 +191,8 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     if (togglerView == null) {
       togglerView = new TogglerView(getContext());
       togglerView.init(isEnabled());
-      FrameLayout.LayoutParams params = FrameLayoutFix.newParams(Screen.dp(66f), Screen.dp(48f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
+      // M3 (Monet): 72dp = 52dp track + 16dp trailing space. Legacy themes keep the original 66dp geometry.
+      FrameLayout.LayoutParams params = FrameLayoutFix.newParams(togglerWidth(), Screen.dp(48f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
       params.leftMargin = Screen.dp(4f);
       params.bottomMargin = Screen.dp(3f);
       togglerView.setLayoutParams(params);
@@ -323,9 +325,22 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     return forcedPaddingLeft != 0 ? forcedPaddingLeft : Screen.dp(icon == null ? 16f : 73f);
   }
 
+  private static int togglerWidth () {
+    return Screen.dp(M3.isDynamicTheme() ? 72f : 66f);
+  }
+
+  private boolean layoutM3;
+
   @SuppressWarnings ("Range")
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+    // Monet <-> legacy theme switch: toggler width and the reserved text space depend on the switch style.
+    boolean m3 = M3.isDynamicTheme();
+    boolean m3Changed = m3 != layoutM3;
+    layoutM3 = m3;
+    if (togglerView != null && togglerView.getLayoutParams() != null) {
+      togglerView.getLayoutParams().width = togglerWidth();
+    }
     if (type == TYPE_INFO_MULTILINE) {
       if (text != null) {
         int paddingLeft = measurePaddingLeft();
@@ -338,6 +353,9 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
       super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(getCurrentHeight(), MeasureSpec.EXACTLY));
     } else {
       super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+    if (m3Changed && type == TYPE_RADIO) {
+      buildLayout(getMeasuredWidth(), getMeasuredHeight());
     }
     layoutProgress();
   }
@@ -635,7 +653,8 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     float availWidth;
 
     if (type == TYPE_RADIO) {
-      availWidth = totalWidth - paddingLeft - paddingRight - paddingRight - Screen.dp(38f);
+      // M3 switch track is wider than the legacy toggler: reserve more space for the text.
+      availWidth = totalWidth - paddingLeft - paddingRight - paddingRight - Screen.dp(M3.isDynamicTheme() ? 50f : 38f);
     } else {
       availWidth = totalWidth - paddingLeft - paddingRight;
     }

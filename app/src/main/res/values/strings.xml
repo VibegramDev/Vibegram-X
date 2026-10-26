@@ -1626,6 +1626,7 @@
   <string name="NoVideoToShowInChannel">Published video messages\nwill be shown here.</string>
   <string name="NoGifsToShowInChannel">Published GIFs will be shown here.</string>
   <string name="PinToTop">Pin to top</string>
+  <string name="ScrollToTop">Scroll to top</string>
   <string name="UnpinFromTop">Unpin from top</string>
   <string name="WhatThisBotCanDo">What can this bot do?</string>
   <string name="WhatThisChannelCanDo">What can admins do on behalf of this channel?</string>
@@ -4240,6 +4241,7 @@
   <string name="NumberHiddenHint">Phone number will be visible once %1$s adds you as a contact or changes their privacy settings.</string>
 
   <string name="CategoryMain">All Chats</string>
+  <string name="CategoryMainShort">All</string>
   <string name="CategoryArchive">Archive</string>
   <string name="CategoryArchivePrivate">Archive / Private</string>
   <string name="CategoryArchiveGroup">Archive / Groups</string>
@@ -5521,6 +5523,10 @@
   <string name="ChatFoldersAppearance">Appearance</string>
   <string name="ChatFoldersPositionTop">Top</string>
   <string name="ChatFoldersPositionBottom">Bottom</string>
+  <string name="ChatFoldersPositionSide">Side</string>
+  <string name="ChatFoldersPositionBelowSearch">Below search</string>
+  <string name="TabletFoldersSide">Tablet: folders on the side</string>
+  <string name="TabletFoldersBelowSearch">Tablet: folders below search</string>
   <string name="ChatFolderChangeIcon">Change Icon</string>
   <string name="ChatFolderAddChats">Add Chats</string>
   <string name="FolderVisible">Folder visible</string>

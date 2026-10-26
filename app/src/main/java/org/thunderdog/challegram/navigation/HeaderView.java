@@ -1075,6 +1075,16 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     }
     moreWrap.setAnchorMode(MenuMoreWrap.ANCHOR_MODE_RIGHT);
     moreWrap.setRightNumber(buttonIndex);
+    // The popup covers the whole window, while this header may be narrower (master pane of the tablet layout):
+    // anchor the menu to the trailing edge of this header, not of the window.
+    int windowWidth = getRootView().getWidth();
+    if (windowWidth > 0 && getWidth() > 0) {
+      int left = Views.getLocationInWindow(this)[0];
+      int trailingGap = Lang.rtl() ? left : windowWidth - (left + getWidth());
+      if (trailingGap > 0) {
+        moreWrap.setTranslationX(moreWrap.getTranslationX() + (Lang.rtl() ? trailingGap : -trailingGap));
+      }
+    }
     moreWrap.setTranslationY(getTranslationY() + getCurrentHeaderOffset());
     showMore(ids, titles, icons, onMoreItemClick, isLayered, themeListenerList);
   }
@@ -1229,6 +1239,12 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     View newTitle = item.getCustomHeaderCell();
 
     if (newTitle == null) {
+      if (textTitle == null) {
+        // applyPreview() swaps textTitle/textPreview: after a transition between two screens with custom header
+        // cells (e.g. chats -> settings) the plain title is null. The animated path recreates it in genPreview();
+        // the tablet split path (navigateTablet -> setTitle) comes here directly, so create it the same way.
+        textTitle = genTextTitle(getContext());
+      }
       updateTextMargins(textTitle, item, 0, getCurrentHeaderOffset());
       textTitle.setId(item.getId());
       Views.setMediumText(textTitle, item.getName());
@@ -1423,6 +1439,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
   private ColorChanger barChanger;
 
   private boolean useShadowSwitch, shadowSwitch;
+  private float baseShadowLine = 1f, previewShadowLine = 1f;
   private boolean usePlayerSwitch, playerSwitch;
   private float translationFactor;
   private boolean forceRtlAnimation;
@@ -1621,6 +1638,9 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
     if (useShadowSwitch) {
       filling.setShadowAlpha(shadowSwitch ? raptor : 1f - raptor);
+    }
+    if (baseShadowLine != previewShadowLine) {
+      filling.setShadowLineFactor(baseShadowLine + (previewShadowLine - baseShadowLine) * raptor);
     }
     if (usePlayerSwitch) {
       filling.setPlayerAllowance(playerSwitch ? raptor : 1f - raptor);
@@ -2149,6 +2169,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     }
     filling.setColor(item.getHeaderColor());
     filling.setShadowAlpha(item.useDropShadow() ? 1f : 0f);
+    filling.setShadowLineFactor(item.needHeaderShadowLine() ? 1f : 0f);
     filling.setPlayerAllowance(item.useDropPlayer() ? 1f : 0f);
     // TODO other options
 
@@ -2591,6 +2612,9 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     }
 
     boolean baseShadow = (baseItem == null ? useDropShadow(previewItem) : useDropShadow(baseItem)) && !baseIsPopup;
+    baseShadowLine = needHeaderShadowLine(baseItem == null ? previewItem : baseItem) ? 1f : 0f;
+    previewShadowLine = needHeaderShadowLine(previewItem == null ? baseItem : previewItem) ? 1f : 0f;
+    getFilling().setShadowLineFactor(baseShadowLine);
     boolean previewShadow = (previewItem == null ? baseShadow : useDropShadow(previewItem)) && !previewIsPopup;
     boolean basePlayer = (baseItem == null ? useDropPlayer(previewItem) : useDropPlayer(baseItem)) && !baseIsPopup;
     boolean previewPlayer = (previewItem == null ? basePlayer : useDropPlayer(previewItem)) && !previewIsPopup;
@@ -2815,6 +2839,10 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
   public static boolean useDropShadow (ViewController<?> c) {
     return c == null || c.useDropShadow();
+  }
+
+  private static boolean needHeaderShadowLine (ViewController<?> c) {
+    return c == null || c.needHeaderShadowLine();
   }
 
   public static boolean useDropPlayer (ViewController<?> c) {

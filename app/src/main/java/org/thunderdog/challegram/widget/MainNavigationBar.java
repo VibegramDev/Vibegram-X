@@ -18,10 +18,15 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
 import android.graphics.Outline;
+import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.text.TextPaint;
 import android.text.TextUtils;
@@ -37,7 +42,6 @@ import androidx.annotation.Nullable;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
-import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
@@ -49,7 +53,6 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.TextColorSet;
 
-import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
@@ -57,18 +60,27 @@ import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.Destroyable;
 
 /**
- * Main sections of the app: chats, contacts and settings (shown as the user's avatar).
- * Phone: floating vertical rail with icons only, the compose button is its separate top segment
- * that collapses on scroll. Tablet: bar attached to the bottom of the chat list.
+ * Main sections of the app: chats, calls, contacts and settings (shown as the user's avatar).
+ * Phone: floating vertical rail with icons only, search is its first item.
+ * Tablet: bar attached to the bottom of the chat list (search is the search bar in the app bar there).
  */
-public class MainNavigationBar extends FrameLayoutFix implements Destroyable, FactorAnimator.Target {
+public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
+  // Item ids are also indexes in the items array.
   public static final int ITEM_CHATS = 0;
-  public static final int ITEM_CONTACTS = 1;
-  public static final int ITEM_SETTINGS = 2;
-  public static final int ITEM_COMPOSE = 3;
+  public static final int ITEM_CALLS = 1;
+  public static final int ITEM_CONTACTS = 2;
+  public static final int ITEM_SETTINGS = 3;
+  public static final int ITEM_SEARCH = 4;
+  /** Phone, collapsed rail: scrolls the chat list to the top. */
+  public static final int ITEM_SCROLL_TOP = 5;
 
   public interface Callback {
     void onNavigationItemClick (int item);
+  }
+
+  public interface CollapseListener {
+    /** 0: full rail, 1: collapsed to the scroll to top button (the sections are in the app bar). */
+    void onNavigationCollapseFactorChanged (float factor);
   }
 
   private static final float RAIL_ITEM_SIZE = 56f;
@@ -76,22 +88,28 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
   private static final float BAR_HEIGHT = 64f;
   private static final float ICON_SIZE = 24f;
   private static final float AVATAR_SIZE = 28f;
-  /** Space between the compose segment and the sections, the separator is drawn in its middle. */
-  private static final float COMPOSE_GAP = 8f;
+  /** Active indicator (and pressed state layer) size. */
+  private static final float INDICATOR_HEIGHT = 32f;
+  private static final float BAR_INDICATOR_WIDTH = 60f;
+  private static final float RAIL_INDICATOR_WIDTH = 48f;
 
   private final ViewController<?> themeProvider;
   private final ItemView[] items;
-  private final ComposeView composeView;
+  private final SimpleItemView searchView, scrollTopView;
   private final AvatarView avatarView;
   private final Counter unreadCounter;
   private @Nullable Callback callback;
+  private @Nullable CollapseListener collapseListener;
+  /** Phone: the rail collapses into the scroll to top button while the chat list is scrolled. */
+  private final FactorAnimator collapseAnimator;
+  private boolean isCollapsed;
+  private float collapseFactor;
 
   private boolean isBar;
   private int selectedItem = ITEM_CHATS;
 
-  private final FactorAnimator composeAnimator = new FactorAnimator(0, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 220L, 1f);
-  private float composeVisibility = 1f;
-  private float composeOpenFactor;
+  /** 0: search icon, 1: search is open, the segment shows a close icon. */
+  private float searchOpenFactor;
 
   public MainNavigationBar (Context context, ViewController<?> themeProvider) {
     super(context);
@@ -126,18 +144,29 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
     items = new ItemView[] {
       // M3: outlined icon for unselected destinations, filled for the selected one.
       new ItemView(context, ITEM_CHATS, R.drawable.outline_forum_24, R.drawable.baseline_forum_24, R.string.Chats),
+      new ItemView(context, ITEM_CALLS, R.drawable.outline_phone_24, R.drawable.baseline_phone_24, R.string.Calls),
       new ItemView(context, ITEM_CONTACTS, R.drawable.outline_perm_contact_calendar_24, R.drawable.baseline_perm_contact_calendar_24, R.string.Contacts),
       new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings)
     };
     items[ITEM_SETTINGS].addView(avatarView);
-    composeView = new ComposeView(context);
-    composeView.setOnClickListener(v -> {
-      if (callback != null && composeVisibility == 1f) {
-        callback.onNavigationItemClick(ITEM_COMPOSE);
+    searchView = new SimpleItemView(context, R.drawable.baseline_search_24, R.drawable.baseline_close_24, R.string.Search);
+    searchView.setOnClickListener(v -> {
+      if (callback != null) {
+        callback.onNavigationItemClick(ITEM_SEARCH);
       }
     });
-    addView(composeView);
-    themeProvider.addThemeInvalidateListener(composeView);
+    setPressedStateLayer(searchView, new IndicatorMask(false));
+    addView(searchView);
+    themeProvider.addThemeInvalidateListener(searchView);
+    scrollTopView = new SimpleItemView(context, R.drawable.baseline_arrow_upward_24, 0, R.string.ScrollToTop);
+    scrollTopView.setOnClickListener(v -> {
+      if (callback != null && collapseFactor > .5f) {
+        callback.onNavigationItemClick(ITEM_SCROLL_TOP);
+      }
+    });
+    setPressedStateLayer(scrollTopView, new IndicatorMask(false));
+    scrollTopView.setVisibility(View.INVISIBLE);
+    themeProvider.addThemeInvalidateListener(scrollTopView);
     for (ItemView item : items) {
       item.setOnClickListener(v -> {
         if (callback != null) {
@@ -147,7 +176,11 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
       addView(item);
       themeProvider.addThemeInvalidateListener(item);
     }
+    // Above the settings item: they swap places when the rail collapses.
+    addView(scrollTopView);
     themeProvider.addThemeInvalidateListener(this);
+    // Container height: spatial spring; contents fade with derived factors.
+    collapseAnimator = new FactorAnimator(0, (id, factor, fraction, callee) -> setCollapseFactor(factor), M3.DEFAULT_SPATIAL, M3.DEFAULT_SPATIAL.duration, 0f);
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       setOutlineProvider(new ViewOutlineProvider() {
@@ -166,6 +199,93 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
 
   public void setCallback (@Nullable Callback callback) {
     this.callback = callback;
+  }
+
+  public void setCollapseListener (@Nullable CollapseListener listener) {
+    this.collapseListener = listener;
+  }
+
+  // Collapse (phone)
+
+  /**
+   * Phone: collapses the rail into the scroll to top button (the owner moves the sections into the app bar).
+   * Ignored in the tablet bar mode.
+   */
+  public void setCollapsed (boolean collapsed, boolean animated) {
+    collapsed = collapsed && !isBar;
+    if (this.isCollapsed == collapsed) {
+      return;
+    }
+    this.isCollapsed = collapsed;
+    float to = collapsed ? 1f : 0f;
+    if (animated && isLaidOut() && getVisibility() == View.VISIBLE) {
+      collapseAnimator.animateTo(to);
+    } else {
+      collapseAnimator.forceFactor(to);
+      setCollapseFactor(to);
+    }
+  }
+
+  public boolean isCollapsed () {
+    return isCollapsed;
+  }
+
+  public float getCollapseFactor () {
+    return MathUtils.clamp(collapseFactor);
+  }
+
+  private void setCollapseFactor (float factor) {
+    if (this.collapseFactor != factor) {
+      this.collapseFactor = factor;
+      updateCollapsedViews();
+      invalidate();
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        invalidateOutline();
+      }
+      if (collapseListener != null) {
+        collapseListener.onNavigationCollapseFactorChanged(MathUtils.clamp(factor));
+      }
+    }
+  }
+
+  private static int getCollapsedRailHeight () {
+    return Screen.dp(RAIL_ITEM_SIZE) + Screen.dp(RAIL_PADDING) * 2;
+  }
+
+  /** Top of the visible rail: it shrinks towards the bottom while collapsing. */
+  private int getRailTop () {
+    if (isBar) {
+      return 0;
+    }
+    int height = getHeight() > 0 ? getHeight() : getRailHeight();
+    return Math.round((height - getCollapsedRailHeight()) * MathUtils.clamp(collapseFactor));
+  }
+
+  private void updateCollapsedViews () {
+    float factor = isBar ? 0f : MathUtils.clamp(collapseFactor);
+    // Sections leave first (upwards, towards the app bar), the settings item turns into the scroll to top button.
+    float leave = MathUtils.clamp(factor / .6f);
+    float swap = MathUtils.clamp((factor - .3f) / .7f);
+    float lift = -Screen.dp(12f) * leave;
+    applyCollapse(searchView, 1f - leave, lift, isBar);
+    for (ItemView item : items) {
+      if (item.id == ITEM_SETTINGS) {
+        applyCollapse(item, 1f - swap, 0, false);
+      } else {
+        applyCollapse(item, 1f - leave, isBar ? 0 : lift, false);
+      }
+    }
+    scrollTopView.setAlpha(swap);
+    scrollTopView.setScaleX(.6f + .4f * swap);
+    scrollTopView.setScaleY(.6f + .4f * swap);
+    scrollTopView.setVisibility(swap > 0f && !isBar ? View.VISIBLE : View.INVISIBLE);
+  }
+
+  private static void applyCollapse (View view, float alpha, float translationY, boolean gone) {
+    view.setAlpha(alpha);
+    view.setTranslationY(translationY);
+    // Invisible items must not take touches (the list below gets them).
+    view.setVisibility(gone ? View.GONE : alpha > 0f ? View.VISIBLE : View.INVISIBLE);
   }
 
   public Counter getUnreadCounter () {
@@ -199,12 +319,21 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
     return isBar || !Theme.isDark() ? M3.surfaceContainer() : M3.surfaceContainerHigh();
   }
 
-  /** Ripple above the active indicator / compose container, so the pressed state stays visible. */
-  private static void moveRippleToForeground (View view) {
-    Drawable ripple = view.getBackground();
+  /**
+   * M3 pressed state layer: ripple clipped to the shape of the element (the active indicator for
+   * destinations, the container for the search button), drawn above it so it stays visible.
+   */
+  private void setPressedStateLayer (View view, Drawable mask) {
+    Drawable ripple;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      ripple = new RippleDrawable(ColorStateList.valueOf(Theme.RIPPLE_COLOR), null, mask);
+    } else {
+      ripple = Theme.transparentRoundSelector(Screen.dp(INDICATOR_HEIGHT / 2f));
+    }
     view.setBackground(null);
     view.setForeground(ripple);
   }
+
 
   public boolean isBar () {
     return isBar;
@@ -218,70 +347,26 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
     return Screen.dp(RAIL_ITEM_SIZE + RAIL_PADDING * 2);
   }
 
-  /** Full height of the rail including the compose segment. */
-  public int getRailHeight () {
-    return Screen.dp(RAIL_ITEM_SIZE) * items.length + Screen.dp(RAIL_PADDING) * 2 + getComposeSegmentHeight();
+  /** Height of the rail itself. */
+  private int getRailHeight () {
+    // Search item + sections.
+    return Screen.dp(RAIL_ITEM_SIZE) * (items.length + 1) + Screen.dp(RAIL_PADDING) * 2;
   }
 
-  private static int getComposeSegmentHeight () {
-    return Screen.dp(RAIL_ITEM_SIZE) + Screen.dp(COMPOSE_GAP);
+  /** Full height of the floating rail. */
+  public int getRailTotalHeight () {
+    return getRailHeight();
   }
 
-  /** Distance from the bottom of the rail to the center of the compose button. */
-  public int getComposeCenterFromRailBottom () {
-    return getRailHeight() - Screen.dp(RAIL_PADDING) - Screen.dp(RAIL_ITEM_SIZE) / 2;
-  }
+  // Search button
 
-  /** Top of the visible rail: the compose segment collapses when the compose button is hidden. */
-  private int getRailTop () {
-    return isBar ? 0 : Math.round(getComposeSegmentHeight() * (1f - composeVisibility));
-  }
-
-  // Compose button
-
-  public void setComposeIcon (@DrawableRes int icon) {
-    composeView.setIcon(icon);
-  }
-
-  public void setComposeVisible (boolean visible, boolean animated) {
-    if (animated && !isBar && getParent() != null) {
-      composeAnimator.animateTo(visible ? 1f : 0f);
-    } else {
-      composeAnimator.forceFactor(visible ? 1f : 0f);
-      setComposeVisibility(visible ? 1f : 0f);
+  /** Search transform factor of the chat list: the search icon turns into a close icon while search is open. */
+  public void setSearchOpenFactor (float factor) {
+    factor = MathUtils.clamp(factor);
+    if (this.searchOpenFactor != factor) {
+      this.searchOpenFactor = factor;
+      searchView.invalidate();
     }
-  }
-
-  public void setComposeOpenFactor (float factor) {
-    if (this.composeOpenFactor != factor) {
-      this.composeOpenFactor = factor;
-      composeView.invalidate();
-    }
-  }
-
-  private void setComposeVisibility (float visibility) {
-    if (this.composeVisibility != visibility) {
-      this.composeVisibility = visibility;
-      updateComposeView();
-      invalidate();
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        invalidateOutline();
-      }
-    }
-  }
-
-  private void updateComposeView () {
-    composeView.setVisibility(isBar || composeVisibility == 0f ? View.GONE : View.VISIBLE);
-    float scale = .6f + .4f * composeVisibility;
-    composeView.setScaleX(scale);
-    composeView.setScaleY(scale);
-    composeView.setAlpha(composeVisibility);
-    composeView.setTranslationY(getComposeSegmentHeight() * (1f - composeVisibility) * .5f);
-  }
-
-  @Override
-  public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
-    setComposeVisibility(factor);
   }
 
   /** Distance from the edge of the parent to the rail. */
@@ -314,29 +399,33 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
       setPadding(padding, padding, padding, padding);
     }
     setLayoutParams(params);
+    // Phone: search is the first item of the rail, the scroll to top button takes the place of the last one.
+    searchView.setLayoutParams(FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT));
+    FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
+    scrollTopParams.topMargin = itemSize * items.length;
+    scrollTopView.setLayoutParams(scrollTopParams);
+    if (isBar && isCollapsed) {
+      // Tablet bar never collapses.
+      isCollapsed = false;
+      collapseAnimator.forceFactor(0f);
+      setCollapseFactor(0f);
+    }
     for (int i = 0; i < items.length; i++) {
       FrameLayoutFix.LayoutParams itemParams;
       if (isBar) {
         itemParams = FrameLayoutFix.newParams(0, getBarHeight(), Gravity.TOP | Gravity.LEFT);
       } else {
         itemParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
-        itemParams.topMargin = itemSize * i;
-      }
-      if (!isBar) {
-        itemParams.topMargin += getComposeSegmentHeight();
+        itemParams.topMargin = itemSize * (i + 1);
       }
       items[i].setLayoutParams(itemParams);
-      if (modeChanged) {
-        RippleSupport.setTransparentSelector(items[i], isBar ? 0 : getRailRadius(), themeProvider);
-        moveRippleToForeground(items[i]);
+      if (items[i].getForeground() == null) {
+        setPressedStateLayer(items[i], new IndicatorMask());
       }
+      items[i].invalidateMask();
     }
-    composeView.setLayoutParams(FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT));
-    if (modeChanged) {
-      RippleSupport.setTransparentSelector(composeView, getRailRadius(), themeProvider);
-      moveRippleToForeground(composeView);
-    }
-    updateComposeView();
+    // Tablet: search is the search bar in the app bar, not a bar item.
+    updateCollapsedViews();
     Views.setTopMargin(avatarView, getIconCenterY() - Screen.dp(AVATAR_SIZE) / 2);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       setElevation(isBar ? 0 : Screen.dp(4f));
@@ -388,17 +477,15 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
       rect.set(0, getRailTop(), getWidth(), getHeight());
       float radius = getRailRadius();
       c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(fillingColor));
-      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || Theme.isDark()) {
-        // Elevation shadow is barely visible on dark themes, outline the rail instead.
+      if (needOutlineStroke()) {
         c.drawRoundRect(rect, radius, radius, Paints.strokeSmallPaint(Theme.separatorColor()));
       }
-      if (composeVisibility > 0f) {
-        // Separates the compose action from the sections.
-        int y = getPaddingTop() + Screen.dp(RAIL_ITEM_SIZE) + Screen.dp(COMPOSE_GAP) / 2;
-        int inset = Screen.dp(14f);
-        c.drawRect(inset, y, getWidth() - inset, y + Math.max(1, Screen.dp(1f)), Paints.fillingPaint(ColorUtils.alphaColor(composeVisibility, Theme.separatorColor())));
-      }
     }
+  }
+
+  /** Elevation shadow is barely visible on dark themes, floating elements are outlined instead. */
+  private static boolean needOutlineStroke () {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP || Theme.isDark();
   }
 
   @Override
@@ -406,46 +493,82 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
     avatarView.performDestroy();
   }
 
-  private class ComposeView extends View {
-    private @DrawableRes int iconRes;
-    private @Nullable Drawable icon;
-    private final Drawable closeIcon;
+  /** Opaque shape of the active indicator of an item, masks the pressed ripple. */
+  private class IndicatorMask extends Drawable {
+    private final boolean followLayoutMode;
 
-    public ComposeView (Context context) {
-      super(context);
-      closeIcon = Drawables.get(getResources(), R.drawable.baseline_close_24);
-      setIcon(R.drawable.baseline_create_24);
-      setContentDescription(Lang.getString(R.string.NewChat));
+    IndicatorMask () {
+      this(true);
     }
 
-    public void setIcon (@DrawableRes int iconRes) {
-      if (this.iconRes != iconRes) {
-        this.iconRes = iconRes;
-        this.icon = iconRes != 0 ? Drawables.get(getResources(), iconRes) : null;
-        invalidate();
-      }
+    /** @param followLayoutMode false: always the rail indicator, centered (search button) */
+    IndicatorMask (boolean followLayoutMode) {
+      this.followLayoutMode = followLayoutMode;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      Rect bounds = getBounds();
+      RectF rect = Paints.getRectF();
+      boolean bar = followLayoutMode && isBar;
+      float width = Math.min(bounds.width() - Screen.dp(8f), Screen.dp(bar ? BAR_INDICATOR_WIDTH : RAIL_INDICATOR_WIDTH));
+      float height = Screen.dp(INDICATOR_HEIGHT);
+      float cx = bounds.exactCenterX();
+      float cy = followLayoutMode ? bounds.top + getIconCenterY() : bounds.exactCenterY();
+      rect.set(cx - width / 2f, cy - height / 2f, cx + width / 2f, cy + height / 2f);
+      c.drawRoundRect(rect, height / 2f, height / 2f, Paints.fillingPaint(0xffffffff));
+    }
+
+    @Override
+    public void setAlpha (int alpha) { }
+
+    @Override
+    public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+    @Override
+    public int getOpacity () {
+      return PixelFormat.TRANSLUCENT;
+    }
+  }
+
+  /**
+   * Icon-only item of the rail without a section: search (its icon turns into a close icon with the
+   * active indicator while search is open) and scroll to top.
+   */
+  private class SimpleItemView extends View {
+    private final Drawable icon;
+    private final @Nullable Drawable openIcon;
+
+    public SimpleItemView (Context context, @DrawableRes int iconRes, @DrawableRes int openIconRes, int labelRes) {
+      super(context);
+      icon = Drawables.get(getResources(), iconRes);
+      openIcon = openIconRes != 0 ? Drawables.get(getResources(), openIconRes) : null;
+      setContentDescription(Lang.getString(labelRes));
     }
 
     @Override
     protected void onDraw (@NonNull Canvas c) {
-      int cx = getWidth() / 2;
-      int cy = getHeight() / 2;
-      float open = composeOpenFactor;
-      // M3 FAB nested in the dock: primaryContainer circle (concentric with the dock corners),
-      // it becomes the contrasting primary close button of the FAB menu.
-      c.drawCircle(cx, cy, Math.min(getWidth(), getHeight()) / 2f, Paints.fillingPaint(ColorUtils.fromToArgb(M3.primaryContainer(), M3.primary(), open)));
-      int iconColor = ColorUtils.fromToArgb(M3.onPrimaryContainer(), M3.onPrimary(), open);
-      // Same morph as the floating button: the icon turns into a cross while the menu is open.
-      if (icon != null && open < 1f) {
+      float cx = getWidth() / 2f;
+      float cy = getHeight() / 2f;
+      float open = openIcon != null ? searchOpenFactor : 0f;
+      if (open > 0f) {
+        RectF rect = Paints.getRectF();
+        float indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
+        float indicatorWidth = Screen.dp(RAIL_INDICATOR_WIDTH) * open;
+        rect.set(cx - indicatorWidth / 2f, cy - indicatorHeight / 2f, cx + indicatorWidth / 2f, cy + indicatorHeight / 2f);
+        c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(open, M3.secondaryContainer())));
+      }
+      int iconColor = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.onSecondaryContainer(), open);
+      if (open < 1f) {
         c.save();
         c.rotate(90f * open, cx, cy);
         Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - open, iconColor)));
         c.restore();
       }
-      if (open > 0f) {
+      if (open > 0f && openIcon != null) {
         c.save();
         c.rotate(-90f * (1f - open), cx, cy);
-        Drawables.draw(c, closeIcon, cx - closeIcon.getMinimumWidth() / 2f, cy - closeIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(open, iconColor)));
+        Drawables.draw(c, openIcon, cx - openIcon.getMinimumWidth() / 2f, cy - openIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(open, iconColor)));
         c.restore();
       }
     }
@@ -455,8 +578,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
     private final int id;
     private final @Nullable Drawable icon, selectedIcon;
     private final String label;
-    private final FactorAnimator selectAnimator;
-    private float selectFactor;
+    private final FactorAnimator selectAnimator, colorAnimator;
+    private float selectFactor, colorFactor;
 
     public ItemView (Context context, int id, @DrawableRes int iconRes, @DrawableRes int selectedIconRes, int labelRes) {
       super(context);
@@ -464,28 +587,46 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
       this.icon = iconRes != 0 ? Drawables.get(getResources(), iconRes) : null;
       this.selectedIcon = selectedIconRes != 0 ? Drawables.get(getResources(), selectedIconRes) : null;
       this.label = Lang.getString(labelRes);
-      this.selectFactor = id == selectedItem ? 1f : 0f;
-      // Indicator size: fast spatial spring; colors are clamped (effects, no overshoot).
+      this.selectFactor = this.colorFactor = id == selectedItem ? 1f : 0f;
+      // Indicator size: fast spatial spring (may overshoot). Colors and icon crossfade: fast effects (no overshoot).
       this.selectAnimator = new FactorAnimator(0, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration, selectFactor);
+      this.colorAnimator = new FactorAnimator(1, this, M3.FAST_EFFECTS, M3.FAST_EFFECTS.duration, colorFactor);
       setWillNotDraw(false);
       setContentDescription(label);
       setSelected(id == selectedItem);
     }
 
+    /** The ripple mask depends on the layout mode. */
+    void invalidateMask () {
+      Drawable foreground = getForeground();
+      if (foreground != null) {
+        foreground.invalidateSelf();
+      }
+    }
+
     void setItemSelected (boolean isSelected, boolean animated) {
       setSelected(isSelected);
+      float to = isSelected ? 1f : 0f;
       if (animated) {
-        selectAnimator.animateTo(isSelected ? 1f : 0f);
+        selectAnimator.animateTo(to);
+        colorAnimator.animateTo(to);
       } else {
-        selectAnimator.forceFactor(isSelected ? 1f : 0f);
-        selectFactor = isSelected ? 1f : 0f;
+        selectAnimator.forceFactor(to);
+        colorAnimator.forceFactor(to);
+        selectFactor = colorFactor = to;
         invalidate();
       }
     }
 
     @Override
     public void onFactorChanged (int animatorId, float factor, float fraction, FactorAnimator callee) {
-      if (this.selectFactor != factor) {
+      if (animatorId == 1) {
+        factor = MathUtils.clamp(factor);
+        if (this.colorFactor != factor) {
+          this.colorFactor = factor;
+          invalidate();
+        }
+      } else if (this.selectFactor != factor) {
         this.selectFactor = factor;
         invalidate();
       }
@@ -493,7 +634,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
 
     @Override
     protected void onDraw (@NonNull Canvas c) {
-      float selected = MathUtils.clamp(selectFactor);
+      float selected = colorFactor;
       int cx = getWidth() / 2;
       int cy = getIconCenterY();
 
@@ -501,8 +642,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
       float widthFactor = Math.max(0f, selectFactor);
       if (widthFactor > 0f) {
         RectF rect = Paints.getRectF();
-        int indicatorHeight = Screen.dp(32f);
-        float indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isBar ? 60f : 48f)) * widthFactor;
+        int indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
+        float indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isBar ? BAR_INDICATOR_WIDTH : RAIL_INDICATOR_WIDTH)) * widthFactor;
         rect.set(cx - indicatorWidth / 2f, cy - indicatorHeight / 2f, cx + indicatorWidth / 2f, cy + indicatorHeight / 2f);
         c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(selected, M3.secondaryContainer())));
       }

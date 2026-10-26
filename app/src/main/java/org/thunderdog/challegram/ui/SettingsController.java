@@ -734,6 +734,7 @@ public class SettingsController extends ViewController<Void> implements
 
     processUserFull(tdlib.myUserFull());
 
+    M3SettingsGroupDecoration.attach(this.contentView, adapter);
     this.contentView.setAdapter(adapter);
 
     tdlib.cache().addMyUserListener(this);

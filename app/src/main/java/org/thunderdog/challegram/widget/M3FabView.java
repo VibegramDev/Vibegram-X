@@ -51,6 +51,7 @@ public class M3FabView extends View {
   private @Nullable Drawable icon;
   private final Drawable closeIcon;
   private float openFactor;
+  private float colorFactor;
 
   private final GradientDrawable rippleMask;
   private final RippleDrawable ripple;
@@ -99,6 +100,15 @@ public class M3FabView extends View {
     }
   }
 
+  /** Color / icon crossfade of the open state (effects spring, no overshoot). */
+  public void setColorFactor (float factor) {
+    factor = MathUtils.clamp(factor);
+    if (this.colorFactor != factor) {
+      this.colorFactor = factor;
+      invalidate();
+    }
+  }
+
   private float getCornerRadius () {
     float rest = Screen.dp(M3.CORNER_LARGE);
     float size = Math.min(getWidth(), getHeight());
@@ -107,7 +117,7 @@ public class M3FabView extends View {
   }
 
   private int computeRippleColor () {
-    return ColorUtils.alphaColor(M3.STATE_PRESSED, ColorUtils.fromToArgb(M3.onPrimaryContainer(), M3.onPrimary(), openFactor));
+    return ColorUtils.alphaColor(M3.STATE_PRESSED, ColorUtils.fromToArgb(M3.onPrimaryContainer(), M3.onPrimary(), colorFactor));
   }
 
   @Override
@@ -126,23 +136,24 @@ public class M3FabView extends View {
     }
     float radius = getCornerRadius();
     rect.set(0, 0, getWidth(), getHeight());
-    c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(ColorUtils.fromToArgb(M3.primaryContainer(), M3.primary(), openFactor)));
+    c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(ColorUtils.fromToArgb(M3.primaryContainer(), M3.primary(), colorFactor)));
 
-    int iconColor = ColorUtils.fromToArgb(M3.onPrimaryContainer(), M3.onPrimary(), openFactor);
+    int iconColor = ColorUtils.fromToArgb(M3.onPrimaryContainer(), M3.onPrimary(), colorFactor);
     float cx = getWidth() / 2f;
     float cy = getHeight() / 2f;
-    if (icon != null && openFactor < 1f) {
+    // Rotation follows the spatial factor, opacity the effects factor.
+    if (icon != null && colorFactor < 1f) {
       c.save();
       c.rotate(90f * openFactor, cx, cy);
-      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - openFactor, iconColor)));
+      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - colorFactor, iconColor)));
       c.restore();
     }
-    if (openFactor > 0f) {
+    if (colorFactor > 0f) {
       c.save();
       c.rotate(-90f * (1f - openFactor), cx, cy);
       float scale = CLOSE_ICON_SIZE / ICON_SIZE;
       c.scale(scale, scale, cx, cy);
-      Drawables.draw(c, closeIcon, cx - closeIcon.getMinimumWidth() / 2f, cy - closeIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(openFactor, iconColor)));
+      Drawables.draw(c, closeIcon, cx - closeIcon.getMinimumWidth() / 2f, cy - closeIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(colorFactor, iconColor)));
       c.restore();
     }
   }

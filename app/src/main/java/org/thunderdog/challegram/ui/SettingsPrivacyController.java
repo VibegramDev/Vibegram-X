@@ -256,6 +256,7 @@ public class SettingsPrivacyController extends RecyclerViewController<SettingsPr
 
 
     adapter.setItems(items, false);
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
 
     Log.ensureReturnType(TdApi.GetBlockedMessageSenders.class, TdApi.MessageSenders.class);

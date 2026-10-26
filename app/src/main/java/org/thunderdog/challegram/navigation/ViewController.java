@@ -992,7 +992,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return Theme.getColor(getSearchHeaderColorId());
   }
 
-  protected final int getHeaderColor () {
+  protected int getHeaderColor () {
     return Theme.getColor(getHeaderColorId());
   }
 
@@ -1377,6 +1377,18 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
 
   protected boolean useDropShadow () {
     return true;
+  }
+
+  /**
+   * Whether the drop shadow line is drawn below the app bar. Unlike {@link #useDropShadow()}
+   * it doesn't affect the ongoing call / player bars. M3 app bars have no shadow line.
+   */
+  protected boolean useHeaderShadowLine () {
+    return true;
+  }
+
+  public final boolean needHeaderShadowLine () {
+    return useHeaderShadowLine();
   }
 
   protected boolean useDropPlayer () {

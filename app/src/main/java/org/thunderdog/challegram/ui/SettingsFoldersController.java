@@ -283,9 +283,10 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
         view.setIconAlpha(iconAlpha);
         view.setDisabledAlpha(disabledAlpha);
         if (item.getId() == R.id.btn_chatFolderStyle) {
+          // Phone: always at the bottom. Tablet: rail at the side or tabs below the search bar.
           int positionRes;
-          if (tdlib.settings().displayFoldersAtTop()) {
-            positionRes = R.string.ChatFoldersPositionTop;
+          if (navigationController != null && navigationController.isTabletSplit()) {
+            positionRes = tdlib.settings().displayTabletFoldersBelowSearch() ? R.string.ChatFoldersPositionBelowSearch : R.string.ChatFoldersPositionSide;
           } else {
             positionRes = R.string.ChatFoldersPositionBottom;
           }
@@ -439,7 +440,10 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     } else if (v.getId() == R.id.btn_chatFolderStyle) {
       int chatFolderStyle = tdlib.settings().chatFolderStyle();
       ListItem[] items = new ListItem[] {
-        new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_displayFoldersAtTop, 0, R.string.DisplayFoldersAtTheTop, tdlib.settings().displayFoldersAtTop()),
+        // Phone: folders are always at the bottom of the screen. Tablet: choice of the side rail or tabs below the search bar.
+        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_tabletFoldersSide, 0, R.string.TabletFoldersSide, R.id.btn_tabletFoldersPosition, !tdlib.settings().displayTabletFoldersBelowSearch()),
+        new ListItem(ListItem.TYPE_SEPARATOR_FULL),
+        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_tabletFoldersBelowSearch, 0, R.string.TabletFoldersBelowSearch, R.id.btn_tabletFoldersPosition, tdlib.settings().displayTabletFoldersBelowSearch()),
         new ListItem(ListItem.TYPE_SHADOW_BOTTOM).setTextColorId(ColorId.background),
         new ListItem(ListItem.TYPE_SHADOW_TOP).setTextColorId(ColorId.background),
         new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_iconWithLabelOnActiveFolder, 0, R.string.IconWithLabelOnActiveFolder2, R.id.btn_chatFolderStyle, chatFolderStyle == ChatFolderStyle.ICON_WITH_LABEL_ON_ACTIVE_FOLDER),
@@ -465,9 +469,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
           } else {
             style = ChatFolderStyle.LABEL_ONLY;
           }
-          boolean displayFoldersAtTop = result.get(R.id.btn_displayFoldersAtTop) != 0;
+          boolean tabletBelowSearch = result.get(R.id.btn_tabletFoldersPosition) == R.id.btn_tabletFoldersBelowSearch;
           tdlib.settings().setChatFolderStyle(style);
-          tdlib.settings().setDisplayFoldersAtTop(displayFoldersAtTop);
+          tdlib.settings().setDisplayTabletFoldersBelowSearch(tabletBelowSearch);
           adapter.updateValuedSettingById(R.id.btn_chatFolderStyle);
         });
       showSettings(settings);

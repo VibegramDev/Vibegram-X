@@ -331,6 +331,15 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
   }
 
   private float dropShadowAlpha = 1f;
+  /** Multiplier of the drop shadow line only (ongoing bars still follow {@link #dropShadowAlpha}). */
+  private float shadowLineFactor = 1f;
+
+  public void setShadowLineFactor (float factor) {
+    if (this.shadowLineFactor != factor) {
+      this.shadowLineFactor = factor;
+      invalidate();
+    }
+  }
 
   public void setShadowAlpha (float alpha) {
     if (this.dropShadowAlpha != alpha) {
@@ -414,7 +423,9 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
         // c.drawCircle(startX, y, Screen.dp(2f), Paints.fillingPaint(0xaaff0000));
         c.restore();
       }
-      ShadowView.drawDropShadow(c, 0, width, (int) shadowTop, dropShadowAlpha);
+      if (shadowLineFactor > 0f) {
+        ShadowView.drawDropShadow(c, 0, width, (int) shadowTop, dropShadowAlpha * shadowLineFactor);
+      }
     } else {
       if (fillFactor == 1f) {
         c.drawRect(0f, 0f, width, fillingBottom, Paints.fillingPaint(color));

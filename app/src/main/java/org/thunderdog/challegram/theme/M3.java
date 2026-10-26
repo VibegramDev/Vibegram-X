@@ -81,6 +81,7 @@ public final class M3 {
   private static boolean hasCache;
 
   public static @ColorInt int surface () { return get(SURFACE); }
+  public static @ColorInt int surfaceContainerLowest () { return get(SURFACE_CONTAINER_LOWEST); }
   public static @ColorInt int onSurface () { return get(ON_SURFACE); }
   public static @ColorInt int onSurfaceVariant () { return get(ON_SURFACE_VARIANT); }
   public static @ColorInt int surfaceContainerLow () { return get(SURFACE_CONTAINER_LOW); }
@@ -240,6 +241,8 @@ public final class M3 {
   public static final Spring DEFAULT_SPATIAL = new Spring(SPRING_DEFAULT_SPATIAL_STIFFNESS, SPRING_DEFAULT_SPATIAL_DAMPING);
   /** "Default effects" spring: color and opacity, no overshoot. */
   public static final Spring DEFAULT_EFFECTS = new Spring(SPRING_DEFAULT_EFFECTS_STIFFNESS, SPRING_DEFAULT_EFFECTS_DAMPING);
+  /** Expressive "fast effects" spring: color and opacity of small components, no overshoot. */
+  public static final Spring FAST_EFFECTS = new Spring(3800f, 1f);
 
   /**
    * Damped spring (unit mass) expressed as a time interpolator, so it can drive the existing

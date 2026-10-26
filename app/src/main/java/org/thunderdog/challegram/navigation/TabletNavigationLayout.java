@@ -6,12 +6,15 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import androidx.annotation.Nullable;
+
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.ui.MainController;
+import org.thunderdog.challegram.widget.M3FolderRailView;
 
 import me.vkryl.android.widget.FrameLayoutFix;
 
@@ -25,6 +28,9 @@ final class TabletNavigationLayout extends FrameLayoutFix {
   private HeaderView masterHeader;
   private MainController main;
   private int listWidth;
+  /** Chat folders rail of the main screen, at the leading edge along the full height of the left pane. */
+  private @Nullable View folderRail;
+  private int railWidth;
 
   TabletNavigationLayout (Context context, NavigationController navigation, View detail) {
     super(context);
@@ -88,6 +94,27 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     addView(masterHeader);
     main.attachNavigationController(navigation);
     divider.bringToFront();
+    updateFolderRail();
+  }
+
+  /** Attaches or removes the folder rail provided by the main screen. */
+  void updateFolderRail () {
+    View rail = main != null ? main.getTabletFolderRail() : null;
+    if (rail != folderRail) {
+      if (folderRail != null) {
+        removeView(folderRail);
+      }
+      folderRail = rail;
+      if (rail != null) {
+        if (rail.getParent() != null) {
+          ((ViewGroup) rail.getParent()).removeView(rail);
+        }
+        resetTransition(rail);
+        addView(rail);
+        divider.bringToFront();
+      }
+    }
+    requestLayout();
   }
 
   // Chat cells draw the selection themselves; hardware-accelerated parents don't redraw children on invalidate().
@@ -119,6 +146,10 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       return;
     }
     master.removeView(main.getValue());
+    if (folderRail != null) {
+      removeView(folderRail);
+      folderRail = null;
+    }
     masterHeader.detachControllerTitle(main);
     main.removeDestroyListener(masterHeader);
     masterHeader.performDestroy();
@@ -155,7 +186,8 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     int height = MeasureSpec.getSize(heightMeasureSpec);
     int requestedWidth = TabletLayoutPolicy.chatListWidth(width, Screen.density(), getResources().getConfiguration().smallestScreenWidthDp);
     navigation.updateTabletLayout(requestedWidth);
-    listWidth = isSplit() ? requestedWidth : 0;
+    railWidth = isSplit() && folderRail != null ? M3FolderRailView.getRailWidth() : 0;
+    listWidth = isSplit() ? TabletLayoutPolicy.masterWidth(width, Screen.density(), requestedWidth, railWidth) : 0;
     updateVisibility();
     int detailSpec = MeasureSpec.makeMeasureSpec(width - listWidth, MeasureSpec.EXACTLY);
     int heightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
@@ -163,9 +195,12 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     empty.measure(detailSpec, heightSpec);
     divider.measure(MeasureSpec.makeMeasureSpec(1, MeasureSpec.EXACTLY), heightSpec);
     if (master != null) {
-      int masterSpec = MeasureSpec.makeMeasureSpec(listWidth, MeasureSpec.EXACTLY);
+      int masterSpec = MeasureSpec.makeMeasureSpec(listWidth - railWidth, MeasureSpec.EXACTLY);
       master.measure(masterSpec, heightSpec);
       measureChild(masterHeader, masterSpec, heightSpec);
+    }
+    if (folderRail != null) {
+      folderRail.measure(MeasureSpec.makeMeasureSpec(railWidth, MeasureSpec.EXACTLY), heightSpec);
     }
     setMeasuredDimension(width, height);
   }
@@ -178,8 +213,11 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     empty.layout(listWidth, 0, width, height);
     divider.layout(listWidth - 1, 0, listWidth, height);
     if (master != null) {
-      master.layout(0, 0, listWidth, height);
-      masterHeader.layout(0, 0, listWidth, masterHeader.getMeasuredHeight());
+      master.layout(railWidth, 0, listWidth, height);
+      masterHeader.layout(railWidth, 0, listWidth, masterHeader.getMeasuredHeight());
+    }
+    if (folderRail != null) {
+      folderRail.layout(0, 0, railWidth, railWidth > 0 ? height : 0);
     }
   }
 }

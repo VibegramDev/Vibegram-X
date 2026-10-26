@@ -25,6 +25,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.annotation.IntRange;
 import androidx.annotation.NonNull;
@@ -35,6 +36,7 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
@@ -73,6 +75,10 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
         @Override
         @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
         public void getOutline (View view, android.graphics.Outline outline) {
+          if (isM3()) {
+            outline.setEmpty(); // M3 switch has no shadow
+            return;
+          }
           outline.setRoundRect((int) (origX - origRadius), (int) (origY - origRadius), (int) (origX + origRadius), (int) (origY + origRadius), origRadius);
         }
       });
@@ -81,6 +87,9 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
       ViewUtils.setBackground(this, new Drawable() {
         @Override
         public void draw (@NonNull Canvas c) {
+          if (isM3()) {
+            return; // M3 switch draws its track in onDraw
+          }
           final int fromBackgroundColor;
           final int toBackgroundColor;
           if (useNegativeState) {
@@ -138,6 +147,21 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
   }
 
   private static final int ANIMATOR_DISABLE = 1;
+  private static final int ANIMATOR_PRESS = 2;
+  /** M3 switch: the handle grows to 28dp while the row is pressed (pressed state is dispatched by the parent row). */
+  private BoolAnimator isPressedAnimator;
+
+  @Override
+  public void setPressed (boolean pressed) {
+    super.setPressed(pressed);
+    if (isPressedAnimator == null) {
+      if (!pressed) {
+        return;
+      }
+      isPressedAnimator = new BoolAnimator(ANIMATOR_PRESS, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration);
+    }
+    isPressedAnimator.setValue(pressed, isM3() && isLaidOut());
+  }
 
   public void setDisabled (boolean isDisabled, boolean animated) {
     if (this.isDisabled != null || isDisabled) {
@@ -169,7 +193,9 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
   public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
     switch (id) {
       case ANIMATOR_DISABLE:
+      case ANIMATOR_PRESS:
         invalidate();
+        break;
     }
   }
 
@@ -258,8 +284,68 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
     outRect.set((int) (origX - origRadius - bound), (int) (origY - origRadius - bound), (int) (origX + origRadius + bound), (int) (origY + origRadius + bound));
   }
 
+  // Material 3 switch (Monet themes): track 52x32dp, handle 16dp off / 24dp on, no shadow
+  // (m3.material.io/components/switch). Negative-state and lock variants keep the legacy look.
+
+  private boolean lastM3;
+  private final RectF trackRect = new RectF();
+
+  private boolean isM3 () {
+    return M3.isDynamicTheme() && !useNegativeState && !showLock;
+  }
+
+  private void drawM3 (Canvas c) {
+    final float checked = this.isEnabled.getFloatValue();
+    final float disabled = this.isDisabled != null ? this.isDisabled.getFloatValue() : 0f;
+    final float alpha = 1f - .62f * disabled;
+    final float trackWidth = Screen.dp(52f), trackHeight = Screen.dp(32f);
+    float trailing = Math.min(Screen.dp(16f), Math.max(0f, getWidth() - trackWidth));
+    float cy = getHeight() / 2f;
+    ViewGroup.LayoutParams params = getLayoutParams();
+    if (params instanceof ViewGroup.MarginLayoutParams) {
+      // Center on the row, not on a view shifted by its margins.
+      cy += (((ViewGroup.MarginLayoutParams) params).bottomMargin - ((ViewGroup.MarginLayoutParams) params).topMargin) / 2f;
+    }
+    float left = Lang.rtl() ? trailing : getWidth() - trailing - trackWidth;
+    trackRect.set(left, cy - trackHeight / 2f, left + trackWidth, cy + trackHeight / 2f);
+    float radius = trackHeight / 2f;
+
+    int trackColor = ColorUtils.fromToArgb(M3.surfaceContainerHighest(), M3.primary(), checked);
+    c.drawRoundRect(trackRect, radius, radius, Paints.fillingPaint(ColorUtils.alphaColor(alpha, trackColor)));
+    if (checked < 1f) {
+      float stroke = Screen.dp(2f);
+      trackRect.inset(stroke / 2f, stroke / 2f);
+      c.drawRoundRect(trackRect, radius - stroke / 2f, radius - stroke / 2f, Paints.getProgressPaint(ColorUtils.alphaColor(alpha * (1f - checked), M3.outline()), stroke));
+      trackRect.inset(-stroke / 2f, -stroke / 2f);
+    }
+
+    float handleRadius = Screen.dp(8f) + Screen.dp(4f) * checked;
+    float pressed = isPressedAnimator != null ? isPressedAnimator.getFloatValue() : 0f;
+    handleRadius += (Screen.dp(14f) - handleRadius) * pressed; // pressed handle: 28dp
+    float startX = trackRect.left + radius, endX = trackRect.right - radius;
+    float handleX = Lang.rtl() ? endX - (endX - startX) * checked : startX + (endX - startX) * checked;
+    int handleColor = ColorUtils.fromToArgb(M3.outline(), M3.onPrimary(), checked);
+    c.drawCircle(handleX, cy, handleRadius, Paints.fillingPaint(ColorUtils.alphaColor(alpha, handleColor)));
+
+    // Tooltip anchor follows the handle.
+    origX = handleX;
+    origY = cy;
+    origRadius = handleRadius;
+  }
+
   @Override
   public void onDraw (Canvas c) {
+    boolean m3 = isM3();
+    if (m3 != lastM3) {
+      lastM3 = m3;
+      invalidateOutline();
+      // Theme switch: the parent row re-measures (toggler width and the text space depend on the style).
+      post(this::requestLayout);
+    }
+    if (m3) {
+      drawM3(c);
+      return;
+    }
     final float factor = this.isEnabled.getFloatValue();
     updateOrigX();
     final int fromBackgroundColor, fromColor;

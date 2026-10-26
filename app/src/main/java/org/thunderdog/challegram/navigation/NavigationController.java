@@ -229,6 +229,13 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return isTabletSplit() ? tabletLayout.getMain() : getCurrentStackItem();
   }
 
+  /** The main screen shows or hides its chat folders rail in the left pane. */
+  public void updateTabletFolderRail () {
+    if (tabletLayout != null) {
+      tabletLayout.updateFolderRail();
+    }
+  }
+
   void updateTabletLayout (int listWidth) {
     if (isAnimating || isDestroyed) {
       return;

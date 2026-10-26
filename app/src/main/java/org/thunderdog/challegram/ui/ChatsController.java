@@ -482,6 +482,24 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
 
   private int navigationInset;
 
+  /** True when chats are scrolled under the app bar (the collapsed archive row does not count). */
+  public boolean isScrolledFromTop () {
+    if (chatsView == null || !(chatsView.getLayoutManager() instanceof LinearLayoutManager)) {
+      return false;
+    }
+    LinearLayoutManager manager = (LinearLayoutManager) chatsView.getLayoutManager();
+    int first = manager.findFirstVisibleItemPosition();
+    if (first == RecyclerView.NO_POSITION) {
+      return false;
+    }
+    int rest = hideArchive && archiveCollapsed && adapter.hasArchive() ? 1 : 0;
+    if (first != rest) {
+      return first > rest;
+    }
+    View view = manager.findViewByPosition(first);
+    return view != null && view.getTop() < chatsView.getPaddingTop();
+  }
+
   /** Extra bottom scroll space, so the last chat can be scrolled above the main screen dock / FAB. */
   public void setNavigationInset (int inset) {
     if (this.navigationInset != inset) {
@@ -508,6 +526,15 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     });
     Views.applyBottomInset(chatsView, extraBottomInset + navigationInset);
     chatsView.setItemAnimator(null);
+    // M3 app bar: the main screen header changes to surfaceContainer while the list is scrolled under it.
+    chatsView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+      @Override
+      public void onScrolled (@NonNull RecyclerView recyclerView, int dx, int dy) {
+        if (parentController != null) {
+          parentController.onChatListScrolled(ChatsController.this);
+        }
+      }
+    });
     if (isInForceTouchMode()) {
       chatsView.setVerticalScrollBarEnabled(false);
     }
@@ -870,9 +897,6 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
         int top = Math.max(0, manager.getDecoratedTop(view));
         int bottom = Math.max(0, manager.getDecoratedBottom(view));
         chatsView.smoothScrollBy(0, (bottom - top));
-      }
-      if (parentController != null) {
-        parentController.showComposeWrap(this);
       }
     } else {
       setArchiveCollapsed(true);
@@ -2413,9 +2437,6 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
       }
       if (displayNoChats) {
         prepareNoChats();
-        if (parentController != null) {
-          parentController.showComposeWrap(this);
-        }
       }
       boolean animated = chatsView != null && Math.max(chatsView.getMeasuredWidth(), chatsView.getMeasuredHeight()) > 0 && initializationTime != 0 && SystemClock.uptimeMillis() - initializationTime >= 600l && (parentController != null ? parentController.isFocused() : isFocused());
       noChatsAnimator.setValue(displayNoChats, animated);

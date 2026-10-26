@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: fallback for strings missing from the cloud language pack (system locale ru). -->
+<resources>
+  <string name="ScrollToTop">Наверх</string>
+  <string name="ChatFoldersPositionSide">Сбоку</string>
+  <string name="ChatFoldersPositionBelowSearch">Под поиском</string>
+  <string name="TabletFoldersSide">Планшет: папки сбоку</string>
+  <string name="TabletFoldersBelowSearch">Планшет: папки под поиском</string>
+  <string name="CategoryMainShort">Все</string>
+</resources>
