@@ -124,9 +124,25 @@ public final class M3 {
     return themeId == ThemeId.MONET_WHITE || themeId == ThemeId.MONET_DARK || themeId == ThemeId.MONET_BLACK;
   }
 
-  /** True for the built-in Material You (Monet) themes, where color roles come from the system. */
-  public static boolean isDynamicTheme () {
-    return isMonet(ThemeManager.instance().currentThemeId());
+  /**
+   * App bar color while content is scrolled under it. M3: surface -> surfaceContainer. The same tonal step
+   * (surfaceContainer - surface) is applied to the theme's own app bar color, so a theme with a colored app bar
+   * gets the same behaviour; when the app bar is surface the result is exactly surfaceContainer.
+   *
+   * The UI never depends on the theme: only the palette source does (system roles for Monet, derived otherwise).
+   */
+  public static @ColorInt int scrolledAppBarColor (@ColorInt int appBarColor) {
+    int from = surface(), to = surfaceContainer();
+    return Color.argb(
+      Color.alpha(appBarColor),
+      clampChannel(Color.red(appBarColor) + Color.red(to) - Color.red(from)),
+      clampChannel(Color.green(appBarColor) + Color.green(to) - Color.green(from)),
+      clampChannel(Color.blue(appBarColor) + Color.blue(to) - Color.blue(from))
+    );
+  }
+
+  private static int clampChannel (int value) {
+    return Math.max(0, Math.min(255, value));
   }
 
   private static void compute (int themeId, boolean dark, int filling, int accent, int text) {

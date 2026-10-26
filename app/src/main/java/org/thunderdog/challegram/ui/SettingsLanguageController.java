@@ -170,6 +170,7 @@ public class SettingsLanguageController extends RecyclerViewController<Void> imp
       }
     };
     adapter.setOnLongClickListener(this);
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
     isLoading = true;
     tdlib.client().send(new TdApi.GetLocalizationTargetInfo(true), localResult -> {

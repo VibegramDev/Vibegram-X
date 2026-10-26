@@ -491,6 +491,7 @@ public class SettingsProxyController extends RecyclerViewController<Void> implem
     };
     adapter.setOnLongClickListener(this);
     adapter.setItems(items, false);
+    M3SettingsGroupDecoration.attach(recyclerView, adapter);
     recyclerView.setAdapter(adapter);
 
     touchHelper = RemoveHelper.attach(recyclerView, new RemoveHelper.ExtendedCallback() {

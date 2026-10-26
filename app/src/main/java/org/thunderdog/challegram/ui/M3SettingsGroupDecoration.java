@@ -37,15 +37,16 @@ import java.util.List;
 import me.vkryl.core.ColorUtils;
 
 /**
- * Material 3 Expressive segmented list for settings screens (opt-in per screen, Monet themes only).
+ * Material 3 Expressive segmented list for settings screens (opt-in per screen, every theme:
+ * the theme changes only the colors, never the layout).
  *
  * Groups are the existing Telegram X sections (rows between shadows). Each row becomes a segment:
  * outer corners 16dp, inner corners 4dp, 2dp gaps ("4dp inner, 16dp outer", "Use gaps for contained lists",
  * m3.material.io/components/lists). Shadows and separators are replaced by the page color.
  *
  * Group boundaries are computed from the adapter model, not from visible views. Row backgrounds are wrapped
- * (the original drawable is kept inside the wrapper) and restored when a row is detached (recycling) or when
- * the theme is no longer Monet; offsets are invalidated on that switch.
+ * (the original drawable is kept inside the wrapper) and restored when a row is detached (recycling), so a
+ * holder reused for a row type outside the group gets its own background back.
  */
 public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration implements RecyclerView.OnChildAttachStateChangeListener {
   private static final int KIND_OTHER = 0, KIND_CARD = 1, KIND_SEPARATOR = 2, KIND_HIDDEN = 3, KIND_TEXT = 4;
@@ -54,11 +55,9 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
   private static final float SEPARATOR_HEIGHT = 1f; // SettingHolder TYPE_SEPARATOR height
 
   private final SettingsAdapter adapter;
-  private boolean lastEnabled;
 
   private M3SettingsGroupDecoration (SettingsAdapter adapter) {
     this.adapter = adapter;
-    this.lastEnabled = isEnabled();
   }
 
   /** Call before {@code setAdapter}. Every row type of the screen must be classified in {@link #kindAt}. */
@@ -67,10 +66,6 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
     recyclerView.addItemDecoration(decoration);
     recyclerView.addOnChildAttachStateChangeListener(decoration);
     return decoration;
-  }
-
-  public static boolean isEnabled () {
-    return M3.isDynamicTheme();
   }
 
   /** Segment container: surfaceContainerLowest on the light page (surfaceContainer), surfaceContainerHigh on the dark page (surface). */
@@ -120,6 +115,10 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       case ListItem.TYPE_DESCRIPTION:
       case ListItem.TYPE_DESCRIPTION_SMALL:
         return KIND_TEXT;
+      // 4dp spacer painted with the page color, full-screen placeholder text (loading error): not part of a group.
+      case ListItem.TYPE_EMPTY_OFFSET_SMALL:
+      case ListItem.TYPE_EMPTY:
+        return KIND_OTHER;
     }
     return KIND_OTHER;
   }
@@ -134,9 +133,6 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
   @Override
   public void getItemOffsets (@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
     outRect.setEmpty();
-    if (!isEnabled()) {
-      return;
-    }
     int position = parent.getChildAdapterPosition(view);
     if (position == RecyclerView.NO_POSITION) {
       return;
@@ -163,19 +159,16 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
 
   @Override
   public void onDraw (@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-    boolean enabled = isEnabled();
-    if (enabled != lastEnabled) {
-      // Monet <-> legacy theme: side insets and gaps must be recomputed, not only the backgrounds.
-      lastEnabled = enabled;
-      parent.post(parent::invalidateItemDecorations);
-    }
     for (int i = 0; i < parent.getChildCount(); i++) {
       View view = parent.getChildAt(i);
       int position = parent.getChildAdapterPosition(view);
-      if (enabled && position != RecyclerView.NO_POSITION && kindAt(position) == KIND_CARD) {
+      if (position == RecyclerView.NO_POSITION) {
+        // Removal animation: keep the current look until the view is detached.
+        continue;
+      }
+      if (kindAt(position) == KIND_CARD) {
         applySegment(view, isConnected(position, -1), isConnected(position, 1));
-      } else if (!enabled || position != RecyclerView.NO_POSITION) {
-        // NO_POSITION (removal animation): keep the current look until the view is detached.
+      } else {
         restore(view);
       }
     }
@@ -183,9 +176,6 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
 
   @Override
   public void onDrawOver (@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-    if (!isEnabled()) {
-      return;
-    }
     // Separators and shadows become gaps of the page color.
     int pageColor = Theme.backgroundColor();
     for (int i = 0; i < parent.getChildCount(); i++) {

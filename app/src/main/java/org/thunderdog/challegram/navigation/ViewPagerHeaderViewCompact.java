@@ -522,7 +522,7 @@ public class ViewPagerHeaderViewCompact extends FrameLayoutFix implements PagerH
 
   @Override
   protected void dispatchDraw (Canvas c) {
-    if (m3Divider && M3.isDynamicTheme()) {
+    if (m3Divider) {
       int height = Math.max(1, Screen.dp(1f));
       // Align with the tab strip (where the active indicator is drawn), not with the taller cell:
       // the part of the cell below the strip is outside the visible app bar.

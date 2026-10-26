@@ -284,14 +284,14 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
     outRect.set((int) (origX - origRadius - bound), (int) (origY - origRadius - bound), (int) (origX + origRadius + bound), (int) (origY + origRadius + bound));
   }
 
-  // Material 3 switch (Monet themes): track 52x32dp, handle 16dp off / 24dp on, no shadow
-  // (m3.material.io/components/switch). Negative-state and lock variants keep the legacy look.
+  // Material 3 switch (every theme): track 52x32dp, handle 16dp off / 24dp on, no shadow
+  // (m3.material.io/components/switch). Negative-state and lock variants still use the legacy drawing (not migrated yet).
 
   private boolean lastM3;
   private final RectF trackRect = new RectF();
 
   private boolean isM3 () {
-    return M3.isDynamicTheme() && !useNegativeState && !showLock;
+    return !useNegativeState && !showLock;
   }
 
   private void drawM3 (Canvas c) {
@@ -339,7 +339,7 @@ public class TogglerView extends View implements FactorAnimator.Target, TooltipO
     if (m3 != lastM3) {
       lastM3 = m3;
       invalidateOutline();
-      // Theme switch: the parent row re-measures (toggler width and the text space depend on the style).
+      // Lock / negative state toggled: the outline (shadow) depends on the style.
       post(this::requestLayout);
     }
     if (m3) {

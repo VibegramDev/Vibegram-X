@@ -429,9 +429,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       searchBarView = new M3SearchBarView(context, this, () -> {
         // Search app bar: the search bar changes color with the app bar on scroll,
         // surface container high on surface container would blend in (m3.material.io/components/search).
-        if (!M3.isDynamicTheme()) {
-          return M3.surfaceContainerHigh();
-        }
         return ColorUtils.fromToArgb(M3.surfaceContainerHigh(), M3.surfaceContainerHighest(), headerScrollFactor);
       }, BuildConfig.PROJECT_NAME, Lang.getString(R.string.Search), getMenuId());
       searchBarView.setOnBarClickListener(v -> openMainSearch());
@@ -1195,8 +1192,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   @Override
   protected int getHeaderColor () {
     int color = super.getHeaderColor();
-    if (headerScrollFactor > 0f && M3.isDynamicTheme() && !inSearchMode() && !inSelectMode()) {
-      return ColorUtils.fromToArgb(color, M3.surfaceContainer(), headerScrollFactor);
+    if (headerScrollFactor > 0f && !inSearchMode() && !inSelectMode()) {
+      // M3 app bar on scroll: surface -> surfaceContainer, in every theme (see M3.scrolledAppBarColor).
+      return ColorUtils.fromToArgb(color, M3.scrolledAppBarColor(color), headerScrollFactor);
     }
     return color;
   }
@@ -3588,16 +3586,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
   }
 
+  /** M3 badge of the folder tabs (every theme): error / onError; muted chats fade to a neutral outlined badge. */
   public static class UnreadCounterColorSet implements TextColorSet {
     private @Nullable Counter counter;
-    private final FutureBool displayTabsAtBottom;
 
-    public UnreadCounterColorSet (FutureBool displayTabsAtBottom) {
-      this.displayTabsAtBottom = displayTabsAtBottom;
-    }
-
-    private static UnreadCounterColorSet create(MainController parent) {
-      return new UnreadCounterColorSet(parent::displayTabsAtBottom);
+    private static UnreadCounterColorSet create (MainController parent) {
+      return new UnreadCounterColorSet();
     }
 
     public void setCounter (@Nullable Counter counter) {
@@ -3607,39 +3601,19 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     @ColorInt
     @Override
     public int defaultTextColor () {
-      if (M3.isDynamicTheme()) {
-        // M3 badge: error / onError; muted chats fade to a neutral outlined badge.
-        return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
-      }
-      return counter != null ? ColorUtils.fromToArgb(foregroundColor(), backgroundColor(), counter.getMuteFactor()) : foregroundColor();
+      return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
     }
 
     @ColorInt
     @Override
     public int backgroundColor (boolean isPressed) {
-      if (M3.isDynamicTheme()) {
-        return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), M3.error()) : M3.error();
-      }
-      return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), backgroundColor()) : backgroundColor();
+      return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), M3.error()) : M3.error();
     }
 
     @ColorInt
     @Override
     public int outlineColor (boolean isPressed) {
-      if (M3.isDynamicTheme()) {
-        return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.onSurfaceVariant(), counter.getMuteFactor()) : Color.TRANSPARENT;
-      }
-      return counter != null ? backgroundColor() : Color.TRANSPARENT;
-    }
-
-    @ColorInt
-    private int foregroundColor () {
-      return Theme.getColor(displayTabsAtBottom.getBoolValue() ? ColorId.headerLightBackground : ColorId.headerBackground);
-    }
-
-    @ColorInt
-    private int backgroundColor() {
-      return Theme.getColor(displayTabsAtBottom.getBoolValue() ? ColorId.headerLightText : ColorId.headerText);
+      return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.onSurfaceVariant(), counter.getMuteFactor()) : Color.TRANSPARENT;
     }
   }
 

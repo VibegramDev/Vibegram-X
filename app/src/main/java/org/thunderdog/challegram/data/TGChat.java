@@ -35,7 +35,6 @@ import org.thunderdog.challegram.telegram.TdlibCounter;
 import org.thunderdog.challegram.telegram.TdlibStatusManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PorterDuffColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Icons;
@@ -826,9 +825,6 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
 
   /** Real unread state only: a failed send (CHAT_FAILED) or an outgoing message unread by the peer is not "unread". */
   private boolean needEmphasizedTitle () {
-    if (!M3.isDynamicTheme()) {
-      return true;
-    }
     if (isArchive()) {
       return getTotalUnreadCount() != 0;
     }
