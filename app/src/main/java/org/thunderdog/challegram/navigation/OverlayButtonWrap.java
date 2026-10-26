@@ -15,20 +15,23 @@
 package org.thunderdog.challegram.navigation;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
+import android.graphics.Outline;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
-import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.IdRes;
@@ -37,15 +40,15 @@ import androidx.annotation.Nullable;
 import androidx.core.content.res.ResourcesCompat;
 
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.support.RippleSupport;
-import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Anim;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.widget.CircleButton;
+import org.thunderdog.challegram.widget.M3FabView;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 
 import me.vkryl.android.AnimatorUtils;
@@ -53,39 +56,58 @@ import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.Destroyable;
 
+/**
+ * Material 3 Expressive FAB menu: a toggle FAB that morphs into a close button and
+ * a stack of pill-shaped menu items above it (FabMenuBaselineTokens, m3.material.io).
+ */
 public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickListener, FactorAnimator.Target, Destroyable {
-  private static final float START_SCALE = .6f;
+  /** Menu items expand along the y axis from the FAB (M3: "Scale and z-axis motion is avoided"). */
+  private static final float ITEM_ENTER_OFFSET = 16f;
+  /** FAB margin from the window edges (FloatingToolbar/FAB placement: 16dp). */
+  private static final float FAB_MARGIN = 16f;
+  /** Space between the close button and the first menu item. */
+  private static final float CLOSE_BUTTON_SPACE = 8f;
+  /** FabMenuBaselineTokens.ListItemBetweenSpace */
+  private static final float ITEM_SPACE = 4f;
+  private static final float ITEM_HEIGHT = 56f;
+  private static final float ITEM_LEADING_SPACE = 24f;
+  private static final float ITEM_TRAILING_SPACE = 24f;
+  private static final float ITEM_ICON_LABEL_SPACE = 8f;
 
   private Callback callback;
-  private CircleButton mainButton;
+  private M3FabView mainButton;
   private @DrawableRes int mainButtonIcon;
   private @Nullable StateListener stateListener;
-  private boolean mainButtonDetached;
-  // private int rowsCount;
   private final FactorAnimator animator;
 
   public OverlayButtonWrap (Context context) {
     super(context);
 
-    this.animator = new FactorAnimator(0, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 200l);
+    // FAB menu motion: expressive fast spatial (position) + clamped alpha (effects, no overshoot).
+    this.animator = new FactorAnimator(0, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration);
 
     ViewUtils.setBackground(this, new OverlayBackground(this));
     setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
   }
 
+  /**
+   * Color ids are kept for compatibility, Material 3 color roles are used instead:
+   * primaryContainer for the FAB and the menu items, primary for the close button.
+   */
   public void initWithList (final @NonNull ViewController<?> parent, int overlayColorId, int overlayIconColorId, int[] ids, int[] resources, int[] backgrounds, int[] colors, int[] items, boolean reverse) {
     if (reverse) {
       for (int i = ids.length - 1, j = 0; i >= 1; i--, j++) {
-        addButton(parent, j, ids[i], resources[i], backgrounds[i], colors[i], items[i - 1]);
+        addButton(parent, j, ids[i], resources[i], items[i - 1]);
       }
     } else {
       for (int i = 1; i < ids.length; i++) {
-        addButton(parent, i - 1, ids[i], resources[i], backgrounds[i], colors[i], items[i - 1]);
+        addButton(parent, i - 1, ids[i], resources[i], items[i - 1]);
       }
     }
-    addMainButton(parent, ids[0], resources[0], backgrounds[0], colors[0], overlayColorId, overlayIconColorId);
+    addMainButton(parent, ids[0], resources[0]);
   }
 
   @IdRes
@@ -95,7 +117,7 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
 
   public void replaceMainButton (@IdRes int id, @DrawableRes int icon) {
     mainButton.setId(id);
-    mainButton.replaceIcon(icon);
+    mainButton.setIcon(icon);
     if (mainButtonIcon != icon) {
       mainButtonIcon = icon;
       if (stateListener != null) {
@@ -113,7 +135,6 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     return hidden;
   }
 
-  /** Lets another view (e.g. the navigation rail) render the main button and its state. */
   public interface StateListener {
     void onMainButtonIconChanged (@DrawableRes int icon);
     void onHiddenChanged (boolean hidden);
@@ -124,8 +145,10 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     this.stateListener = listener;
   }
 
+  private boolean mainButtonDetached;
+
   /**
-   * Hides the main button while keeping the menu: the button is rendered elsewhere,
+   * Hides the main button while keeping the menu: the button is rendered elsewhere (phone dock),
    * and the menu opens above the place where the main button would be.
    */
   public void setMainButtonDetached (boolean detached) {
@@ -137,18 +160,17 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
 
   // Views
 
-  private void addMainButton (@NonNull ViewController<?> parent, int id, int resource, @ColorId int circleColorId, @ColorId int iconColorId, @ColorId int overlayColorId, @ColorId int overlayIconColorId) {
-    FrameLayoutFix.LayoutParams params;
+  private int endGravity () {
+    return (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM;
+  }
 
-    int padding = Screen.dp(4f);
-    params = FrameLayoutFix.newParams(Screen.dp(56f) + padding * 2, Screen.dp(56f) + padding * 2, Lang.rtl() ? Gravity.LEFT | Gravity.BOTTOM : Gravity.RIGHT | Gravity.BOTTOM);
-    params.rightMargin = params.leftMargin = params.bottomMargin = Screen.dp(16f) - padding;
+  private void addMainButton (@NonNull ViewController<?> parent, int id, int resource) {
+    int size = Screen.dp(M3FabView.SIZE);
+    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(size, size, endGravity());
+    params.rightMargin = params.leftMargin = params.bottomMargin = Screen.dp(FAB_MARGIN);
 
-    CircleButton button;
-
-    button = new CircleButton(getContext());
-    button.init(resource, 56f, 4f, circleColorId, iconColorId);
-    button.setCrossColorId(overlayColorId, overlayIconColorId);
+    M3FabView button = new M3FabView(getContext());
+    button.setIcon(resource);
     button.setId(id);
     button.setOnClickListener(this);
     button.setLayoutParams(params);
@@ -159,134 +181,139 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
   }
 
   public void updateRtl () {
-    int gravity = Lang.rtl() ? Gravity.LEFT | Gravity.BOTTOM : Gravity.RIGHT | Gravity.BOTTOM;
-    int padding = Screen.dp(4f);
-    int leftMargin, rightMargin;
-
-    if (Lang.rtl()) {
-      leftMargin = Screen.dp(90f) - padding;
-      rightMargin = Screen.dp(26f) - padding;
-    } else {
-      rightMargin = Screen.dp(90f) - padding;
-      leftMargin = Screen.dp(26f) - padding;
-    }
-
+    int gravity = endGravity();
     for (int i = 0; i < getChildCount(); i++) {
       View view = getChildAt(i);
       if (view == null)
         continue;
       FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
-      boolean changed = false;
       if (params.gravity != gravity) {
         params.gravity = gravity;
-        changed = true;
-      }
-      if (i % 2 == 1 && (params.leftMargin != leftMargin || params.rightMargin != rightMargin)) {
-        params.leftMargin = leftMargin;
-        params.rightMargin = rightMargin;
-        changed = true;
-      }
-      if (changed) {
         view.setLayoutParams(params);
       }
     }
   }
 
-  private TextView newTextView (ViewController<?> parent) {
-    int padding = Screen.dp(4f);
-    TextView text = new NoScrollTextView(getContext()) {
-      @Override
-      public boolean onTouchEvent (MotionEvent e) {
-        return !(e.getAction() == MotionEvent.ACTION_DOWN && getAlpha() == 0f) && super.onTouchEvent(e);
+  private int menuOffset;
+
+  /**
+   * Extra space between the main button bounds and the menu: when the main button is rendered by
+   * a container around it (phone dock), the menu opens above that container and aligns with its edge.
+   */
+  public void setMenuOffset (int offset) {
+    if (this.menuOffset == offset) {
+      return;
+    }
+    this.menuOffset = offset;
+    for (int index = 0; index < getChildCount(); index++) {
+      View view = getChildAt(index);
+      if (view == mainButton) {
+        continue;
       }
-    };
-    text.setTextColor(Theme.textDecentColor());
-    parent.addThemeTextDecentColorListener(text);
-    RippleSupport.setRectBackground(text, 3f, 4f, ColorId.filling);
-    parent.addThemeInvalidateListener(text);
-    text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15f);
-    text.setTypeface(Fonts.getRobotoBold());
-    text.setSingleLine(true);
-    text.setEllipsize(TextUtils.TruncateAt.END);
-    text.setPadding(Screen.dp(8f) + padding, Screen.dp(2.5f) + padding, Screen.dp(8f) + padding, padding);
-    text.setOnClickListener(this);
-    return text;
+      FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
+      params.leftMargin = params.rightMargin = itemSideMargin();
+      params.bottomMargin = itemBottomMargin(index);
+      view.setLayoutParams(params);
+    }
   }
 
-  private void addButton (@NonNull ViewController<?> parent, int index, int id, int resource, int background, int colorId, int stringRes) {
-    FrameLayoutFix.LayoutParams params;
+  private int itemSideMargin () {
+    return Math.max(0, Screen.dp(FAB_MARGIN) - menuOffset);
+  }
 
-    final int padding = Screen.dp(4f);
+  private int itemBottomMargin (int index) {
+    return Screen.dp(FAB_MARGIN) + Screen.dp(M3FabView.SIZE) + menuOffset + Screen.dp(CLOSE_BUTTON_SPACE) + (Screen.dp(ITEM_HEIGHT) + Screen.dp(ITEM_SPACE)) * index;
+  }
 
-    params = FrameLayoutFix.newParams(Screen.dp(40f) + padding * 2, Screen.dp(40f) + padding * 2, Lang.rtl() ? Gravity.LEFT | Gravity.BOTTOM : Gravity.RIGHT | Gravity.BOTTOM);
-    params.bottomMargin = Screen.dp(96f) + Screen.dp(56f) * index - padding;
-    params.rightMargin = params.leftMargin = Screen.dp(24f) - padding;
+  private void addButton (@NonNull ViewController<?> parent, int index, int id, int resource, int stringRes) {
+    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(ITEM_HEIGHT), endGravity());
+    params.leftMargin = params.rightMargin = itemSideMargin();
+    params.bottomMargin = itemBottomMargin(index);
 
-    final View button;
-
-    CircleButton circleButton;
-    circleButton = new CircleButton(getContext());
-    circleButton.init(resource, 40f, 4f, background, colorId);
-    button = circleButton;
-    /* else {
-      AvatarView avatarView = new AvatarView(getContext());
-      avatarView.setUser(user);
-      avatarView.setPadding(padding, padding, padding, padding);
-      RippleSupport.setCircleBackground(avatarView, 40f, 4f, ColorId.filling);
-      button = avatarView;
-    }*/
-
-    parent.addThemeInvalidateListener(button);
-    button.setId(id);
-    // button.setTag(user);
-    button.setOnClickListener(this);
-    button.setLayoutParams(params);
+    MenuItemView item = new MenuItemView(getContext(), resource);
+    item.setId(id);
+    item.setOnClickListener(this);
+    item.setText(Lang.getString(parent.bindLocaleChanger(stringRes, item, false, false)));
+    item.setLayoutParams(params);
+    parent.addThemeInvalidateListener(item);
 
     if (easeFactor == 0f) {
-      button.setEnabled(false);
-      button.setScaleX(START_SCALE);
-      button.setScaleY(START_SCALE);
-      button.setAlpha(0f);
+      item.setEnabled(false);
+      item.setTranslationY(Screen.dp(ITEM_ENTER_OFFSET));
+      item.setAlpha(0f);
     }
 
-    addView(button, index * 2);
+    addView(item, index);
+  }
 
-    params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(26f) + padding * 2, Lang.rtl() ? Gravity.LEFT | Gravity.BOTTOM : Gravity.RIGHT | Gravity.BOTTOM);
+  /** FAB menu item: 56dp pill, primaryContainer, 24dp icon, TitleMedium label, Level3. */
+  private static final class MenuItemView extends NoScrollTextView {
+    private final Drawable icon;
+    private final GradientDrawable rippleMask;
+    private final RippleDrawable ripple;
+    private int textColor, rippleColor;
 
-    params.bottomMargin = Screen.dp(103) + Screen.dp(56f) * index - padding;
-
-    if (Lang.rtl()) {
-      params.leftMargin = Screen.dp(90f) - padding;
-      params.rightMargin = Screen.dp(26f) - padding;
-    } else {
-      params.rightMargin = Screen.dp(90f) - padding;
-      params.leftMargin = Screen.dp(26f) - padding;
+    MenuItemView (Context context, @DrawableRes int iconRes) {
+      super(context);
+      icon = Drawables.get(getResources(), iconRes).mutate();
+      int iconSize = Screen.dp(24f);
+      icon.setBounds(0, 0, iconSize, iconSize);
+      setCompoundDrawablesRelative(icon, null, null, null);
+      setCompoundDrawablePadding(Screen.dp(ITEM_ICON_LABEL_SPACE));
+      setGravity(Gravity.CENTER_VERTICAL);
+      setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+      setTypeface(Fonts.getRobotoMedium());
+      setLetterSpacing(.15f / 16f);
+      setSingleLine(true);
+      setEllipsize(TextUtils.TruncateAt.END);
+      setPaddingRelative(Screen.dp(ITEM_LEADING_SPACE), 0, Screen.dp(ITEM_TRAILING_SPACE), 0);
+      setWillNotDraw(false);
+      rippleMask = new GradientDrawable();
+      rippleMask.setColor(0xFFFFFFFF);
+      rippleMask.setCornerRadius(Screen.dp(ITEM_HEIGHT) / 2f);
+      rippleColor = computeRippleColor();
+      ripple = new RippleDrawable(ColorStateList.valueOf(rippleColor), null, rippleMask);
+      setForeground(ripple);
+      setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), view.getHeight() / 2f);
+        }
+      });
+      setClipToOutline(true);
+      setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+      updateColors();
     }
 
-    final TextView text = newTextView(parent);
-    text.setId(id);
-    // text.setTag(user);
-    text.setOnClickListener(this);
-    text.setText(Lang.getString(parent.bindLocaleChanger(stringRes, text, false, false)));
-    /*if (user == null) {
-    } else {
-      text.setText(TD.getUserName(user));
-    }*/
-    text.setLayoutParams(params);
-
-    if (easeFactor == 0f) {
-      text.setEnabled(false);
-      text.setScaleX(START_SCALE);
-      text.setScaleY(START_SCALE);
-      text.setAlpha(0f);
-    }
-    // text.setTranslationY(margin * (1f - factor));
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      text.setTranslationZ(Screen.dp(2f));
+    private static int computeRippleColor () {
+      return ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onPrimaryContainer());
     }
 
-    addView(text, index * 2 + 1);
+    private void updateColors () {
+      int color = M3.onPrimaryContainer();
+      if (color != textColor) {
+        textColor = color;
+        setTextColor(color);
+        setCompoundDrawableTintList(ColorStateList.valueOf(color));
+      }
+      int newRippleColor = computeRippleColor();
+      if (newRippleColor != rippleColor) {
+        rippleColor = newRippleColor;
+        ripple.setColor(ColorStateList.valueOf(newRippleColor));
+      }
+    }
+
+    @Override
+    protected void onDraw (Canvas c) {
+      updateColors();
+      c.drawColor(M3.primaryContainer());
+      super.onDraw(c);
+    }
+
+    @Override
+    public boolean onTouchEvent (MotionEvent e) {
+      return !(e.getAction() == MotionEvent.ACTION_DOWN && getAlpha() == 0f) && super.onTouchEvent(e);
+    }
   }
 
   @Override
@@ -360,27 +387,14 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     factor = Anim.anticipateRange(factor);
     if (this.hideFactor != factor) {
       this.hideFactor = factor;
-      if (USE_DECELERATE) {
-        float scale = .6f + .4f * (1f - factor);
-        mainButton.setScaleX(scale);
-        mainButton.setScaleY(scale);
-        mainButton.setAlpha(1f - factor);
-      } else {
-        mainButton.setTranslationY((float) (Screen.dp(16f) * 2 + mainButton.getMeasuredHeight() + getPaddingBottom()) * factor);
-        mainButton.setAlpha(factor < 1f ? 1f : 0f);
-      }
+      mainButton.setTranslationY((float) (Screen.dp(FAB_MARGIN) * 2 + mainButton.getMeasuredHeight() + getPaddingBottom()) * factor);
+      mainButton.setAlpha(factor < 1f ? 1f : 0f);
     }
   }
 
-  private static final boolean USE_DECELERATE = false;
-
   private void animateHideFactor (float toFactor) {
     if (hideAnimator == null) {
-      if (USE_DECELERATE) {
-        hideAnimator = new FactorAnimator(1, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l, this.hideFactor);
-      } else {
-        hideAnimator = new FactorAnimator(1, this, AnimatorUtils.ANTICIPATE_OVERSHOOT_INTERPOLATOR, 440l, this.hideFactor);
-      }
+      hideAnimator = new FactorAnimator(1, this, AnimatorUtils.ANTICIPATE_OVERSHOOT_INTERPOLATOR, 440l, this.hideFactor);
     }
     hideAnimator.animateTo(toFactor);
   }
@@ -432,53 +446,32 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
       return;
     }
 
+    float clamped = MathUtils.clamp(factor);
     if (stateListener != null) {
-      stateListener.onOpenFactorChanged(factor);
+      stateListener.onOpenFactorChanged(clamped);
     }
-    easeFactor = factor; // isOpen ? Anim.DECELERATE_INTERPOLATOR.getInterpolation(factor) : 1f - Anim.DECELERATE_INTERPOLATOR.getInterpolation(1f - factor);
-    mainButton.setRotationFactor(Lang.rtl(), easeFactor);
+    easeFactor = clamped;
+    mainButton.setOpenFactor(clamped);
     HeaderView headerView = UI.getHeaderView(getContext());
     if (headerView != null) {
       headerView.setOverlayColor(calculateOverlayColor());
     }
 
-    // Buttons
-
-    final int count = getChildCount();
-
-    final int rowsCount = (count - 1) / 2;
-
-    final float stepFactor = 1f / (float) rowsCount * .8f;
-    float startFactor = 0f;
-
-    for (int index = 0; index < count - 1; index++) {
-      final float maxButtonFactor = 1f - startFactor;
-      final float buttonFactor;
-      if (factor < startFactor) {
-        buttonFactor = 0f;
-      } else if (factor > startFactor + maxButtonFactor) {
-        buttonFactor = 1f;
-      } else {
-        final float rawFactor = (factor - startFactor) / maxButtonFactor;
-        // buttonFactor = isOpen ? Anim.DECELERATE_INTERPOLATOR.getInterpolation(rawFactor) : 1f - Anim.DECELERATE_INTERPOLATOR.getInterpolation(1f - rawFactor);
-        buttonFactor = rawFactor;
-      }
+    // Menu items, staggered from the FAB upwards: they slide along the y axis (spatial spring, may overshoot)
+    // and fade in (alpha is clamped, no overshoot).
+    final int itemCount = getChildCount() - 1;
+    final float stepFactor = itemCount > 0 ? 1f / (float) itemCount * .6f : 0f;
+    for (int index = 0; index < itemCount; index++) {
+      final float startFactor = stepFactor * index;
+      final float range = 1f - startFactor;
+      final float itemFactor = range > 0f ? Math.max(0f, (factor - startFactor) / range) : factor;
+      final float alpha = MathUtils.clamp(itemFactor);
 
       View v = getChildAt(index);
-      v.setEnabled(factor == 1f);
-
-      if (index % 2 == 1) { // text
-        v.setPivotX(Lang.rtl() ? 0f : v.getMeasuredWidth());
-        startFactor += stepFactor;
-        // v.setPivotY(getChildAt(index - 1).getMeasuredHeight());
-      } else {
-      }
-      v.setPivotY(v.getMeasuredHeight());
-
-      v.setScaleX(START_SCALE + (1f - START_SCALE) * buttonFactor);
-      v.setScaleY(START_SCALE + (1f - START_SCALE) * buttonFactor);
+      v.setEnabled(factor >= 1f);
+      v.setTranslationY(Screen.dp(ITEM_ENTER_OFFSET) * (1f - itemFactor));
       //noinspection Range
-      v.setAlpha(buttonFactor);
+      v.setAlpha(alpha);
     }
 
     invalidate();
@@ -494,7 +487,7 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     UI.getContext(getContext()).notifyBackPressAvailabilityChanged();
   }
 
-  // Background shit
+  // Scrim
 
   private int calculateOverlayColor () {
     if (easeFactor != 0f) {
@@ -520,8 +513,6 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
         c.drawColor(color);
       }
     }
-
-    // Drawable utils
 
     @Override
     public void setAlpha (int alpha) { }

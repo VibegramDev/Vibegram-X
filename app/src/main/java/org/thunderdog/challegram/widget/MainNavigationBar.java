@@ -23,6 +23,7 @@ import android.graphics.Outline;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -39,17 +40,20 @@ import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.util.text.Counter;
+import org.thunderdog.challegram.util.text.TextColorSet;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.Destroyable;
 
 /**
@@ -94,9 +98,25 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
     this.themeProvider = themeProvider;
     setWillNotDraw(false);
 
+    // M3 large badge: error / onError ("Keep the default color mapping"). Muted chats: neutral, still readable.
     unreadCounter = new Counter.Builder()
       .textSize(11f)
-      .outlineColor(ColorId.filling)
+      .colorSet(new TextColorSet() {
+        @Override
+        public int defaultTextColor () {
+          return ColorUtils.fromToArgb(M3.onError(), M3.surface(), badgeMuteFactor());
+        }
+
+        @Override
+        public int backgroundColor (boolean isPressed) {
+          return ColorUtils.fromToArgb(M3.error(), M3.onSurfaceVariant(), badgeMuteFactor());
+        }
+
+        @Override
+        public int outlineColor (boolean isPressed) {
+          return containerColor();
+        }
+      })
       .callback((counter, sizeChanged) -> invalidateItems())
       .build();
 
@@ -104,9 +124,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
     avatarView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(AVATAR_SIZE), Screen.dp(AVATAR_SIZE), Gravity.CENTER_HORIZONTAL | Gravity.TOP));
 
     items = new ItemView[] {
-      new ItemView(context, ITEM_CHATS, R.drawable.baseline_forum_24, R.string.Chats),
-      new ItemView(context, ITEM_CONTACTS, R.drawable.baseline_perm_contact_calendar_24, R.string.Contacts),
-      new ItemView(context, ITEM_SETTINGS, 0, R.string.Settings)
+      // M3: outlined icon for unselected destinations, filled for the selected one.
+      new ItemView(context, ITEM_CHATS, R.drawable.outline_forum_24, R.drawable.baseline_forum_24, R.string.Chats),
+      new ItemView(context, ITEM_CONTACTS, R.drawable.outline_perm_contact_calendar_24, R.drawable.baseline_perm_contact_calendar_24, R.string.Contacts),
+      new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings)
     };
     items[ITEM_SETTINGS].addView(avatarView);
     composeView = new ComposeView(context);
@@ -158,8 +179,31 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
   public void setSelectedItem (int item) {
     if (this.selectedItem != item) {
       this.selectedItem = item;
-      invalidateItems();
+      boolean animated = isLaidOut() && getVisibility() == View.VISIBLE;
+      for (ItemView view : items) {
+        view.setItemSelected(view.id == item, animated);
+      }
     }
+  }
+
+  private float badgeMuteFactor () {
+    return unreadCounter != null ? unreadCounter.getMuteFactor() : 0f;
+  }
+
+  /**
+   * Tablet bar: surfaceContainer (M3 navigation area role).
+   * Phone dock floats above the list: one tonal step more in dark themes, where shadows are barely visible;
+   * surfaceContainer in light themes, where the shadow separates it and the indicator keeps its contrast.
+   */
+  private int containerColor () {
+    return isBar || !Theme.isDark() ? M3.surfaceContainer() : M3.surfaceContainerHigh();
+  }
+
+  /** Ripple above the active indicator / compose container, so the pressed state stays visible. */
+  private static void moveRippleToForeground (View view) {
+    Drawable ripple = view.getBackground();
+    view.setBackground(null);
+    view.setForeground(ripple);
   }
 
   public boolean isBar () {
@@ -284,11 +328,13 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
       items[i].setLayoutParams(itemParams);
       if (modeChanged) {
         RippleSupport.setTransparentSelector(items[i], isBar ? 0 : getRailRadius(), themeProvider);
+        moveRippleToForeground(items[i]);
       }
     }
     composeView.setLayoutParams(FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT));
     if (modeChanged) {
       RippleSupport.setTransparentSelector(composeView, getRailRadius(), themeProvider);
+      moveRippleToForeground(composeView);
     }
     updateComposeView();
     Views.setTopMargin(avatarView, getIconCenterY() - Screen.dp(AVATAR_SIZE) / 2);
@@ -333,7 +379,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
 
   @Override
   protected void onDraw (Canvas c) {
-    int fillingColor = Theme.fillingColor();
+    int fillingColor = containerColor();
     if (isBar) {
       c.drawRect(0, 0, getWidth(), getHeight(), Paints.fillingPaint(fillingColor));
       c.drawRect(0, 0, getWidth(), Math.max(1, Screen.dp(.5f)), Paints.fillingPaint(Theme.separatorColor()));
@@ -385,60 +431,97 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable, Fa
       int cx = getWidth() / 2;
       int cy = getHeight() / 2;
       float open = composeOpenFactor;
+      // M3 FAB nested in the dock: primaryContainer circle (concentric with the dock corners),
+      // it becomes the contrasting primary close button of the FAB menu.
+      c.drawCircle(cx, cy, Math.min(getWidth(), getHeight()) / 2f, Paints.fillingPaint(ColorUtils.fromToArgb(M3.primaryContainer(), M3.primary(), open)));
+      int iconColor = ColorUtils.fromToArgb(M3.onPrimaryContainer(), M3.onPrimary(), open);
       // Same morph as the floating button: the icon turns into a cross while the menu is open.
       if (icon != null && open < 1f) {
         c.save();
         c.rotate(90f * open, cx, cy);
-        Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - open, Theme.iconColor())));
+        Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - open, iconColor)));
         c.restore();
       }
       if (open > 0f) {
         c.save();
         c.rotate(-90f * (1f - open), cx, cy);
-        Drawables.draw(c, closeIcon, cx - closeIcon.getMinimumWidth() / 2f, cy - closeIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(open, Theme.getColor(ColorId.iconActive))));
+        Drawables.draw(c, closeIcon, cx - closeIcon.getMinimumWidth() / 2f, cy - closeIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(open, iconColor)));
         c.restore();
       }
     }
   }
 
-  private class ItemView extends FrameLayoutFix {
+  private class ItemView extends FrameLayoutFix implements FactorAnimator.Target {
     private final int id;
-    private final @Nullable Drawable icon;
+    private final @Nullable Drawable icon, selectedIcon;
     private final String label;
+    private final FactorAnimator selectAnimator;
+    private float selectFactor;
 
-    public ItemView (Context context, int id, @DrawableRes int iconRes, int labelRes) {
+    public ItemView (Context context, int id, @DrawableRes int iconRes, @DrawableRes int selectedIconRes, int labelRes) {
       super(context);
       this.id = id;
       this.icon = iconRes != 0 ? Drawables.get(getResources(), iconRes) : null;
+      this.selectedIcon = selectedIconRes != 0 ? Drawables.get(getResources(), selectedIconRes) : null;
       this.label = Lang.getString(labelRes);
+      this.selectFactor = id == selectedItem ? 1f : 0f;
+      // Indicator size: fast spatial spring; colors are clamped (effects, no overshoot).
+      this.selectAnimator = new FactorAnimator(0, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration, selectFactor);
       setWillNotDraw(false);
       setContentDescription(label);
+      setSelected(id == selectedItem);
+    }
+
+    void setItemSelected (boolean isSelected, boolean animated) {
+      setSelected(isSelected);
+      if (animated) {
+        selectAnimator.animateTo(isSelected ? 1f : 0f);
+      } else {
+        selectAnimator.forceFactor(isSelected ? 1f : 0f);
+        selectFactor = isSelected ? 1f : 0f;
+        invalidate();
+      }
+    }
+
+    @Override
+    public void onFactorChanged (int animatorId, float factor, float fraction, FactorAnimator callee) {
+      if (this.selectFactor != factor) {
+        this.selectFactor = factor;
+        invalidate();
+      }
     }
 
     @Override
     protected void onDraw (@NonNull Canvas c) {
-      boolean isSelected = selectedItem == id;
-      int activeColor = Theme.getColor(ColorId.iconActive);
-      int color = isSelected ? activeColor : Theme.iconColor();
+      float selected = MathUtils.clamp(selectFactor);
       int cx = getWidth() / 2;
       int cy = getIconCenterY();
 
-      if (isSelected) {
+      // Active indicator: opaque secondaryContainer pill, grows from the icon center along one axis.
+      float widthFactor = Math.max(0f, selectFactor);
+      if (widthFactor > 0f) {
         RectF rect = Paints.getRectF();
         int indicatorHeight = Screen.dp(32f);
-        int indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isBar ? 60f : 48f));
+        float indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isBar ? 60f : 48f)) * widthFactor;
         rect.set(cx - indicatorWidth / 2f, cy - indicatorHeight / 2f, cx + indicatorWidth / 2f, cy + indicatorHeight / 2f);
-        c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(.15f, activeColor)));
+        c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(selected, M3.secondaryContainer())));
       }
-      if (icon != null) {
-        Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(color));
+      // Icons: outlined onSurfaceVariant when unselected, filled onSecondaryContainer when selected.
+      if (icon != null && selected < 1f) {
+        Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - selected, M3.onSurfaceVariant())));
+      }
+      if (selectedIcon != null && selected > 0f) {
+        Drawables.draw(c, selectedIcon, cx - selectedIcon.getMinimumWidth() / 2f, cy - selectedIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(selected, M3.onSecondaryContainer())));
       }
       if (isBar) {
+        // Labels: selected = bold secondary, others = medium onSurfaceVariant.
         float textSize = 12f;
+        int color = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.secondary(), selected);
+        TextPaint paint = selected >= .5f ? Paints.getBoldTextPaint(textSize, color) : Paints.getMediumTextPaint(textSize, color, false);
         float maxWidth = getWidth() - Screen.dp(8f);
-        CharSequence text = TextUtils.ellipsize(label, Paints.getMediumTextPaint(textSize, color, false), maxWidth, TextUtils.TruncateAt.END);
-        float textWidth = Paints.getMediumTextPaint(textSize, color, false).measureText(text, 0, text.length());
-        c.drawText(text, 0, text.length(), cx - textWidth / 2f, Screen.dp(56f), Paints.getMediumTextPaint(textSize, color, false));
+        CharSequence text = TextUtils.ellipsize(label, paint, maxWidth, TextUtils.TruncateAt.END);
+        float textWidth = paint.measureText(text, 0, text.length());
+        c.drawText(text, 0, text.length(), cx - textWidth / 2f, Screen.dp(56f), paint);
       }
     }
 
