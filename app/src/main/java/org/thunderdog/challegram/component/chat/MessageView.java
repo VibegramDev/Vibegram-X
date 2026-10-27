@@ -569,6 +569,17 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
     }
   }
 
+  /**
+   * Performs a regular tap on the message, for content that consumed the touch itself.
+   */
+  public boolean performMessageClick (float x, float y) {
+    if (onMessageClick(x, y)) {
+      ViewUtils.onClick(this);
+      return true;
+    }
+    return false;
+  }
+
   private boolean onMessageClick (float x, float y) {
     if (msg == null /*|| msg instanceof TGMessageBotInfo*/) {
       return false;

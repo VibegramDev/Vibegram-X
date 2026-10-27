@@ -11,7 +11,10 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewParent;
+import android.widget.OverScroller;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -53,6 +56,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   private static final float QUOTE_PADDING = 10f;
   private static final float LIST_GAP = 6f;
   private static final float CELL_PADDING = 6f;
+  private static final float SCROLLBAR_SPACE = 10f;
+  /** Wide tables keep natural column widths and scroll horizontally instead of being squeezed */
+  private static final boolean ALLOW_TABLE_SCROLL = true;
 
   private static final long FILE_KEY_OFFSET = 1L << 40;
 
@@ -67,6 +73,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   private final ArrayList<MediaWrapper> mediaWrappers = new ArrayList<>();
   private final ArrayList<TdApi.PageBlockCaption> mediaCaptions = new ArrayList<>();
   private final ArrayList<Toggle> toggles = new ArrayList<>();
+  private final ArrayList<TableBlock> tables = new ArrayList<>();
   /** Collapsible blocks the user has toggled (value = expanded). Survives rebuilds. */
   private final IdentityHashMap<Object, Boolean> expandedState = new IdentityHashMap<>();
 
@@ -143,6 +150,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     mosaics.clear();
     files.clear();
     buttonRows.clear();
+    tables.clear();
     mediaWrappers.clear();
     mediaCaptions.clear();
     if (richMessage != null && richMessage.blocks != null) {
@@ -648,6 +656,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       }
     }
     TableBlock tableBlock = new TableBlock(table, cells, columnCount);
+    tables.add(tableBlock);
     return withCaption(tableBlock, table.caption != null ? new TdApi.PageBlockCaption(table.caption, null) : null);
   }
 
@@ -714,6 +723,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   protected void drawContent (MessageView view, Canvas c, int startX, int startY, int maxWidth, ComplexReceiver receiver) {
     ComplexReceiver textMediaReceiver = view.getTextMediaReceiver();
     toggles.clear();
+    for (TableBlock table : tables) {
+      table.isVisible = false;
+    }
     for (Block block : blocks) {
       block.draw(view, c, startX, startY + block.y, receiver, textMediaReceiver);
     }
@@ -775,8 +787,181 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
 
   // Touch
 
+  // Horizontal scrolling of wide tables
+
+  private @Nullable TableBlock touchTable;
+  private float touchDownX, touchDownY;
+  private int touchStartScrollX;
+  private boolean isTableDragging, touchCaughtByContent;
+  private @Nullable VelocityTracker velocityTracker;
+  private @Nullable OverScroller tableScroller;
+  private @Nullable TableBlock flingTable;
+  private @Nullable View flingView;
+
+  private @Nullable TableBlock findScrollableTable (float x, float y) {
+    for (TableBlock table : tables) {
+      if (table.isVisible && table.getMaxScrollX() > 0 &&
+        x >= table.drawX && x < table.drawX + table.width &&
+        y >= table.drawY && y < table.drawY + table.height) {
+        return table;
+      }
+    }
+    return null;
+  }
+
+  private static void setDisallowIntercept (View view, boolean disallow) {
+    ViewParent parent = view.getParent();
+    if (parent != null) {
+      parent.requestDisallowInterceptTouchEvent(disallow);
+    }
+  }
+
+  private void stopTableFling () {
+    if (tableScroller != null && !tableScroller.isFinished()) {
+      tableScroller.forceFinished(true);
+    }
+    if (flingView != null) {
+      flingView.removeCallbacks(flingRunnable);
+      flingView = null;
+    }
+    flingTable = null;
+  }
+
+  private final Runnable flingRunnable = new Runnable() {
+    @Override
+    public void run () {
+      if (tableScroller == null || flingTable == null || flingView == null) {
+        return;
+      }
+      if (tableScroller.computeScrollOffset()) {
+        flingTable.setScrollX(tableScroller.getCurrX());
+        invalidate();
+        flingView.postOnAnimation(this);
+      } else {
+        flingTable = null;
+        flingView = null;
+      }
+    }
+  };
+
+  private void resetTableTouch () {
+    touchTable = null;
+    isTableDragging = false;
+    touchCaughtByContent = false;
+    if (velocityTracker != null) {
+      velocityTracker.recycle();
+      velocityTracker = null;
+    }
+  }
+
+  private MotionEvent obtainCancelEvent (MotionEvent e) {
+    MotionEvent cancel = MotionEvent.obtain(e);
+    cancel.setAction(MotionEvent.ACTION_CANCEL);
+    return cancel;
+  }
+
+  private boolean onTableTouchEvent (MessageView view, MotionEvent e) {
+    final TableBlock table = touchTable;
+    if (table == null) {
+      return false;
+    }
+    if (velocityTracker != null) {
+      velocityTracker.addMovement(e);
+    }
+    switch (e.getActionMasked()) {
+      case MotionEvent.ACTION_MOVE: {
+        if (!isTableDragging) {
+          float dx = e.getX() - touchDownX, dy = e.getY() - touchDownY;
+          float slop = Screen.getTouchSlop();
+          if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy)) {
+            isTableDragging = true;
+            // Cancel clicks and link highlights that started under the finger
+            MotionEvent cancel = obtainCancelEvent(e);
+            dispatchContentTouchEvent(view, cancel);
+            cancel.recycle();
+            touchDownX = e.getX();
+            touchStartScrollX = table.scrollX;
+          } else if (Math.abs(dy) > slop) {
+            // Vertical gesture: let the chat scroll
+            setDisallowIntercept(view, false);
+            boolean result = dispatchContentTouchEvent(view, e);
+            resetTableTouch();
+            return result;
+          } else {
+            dispatchContentTouchEvent(view, e);
+            return true;
+          }
+        }
+        table.setScrollX(touchStartScrollX - (int) (e.getX() - touchDownX));
+        invalidate();
+        return true;
+      }
+      case MotionEvent.ACTION_UP: {
+        setDisallowIntercept(view, false);
+        if (isTableDragging) {
+          if (velocityTracker != null) {
+            velocityTracker.computeCurrentVelocity(1000);
+            int velocityX = (int) velocityTracker.getXVelocity();
+            if (Math.abs(velocityX) > Screen.dp(120f)) {
+              if (tableScroller == null) {
+                tableScroller = new OverScroller(view.getContext());
+              }
+              stopTableFling();
+              tableScroller.fling(table.scrollX, 0, -velocityX, 0, 0, table.getMaxScrollX(), 0, 0);
+              flingTable = table;
+              flingView = view;
+              view.postOnAnimation(flingRunnable);
+            }
+          }
+          resetTableTouch();
+          return true;
+        }
+        boolean caught = touchCaughtByContent;
+        boolean result = dispatchContentTouchEvent(view, e);
+        resetTableTouch();
+        if (!caught && !result) {
+          view.performMessageClick(e.getX(), e.getY());
+        }
+        return true;
+      }
+      case MotionEvent.ACTION_CANCEL: {
+        setDisallowIntercept(view, false);
+        if (!isTableDragging) {
+          dispatchContentTouchEvent(view, e);
+        }
+        resetTableTouch();
+        return true;
+      }
+    }
+    return true;
+  }
+
   @Override
   public boolean onTouchEvent (MessageView view, MotionEvent e) {
+    if (touchTable != null) {
+      return onTableTouchEvent(view, e);
+    }
+    if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+      TableBlock table = findScrollableTable(e.getX(), e.getY());
+      if (table != null) {
+        stopTableFling();
+        touchTable = table;
+        touchDownX = e.getX();
+        touchDownY = e.getY();
+        touchStartScrollX = table.scrollX;
+        isTableDragging = false;
+        velocityTracker = VelocityTracker.obtain();
+        velocityTracker.addMovement(e);
+        // Keep the chat list and swipe-to-reply from stealing the horizontal gesture
+        setDisallowIntercept(view, true);
+        touchCaughtByContent = dispatchContentTouchEvent(view, e);
+        return true;
+      }
+    }
+    return dispatchContentTouchEvent(view, e);
+  }
+
+  private boolean dispatchContentTouchEvent (MessageView view, MotionEvent e) {
     if (super.onTouchEvent(view, e)) {
       return true;
     }
@@ -1224,6 +1409,17 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     final Cell[][] cells;
     final int columnCount;
     int[] rowHeights;
+    int contentWidth, scrollX;
+    int drawX, drawY;
+    boolean isVisible;
+
+    int getMaxScrollX () {
+      return Math.max(0, contentWidth - width);
+    }
+
+    void setScrollX (int scrollX) {
+      this.scrollX = Math.max(0, Math.min(getMaxScrollX(), scrollX));
+    }
 
     TableBlock (TdApi.PageBlockTable table, Cell[][] cells, int columnCount) {
       this.table = table;
@@ -1248,13 +1444,16 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
           column += span;
         }
       }
+      // Very long cells wrap instead of making a single column huge
+      final int maxColumnWidth = Math.max(Screen.dp(200f), maxWidth * 4 / 5);
       int[] widths = new int[columnCount];
       int total = 0;
       for (int i = 0; i < columnCount; i++) {
-        widths[i] = Math.max(minColumnWidth, natural[i]);
+        widths[i] = Math.max(minColumnWidth, Math.min(maxColumnWidth, natural[i]));
         total += widths[i];
       }
-      if (total > maxWidth) {
+      //noinspection ConstantConditions
+      if (total > maxWidth && !ALLOW_TABLE_SCROLL) {
         // Shrink the widest columns first, keeping narrow ones at their natural width
         int fair = maxWidth / columnCount;
         int fixedTotal = 0, flexibleNatural = 0;
@@ -1302,7 +1501,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         y += rowHeight;
       }
       width = Math.min(maxWidth, total);
-      height = y;
+      contentWidth = total;
+      height = y + (contentWidth > width ? Screen.dp(SCROLLBAR_SPACE) : 0);
+      setScrollX(scrollX);
     }
 
     @Override
@@ -1310,12 +1511,18 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       final int padding = Screen.dp(table.isCompact ? CELL_PADDING / 2 : CELL_PADDING);
       final int borderColor = ColorUtils.alphaColor(.22f, decentColor());
       final int stroke = Math.max(1, Screen.dp(.5f));
+      this.drawX = x;
+      this.drawY = y;
+      this.isVisible = true;
+      final int ox = x - scrollX;
+      final int maxScrollX = getMaxScrollX();
+      final int tableHeight = height - (maxScrollX > 0 ? Screen.dp(SCROLLBAR_SPACE) : 0);
       int saveCount = c.save();
       c.clipRect(x, y, x + width, y + height);
       for (int rowIndex = 0; rowIndex < cells.length; rowIndex++) {
         Cell[] row = cells[rowIndex];
         for (Cell cell : row) {
-          int left = x + cell.x, top = y + cell.y;
+          int left = ox + cell.x, top = y + cell.y;
           if (cell.cell.isHeader) {
             c.drawRect(left, top, left + cell.w, top + cell.h, Paints.fillingPaint(ColorUtils.alphaColor(.07f, textColor())));
           } else if (table.isStriped && rowIndex % 2 == 1) {
@@ -1358,15 +1565,27 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       for (Cell[] row : cells) {
         for (int i = 0; i < row.length; i++) {
           Cell cell = row[i];
-          int left = x + cell.x;
+          int left = ox + cell.x;
           if (i > 0) {
             c.drawRect(left, y + cell.y, left + stroke, y + cell.y + cell.h, borderPaint);
           }
         }
       }
       if (table.isBordered) {
-        c.drawRect(x, y, x + stroke, y + height, borderPaint);
-        c.drawRect(x + width - stroke, y, x + width, y + height, borderPaint);
+        c.drawRect(x, y, x + stroke, y + tableHeight, borderPaint);
+        c.drawRect(x + width - stroke, y, x + width, y + tableHeight, borderPaint);
+      }
+      if (maxScrollX > 0) {
+        // Scroll indicator under the table
+        final int barHeight = Screen.dp(3f);
+        final int barTop = y + tableHeight + Screen.dp(SCROLLBAR_SPACE) / 2 - barHeight / 2;
+        final int barWidth = Math.max(Screen.dp(24f), (int) ((long) width * width / contentWidth));
+        final int barLeft = x + (int) ((long) (width - barWidth) * scrollX / maxScrollX);
+        RectF rect = Paints.getRectF();
+        rect.set(x, barTop, x + width, barTop + barHeight);
+        c.drawRoundRect(rect, barHeight / 2f, barHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(.1f, decentColor())));
+        rect.set(barLeft, barTop, barLeft + barWidth, barTop + barHeight);
+        c.drawRoundRect(rect, barHeight / 2f, barHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(.45f, decentColor())));
       }
       c.restoreToCount(saveCount);
     }
