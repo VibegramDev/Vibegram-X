@@ -282,7 +282,7 @@ public class ContentPreview {
       }
       case TdApi.MessageRichMessage.CONSTRUCTOR: {
         TdApi.MessageRichMessage richMessage = (TdApi.MessageRichMessage) message.content;
-        // TODO rich message text representation
+        alternativeText = TD.getRichMessagePreviewText(richMessage.message, 256);
         break;
       }
       case TdApi.MessageAnimatedEmoji.CONSTRUCTOR: {
@@ -753,6 +753,28 @@ public class ContentPreview {
       case TdApi.MessageGroupCall.CONSTRUCTOR:
       case TdApi.MessagePaidMessagesRefunded.CONSTRUCTOR:
       case TdApi.MessagePaidMessagePriceChanged.CONSTRUCTOR:
+        break;
+
+      // Forum topic service messages
+      case TdApi.MessageForumTopicCreated.CONSTRUCTOR: {
+        return new ContentPreview(EMOJI_GROUP, R.string.TopicWasCreated);
+      }
+      case TdApi.MessageForumTopicEdited.CONSTRUCTOR: {
+        TdApi.MessageForumTopicEdited edited = (TdApi.MessageForumTopicEdited) message.content;
+        if (edited.name != null && !edited.name.isEmpty()) {
+          return new ContentPreview(EMOJI_GROUP, 0, Lang.getString(R.string.TopicWasRenamed, edited.name), true);
+        }
+        // Icon was changed (name is empty/null means only icon changed)
+        return new ContentPreview(EMOJI_GROUP, R.string.TopicIconChanged);
+      }
+      case TdApi.MessageForumTopicIsClosedToggled.CONSTRUCTOR: {
+        TdApi.MessageForumTopicIsClosedToggled toggled = (TdApi.MessageForumTopicIsClosedToggled) message.content;
+        return new ContentPreview(EMOJI_GROUP, toggled.isClosed ? R.string.TopicWasClosed : R.string.TopicWasReopened);
+      }
+      case TdApi.MessageForumTopicIsHiddenToggled.CONSTRUCTOR: {
+        TdApi.MessageForumTopicIsHiddenToggled toggled = (TdApi.MessageForumTopicIsHiddenToggled) message.content;
+        return new ContentPreview(EMOJI_GROUP, toggled.isHidden ? R.string.GeneralTopicWasHidden : R.string.GeneralTopicWasShown);
+      }
 
       // Handled by getSimpleContentPreview, but unsupported
       case TdApi.MessageUnsupported.CONSTRUCTOR:
@@ -760,10 +782,6 @@ public class ContentPreview {
       case TdApi.MessageChatShared.CONSTRUCTOR:
       case TdApi.MessageSuggestProfilePhoto.CONSTRUCTOR:
       case TdApi.MessageSuggestBirthdate.CONSTRUCTOR:
-      case TdApi.MessageForumTopicCreated.CONSTRUCTOR:
-      case TdApi.MessageForumTopicEdited.CONSTRUCTOR:
-      case TdApi.MessageForumTopicIsClosedToggled.CONSTRUCTOR:
-      case TdApi.MessageForumTopicIsHiddenToggled.CONSTRUCTOR:
       case TdApi.MessagePassportDataSent.CONSTRUCTOR:
       case TdApi.MessageChatSetBackground.CONSTRUCTOR:
       case TdApi.MessageChecklist.CONSTRUCTOR:
@@ -1289,6 +1307,7 @@ public class ContentPreview {
       case TdApi.MessageText.CONSTRUCTOR:
         return new ContentPreview(arg1 == ARG_TRUE ? EMOJI_LINK : null, R.string.YouHaveNewMessage, formattedArgument, argumentTranslatable);
       case TdApi.MessageAnimatedEmoji.CONSTRUCTOR:
+      case TdApi.MessageRichMessage.CONSTRUCTOR:
         return new ContentPreview(null, R.string.YouHaveNewMessage, formattedArgument, argumentTranslatable);
       case TdApi.MessagePhoto.CONSTRUCTOR:
         return new ContentPreview(EMOJI_PHOTO, R.string.ChatContentPhoto, formattedArgument, argumentTranslatable);
@@ -1596,15 +1615,21 @@ public class ContentPreview {
       case TdApi.MessagePaymentRefunded.CONSTRUCTOR:
         throw new IllegalArgumentException(Integer.toString(type));
         
+      // Forum topic service messages
+      case TdApi.MessageForumTopicCreated.CONSTRUCTOR:
+        return new ContentPreview(EMOJI_GROUP, R.string.TopicWasCreated);
+      case TdApi.MessageForumTopicEdited.CONSTRUCTOR:
+        return new ContentPreview(EMOJI_GROUP, R.string.TopicIconChanged);
+      case TdApi.MessageForumTopicIsClosedToggled.CONSTRUCTOR:
+        return new ContentPreview(EMOJI_GROUP, arg1 == ARG_TRUE ? R.string.TopicWasClosed : R.string.TopicWasReopened);
+      case TdApi.MessageForumTopicIsHiddenToggled.CONSTRUCTOR:
+        return new ContentPreview(EMOJI_GROUP, arg1 == ARG_TRUE ? R.string.GeneralTopicWasHidden : R.string.GeneralTopicWasShown);
+
       case TdApi.MessageStory.CONSTRUCTOR:
       case TdApi.MessageUsersShared.CONSTRUCTOR:
       case TdApi.MessageChatShared.CONSTRUCTOR:
       case TdApi.MessageSuggestProfilePhoto.CONSTRUCTOR:
       case TdApi.MessageSuggestBirthdate.CONSTRUCTOR:
-      case TdApi.MessageForumTopicCreated.CONSTRUCTOR:
-      case TdApi.MessageForumTopicEdited.CONSTRUCTOR:
-      case TdApi.MessageForumTopicIsClosedToggled.CONSTRUCTOR:
-      case TdApi.MessageForumTopicIsHiddenToggled.CONSTRUCTOR:
       case TdApi.MessagePassportDataSent.CONSTRUCTOR:
       case TdApi.MessageChatSetBackground.CONSTRUCTOR:
       case TdApi.MessagePremiumGiftCode.CONSTRUCTOR:
@@ -1635,7 +1660,6 @@ public class ContentPreview {
       case TdApi.MessageManagedBotCreated.CONSTRUCTOR:
       case TdApi.MessagePollOptionAdded.CONSTRUCTOR:
       case TdApi.MessagePollOptionDeleted.CONSTRUCTOR:
-      case TdApi.MessageRichMessage.CONSTRUCTOR:
       case TdApi.MessageChatAddedToCommunity.CONSTRUCTOR:
       case TdApi.MessageChatRemovedFromCommunity.CONSTRUCTOR:
       case TdApi.MessageTonConnectRequest.CONSTRUCTOR:

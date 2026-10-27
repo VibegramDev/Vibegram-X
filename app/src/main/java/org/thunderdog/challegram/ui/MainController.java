@@ -3484,9 +3484,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     CharSequence sectionName = getFolderSectionName(pagerItemId, TD.toCharSequence(chatFolderInfo.name), chatFolderStyle);
     int iconResource = TD.findFolderIcon(chatFolderInfo.icon, R.drawable.baseline_folder_24);
     ViewPagerTopView.Item item = buildSectionItem(pagerItemId, pagerItemPosition, chatList, sectionName, iconResource, chatFolderStyle);
-    if (chatFolderStyle != ChatFolderStyle.ICON_ONLY && TD.hasCustomEmoji(chatFolderInfo.name.text) && !hasIconSpans(sectionName)) {
+    if (chatFolderStyle != ChatFolderStyle.ICON_ONLY && TD.hasCustomEmoji(chatFolderInfo.name.text)) {
       // Rendered via Text, which is able to draw custom emoji; Layout-based path would show placeholder emoji only
       item.setCustomEmojiText(tdlib, chatFolderInfo.name.text, chatFolderInfo.name.animateCustomEmoji);
+      if (hasIconSpans(sectionName)) {
+        // Selected chat filter: Text cannot draw IconSpan, so the filter icon is drawn after the label
+        item.setTrailingIcon(getFilterVariantIcon(getSelectedFilter(pagerItemId)));
+      }
     }
     return item;
   }

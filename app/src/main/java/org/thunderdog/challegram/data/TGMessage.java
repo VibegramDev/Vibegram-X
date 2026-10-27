@@ -3160,6 +3160,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     } else if (inlineKeyboard != null) {
       inlineKeyboard.clear();
     }
+    if (UI.inUiThread()) {
+      performWithViews(this::requestInlineKeyboardMedia);
+    }
   }
 
   public final int getForwardOrImportDate () {
@@ -4281,6 +4284,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   public final void requestAllTextMedia (MessageView view) {
     requestTextMedia(view.getTextMediaReceiver());
     requestAuthorTextMedia(view.getEmojiStatusReceiver());
+    requestInlineKeyboardMedia(view);
 
     if (footerText != null) {
       footerText.requestMedia(view.getFooterTextMediaReceiver(true));
@@ -4290,6 +4294,29 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
         receiver.clear();
       }
     }
+  }
+
+  private void requestInlineKeyboardMedia (MessageView view) {
+    if (inlineKeyboard != null && inlineKeyboard.hasIconMedia()) {
+      inlineKeyboard.requestIconMedia(view.getInlineKeyboardMediaReceiver(true));
+    } else {
+      ComplexReceiver receiver = view.getInlineKeyboardMediaReceiver(false);
+      if (receiver != null) {
+        receiver.clear();
+      }
+    }
+  }
+
+  final void invalidateInlineKeyboardMedia (TGInlineKeyboard keyboard, Text text, @Nullable TextMedia specificMedia) {
+    if (keyboard != inlineKeyboard) {
+      return;
+    }
+    performWithViews(view -> {
+      ComplexReceiver receiver = view.getInlineKeyboardMediaReceiver(true);
+      if (!text.invalidateMediaContent(receiver, specificMedia)) {
+        keyboard.requestIconMedia(receiver);
+      }
+    });
   }
 
   public final void requestAuthorTextMedia (ComplexReceiver textMediaReceiver) {
@@ -7695,10 +7722,19 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     return false;
   }
 
+  protected boolean onRichButtonClick (View view, TdApi.InlineButton button, @NonNull TdlibUi.UrlOpenParameters openParameters) {
+    return false;
+  }
+
   public final Text.ClickCallback clickCallback () {
     if (clickCallback != null)
       return clickCallback;
     return clickCallback = new Text.ClickCallback() {
+      @Override
+      public boolean onButtonClick (View view, TdApi.InlineButton button, @NonNull TdlibUi.UrlOpenParameters openParameters) {
+        return onRichButtonClick(view, button, openParameters);
+      }
+
       @Override
       public boolean onCommandClick (View view, Text text, TextPart part, String command, boolean isLongPress) {
         if (isLongPress) {
@@ -8451,8 +8487,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
         case TdApi.MessageGiveaway.CONSTRUCTOR: {
           return new TGMessageGiveaway(context, msg, (TdApi.MessageGiveaway) content);
         }
+        case TdApi.MessageRichMessage.CONSTRUCTOR: {
+          return new TGMessageRich(context, msg, (TdApi.MessageRichMessage) content);
+        }
         // unsupported
-        case TdApi.MessageRichMessage.CONSTRUCTOR:
         case TdApi.MessageInvoice.CONSTRUCTOR:
         case TdApi.MessagePassportDataSent.CONSTRUCTOR:
         case TdApi.MessageStory.CONSTRUCTOR:

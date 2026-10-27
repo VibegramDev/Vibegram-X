@@ -111,6 +111,7 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
   private final DoubleImageReceiver replyReceiver;
   private final RefreshRateLimiter refreshRateLimiter, highRefreshRateLimiter;
   private ComplexReceiver footerTextMediaReceiver;
+  private ComplexReceiver inlineKeyboardMediaReceiver;
 
   private ImageReceiver contentReceiver;
   private DoubleImageReceiver previewReceiver;
@@ -185,6 +186,9 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
     reactionsComplexReceiver.performDestroy();
     textMediaReceiver.performDestroy();
     emojiStatusReceiver.performDestroy();
+    if (inlineKeyboardMediaReceiver != null) {
+      inlineKeyboardMediaReceiver.performDestroy();
+    }
     if (contentReceiver != null) {
       contentReceiver.destroy();
     }
@@ -469,6 +473,19 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
     return previewReceiver;
   }
 
+  public ComplexReceiver getInlineKeyboardMediaReceiver (boolean force) {
+    if (inlineKeyboardMediaReceiver == null && force) {
+      inlineKeyboardMediaReceiver = new ComplexReceiver()
+        .setUpdateListener(refreshRateLimiter);
+      if (isAttached) {
+        inlineKeyboardMediaReceiver.attach();
+      } else {
+        inlineKeyboardMediaReceiver.detach();
+      }
+    }
+    return inlineKeyboardMediaReceiver;
+  }
+
   public ComplexReceiver getFooterTextMediaReceiver (boolean force) {
     if (footerTextMediaReceiver == null) {
       footerTextMediaReceiver = new ComplexReceiver()
@@ -498,6 +515,9 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
       emojiStatusReceiver.attach();
       replyReceiver.attach();
       replyTextMediaReceiver.attach();
+      if (inlineKeyboardMediaReceiver != null) {
+        inlineKeyboardMediaReceiver.attach();
+      }
       if ((flags & FLAG_USE_COMMON_RECEIVER) != 0) {
         contentReceiver.attach();
         previewReceiver.attach();
@@ -521,6 +541,9 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
       emojiStatusReceiver.detach();
       replyReceiver.detach();
       replyTextMediaReceiver.detach();
+      if (inlineKeyboardMediaReceiver != null) {
+        inlineKeyboardMediaReceiver.detach();
+      }
       if ((flags & FLAG_USE_COMMON_RECEIVER) != 0) {
         contentReceiver.detach();
         previewReceiver.detach();
@@ -544,6 +567,17 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
     } else {
       m.selectMessage(messageId, msg, touchX, touchY);
     }
+  }
+
+  /**
+   * Performs a regular tap on the message, for content that consumed the touch itself.
+   */
+  public boolean performMessageClick (float x, float y) {
+    if (onMessageClick(x, y)) {
+      ViewUtils.onClick(this);
+      return true;
+    }
+    return false;
   }
 
   private boolean onMessageClick (float x, float y) {

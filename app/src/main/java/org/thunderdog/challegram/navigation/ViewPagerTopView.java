@@ -184,6 +184,30 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       return this;
     }
 
+    // Icon drawn right after the custom emoji label (e.g. the selected chat filter),
+    // replaces IconSpan which is not supported by Text.
+    private @DrawableRes int trailingIconRes;
+    private @Nullable Drawable trailingIcon;
+    private static final float TRAILING_ICON_SPACING = 4f;
+
+    public Item setTrailingIcon (@DrawableRes int iconRes) {
+      this.trailingIconRes = iconRes;
+      this.trailingIcon = null;
+      return this;
+    }
+
+    private @Nullable Drawable getTrailingIcon () {
+      if (trailingIcon == null && trailingIconRes != 0) {
+        trailingIcon = Drawables.get(trailingIconRes);
+      }
+      return trailingIcon;
+    }
+
+    int getTrailingIconSpace () {
+      Drawable icon = hasCustomEmojiText() ? getTrailingIcon() : null;
+      return icon != null ? icon.getIntrinsicWidth() + Screen.dp(TRAILING_ICON_SPACING) : 0;
+    }
+
     boolean hasCustomEmojiText () {
       return tdlib != null && formattedString != null && string != null;
     }
@@ -271,12 +295,12 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     }
 
     int getLabelWidth () {
-      return customLabel != null ? customLabel.getWidth() : ellipsizedStringLayout != null ? ellipsizedStringLayout.getWidth() : 0;
+      return customLabel != null ? customLabel.getWidth() + getTrailingIconSpace() : ellipsizedStringLayout != null ? ellipsizedStringLayout.getWidth() : 0;
     }
 
     @Override
     public boolean equals (Object obj) {
-      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && customEmojiEquals(((Item) obj).formattedString, formattedString);
+      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && ((Item) obj).trailingIconRes == trailingIconRes && customEmojiEquals(((Item) obj).formattedString, formattedString);
     }
 
     private int width, contentWidth;
@@ -347,7 +371,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     private float measureLabel (TextPaint paint) {
       if (hasCustomEmojiText() && owner != null) {
-        return obtainNaturalLabel(owner).getWidth();
+        return obtainNaturalLabel(owner).getWidth() + getTrailingIconSpace();
       }
       return U.measureEmojiText(string, paint);
     }
@@ -394,9 +418,10 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
         ellipsizedStringLayout = null;
         iconSpans = null;
         Text natural = obtainNaturalLabel(owner);
-        Text label = natural.getWidth() <= availWidth ? natural : buildLabel(owner, availWidth);
+        int textAvailWidth = Math.max(1, availWidth - getTrailingIconSpace());
+        Text label = natural.getWidth() <= textAvailWidth ? natural : buildLabel(owner, textAvailWidth);
         setCustomLabel(owner, label);
-        ellipsizedWidth = label.getWidth();
+        ellipsizedWidth = label.getWidth() + getTrailingIconSpace();
         return;
       }
       if (string != null) {
@@ -1485,6 +1510,12 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       if (customLabel != null) {
         labelColorSet.color = color;
         customLabel.draw(c, 0, 0, labelColorSet, 1f, labelMediaReceiver);
+        Drawable trailingIcon = item.getTrailingIcon();
+        if (trailingIcon != null) {
+          int iconX = customLabel.getWidth() + Screen.dp(Item.TRAILING_ICON_SPACING);
+          int iconY = customLabel.getHeight() / 2 - trailingIcon.getIntrinsicHeight() / 2;
+          Drawables.draw(c, trailingIcon, iconX, iconY, Paints.getPorterDuffPaint(color));
+        }
       }
       c.translate(-x, -y);
     }
