@@ -2658,35 +2658,39 @@ public class TD {
   }
 
   public static void getText (TdApi.RichText richText, StringBuilder b) {
+    getText(richText, b, false);
+  }
+
+  public static void getText (TdApi.RichText richText, StringBuilder b, boolean hideSpoilers) {
     if (richText == null)
       return;
     switch (richText.getConstructor()) {
       case TdApi.RichTextBold.CONSTRUCTOR: {
-        getText(((TdApi.RichTextBold) richText).text, b);
+        getText(((TdApi.RichTextBold) richText).text, b, hideSpoilers);
         break;
       }
       case TdApi.RichTextStrikethrough.CONSTRUCTOR: {
-        getText(((TdApi.RichTextStrikethrough) richText).text, b);
+        getText(((TdApi.RichTextStrikethrough) richText).text, b, hideSpoilers);
         break;
       }
       case TdApi.RichTextUnderline.CONSTRUCTOR: {
-        getText(((TdApi.RichTextUnderline) richText).text, b);
+        getText(((TdApi.RichTextUnderline) richText).text, b, hideSpoilers);
         break;
       }
       case TdApi.RichTextUrl.CONSTRUCTOR: {
-        getText(((TdApi.RichTextUrl) richText).text, b);
+        getText(((TdApi.RichTextUrl) richText).text, b, hideSpoilers);
         break;
       }
       case TdApi.RichTextFixed.CONSTRUCTOR: {
-        getText(((TdApi.RichTextFixed) richText).text, b);
+        getText(((TdApi.RichTextFixed) richText).text, b, hideSpoilers);
         break;
       }
       case TdApi.RichTextEmailAddress.CONSTRUCTOR: {
-        getText(((TdApi.RichTextEmailAddress) richText).text, b);
+        getText(((TdApi.RichTextEmailAddress) richText).text, b, hideSpoilers);
         break;
       }
       case TdApi.RichTextItalic.CONSTRUCTOR: {
-        getText(((TdApi.RichTextItalic) richText).text, b);
+        getText(((TdApi.RichTextItalic) richText).text, b, hideSpoilers);
         break;
       }
       case TdApi.RichTextPlain.CONSTRUCTOR: {
@@ -2696,10 +2700,169 @@ public class TD {
       case TdApi.RichTexts.CONSTRUCTOR: {
         TdApi.RichTexts richTexts = (TdApi.RichTexts) richText;
         for (TdApi.RichText text : richTexts.texts) {
-          getText(text, b);
+          getText(text, b, hideSpoilers);
         }
         break;
       }
+      case TdApi.RichTextSubscript.CONSTRUCTOR:
+        getText(((TdApi.RichTextSubscript) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextSuperscript.CONSTRUCTOR:
+        getText(((TdApi.RichTextSuperscript) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextMarked.CONSTRUCTOR:
+        getText(((TdApi.RichTextMarked) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextSpoiler.CONSTRUCTOR:
+        if (hideSpoilers) {
+          b.append("\u2592\u2592\u2592");
+        } else {
+          getText(((TdApi.RichTextSpoiler) richText).text, b, hideSpoilers);
+        }
+        break;
+      case TdApi.RichTextMention.CONSTRUCTOR:
+        getText(((TdApi.RichTextMention) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextMentionName.CONSTRUCTOR:
+        getText(((TdApi.RichTextMentionName) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextHashtag.CONSTRUCTOR:
+        getText(((TdApi.RichTextHashtag) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextCashtag.CONSTRUCTOR:
+        getText(((TdApi.RichTextCashtag) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextBankCardNumber.CONSTRUCTOR:
+        getText(((TdApi.RichTextBankCardNumber) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextTonAddress.CONSTRUCTOR:
+        getText(((TdApi.RichTextTonAddress) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextBotCommand.CONSTRUCTOR:
+        getText(((TdApi.RichTextBotCommand) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextPhoneNumber.CONSTRUCTOR:
+        getText(((TdApi.RichTextPhoneNumber) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextDateTime.CONSTRUCTOR:
+        getText(((TdApi.RichTextDateTime) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextAnchorLink.CONSTRUCTOR:
+        getText(((TdApi.RichTextAnchorLink) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextReferenceLink.CONSTRUCTOR:
+        getText(((TdApi.RichTextReferenceLink) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextDiff.CONSTRUCTOR:
+        getText(((TdApi.RichTextDiff) richText).text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextButton.CONSTRUCTOR:
+        getText(((TdApi.RichTextButton) richText).button.text, b, hideSpoilers);
+        break;
+      case TdApi.RichTextMathematicalExpression.CONSTRUCTOR:
+        b.append(((TdApi.RichTextMathematicalExpression) richText).expression);
+        break;
+      case TdApi.RichTextCustomEmoji.CONSTRUCTOR:
+        b.append(((TdApi.RichTextCustomEmoji) richText).alternativeText);
+        break;
+    }
+  }
+
+  /**
+   * Plain-text summary of a rich message for chat list and notification previews.
+   */
+  public static String getRichMessagePreviewText (@Nullable TdApi.RichMessage richMessage, int maxLength) {
+    StringBuilder b = new StringBuilder();
+    if (richMessage != null && richMessage.blocks != null) {
+      appendPreviewText(richMessage.blocks, b, maxLength);
+    }
+    return b.toString().trim();
+  }
+
+  private static void appendPreviewText (TdApi.PageBlock[] blocks, StringBuilder b, int maxLength) {
+    for (TdApi.PageBlock block : blocks) {
+      if (b.length() >= maxLength) {
+        return;
+      }
+      appendPreviewText(block, b, maxLength);
+    }
+  }
+
+  private static void appendPreviewPart (@Nullable TdApi.RichText text, StringBuilder b) {
+    if (text == null) {
+      return;
+    }
+    String part = getText(text).replace('\n', ' ').trim();
+    if (!part.isEmpty()) {
+      if (b.length() > 0) {
+        b.append(' ');
+      }
+      b.append(part);
+    }
+  }
+
+  private static void appendPreviewText (TdApi.PageBlock block, StringBuilder b, int maxLength) {
+    switch (block.getConstructor()) {
+      case TdApi.PageBlockTitle.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockTitle) block).title, b);
+        break;
+      case TdApi.PageBlockSubtitle.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockSubtitle) block).subtitle, b);
+        break;
+      case TdApi.PageBlockHeader.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockHeader) block).header, b);
+        break;
+      case TdApi.PageBlockSubheader.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockSubheader) block).subheader, b);
+        break;
+      case TdApi.PageBlockKicker.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockKicker) block).kicker, b);
+        break;
+      case TdApi.PageBlockSectionHeading.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockSectionHeading) block).text, b);
+        break;
+      case TdApi.PageBlockParagraph.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockParagraph) block).text, b);
+        break;
+      case TdApi.PageBlockPreformatted.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockPreformatted) block).text, b);
+        break;
+      case TdApi.PageBlockFooter.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockFooter) block).footer, b);
+        break;
+      case TdApi.PageBlockPullQuote.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockPullQuote) block).text, b);
+        break;
+      case TdApi.PageBlockExpandableBlockQuote.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockExpandableBlockQuote) block).text, b);
+        break;
+      case TdApi.PageBlockBlockQuote.CONSTRUCTOR:
+        appendPreviewText(((TdApi.PageBlockBlockQuote) block).blocks, b, maxLength);
+        break;
+      case TdApi.PageBlockDetails.CONSTRUCTOR:
+        appendPreviewPart(((TdApi.PageBlockDetails) block).header, b);
+        break;
+      case TdApi.PageBlockList.CONSTRUCTOR:
+        for (TdApi.PageBlockListItem item : ((TdApi.PageBlockList) block).items) {
+          if (b.length() >= maxLength) {
+            break;
+          }
+          appendPreviewText(item.blocks, b, maxLength);
+        }
+        break;
+      case TdApi.PageBlockMathematicalExpression.CONSTRUCTOR: {
+        String expression = ((TdApi.PageBlockMathematicalExpression) block).expression;
+        if (!StringUtils.isEmpty(expression)) {
+          if (b.length() > 0) {
+            b.append(' ');
+          }
+          b.append(expression);
+        }
+        break;
+      }
+      default:
+        // Media, tables, dividers, buttons and other non-textual blocks are skipped
+        break;
     }
   }
 

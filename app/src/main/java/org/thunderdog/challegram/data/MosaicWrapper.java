@@ -1036,6 +1036,15 @@ public class MosaicWrapper implements FactorAnimator.Target, ComplexReceiver.Key
     return startKey;
   }
 
+  /**
+   * Same as {@link #requestFiles(ComplexReceiver, boolean)}, but does not clear receivers
+   * that belong to other content sharing the same {@link ComplexReceiver}.
+   */
+  public void requestFilesKeepOthers (ComplexReceiver complexReceiver, boolean invalidate) {
+    requestFiles(this, complexReceiver, invalidate, mosaicItems, -1);
+    requestFiles(this, complexReceiver, invalidate, addedMosaicItems, -1);
+  }
+
   public void requestFiles (ComplexReceiver complexReceiver, boolean invalidate) {
     /*int i = requestFiles(this, complexReceiver, invalidate, mosaicItems, 0);
     i = requestFiles(this, complexReceiver, invalidate, addedMosaicItems, i);
