@@ -193,54 +193,14 @@ public class Theme {
 
   @ColorInt
   public static int getColor (final @ColorId int colorId) {
-    return chromeColor(ThemeManager.instance().currentTheme(), colorId);
+    return ThemeManager.instance().currentTheme().getColor(colorId);
   }
 
   public static int getColorFast (final @ColorId int colorId) {
     ThemeDelegate currentTheme = ThemeManager.currentThemeFast();
     if (currentTheme != null)
-      return chromeColor(currentTheme, colorId);
+      return currentTheme.getColor(colorId);
     return ThemeSet.getColor(ThemeId.BLUE, colorId);
-  }
-
-  // M3 surfaces and app bars (owner's decision: literal M3 color roles in every theme)
-
-  /**
-   * Surfaces and app bars follow the M3 roles in every theme: Monet themes take them from the system scheme,
-   * other themes from roles derived from the preset ({@link M3}). m3.material.io/styles/color/roles: "surface for
-   * background, surface container for navigation areas"; app bars: container surface, surface container on scroll.
-   *
-   * <ul>
-   *   <li>page backgrounds ({@code filling}: chat list and rows, {@code background}: settings pages, empty pane) and
-   *   the app bar ({@code headerBackground}) are surface; segmented settings cards are surfaceContainer
-   *   ({@code M3SettingsGroupDecoration}), navigation (rail, dock, folder tabs) surfaceContainer;</li>
-   *   <li>app bar title and icons onSurface, tabs primary / onSurfaceVariant;</li>
-   *   <li>the status bar gets no tint and dark icons in light themes.</li>
-   * </ul>
-   *
-   * Only the current theme's colors as read through {@link Theme} are affected: theme previews and forced themes
-   * (media viewer) read their delegates directly and keep the preset colors. {@link M3} reads its inputs from the
-   * delegate directly too (no recursion).
-   */
-  private static @ColorInt int chromeColor (ThemeDelegate theme, @ColorId int colorId) {
-    switch (colorId) {
-      case ColorId.filling:
-      case ColorId.background:
-      case ColorId.headerBackground:
-      case ColorId.chatBackground:
-        return M3.surface();
-      case ColorId.headerText:
-      case ColorId.headerIcon:
-        return M3.onSurface();
-      case ColorId.headerTabActive:
-      case ColorId.headerTabActiveText:
-        return M3.primary();
-      case ColorId.headerTabInactiveText:
-        return M3.onSurfaceVariant();
-      case ColorId.statusBar:
-        return 0;
-    }
-    return theme.getColor(colorId);
   }
 
   public static float getProperty (final @PropertyId int propertyId, final @ThemeId int themeId) {
@@ -261,7 +221,7 @@ public class Theme {
   public static int getColor (final @ColorId int colorId, final @ThemeId int themeId) {
     ThemeDelegate currentTheme = ThemeManager.currentThemeFast();
     if (currentTheme != null && themeId == currentTheme.getId())
-      return chromeColor(currentTheme, colorId);
+      return currentTheme.getColor(colorId);
     return ThemeSet.getColor(themeId, colorId);
   }
 
@@ -916,12 +876,10 @@ public class Theme {
 
   // Themes
 
-  /** Alert dialogs: M3 basic dialog (styled at runtime by {@link M3Dialogs}). */
-  public static int dialogTheme () {
-    return isDark() ? R.style.M3DialogThemeDark : R.style.M3DialogTheme;
-  }
-
-  /** Date/time pickers keep the legacy Holo dialog: Material pickers would take the static teal colorAccent. */
+  /**
+   * Platform dialogs (date/time pickers, call feedback outside of {@link org.thunderdog.challegram.BaseActivity}) keep the
+   * legacy Holo dialog: Material pickers would take the static teal colorAccent. Alerts are {@link org.thunderdog.challegram.navigation.AlertPopup}.
+   */
   public static int pickerDialogTheme () {
     return isDark() ? R.style.DialogThemeDark : R.style.DialogTheme;
   }
@@ -941,7 +899,7 @@ public class Theme {
   }
 
   public static boolean needLightStatusBar () {
-    // App bars are surface in every theme (see chromeColor).
+    // App bars are surface in every theme (see ThemeDelegate.getColor).
     return !isDark();
   }
 

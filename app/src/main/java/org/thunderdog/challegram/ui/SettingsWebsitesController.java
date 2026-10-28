@@ -150,7 +150,7 @@ public class SettingsWebsitesController extends RecyclerViewController<SettingsP
       }));
     }
 
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
 
     recyclerView.setAdapter(adapter);
   }
@@ -236,7 +236,6 @@ public class SettingsWebsitesController extends RecyclerViewController<SettingsP
           terminateSession(website, banUser1, false);
         })
         .setSaveStr(R.string.DisconnectWebsite)
-        .setSaveColorId(ColorId.textNegative)
       );
       return;
     }

@@ -76,11 +76,19 @@ public final class ThemeMonet implements ThemeDelegate {
   }
 
   @Override
-  public int getColor (int colorId) {
+  public int getRawColor (int colorId) {
     if (colorId > 0 && colorId < colors.length && hasColor[colorId]) {
       return colors[colorId];
     }
-    return base.getColor(colorId);
+    return base.getRawColor(colorId);
+  }
+
+  /** System dynamic color roles on Android 14+, see {@link M3.Roles}. */
+  private final M3.Roles roles = new M3.Roles(true);
+
+  @Override
+  public int getRoleColor (int role) {
+    return roles.get(this, role);
   }
 
   @Override

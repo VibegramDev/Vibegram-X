@@ -18,6 +18,7 @@ import android.Manifest;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.UiModeManager;
 import android.content.BroadcastReceiver;
@@ -89,6 +90,8 @@ import org.thunderdog.challegram.mediaview.MediaViewController;
 import org.thunderdog.challegram.proxy.WebProxyTransport;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
 import org.thunderdog.challegram.navigation.BackPressMode;
+import org.thunderdog.challegram.navigation.AlertPopup;
+import org.thunderdog.challegram.navigation.DialogLayout;
 import org.thunderdog.challegram.navigation.DrawerController;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.InterceptLayout;
@@ -111,7 +114,6 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.telegram.TdlibMessageViewer;
 import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.M3Dialogs;
 import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
@@ -690,24 +692,24 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   private List<Reference<View>> dialogMessages;
 
-  public final AlertDialog showAlert (AlertDialog.Builder b) {
+  public final AlertPopup showAlert (AlertPopup.Builder b) {
     return showAlert(b, null);
   }
 
-  public final AlertDialog showAlert (AlertDialog.Builder b, ThemeDelegate theme) {
+  public final AlertPopup showAlert (AlertPopup.Builder b, ThemeDelegate theme) {
     if (isFinishing()) {
       return null;
     }
-    AlertDialog dialog;
+    AlertPopup dialog;
     try {
-      dialog = b.show();
+      dialog = b.create(this, theme);
     } catch (Throwable t) {
       if (UI.getUiState() == UI.State.RESUMED)
         UI.showToast("Failed to display system pop-up, see application log for details", Toast.LENGTH_SHORT);
       Log.e("Cannot show dialog", t);
       return null;
     }
-    View view = dialog.findViewById(android.R.id.message);
+    View view = dialog.getMessageView();
     if (view != null) {
       if (dialogMessages == null) {
         dialogMessages = new ArrayList<>();
@@ -716,7 +718,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       ReferenceUtils.addReference(dialogMessages, view);
     }
     // TODO LOW_PROFILE
-    return modifyAlert(dialog, theme);
+    return dialog;
   }
 
   private static boolean patchAlertButton (View v, ThemeDelegate theme, @ColorId int colorId) {
@@ -764,10 +766,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       patchAlertButton(dialog.findViewById(android.R.id.button2), theme, ColorId.textNeutral);
     if (!patchAlertButton(dialog.getButton(DialogInterface.BUTTON_NEGATIVE), theme, ColorId.textNeutral))
       patchAlertButton(dialog.findViewById(android.R.id.button3), theme, ColorId.textNeutral);
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      // M3 basic dialog: 28dp surfaceContainerHigh container, 280..560dp, M3 type and actions.
-      M3Dialogs.apply(context, dialog, theme);
-    }
     return dialog;
   }
 
@@ -809,6 +807,47 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   public void removeKeyEventListener (KeyEventListener listener) {
     keyEventListeners.remove(listener);
+  }
+
+  // Last touch: M3 menus on wide windows open at the point that opened them
+
+  /** A popup shown later than this after the last touch was not opened by it (keyboard, programmatic, async). */
+  private static final long RECENT_TOUCH_TIMEOUT = 1000L;
+
+  private float lastTouchDownX, lastTouchDownY;
+  private long lastTouchTime, lastKeyTime;
+
+  /** Called for every touch event of the activity window and of popups shown in their own windows. */
+  public void recordTouchEvent (MotionEvent e) {
+    if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+      lastTouchDownX = e.getRawX();
+      lastTouchDownY = e.getRawY();
+    }
+    lastTouchTime = SystemClock.uptimeMillis();
+  }
+
+  /** @return screen coordinates of the touch that is likely to have opened a popup right now, or null. */
+  public @Nullable float[] getRecentTouchPoint () {
+    if (lastTouchTime == 0 || lastKeyTime > lastTouchTime || SystemClock.uptimeMillis() - lastTouchTime > RECENT_TOUCH_TIMEOUT) {
+      return null;
+    }
+    return new float[] {lastTouchDownX, lastTouchDownY};
+  }
+
+  @Override
+  public boolean dispatchTouchEvent (MotionEvent e) {
+    recordTouchEvent(e);
+    return super.dispatchTouchEvent(e);
+  }
+
+  // Activity.dispatchKeyEvent is public framework API; androidx.core only marks its own override as restricted.
+  @SuppressLint("RestrictedApi")
+  @Override
+  public boolean dispatchKeyEvent (KeyEvent event) {
+    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getKeyCode() != KeyEvent.KEYCODE_BACK) {
+      lastKeyTime = SystemClock.uptimeMillis();
+    }
+    return super.dispatchKeyEvent(event);
   }
 
   private boolean backKeyDownReceived;
@@ -2466,11 +2505,11 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     if (isActivityBusyWithSomething()) {
       boolean exit = true;
 
-      if ((window.getBoundController() instanceof MediaViewController && ((MediaViewController) window.getBoundController()).isFromCamera()) || window.getBoundView() instanceof OptionsLayout || window.getBoundView() instanceof MenuMoreWrap) {
+      if ((window.getBoundController() instanceof MediaViewController && ((MediaViewController) window.getBoundController()).isFromCamera()) || window.getBoundView() instanceof OptionsLayout || window.getBoundView() instanceof DialogLayout || window.getBoundView() instanceof MenuMoreWrap) {
         exit = false;
       } else if (!windows.isEmpty()) {
         PopupLayout firstWindow = windows.get(0);
-        if ((firstWindow.getBoundController() instanceof MediaViewController && ((MediaViewController) firstWindow.getBoundController()).isFromCamera()) || firstWindow.getBoundView() instanceof OptionsLayout || firstWindow.getBoundView() instanceof MenuMoreWrap) {
+        if ((firstWindow.getBoundController() instanceof MediaViewController && ((MediaViewController) firstWindow.getBoundController()).isFromCamera()) || firstWindow.getBoundView() instanceof OptionsLayout || firstWindow.getBoundView() instanceof DialogLayout || firstWindow.getBoundView() instanceof MenuMoreWrap) {
           exit = false;
         }
       }

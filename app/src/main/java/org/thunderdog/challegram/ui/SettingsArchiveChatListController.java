@@ -81,7 +81,7 @@ public class SettingsArchiveChatListController extends RecyclerViewController<Vo
       buildCells();
       executeScheduledAnimation();
     }));
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
     tdlib.listeners().subscribeToSettingsUpdates(this);
   }

@@ -149,7 +149,7 @@ public abstract class SettingsCloudController<T extends Settings.CloudSetting> e
         }
       }
     }));
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
   }
 

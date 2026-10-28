@@ -14,7 +14,6 @@
  */
 package org.thunderdog.challegram.telegram;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
@@ -67,6 +66,7 @@ import org.thunderdog.challegram.data.TGMessage;
 import org.thunderdog.challegram.data.TGSwitchInline;
 import org.thunderdog.challegram.data.ThreadInfo;
 import org.thunderdog.challegram.mediaview.MediaViewController;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.NavigationStack;
@@ -75,6 +75,7 @@ import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeColors;
@@ -378,7 +379,7 @@ public class TdlibUi extends Handler {
             after.run();
           }
         }
-      }).setSaveStr(R.string.Delete).setSaveColorId(ColorId.textNegative));
+      }).setSaveStr(R.string.Delete));
     if (wrap != null) {
       tdlib.client().send(new TdApi.GetChatMember(chatId, senderId), result -> {
         if (result.getConstructor() == TdApi.ChatMember.CONSTRUCTOR) {
@@ -447,7 +448,6 @@ public class TdlibUi extends Handler {
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_inviteBack, 0, tdlib.isChannel(chatId) ? R.string.InviteBackToChannel : R.string.InviteBackToGroup, false)
       })
       .setSaveStr(R.string.Unban)
-      .setSaveColorId(ColorId.textNegative)
     );
   }
 
@@ -492,7 +492,7 @@ public class TdlibUi extends Handler {
       })
       .setRawItems(new ListItem[]{
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_restrictMember, 0, R.string.BanMember, true)
-      }).setSaveStr(R.string.RemoveMember).setSaveColorId(ColorId.textNegative));
+      }).setSaveStr(R.string.RemoveMember));
   }
 
   private static boolean deleteWithRevoke (final ViewController<?> context, final MessageWithProperties[] deletingMessages, final @Nullable Runnable after) {
@@ -582,7 +582,7 @@ public class TdlibUi extends Handler {
             after.run();
           }
         }
-      }).setSaveStr(R.string.Delete).setSaveColorId(ColorId.textNegative).setAllowResize(false));
+      }).setSaveStr(R.string.Delete).setAllowResize(false));
     return true;
   }
 
@@ -618,7 +618,6 @@ public class TdlibUi extends Handler {
             }
           })
           .setSaveStr(R.string.Delete)
-          .setSaveColorId(ColorId.textNegative)
           .setAllowResize(false))
       );
     });
@@ -934,7 +933,7 @@ public class TdlibUi extends Handler {
     }
     infiniteView.initWithItems(ttlOptions, foundIndex);
 
-    final AlertDialog.Builder builder = new AlertDialog.Builder(context, useDarkMode ? R.style.M3DialogThemeDark : Theme.dialogTheme());
+    final AlertPopup.Builder builder = new AlertPopup.Builder(context);
     builder.setTitle(Lang.getString(R.string.MessageLifetime));
     if (message != 0) {
       builder.setMessage(Lang.getString(message));
@@ -3061,7 +3060,7 @@ public class TdlibUi extends Handler {
     if (options != null && options.requireOpenPrompt && (uri == null || !tdlib.isTrustedHost(url, true))) {
       ViewController<?> c = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
       if (c != null && !c.isDestroyed()) {
-        AlertDialog.Builder b = new AlertDialog.Builder(context.context(), Theme.dialogTheme());
+        AlertPopup.Builder b = new AlertPopup.Builder(context.context());
         b.setTitle(Lang.getString(R.string.AppName));
         b.setMessage(Lang.getString(R.string.OpenThisLink, !StringUtils.isEmpty(options.displayUrl) ? options.displayUrl : url));
         b.setPositiveButton(Lang.getString(R.string.Open), (dialog, which) ->
@@ -4949,7 +4948,7 @@ public class TdlibUi extends Handler {
     if (confirmButtonRes != 0) {
       int checkId = join ? R.id.btn_returnToChat : R.id.btn_removeChatFromList;
       if (!join && ChatId.isBasicGroup(chatId)) {
-        SettingsWrapBuilder b = new SettingsWrapBuilder(R.id.btn_removeChatFromList).setSaveStr(R.string.LeaveDoneGroup).setSaveColorId(ColorId.textNegative);
+        SettingsWrapBuilder b = new SettingsWrapBuilder(R.id.btn_removeChatFromList).setSaveStr(R.string.LeaveDoneGroup);
         if (informationStr != null) {
           b.addHeaderItem(informationStr);
         }
@@ -5032,7 +5031,6 @@ public class TdlibUi extends Handler {
       context.showSettings(new SettingsWrapBuilder(R.id.btn_removeChatFromList)
         .setAllowResize(false)
         .addHeaderItem(tdlib.isSelfChat(chatId) ? Lang.getMarkdownString(context, R.string.ClearSavedMessagesConfirm) : Lang.getString(R.string.ClearHistoryConfirm))
-        .setSaveColorId(ColorId.textNegative)
         .setSaveStr(R.string.Delete)
         .setRawItems(new ListItem[] {
           new ListItem(
@@ -5168,7 +5166,6 @@ public class TdlibUi extends Handler {
               .setRawItems(new ListItem[]{
                 new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_clearChatHistory, 0, Lang.getString(R.string.DeleteSecretChatHistoryForOtherParty, userName), R.id.btn_clearChatHistory, false)
               })
-              .setSaveColorId(ColorId.textNegative)
               .setSaveStr(R.string.Delete)
               .setIntDelegate((id, result) -> {
                 boolean clearHistory = result.get(R.id.btn_clearChatHistory) == R.id.btn_clearChatHistory;
@@ -5210,7 +5207,6 @@ public class TdlibUi extends Handler {
               .setRawItems(new ListItem[] {
                 new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_clearChatHistory, 0, Lang.getString(R.string.DeleteSecretChatHistoryForOtherParty, userName), R.id.btn_clearChatHistory, false)
               })
-              .setSaveColorId(ColorId.textNegative)
               .setSaveStr(R.string.Delete)
               .setIntDelegate((id, result) -> {
                 boolean clearHistory = result.get(R.id.btn_clearChatHistory) == R.id.btn_clearChatHistory;
@@ -5632,7 +5628,6 @@ public class TdlibUi extends Handler {
     settings[0] = context.showSettings(new SettingsWrapBuilder(R.id.btn_addChatToFolder)
       .addHeaderItem(Lang.getString(R.string.ChooseFolder))
       .setRawItems(items)
-      .setNeedSeparators(false)
       .setDisableFooter(true)
       .setNeedRootInsets(true)
       .setSettingProcessor((item, view, isUpdate) -> {
@@ -6633,11 +6628,18 @@ public class TdlibUi extends Handler {
     }
 
     @Override
-    public int getColor (int colorId) {
+    public int getRawColor (int colorId) {
       Integer value = colorsMap.get(colorId);
       if (value != null)
         return value;
-      return ThemeSet.getBuiltinTheme(parentThemeId).getColor(colorId);
+      return ThemeSet.getBuiltinTheme(parentThemeId).getRawColor(colorId);
+    }
+
+    private final M3.Roles roles = new M3.Roles(false);
+
+    @Override
+    public int getRoleColor (int role) {
+      return roles.get(this, role);
     }
 
     public void addColor (String name, int id, int value) {
@@ -6682,7 +6684,7 @@ public class TdlibUi extends Handler {
       ThemeDelegate defaultTheme = ThemeSet.getOrLoadTheme(parentThemeId, false);
       for (int i = colorsList.size() - 1; i >= 0; i--) {
         Value value = colorsList.get(i);
-        if (defaultTheme.getColor(value.id) == value.intValue) {
+        if (defaultTheme.getRawColor(value.id) == value.intValue) {
           colorsList.remove(i);
           colorsMap.remove(value.id);
         }

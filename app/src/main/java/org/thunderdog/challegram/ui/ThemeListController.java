@@ -3143,7 +3143,7 @@ public class ThemeListController extends RecyclerViewController<ThemeListControl
   private void saveColor (@NonNull ColorState state, boolean isTemporaryChange) {
     ThemeCustom theme = getTheme();
     int colorId = state.getColorId();
-    int currentColor = theme.getColor(colorId);
+    int currentColor = theme.getRawColor(colorId);
     int newColor = state.getColor();
     int themeId = theme.getId();
     int customThemeId = ThemeManager.resolveCustomThemeId(themeId);

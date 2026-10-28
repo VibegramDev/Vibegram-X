@@ -14,7 +14,6 @@
  */
 package org.thunderdog.challegram.ui;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.text.InputFilter;
 import android.view.View;
@@ -33,9 +32,9 @@ import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.component.user.RemoveHelper;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Keyboard;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
@@ -98,9 +97,9 @@ public class SettingsLanguageController extends RecyclerViewController<Void> imp
 
   private void openHelp () {
     // best code design patterns (c) 2018
-    AlertDialog[] finalDialog = new AlertDialog[1];
+    AlertPopup[] finalDialog = new AlertPopup[1];
 
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(R.string.TranslationMoreTitle));
     b.setMessage(Strings.buildMarkdown(this, Lang.getString(R.string.TranslationMoreText), (v, span, clickedText) -> {
       if (finalDialog[0] != null) {
@@ -170,7 +169,7 @@ public class SettingsLanguageController extends RecyclerViewController<Void> imp
       }
     };
     adapter.setOnLongClickListener(this);
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
     isLoading = true;
     tdlib.client().send(new TdApi.GetLocalizationTargetInfo(true), localResult -> {

@@ -59,6 +59,7 @@ public final class ThemeCustom implements ThemeDelegate {
   public void setColor (@ColorId int colorId, @Nullable Integer color) {
     this.lastChangedColorId = colorId;
     colors.set(colorId, color);
+    roles.invalidate();
   }
 
   public boolean hasRecentlyChanged (@ColorId int colorId) {
@@ -67,7 +68,7 @@ public final class ThemeCustom implements ThemeDelegate {
 
   public boolean hasColor (@ColorId int colorId, boolean onlyModified) {
     Integer color = colors.get(colorId);
-    return color != null && (!onlyModified || parentTheme == null || color != parentTheme.getColor(colorId));
+    return color != null && (!onlyModified || parentTheme == null || color != parentTheme.getRawColor(colorId));
   }
 
   public boolean hasProperty (@PropertyId int propertyId, boolean onlyModified) {
@@ -86,6 +87,7 @@ public final class ThemeCustom implements ThemeDelegate {
       setParentThemeImpl(value != null ? value.intValue() : ThemeId.NONE);
     }
     properties.set(propertyId, value);
+    roles.invalidate();
   }
 
   @Override
@@ -94,7 +96,7 @@ public final class ThemeCustom implements ThemeDelegate {
   }
 
   @Override
-  public int getColor (int colorId) {
+  public int getRawColor (int colorId) {
     Integer color = colors.get(colorId);
     if (color != null)
       return color;
@@ -106,8 +108,16 @@ public final class ThemeCustom implements ThemeDelegate {
       fallbackColorId = FallbackColorId.get(fallbackColorId);
     }
     if (parentTheme != null)
-      return parentTheme.getColor(colorId);
+      return parentTheme.getRawColor(colorId);
     throw Theme.newError(colorId, "colorId");
+  }
+
+  // Recomputed after edits (theme editor): surface follows an edited filling, etc.
+  private final M3.Roles roles = new M3.Roles(false);
+
+  @Override
+  public int getRoleColor (int role) {
+    return roles.get(this, role);
   }
 
   @Override

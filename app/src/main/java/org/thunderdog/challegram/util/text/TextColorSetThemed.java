@@ -17,7 +17,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeDelegate;
 import org.thunderdog.challegram.theme.ThemeManager;
 
@@ -31,13 +30,6 @@ public interface TextColorSetThemed extends TextColorSet {
   default ThemeDelegate colorTheme () {
     ThemeDelegate forcedTheme = forcedTheme();
     return forcedTheme != null ? forcedTheme : ThemeManager.instance().currentTheme();
-  }
-
-  /** Color of the forced theme, or of the current theme as read through {@link Theme} (two-pane app bars). */
-  @ColorInt
-  default int themedColor (@ColorId int colorId) {
-    ThemeDelegate forcedTheme = forcedTheme();
-    return forcedTheme != null ? forcedTheme.getColor(colorId) : Theme.getColor(colorId);
   }
 
   @ColorId
@@ -69,26 +61,26 @@ public interface TextColorSetThemed extends TextColorSet {
   @ColorInt
   default int defaultTextColor () {
     int colorId = defaultTextColorId();
-    return colorId != 0 ? themedColor(colorId) : 0;
+    return colorId != 0 ? colorTheme().getColor(colorId) : 0;
   }
   @Override
   default int iconColor () {
     int colorId = iconColorId();
-    return colorId != 0 ? themedColor(colorId) : 0;
+    return colorId != 0 ? colorTheme().getColor(colorId) : 0;
   }
   @ColorInt
   default int clickableTextColor (boolean isPressed) {
     int colorId = clickableTextColorId(isPressed);
-    return colorId != 0 ? themedColor(colorId) : 0;
+    return colorId != 0 ? colorTheme().getColor(colorId) : 0;
   }
   @ColorInt
   default int backgroundColor (boolean isPressed) {
     int colorId = backgroundColorId(isPressed);
-    return colorId != 0 ? themedColor(colorId) : 0;
+    return colorId != 0 ? colorTheme().getColor(colorId) : 0;
   }
   @ColorInt
   default int outlineColor (boolean isPressed) {
     int colorId = outlineColorId(isPressed);
-    return colorId != 0 ? themedColor(colorId) : 0;
+    return colorId != 0 ? colorTheme().getColor(colorId) : 0;
   }
 }

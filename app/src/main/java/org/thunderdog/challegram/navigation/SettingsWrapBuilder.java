@@ -22,7 +22,6 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.telegram.TdlibDelegate;
-import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.ui.ListItem;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.TimerView;
@@ -55,13 +54,11 @@ public class SettingsWrapBuilder {
   public @Nullable
   String[] sizeValues;
 
-  public boolean needSeparators = true, needRootInsets = false;
+  public boolean needRootInsets = false;
 
   public String saveStr = Lang.getString(R.string.Save);
-  public int saveColorId = ColorId.textNeutral;
 
   public String cancelStr = Lang.getString(R.string.Cancel);
-  public int cancelColorId = ColorId.textNeutral;
 
   public boolean allowResize = true;
 
@@ -91,11 +88,6 @@ public class SettingsWrapBuilder {
 
   public SettingsWrapBuilder setTdlibDelegate (TdlibDelegate tdlibDelegate) {
     this.tdlibDelegate = tdlibDelegate;
-    return this;
-  }
-
-  public SettingsWrapBuilder setNeedSeparators (boolean needSeparators) {
-    this.needSeparators = needSeparators;
     return this;
   }
 
@@ -210,16 +202,6 @@ public class SettingsWrapBuilder {
 
   public SettingsWrapBuilder setCancelStr (String cancelStr) {
     this.cancelStr = cancelStr;
-    return this;
-  }
-
-  public SettingsWrapBuilder setCancelColorId (int cancelColorId) {
-    this.cancelColorId = cancelColorId;
-    return this;
-  }
-
-  public SettingsWrapBuilder setSaveColorId (int saveColorId) {
-    this.saveColorId = saveColorId;
     return this;
   }
 

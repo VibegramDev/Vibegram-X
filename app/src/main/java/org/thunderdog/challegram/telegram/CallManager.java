@@ -15,7 +15,6 @@
 package org.thunderdog.challegram.telegram;
 
 import android.Manifest;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -36,10 +35,10 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.service.TGCallService;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.CallController;
@@ -275,8 +274,8 @@ debugCall id:long debug:string = Ok;
 
   private void showAlert (@AlertType int alertType) {
     final Context context = UI.getContext();
-    AlertDialog.Builder b;
-    b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b;
+    b = new AlertPopup.Builder(context);
     switch (alertType) {
       case AlertType.ANDROID_VERSION_UNSUPPORTED -> {
         b.setTitle(Lang.getString(R.string.AndroidVersionWarningTitle));
@@ -301,7 +300,7 @@ debugCall id:long debug:string = Ok;
       intent.setData(uri);
       context.startActivity(intent);
     });
-    BaseActivity.modifyAlert(context, b.show(), null);
+    b.show();
   }
 
   public void acceptIncomingCall (Tdlib tdlib, int callId) {
@@ -354,11 +353,11 @@ debugCall id:long debug:string = Ok;
     if (hasActiveCall()) {
       Context context = UI.getUiContext();
       if (context != null) {
-        AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+        AlertPopup.Builder b = new AlertPopup.Builder(context);
         b.setMessage(Lang.getString(R.string.SomeCallInProgressDesc));
         b.setNeutralButton(Lang.getString(R.string.HangUp), (dialog, which) -> hangUpCurrentCall());
         b.setPositiveButton(Lang.getOK(), (dialog, which) -> dialog.dismiss());
-        BaseActivity.modifyAlert(context, b.show(), null);
+        b.show();
       }
       return true;
     }
@@ -397,7 +396,7 @@ debugCall id:long debug:string = Ok;
     final TdApi.Call pendingCall = getCurrentCall();
     final Tdlib pendingCallTdlib = pendingCall != null ? currentCallTdlib : null;
     if (pendingCall != null || (userFull != null && !userFull.canBeCalled)|| (CHECK_CONNECTION && !context.tdlib().isConnected())) {
-      AlertDialog.Builder b = new AlertDialog.Builder(context.context(), Theme.dialogTheme());
+      AlertPopup.Builder b = new AlertPopup.Builder(context.context());
       b.setPositiveButton(Lang.getOK(), (dialog, which) -> dialog.dismiss());
       if (pendingCall != null) {
         if (pendingCall.userId == userId) {
@@ -449,7 +448,7 @@ debugCall id:long debug:string = Ok;
         b.setTitle(Lang.getString(R.string.VoipOfflineTitle));
         b.setMessage(Lang.getString(R.string.VoipOffline));
       }
-      BaseActivity.modifyAlert(context.context(), b.show(), null);
+      b.show();
       return;
     }
     if (userFull == null) {
@@ -488,10 +487,10 @@ debugCall id:long debug:string = Ok;
   }
 
   private boolean checkConnection (final Context context, final Tdlib tdlib) {
-    AlertDialog.Builder b = null;
+    AlertPopup.Builder b = null;
     if (CHECK_CONNECTION && !tdlib.isConnected()) {
       if (U.isAirplaneModeOn()) {
-        b = new AlertDialog.Builder(context, Theme.dialogTheme());
+        b = new AlertPopup.Builder(context);
         b.setTitle(Lang.getString(R.string.VoipOfflineAirplaneTitle));
         b.setMessage(Lang.getString(R.string.VoipOfflineAirplane));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
@@ -504,13 +503,13 @@ debugCall id:long debug:string = Ok;
           b.setNeutralButton(Lang.getString(R.string.AirplaneModeDisable), (dialog, which) -> android.provider.Settings.System.putInt(context.getContentResolver(), android.provider.Settings.System.AIRPLANE_MODE_ON, 0));
         }
       } else {
-        b = new AlertDialog.Builder(context, Theme.dialogTheme());
+        b = new AlertPopup.Builder(context);
         b.setTitle(Lang.getString(R.string.VoipOfflineTitle));
         b.setMessage(Lang.getString(R.string.VoipOffline));
       }
     }
     if (b != null) {
-      try { BaseActivity.modifyAlert(context, b.show(), null); } catch (Throwable ignored) { }
+      try { b.show(); } catch (Throwable ignored) { }
       return false;
     }
     return true;

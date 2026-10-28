@@ -42,7 +42,6 @@ import org.thunderdog.challegram.telegram.DateChangeListener;
 import org.thunderdog.challegram.telegram.MessageListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibOptionListener;
-import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
@@ -646,6 +645,8 @@ public class CallListController extends RecyclerViewController<Void> implements
     ListItem item = (ListItem) v.getTag();
     if (item != null && item.getViewType() == ListItem.TYPE_CHAT_BETTER) {
       CallItem call = (CallItem) item.getData();
+      // Tablet: the row stays selected in the left pane while the call screen it opens is in the right pane.
+      context.navigation().setTabletDetailOpener(item);
       tdlib.context().calls().makeCall(CallListController.this, call.getUserId(), null);
     }
   }
@@ -727,7 +728,7 @@ public class CallListController extends RecyclerViewController<Void> implements
                     if (id == R.id.btn_delete) {
                       tdlib.deleteMessages(chatId, call.getMessageIds(), result.get(R.id.btn_deleteAll) != 0);
                     }
-                  }).setSaveStr(R.string.Delete).setSaveColorId(ColorId.textNegative)
+                  }).setSaveStr(R.string.Delete)
                 );
               } else {
                 showOptions(null, new int[] {R.id.btn_delete, R.id.btn_cancel}, new String[] {Lang.getString(R.string.DeleteEntry), Lang.getString(R.string.Cancel)}, new int[] {OptionColor.RED, OptionColor.NORMAL}, new int[] {R.drawable.baseline_delete_sweep_24, R.drawable.baseline_cancel_24}, (itemView, id) -> {

@@ -631,7 +631,7 @@ public class ChatStatisticsController extends RecyclerViewController<ChatStatist
       })
       .setRawItems(new ListItem[]{
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_restrictMember, 0, R.string.BanMember, true)
-      }).setSaveStr(R.string.RemoveMember).setSaveColorId(ColorId.textNegative));
+      }).setSaveStr(R.string.RemoveMember));
   }
 
   private void editMember (DoubleTextWrapper content, boolean restrict, TdApi.ChatMemberStatus myStatus, TdApi.ChatMember member) {

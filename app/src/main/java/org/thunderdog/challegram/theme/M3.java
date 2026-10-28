@@ -39,8 +39,10 @@ import me.vkryl.core.ColorUtils;
  * Values follow the official token set (m3.material.io, mirrored in androidx.compose.material3.tokens):
  * color roles, corner shape scale, elevation levels and spring motion schemes.
  *
- * Color roles: for built-in Monet themes on Android 14+ they come straight from the system dynamic color
- * roles (android.R.color.system_*_light/dark), otherwise they are derived from the current theme colors.
+ * Color roles are part of every theme ({@link ThemeDelegate#getRoleColor}, stored in {@link Roles}): for built-in
+ * Monet themes on Android 14+ they come straight from the system dynamic color roles
+ * (android.R.color.system_*_light/dark), otherwise they are derived from the theme's own colors.
+ * The accessors below read the roles of the current theme.
  */
 public final class M3 {
   private M3 () { }
@@ -90,10 +92,6 @@ public final class M3 {
     INVERSE_ON_SURFACE = 20,
     INVERSE_PRIMARY = 21,
     ROLE_COUNT = 22;
-
-  private static final int[] cache = new int[ROLE_COUNT];
-  private static long cacheKey;
-  private static boolean hasCache;
 
   public static @ColorInt int surface () { return get(SURFACE); }
   public static @ColorInt int surfaceContainerLowest () { return get(SURFACE_CONTAINER_LOWEST); }
@@ -193,43 +191,69 @@ public final class M3 {
     }
   }
 
-  public static synchronized @ColorInt int get (int role) {
-    // Raw preset value: Theme.fillingColor() is itself mapped to surface (Theme.chromeColor).
-    final int filling = ThemeManager.instance().currentTheme().getColor(ColorId.filling);
-    final int accent = Theme.getColor(ColorId.iconActive);
-    final int text = Theme.textAccentColor();
-    final int themeId = ThemeManager.instance().currentThemeId();
-    final boolean dark = Theme.isDark();
-    long key = ((long) filling * 31 + accent) * 31 + text;
-    key = key * 31 + themeId * 2 + (dark ? 1 : 0);
-    if (!hasCache || key != cacheKey) {
-      compute(themeId, dark, filling, accent, text);
-      cacheKey = key;
-      hasCache = true;
+  /** Role of the current theme. */
+  public static @ColorInt int get (int role) {
+    return ThemeManager.instance().currentTheme().getRoleColor(role);
+  }
+
+  /** Role of {@code forcedTheme} (e.g. the media viewer's dark theme), or of the current theme. */
+  public static @ColorInt int get (int role, @Nullable ThemeDelegate forcedTheme) {
+    return forcedTheme != null ? forcedTheme.getRoleColor(role) : get(role);
+  }
+
+  private static volatile int systemRolesVersion;
+
+  /** System color roles may change without a palette change (e.g. contrast level): system roles are re-read. */
+  public static void invalidateSystemRoles () {
+    systemRolesVersion++;
+  }
+
+  /**
+   * Color roles of one theme, stored in the theme itself. Computed once, on the first read, from the theme's raw
+   * colors ({@link ThemeDelegate#getRawColor}, never from the role-mapped ones), so surface derived from filling
+   * cannot feed back into itself. Themes call {@link #invalidate} when their colors change (theme editor); Monet
+   * themes are rebuilt when the system palette changes ({@link ThemeManager#checkMonetPalette}).
+   */
+  public static final class Roles {
+    private final boolean system;
+    private volatile int[] values;
+    private int version;
+
+    /** @param system Monet themes: system dynamic color roles on Android 14+. */
+    public Roles (boolean system) {
+      this.system = system;
     }
-    return cache[role];
+
+    public @ColorInt int get (ThemeDelegate theme, int role) {
+      int[] values = this.values;
+      if (values == null || (system && version != systemRolesVersion)) {
+        version = systemRolesVersion;
+        values = compute(theme, system);
+        this.values = values;
+      }
+      return values[role];
+    }
+
+    public void invalidate () {
+      values = null;
+    }
   }
 
-  public static synchronized void invalidate () {
-    hasCache = false;
-  }
-
-  private static boolean isMonet (int themeId) {
-    return themeId == ThemeId.MONET_WHITE || themeId == ThemeId.MONET_DARK || themeId == ThemeId.MONET_BLACK;
-  }
-
-  private static void compute (int themeId, boolean dark, int filling, int accent, int text) {
-    if (isMonet(themeId) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+  private static int[] compute (ThemeDelegate theme, boolean system) {
+    final int[] cache = new int[ROLE_COUNT];
+    final boolean dark = theme.isDark();
+    if (system && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       try {
-        computeSystem(dark, themeId == ThemeId.MONET_BLACK);
-        return;
+        computeSystem(cache, dark, theme.getId() == ThemeId.MONET_BLACK);
+        return cache;
       } catch (Throwable ignored) { }
     }
-    computeDerived(dark, filling, accent, text);
+    computeDerived(cache, dark, theme);
+    return cache;
   }
 
   @androidx.annotation.RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-  private static void computeSystem (boolean dark, boolean black) {
+  private static void computeSystem (int[] cache, boolean dark, boolean black) {
     Resources r = UI.getContext().getResources();
     if (dark) {
       cache[SURFACE] = c(r, android.R.color.system_surface_dark);
@@ -292,11 +316,11 @@ public final class M3 {
     return r.getColor(id, null) | 0xFF000000;
   }
 
-  private static void computeDerived (boolean dark, int filling, int accent, int text) {
-    int surface = filling | 0xFF000000;
-    int onSurface = text | 0xFF000000;
-    int onSurfaceVariant = Theme.getColor(ColorId.icon) | 0xFF000000;
-    int primary = accent | 0xFF000000;
+  private static void computeDerived (int[] cache, boolean dark, ThemeDelegate theme) {
+    int surface = theme.getRawColor(ColorId.filling) | 0xFF000000;
+    int onSurface = theme.getRawColor(ColorId.text) | 0xFF000000;
+    int onSurfaceVariant = theme.getRawColor(ColorId.icon) | 0xFF000000;
+    int primary = theme.getRawColor(ColorId.iconActive) | 0xFF000000;
     cache[SURFACE] = surface;
     cache[ON_SURFACE] = onSurface;
     cache[ON_SURFACE_VARIANT] = onSurfaceVariant;
@@ -318,7 +342,7 @@ public final class M3 {
     cache[ON_SECONDARY_CONTAINER] = dark ? ColorUtils.fromToArgb(primary, 0xFFFFFFFF, .8f) : ColorUtils.fromToArgb(primary, 0xFF000000, .7f);
     cache[OUTLINE] = ColorUtils.fromToArgb(surface, onSurface, .5f);
     cache[OUTLINE_VARIANT] = ColorUtils.fromToArgb(surface, onSurface, .2f);
-    cache[ERROR] = Theme.getColor(ColorId.textNegative) | 0xFF000000;
+    cache[ERROR] = theme.getRawColor(ColorId.textNegative) | 0xFF000000;
     cache[ON_ERROR] = contrast(cache[ERROR]);
     cache[INVERSE_SURFACE] = dark ? ColorUtils.fromToArgb(onSurface, surface, .1f) : ColorUtils.fromToArgb(onSurface, surface, .15f);
     cache[INVERSE_ON_SURFACE] = dark ? ColorUtils.fromToArgb(surface, onSurface, .1f) : ColorUtils.fromToArgb(surface, 0xFFFFFFFF, .5f);
@@ -352,10 +376,9 @@ public final class M3 {
   /**
    * Forward/backward between screens: shared axis X (Android default: screens slide a short distance while
    * fading). Taps and buttons only; swipe back and predictive back keep following the finger.
-   * Top-level destinations (dock sections) use fade-through. false: the original Telegram X slide.
+   * Top-level destinations (dock sections) use fade-through.
+   * Slide distance of shared axis X as a fraction of the pane width (user decision: ~10%).
    */
-  public static final boolean SHARED_AXIS_NAVIGATION = true;
-  /** Slide distance of shared axis X as a fraction of the pane width (user decision: ~10%). */
   public static final float SHARED_AXIS_DISTANCE = .1f;
   public static final long TRANSITION_DURATION = 450L;
   /** FadeThroughProvider.FADE_THROUGH_THRESHOLD. */

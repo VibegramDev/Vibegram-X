@@ -4,6 +4,9 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,6 +21,7 @@ import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.MainController;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.widget.M3FolderRailView;
 
 import me.vkryl.android.AnimatorUtils;
@@ -91,17 +95,28 @@ final class TabletNavigationLayout extends FrameLayoutFix {
   public boolean dispatchTouchEvent (android.view.MotionEvent ev) {
     if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
       lastTouchInMaster = isSplit() && ev.getX() < listWidth;
+      // A row click that opens nothing in the right pane doesn't select its row later.
+      navigation.pendingTabletOpener = null;
     }
     return super.dispatchTouchEvent(ev);
   }
 
-  /** Shows the dock section in the left pane (or the chat list again, when {@code controller} is null). */
-  void setSection (@Nullable ViewController<?> controller) {
+  /**
+   * Shows the dock section in the left pane (or the chat list again, when {@code controller} is null).
+   *
+   * @param animated M3 fade-through from the current left pane content (dock section switch, not fold/unfold)
+   */
+  void setSection (@Nullable ViewController<?> controller, boolean animated) {
     if (section == controller || main == null) {
       return;
     }
+    cancelPaneAnimation();
+    boolean fadeThrough = animated && capturePaneGhost();
     clearSection();
     if (controller == null) {
+      if (fadeThrough) {
+        animatePaneEnter();
+      }
       return;
     }
     section = controller;
@@ -131,6 +146,9 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     }
     divider.bringToFront();
     requestLayout();
+    if (fadeThrough) {
+      animatePaneEnter();
+    }
   }
 
   private void clearSection () {
@@ -175,17 +193,24 @@ final class TabletNavigationLayout extends FrameLayoutFix {
 
   @Override
   protected boolean drawChild (android.graphics.Canvas canvas, View child, long drawingTime) {
-    if (child == detail && drawDetailBackdrop) {
+    if ((child == detail && drawDetailBackdrop) || (child == master && paneAnimator != null)) {
+      // The left pane content fades in on the pane surface as well.
       backdropPaint.setColor(Theme.backgroundColor());
-      canvas.drawRect(detail.getLeft(), detail.getTop(), detail.getRight(), detail.getBottom(), backdropPaint);
+      canvas.drawRect(child.getLeft(), child.getTop(), child.getRight(), child.getBottom(), backdropPaint);
     }
-    return super.drawChild(canvas, child, drawingTime);
+    boolean result = super.drawChild(canvas, child, drawingTime);
+    if (child == master && paneGhost != null && paneGhostAlpha > 0f) {
+      // Under the app bars and the folder rail, which are drawn after the left pane.
+      paneGhostPaint.setAlpha(Math.round(255f * paneGhostAlpha));
+      canvas.drawBitmap(paneGhost, master.getLeft(), master.getTop(), paneGhostPaint);
+    }
+    return result;
   }
 
   /** @param direction 1: forward (enters from the trailing side), -1: backward, 0: fade-through (no movement) */
   void animateDetailEnter (int direction) {
     cancelDetailAnimation();
-    if (!M3.SHARED_AXIS_NAVIGATION || getWindowToken() == null || detail.getVisibility() != VISIBLE) {
+    if (getWindowToken() == null || detail.getVisibility() != VISIBLE) {
       return;
     }
     float sign = Lang.rtl() ? -1f : 1f;
@@ -195,13 +220,8 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     drawDetailBackdrop = true;
     invalidate();
     Views.setLayerType(detail, LAYER_TYPE_HARDWARE);
-    ValueAnimator animator = AnimatorUtils.simpleValueAnimator();
-    animator.setDuration(M3.TRANSITION_DURATION);
-    // Linear fraction, eased in the listener (getFraction() is the interpolated value below API 12).
-    animator.setInterpolator(new android.view.animation.LinearInterpolator());
     final boolean fadeThrough = direction == 0;
-    animator.addUpdateListener(animation -> {
-      float progress = M3.EMPHASIZED.getInterpolation(AnimatorUtils.getFraction(animation));
+    detailAnimator = startTransition(progress -> {
       detail.setTranslationX(fromX * (1f - progress));
       // The outgoing screen is already gone: the incoming one fades in after the fade-out part.
       detail.setAlpha(M3.fadeThroughIn(progress));
@@ -210,18 +230,40 @@ final class TabletNavigationLayout extends FrameLayoutFix {
         detail.setScaleX(scale);
         detail.setScaleY(scale);
       }
+    }, () -> {
+      detailAnimator = null;
+      resetDetail();
     });
+  }
+
+  private interface TransitionStep {
+    void apply (float progress);
+  }
+
+  /** Starts an M3 transition: {@code step} gets the emphasized progress, {@code onEnd} runs unless it's cancelled. */
+  private static ValueAnimator startTransition (TransitionStep step, Runnable onEnd) {
+    ValueAnimator animator = AnimatorUtils.simpleValueAnimator();
+    animator.setDuration(M3.TRANSITION_DURATION);
+    // Linear fraction, eased in the listener (getFraction() is the interpolated value below API 12).
+    animator.setInterpolator(new android.view.animation.LinearInterpolator());
+    animator.addUpdateListener(animation -> step.apply(M3.EMPHASIZED.getInterpolation(AnimatorUtils.getFraction(animation))));
     animator.addListener(new AnimatorListenerAdapter() {
+      private boolean cancelled;
+
+      @Override
+      public void onAnimationCancel (Animator animation) {
+        cancelled = true;
+      }
+
       @Override
       public void onAnimationEnd (Animator animation) {
-        if (detailAnimator == animation) {
-          detailAnimator = null;
-          resetDetail();
+        if (!cancelled) {
+          onEnd.run();
         }
       }
     });
-    detailAnimator = animator;
     animator.start();
+    return animator;
   }
 
   void cancelDetailAnimation () {
@@ -243,10 +285,116 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     Views.setLayerType(detail, LAYER_TYPE_NONE);
   }
 
+  // M3 fade-through in the left pane when the dock section changes (Chats, Calls, Contacts, Settings), like top-level
+  // destinations on the phone. The outgoing section is gone at once, so its content and app bar fade out as a snapshot
+  // taken above the floating bar; then the incoming content fades in scaling up from 92% (fades only with reduced
+  // motion), its app bar fades in. The folder rail and the floating bar stay in place.
+
+  private @Nullable ValueAnimator paneAnimator;
+  private @Nullable Bitmap paneGhost;
+  private float paneGhostAlpha;
+  private @Nullable View paneContent, paneHeader;
+  private final Paint paneGhostPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+
+  private boolean capturePaneGhost () {
+    if (master == null || masterHeader == null || getWindowToken() == null || !isShown()) {
+      return false;
+    }
+    int width = master.getWidth();
+    int height = master.getHeight();
+    View bar = main.getTabletNavigationBar();
+    if (bar != null && bar.getVisibility() == VISIBLE) {
+      int[] location = new int[2];
+      bar.getLocationInWindow(location);
+      int barTop = location[1];
+      master.getLocationInWindow(location);
+      height = Math.min(height, barTop - location[1]);
+    }
+    if (width <= 0 || height <= 0) {
+      return false;
+    }
+    try {
+      paneGhost = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+    } catch (OutOfMemoryError e) {
+      paneGhost = null;
+      return false;
+    }
+    Canvas c = new Canvas(paneGhost);
+    // Without the floating bar: the snapshot ends above it.
+    master.draw(c);
+    View header = sectionHeader != null ? sectionHeader : masterHeader;
+    c.translate(header.getLeft() - master.getLeft(), header.getTop() - master.getTop());
+    header.draw(c);
+    return true;
+  }
+
+  private void animatePaneEnter () {
+    if (main == null || masterHeader == null) {
+      paneGhost = null;
+      return;
+    }
+    paneContent = section != null ? section.getValue() : main.getTabletChatList();
+    paneHeader = section != null ? sectionHeader : masterHeader;
+    final boolean scale = !Settings.instance().needReduceMotion();
+    applyPaneTransition(0f, scale);
+    Views.setLayerType(paneContent, LAYER_TYPE_HARDWARE);
+    paneAnimator = startTransition(progress -> applyPaneTransition(progress, scale), () -> {
+      paneAnimator = null;
+      resetPane();
+    });
+  }
+
+  private void applyPaneTransition (float progress, boolean scale) {
+    paneGhostAlpha = M3.fadeThroughOut(progress);
+    float alpha = M3.fadeThroughIn(progress);
+    if (paneContent != null) {
+      paneContent.setAlpha(alpha);
+      if (scale) {
+        float factor = M3.fadeThroughScale(progress);
+        paneContent.setScaleX(factor);
+        paneContent.setScaleY(factor);
+      }
+    }
+    if (paneHeader != null) {
+      paneHeader.setAlpha(alpha);
+    }
+    invalidate();
+  }
+
+  private void cancelPaneAnimation () {
+    if (paneAnimator != null) {
+      ValueAnimator animator = paneAnimator;
+      paneAnimator = null;
+      animator.cancel();
+    }
+    resetPane();
+  }
+
+  private void resetPane () {
+    if (paneContent != null) {
+      paneContent.setAlpha(1f);
+      paneContent.setScaleX(1f);
+      paneContent.setScaleY(1f);
+      Views.setLayerType(paneContent, LAYER_TYPE_NONE);
+      paneContent = null;
+    }
+    if (paneHeader != null) {
+      paneHeader.setAlpha(1f);
+      paneHeader = null;
+    }
+    if (paneGhost != null) {
+      // Not recycled: the last frame may still reference it.
+      paneGhost = null;
+      paneGhostAlpha = 0f;
+      invalidate();
+    }
+  }
+
   @Override
   protected void onDetachedFromWindow () {
     super.onDetachedFromWindow();
     cancelDetailAnimation();
+    cancelPaneAnimation();
   }
 
   void setMain (MainController controller) {
@@ -348,6 +496,7 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       return;
     }
     cancelDetailAnimation();
+    cancelPaneAnimation();
     clearSection();
     leaveTransformModes(masterHeader, main);
     master.removeView(main.getValue());

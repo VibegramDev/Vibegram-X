@@ -84,7 +84,7 @@ public class SettingsLanguageTranslateController extends RecyclerViewController<
         }
       }
     };
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
 
     int chatTranslateMode = Settings.instance().getChatTranslateMode();

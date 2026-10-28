@@ -63,6 +63,13 @@ public final class M3Tooltip implements FactorAnimator.Target {
   public static final int PLACEMENT_START = 0;
   /** Below the element: "If the element is in an app bar, the plain tooltip appears below the element". */
   public static final int PLACEMENT_BELOW = 1;
+  /** Above the element, horizontally centered: the horizontal dock at the bottom of the screen. */
+  public static final int PLACEMENT_ABOVE = 2;
+
+  /** Placement chosen when the tooltip is shown (an element that moves between a vertical and a horizontal dock). */
+  public interface PlacementProvider {
+    int getTooltipPlacement (View anchor);
+  }
 
   private static final float GAP = 4f;
   private static final float MIN_WIDTH = 40f, MAX_WIDTH = 200f, MIN_HEIGHT = 24f;
@@ -88,12 +95,17 @@ public final class M3Tooltip implements FactorAnimator.Target {
    */
   @SuppressLint("ClickableViewAccessibility")
   public static void bind (@NonNull View anchor, int placement, @Nullable BoundsProvider bounds, @NonNull TextProvider text) {
+    bind(anchor, v -> placement, bounds, text);
+  }
+
+  @SuppressLint("ClickableViewAccessibility")
+  public static void bind (@NonNull View anchor, @NonNull PlacementProvider placement, @Nullable BoundsProvider bounds, @NonNull TextProvider text) {
     anchor.setOnLongClickListener(v -> {
       CharSequence value = text.getTooltipText(v);
       if (TextUtils.isEmpty(value) || v.getWindowToken() == null) {
         return false;
       }
-      show(v, placement, bounds, value);
+      show(v, placement.getTooltipPlacement(v), bounds, value);
       v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
       return true;
     });
@@ -167,7 +179,7 @@ public final class M3Tooltip implements FactorAnimator.Target {
     boolean rtl = Lang.rtl();
     // Grows from the side that faces the element.
     view.setPivotX(placement == PLACEMENT_START ? (rtl ? 0 : view.getTooltipWidth()) : view.getTooltipWidth() / 2f);
-    view.setPivotY(placement == PLACEMENT_START ? view.getTooltipHeight() / 2f : 0);
+    view.setPivotY(placement == PLACEMENT_START ? view.getTooltipHeight() / 2f : placement == PLACEMENT_ABOVE ? view.getTooltipHeight() : 0);
     applyFactors(0f, 0f);
     try {
       window.showAtLocation(anchor, Gravity.LEFT | Gravity.TOP, position[0], position[1]);
@@ -199,7 +211,7 @@ public final class M3Tooltip implements FactorAnimator.Target {
       y = rect.centerY() - height / 2;
     } else {
       x = rect.centerX() - width / 2;
-      y = rect.bottom + gap;
+      y = placement == PLACEMENT_ABOVE ? rect.top - gap - height : rect.bottom + gap;
     }
     // Dynamic positioning: stay on screen.
     View root = anchor.getRootView();

@@ -14,7 +14,6 @@ import java.util.*
 plugins {
   id("java-toolchain-convention")
   id(libs.plugins.android.application.get().pluginId)
-  id(libs.plugins.kotlin.compose.get().pluginId)
   id("tgx-config")
   id("tgx-module")
 }
@@ -938,18 +937,6 @@ afterEvaluate {
   }
 }
 
-// Jetpack Compose exists only in sinceLollipop flavors (see sinceLollipopImplementation below).
-// AGP enables the Compose compiler for every variant of the module, and it aborts when the Compose
-// runtime is not on the classpath, so legacy (minSdk 16, no Compose) asks it to skip its IR lowering.
-// @Composable itself lives in the runtime, so Compose code still cannot compile into legacy by mistake.
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-  if (name.startsWith("compileLegacy")) {
-    compilerOptions.freeCompilerArgs.addAll(
-      "-P", "plugin:androidx.compose.compiler.plugins.kotlin:skipIrLoweringIfRuntimeNotFound=true"
-    )
-  }
-}
-
 dependencies {
   sinceNougatImplementation(libs.androidx.profileinstaller)
   flavorImplementation(
@@ -1015,20 +1002,6 @@ dependencies {
   sinceLollipopImplementation(
     libs.androidx.graphics.shapes.lollipop,
     libs.androidx.graphics.shapes.latest
-  )
-  // Jetpack Compose + Material 3: https://developer.android.com/jetpack/androidx/releases/compose-material3
-  // sinceLollipop flavors only (legacy uses the org.thunderdog.challegram.compose.M3Compose stub).
-  sinceLollipopImplementation(
-    platform(libs.androidx.compose.bom.lollipop),
-    platform(libs.androidx.compose.bom.latest)
-  )
-  sinceLollipopImplementation(libs.androidx.compose.runtime)
-  sinceLollipopImplementation(libs.androidx.compose.ui)
-  sinceLollipopImplementation(libs.androidx.compose.foundation)
-  sinceLollipopImplementation(libs.androidx.compose.material3)
-  sinceLollipopImplementation(
-    libs.androidx.activity.compose.lollipop,
-    libs.androidx.activity.compose.latest
   )
   // CameraX: https://developer.android.com/jetpack/androidx/releases/camera
   flavorImplementation(

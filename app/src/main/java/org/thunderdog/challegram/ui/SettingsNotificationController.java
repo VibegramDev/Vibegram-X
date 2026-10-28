@@ -15,7 +15,6 @@
 package org.thunderdog.challegram.ui;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -53,6 +52,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
 import org.thunderdog.challegram.navigation.ViewController;
@@ -67,7 +67,6 @@ import org.thunderdog.challegram.telegram.TdlibOptionListener;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.unsorted.DeviceTokenRetrieverInstance;
@@ -1313,7 +1312,7 @@ public class SettingsNotificationController extends RecyclerViewController<Setti
     }
 
     adapter.setItems(items, hasOptions);
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
 
     tdlib.listeners().subscribeToSettingsUpdates(this);
@@ -1998,7 +1997,7 @@ public class SettingsNotificationController extends RecyclerViewController<Setti
       infiniteView.addThemeListeners(this);
       infiniteView.initWithItems(items, foundIndex);
 
-      AlertDialog.Builder b = new AlertDialog.Builder(context(), Theme.dialogTheme());
+      AlertPopup.Builder b = new AlertPopup.Builder(context());
       b.setTitle(Lang.getString(R.string.RepeatNotifications));
       b.setPositiveButton(Lang.getOK(), (dialog, which) -> {
         SimpleStringItem currentItem = infiniteView.getCurrentItem();

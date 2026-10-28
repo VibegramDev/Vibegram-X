@@ -16,7 +16,6 @@ package org.thunderdog.challegram.navigation;
 
 import android.animation.Animator;
 import android.animation.ValueAnimator;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.res.Configuration;
@@ -26,6 +25,7 @@ import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
@@ -41,10 +41,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
-import android.view.WindowManager;
 import android.view.animation.Interpolator;
-import android.widget.Button;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -94,8 +91,6 @@ import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.Keyboard;
 import org.thunderdog.challegram.tool.Paints;
-import org.thunderdog.challegram.widget.M3Sheets;
-import org.thunderdog.challegram.ui.M3SearchContainerDecoration;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
@@ -117,15 +112,14 @@ import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.v.HeaderEditText;
 import org.thunderdog.challegram.widget.CustomTextView;
+import org.thunderdog.challegram.widget.EmojiTextView;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.InfiniteRecyclerView;
 import org.thunderdog.challegram.widget.MaterialEditText;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
-import org.thunderdog.challegram.widget.NoScrollTextView;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.PopupLayout;
-import org.thunderdog.challegram.widget.RootFrameLayout;
 import org.thunderdog.challegram.widget.SeparatorView;
-import org.thunderdog.challegram.widget.ShadowView;
 import org.thunderdog.challegram.widget.TimerView;
 
 import java.lang.annotation.Retention;
@@ -133,7 +127,6 @@ import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -1601,14 +1594,18 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     openAlert(R.string.AppUpdateRequiredTitle, text, Lang.getString(R.string.AppUpdateOk), (dialog, which) -> Intents.openSelfGooglePlay(), 0);
   }
 
-  public final AlertDialog showAlert (AlertDialog.Builder b) {
-    return modifyAlert(context.showAlert(b), 0);
+  public final AlertPopup showAlert (AlertPopup.Builder b) {
+    return showAlert(b, null);
+  }
+
+  public final AlertPopup showAlert (AlertPopup.Builder b, @Nullable ThemeDelegate forcedTheme) {
+    return context.showAlert(b.setController(this), forcedTheme);
   }
 
   public void openFeatureUnavailable (int stringRes) {
-    AtomicReference<AlertDialog> atomicDialog = new AtomicReference<>();
+    AtomicReference<AlertPopup> atomicDialog = new AtomicReference<>();
     atomicDialog.set(openAlert(R.string.FeatureUnavailableSorry, Strings.buildMarkdown(this, Lang.getString(stringRes), (view, span, clickedText) -> {
-      AlertDialog finalDialog = atomicDialog.get();
+      AlertPopup finalDialog = atomicDialog.get();
       if (finalDialog != null) {
         try {
           finalDialog.dismiss();
@@ -1618,8 +1615,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     })));
   }
 
-  public AlertDialog openAlert (@StringRes int title, CharSequence message) {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+  public AlertPopup openAlert (@StringRes int title, CharSequence message) {
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(title));
     b.setMessage(message);
     b.setPositiveButton(Lang.getOK(), (dialog, which) -> dialog.dismiss());
@@ -1631,7 +1628,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   public void openAlert (@StringRes int title, CharSequence message, DialogInterface.OnClickListener okListener, boolean needCancel) {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(title));
     b.setMessage(message);
     b.setPositiveButton(Lang.getOK(), okListener);
@@ -1644,7 +1641,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   public void openAlert (@StringRes int title, @StringRes int message) {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(title));
     b.setMessage(Lang.getString(message));
     b.setPositiveButton(Lang.getOK(), (dialog, which) -> dialog.dismiss());
@@ -1663,7 +1660,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   public static final int ALERT_NO_CANCELABLE = 1 << 1;
   public static final int ALERT_HAS_LINKS = 1 << 2;
 
-  public AlertDialog openAlert (@StringRes int title, CharSequence message, CharSequence positiveButton, DialogInterface.OnClickListener okListener, int flags) {
+  public AlertPopup openAlert (@StringRes int title, CharSequence message, CharSequence positiveButton, DialogInterface.OnClickListener okListener, int flags) {
     return openAlert(title, message, positiveButton, okListener, (dialog, which) -> dialog.dismiss(), flags);
   }
 
@@ -1701,7 +1698,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     });
 
     LinearLayout ll = new LinearLayout(context) {
-      private boolean first;
+      private boolean first = true;
       @Override
       protected void onLayout (boolean changed, int l, int t, int r, int b) {
         super.onLayout(changed, l, t, r, b);
@@ -1713,8 +1710,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     };
     ll.setOrientation(LinearLayout.VERTICAL);
     ll.setGravity(Gravity.CENTER_HORIZONTAL);
-    // M3 dialog: content aligned with the 24dp container padding, 16dp below the headline.
-    ll.setPadding(Screen.dp(24f), Screen.dp(16f), Screen.dp(24f), 0);
+    // M3 dialog: outlined text field aligned with the 24dp container padding, under the headline (16dp gap).
+    ll.setPadding(Screen.dp(DialogLayout.PADDING), 0, Screen.dp(DialogLayout.PADDING), 0);
 
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL);
     ll.addView(inputView, params);
@@ -1722,47 +1719,36 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       layoutOverride.runWithData(ll);
     }
 
-    AlertDialog.Builder alert = new AlertDialog.Builder(context, Theme.dialogTheme())
+    // Back with the keyboard shown hides the keyboard: the dialog's popup must not take it (EditText#onKeyPreIme).
+    inputView.getEditText().setIgnoreCustomStuff(true);
+    // The field takes the focus in the same window: give it back (e.g. to the message input) when the keyboard stays.
+    final View prevFocus = hideKeyboard ? null : context.getCurrentFocus();
+    AlertPopup.Builder alert = new AlertPopup.Builder(context)
       .setTitle(title)
       .setView(ll)
-      .setPositiveButton(Lang.getString(doneRes), (dialog, which) -> {
-        String result = inputView.getText().toString();
-        if (callback.onAcceptInput(inputView, result)) {
-          if (hideKeyboard) {
-            Keyboard.hide(inputView.getEditText());
-          }
-        } else {
-          inputView.setInErrorState(true);
-        }
-      })
+      .setPositiveButton(Lang.getString(doneRes), null)
       .setNegativeButton(Lang.getString(cancelRes), (dialog, which) -> {
         if (hideKeyboard) {
           Keyboard.hide(inputView.getEditText());
         }
-        dialog.dismiss();
+      })
+      .setOnDismissListener(dialog -> {
+        if (prevFocus != null && prevFocus.getParent() != null) {
+          prevFocus.requestFocus();
+        }
       });
     boolean needReset = !StringUtils.isEmpty(value) && !StringUtils.isEmpty(defaultValue) && !value.equals(defaultValue);
     if (needReset) {
-      alert.setNeutralButton(Lang.getString(R.string.ValueReset), (dialog, which) -> {
-        if (callback.onAcceptInput(inputView, defaultValue)) {
-          if (hideKeyboard) {
-            Keyboard.hide(inputView.getEditText());
-          }
-        } else {
-          inputView.setInErrorState(true);
-        }
-      });
+      alert.setNeutralButton(Lang.getString(R.string.ValueReset), null);
     }
     alert.setCancelable(false);
-    AlertDialog dialog = showAlert(alert);
-    if (dialog.getWindow() != null) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED);
-      } else {
-        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-      }
+    // The outlined field takes the current theme's roles, so the dialog does too (also over the media viewer).
+    AlertPopup dialog = showAlert(alert);
+    if (dialog == null) {
+      return inputView;
     }
-    Button button = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+    // Accepting keeps the dialog open while the callback rejects the input (error state).
+    View button = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
     if (button != null)
       button.setOnClickListener(v -> {
         String result = inputView.getText().toString();
@@ -1792,20 +1778,20 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return inputView;
   }
 
-  protected final AlertDialog modifyAlert (AlertDialog dialog, int flags) {
+  protected final AlertPopup modifyAlert (AlertPopup dialog, int flags) {
     if (dialog == null)
       return null;
     if ((flags & ALERT_HAS_LINKS) != 0) {
-      View message = dialog.findViewById(android.R.id.message);
-      if (message instanceof TextView) {
-        ((TextView) message).setMovementMethod(LinkMovementMethod.getInstance());
+      TextView message = dialog.getMessageView();
+      if (message != null) {
+        message.setMovementMethod(LinkMovementMethod.getInstance());
       }
     }
     return dialog;
   }
 
-  public AlertDialog openAlert (@StringRes int title, CharSequence message, CharSequence positiveButton, DialogInterface.OnClickListener okListener, DialogInterface.OnClickListener cancelListener, int flags) {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+  public AlertPopup openAlert (@StringRes int title, CharSequence message, CharSequence positiveButton, DialogInterface.OnClickListener okListener, DialogInterface.OnClickListener cancelListener, int flags) {
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(title));
     b.setMessage(message);
     b.setPositiveButton(positiveButton, okListener);
@@ -1819,7 +1805,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   public void openMissingPermissionAlert (@StringRes int message) {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(R.string.AppName));
     b.setMessage(Lang.getString(message));
     b.setPositiveButton(Lang.getOK(), (dialog, which) -> dialog.dismiss());
@@ -1880,7 +1866,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   public void openMissingGoogleMapsAlert () {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(R.string.AppName));
     b.setMessage(Lang.getString(R.string.NoGoogleMaps));
     b.setPositiveButton(Lang.getString(R.string.Install), (dialog, which) -> Intents.openGooglePlay("com.google.android.apps.maps"));
@@ -1888,7 +1874,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     showAlert(b);
   }
 
-  private AlertDialog linkWarningDialog;
+  private AlertPopup linkWarningDialog;
   private List<RunnableBool> linkWarningCallbacks;
 
   public final void openSecretLinkPreviewAlert (@Nullable RunnableBool onAcceptWarning) {
@@ -1913,7 +1899,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
         }
       }
     };
-    AlertDialog.Builder b = new AlertDialog.Builder(context(), Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context());
     b.setTitle(Lang.getString(R.string.AppName));
     b.setMessage(Lang.getString(R.string.SecretLinkPreviewAlert));
     b.setPositiveButton(Lang.getString(R.string.SecretLinkPreviewEnable), (dialog, which) ->
@@ -1931,7 +1917,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   public void openOkAlert (String title, CharSequence message) {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     if (title != null && !title.isEmpty()) {
       b.setTitle(title);
     }
@@ -1962,43 +1948,14 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     showSettings(new SettingsWrapBuilder(id).setRawItems(rawItems).setIntDelegate(delegate).setAllowResize(allowResize));
   }
 
-  private static class SettingsWrapLayout extends FrameLayoutFix implements RootFrameLayout.MarginModifier {
-    public SettingsWrapLayout (@NonNull Context context) {
-      super(context);
-    }
-
-    @Override
-    public void onApplyMarginInsets (View child, LayoutParams params, Rect legacyInsets, Rect insets, Rect insetsWithoutIme) {
-      Views.setMargins(params, insets.left, 0, insets.right, 0);
-      setBottomInset(insetsWithoutIme.bottom);
-    }
-
-    private int bottomInset;
-
-    private void setBottomInset (int extraBottomInsetWithoutIme) {
-      if (this.bottomInset != extraBottomInsetWithoutIme) {
-        this.bottomInset = extraBottomInsetWithoutIme;
-        if (footerView != null) {
-          footerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f) + extraBottomInsetWithoutIme, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
-          Views.setPaddingBottom(footerView, extraBottomInsetWithoutIme);
-        }
-        Views.applyBottomInset(recyclerView, footerView == null ? extraBottomInsetWithoutIme : 0);
-        Views.setBottomMargin(shadowView, Screen.dp(56f) + extraBottomInsetWithoutIme);
-      }
-    }
-
-    private RecyclerView recyclerView;
-    private FrameLayout footerView;
-    private SeparatorView shadowView;
-
-    private void setBottomInsetTargets (RecyclerView recyclerView, FrameLayout footerView, SeparatorView shadowView, int inset) {
-      this.recyclerView = recyclerView;
-      this.footerView = footerView;
-      this.shadowView = shadowView;
-      this.bottomInset = inset;
-    }
-  }
-
+  /**
+   * Radio-button / checkbox choice as an M3 basic dialog in the centre of the window on every width
+   * (m3.material.io/components/dialogs: "Basic dialogs most often appear as alerts or lists"): the builder's header
+   * items, size slider and rows scroll inside the dialog while the buttons stay pinned ("When viewing a scrollable list
+   * of options, the dialog title and buttons remain fixed"); dismissive action first, the confirming one closest to the
+   * trailing edge. Dismissing by Back, a tap outside or the dismissive button delivers {@link SettingsWrapBuilder#dismissListener}
+   * (the dismissive button goes through {@link SettingsWrapBuilder#onActionButtonClick} first, as before).
+   */
   @SuppressWarnings("deprecation")
   public final @Nullable SettingsWrap showSettings (final SettingsWrapBuilder b) {
     if (isStackLocked()) {
@@ -2006,112 +1963,44 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       return null;
     }
 
-    final ArrayList<ListItem> items = new ArrayList<>(b.rawItems.length * 2 + 1 + (b.headerItems != null && !b.headerItems.isEmpty() ? b.headerItems.size() + 1 : 0));
-    boolean first = true;
-
-    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    if (b.headerItems != null && !b.headerItems.isEmpty()) {
+    final ArrayList<ListItem> items = new ArrayList<>(b.rawItems.length + 1 + (b.headerItems != null ? b.headerItems.size() : 0));
+    if (b.headerItems != null) {
       items.addAll(b.headerItems);
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     }
     if (b.sizeValues != null) {
       items.add(new ListItem(ListItem.TYPE_SLIDER, b.sizeOptionId, 0, b.sizeStringRes, false).setSliderInfo(b.sizeValues, b.sizeValue));
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     }
-    if (b.needSeparators) {
-      for (ListItem item : b.rawItems) {
-        if (first) {
-          first = false;
-        } else {
-          items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-        }
-        items.add(item);
+    boolean hasRows = false, pendingDivider = false;
+    for (ListItem item : b.rawItems) {
+      switch (item.getViewType()) {
+        case ListItem.TYPE_SEPARATOR:
+        case ListItem.TYPE_SEPARATOR_FULL:
+        case ListItem.TYPE_SHADOW_TOP:
+          // List rows in a dialog have no dividers between them.
+          continue;
+        case ListItem.TYPE_SHADOW_BOTTOM:
+          // End of a group (page band between two cards): one divider between the groups inside the dialog.
+          pendingDivider = hasRows;
+          continue;
+        case ListItem.TYPE_PADDING:
+          // Spacing only: the rows lie on the dialog container, not on the page filling.
+          item.setBoolValue(false);
+          break;
       }
-    } else {
-      items.ensureCapacity(items.size() + b.rawItems.length);
-      Collections.addAll(items, b.rawItems);
+      if (pendingDivider) {
+        pendingDivider = false;
+        items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      }
+      items.add(item);
+      hasRows = true;
     }
-
-    final SettingsWrapLayout settingsLayout = new SettingsWrapLayout(context);
-    settingsLayout.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
     final SettingsWrap settings = new SettingsWrap();
-    // M3 modal bottom sheet: handle area above the first row (drawn by M3SearchContainerDecoration.attachSheet).
-    final int sheetHandleOffset = Screen.dp(M3SearchContainerDecoration.SHEET_HANDLE_OFFSET);
-
-    final RecyclerView recyclerView = new RecyclerView(context) {
-      @Override
-      public boolean onTouchEvent (MotionEvent e) {
-        if (e.getAction() == MotionEvent.ACTION_DOWN && settings.adapter != null && settings.adapter.getItemCount() > 0) {
-          int i = ((LinearLayoutManager) getLayoutManager()).findFirstVisibleItemPosition();
-          if (i == 0) {
-            View view = getLayoutManager().findViewByPosition(i);
-            // Touches above the sheet (scrim) close it; the handle area belongs to the sheet and drags the list.
-            if (view != null && e.getY() < view.getTop() - sheetHandleOffset) {
-              return false;
-            }
-          }
-        }
-        return super.onTouchEvent(e);
-      }
-
-      private int lastHeight;
-
-      @Override
-      protected void onMeasure (int widthSpec, int heightSpec) {
-        // M3 sheet width: up to 640dp, centered with 56dp margins in wide windows.
-        widthSpec = M3Sheets.measureSpec(widthSpec);
-        super.onMeasure(widthSpec, heightSpec);
-
-        final int height = getMeasuredHeight();
-        if (lastHeight != 0 && lastHeight != height) {
-          lastHeight = height;
-          post(this::invalidateItemDecorations);
-        } else {
-          lastHeight = height;
-        }
-      }
-    };
-    settings.recyclerView = recyclerView;
-    // M3 sheet container, drag handle and transparent state-layer rows (replaces the filling backgrounds).
-    M3SearchContainerDecoration.attachSheet(recyclerView, M3::surfaceContainerLow);
-    // M3: the initial height of a modal bottom sheet is at most 50% of the screen, the list scrolls (drags) it up.
-    // Applied to every sheet: short sheets keep their content height, long ones start at half the screen.
-    recyclerView.addItemDecoration(new RecyclerView.ItemDecoration() {
-      @Override
-      public void getItemOffsets (@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-        int position = parent.getChildAdapterPosition(view);
-
-        if (position == 0) {
-          int contentHeight = settings.adapter.measureHeight(-1) + sheetHandleOffset;
-          int controlsHeight = context.getRootView().getSystemInsetsWithoutIme().bottom + (b.disableFooter ? 0 : Screen.dp(56f));
-          outRect.top = Math.max(Screen.currentHeight() / 2, Screen.currentHeight() - contentHeight - controlsHeight);
-        } else {
-          outRect.top = 0;
-        }
-      }
-    });
-    recyclerView.setOverScrollMode(Config.HAS_NICE_OVER_SCROLL_EFFECT ? View.OVER_SCROLL_IF_CONTENT_SCROLLS : View.OVER_SCROLL_NEVER);
-    recyclerView.setItemAnimator(null);
-    recyclerView.setLayoutManager(new LinearLayoutManager(context(), RecyclerView.VERTICAL, false));
-
     final PopupLayout popupLayout = settings.window = new PopupLayout(context);
-    popupLayout.setPopupHeightProvider(() -> {
-      LinearLayoutManager manager = (LinearLayoutManager) recyclerView.getLayoutManager();
-      int firstPosition = manager.findFirstVisibleItemPosition();
-      if (firstPosition == 0) {
-        View view = manager.findViewByPosition(0);
-        if (view != null) {
-          return Math.min(Screen.currentHeight(), Math.min(settingsLayout.getMeasuredHeight() - view.getTop() + sheetHandleOffset, settings.adapter.measureHeight(-1) + sheetHandleOffset) + Screen.dp(56f) + extraBottomInsetWithoutIme);
-        }
-      }
-      return Screen.currentHeight();
-    });
     popupLayout.init(true);
     if (b.needRootInsets) {
       popupLayout.setNeedRootInsets();
     }
-    // popupLayout.addStatusBar();
     popupLayout.setDismissListener(b.dismissListener);
     popupLayout.setNeedFullScreen(true);
 
@@ -2155,6 +2044,26 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       }
     };
     settings.adapter = new SettingsAdapter(b.tdlibDelegate != null ? b.tdlibDelegate : this, onClickListener, this) {
+      @NonNull
+      @Override
+      public SettingHolder onCreateViewHolder (@NonNull ViewGroup parent, int viewType) {
+        SettingHolder holder = super.onCreateViewHolder(parent, viewType);
+        View view = holder.itemView;
+        // Rows lie on the dialog container: no page filling, M3 pressed state layer (onSurface) on clickable rows.
+        if (view instanceof SeparatorView) {
+          ((SeparatorView) view).forceFillingColor(M3.surfaceContainerHigh());
+        } else if (view.getBackground() != null) {
+          ViewUtils.setBackground(view, view.hasOnClickListeners() ? newDialogRowStateLayer() : null);
+        }
+        if (viewType == ListItem.TYPE_INFO) {
+          // Header text = the dialog's supporting text: BodyMedium, 16dp above the rows.
+          CustomTextView textView = (CustomTextView) view;
+          textView.setTextSize(14f);
+          textView.setPadding(textView.getPaddingLeft(), 0, textView.getPaddingRight(), Screen.dp(16f));
+        }
+        return holder;
+      }
+
       @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         switch (item.getViewType()) {
@@ -2184,125 +2093,55 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     };
     final int checkedIndex = settings.adapter.setItems(items, true);
 
-    FrameLayoutFix footerView = null;
-    if (!b.disableFooter) {
-       footerView = new FrameLayoutFix(context) {
-        @Override
-        public boolean onTouchEvent (MotionEvent event) {
-          super.onTouchEvent(event);
-          return true;
+    final RecyclerView recyclerView = new RecyclerView(context) {
+      private int pendingCheckedIndex = checkedIndex;
+
+      @Override
+      protected void onMeasure (int widthSpec, int heightSpec) {
+        if (MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED) {
+          // First pass of the dialog: bind at most one window of rows; DialogLayout then shrinks the list to fit.
+          heightSpec = MeasureSpec.makeMeasureSpec(Screen.currentHeight(), MeasureSpec.AT_MOST);
+        } else if (pendingCheckedIndex > 0 && MeasureSpec.getMode(heightSpec) == MeasureSpec.EXACTLY) {
+          // The list scrolls inside the dialog: open it with the checked row in view (centred) when it is further down.
+          int height = MeasureSpec.getSize(heightSpec);
+          int rowHeight = SettingHolder.measureHeightForType(items.get(pendingCheckedIndex));
+          if (settings.adapter.measureScrollTop(pendingCheckedIndex) + rowHeight > height) {
+            ((LinearLayoutManager) getLayoutManager()).scrollToPositionWithOffset(pendingCheckedIndex, Math.max(0, (height - rowHeight) / 2));
+          }
+          pendingCheckedIndex = -1;
         }
-
-        @Override
-        protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
-          super.onMeasure(M3Sheets.measureSpec(widthMeasureSpec), heightMeasureSpec);
-        }
-      };
-      // M3 sheet actions sit on the sheet container.
-      footerView.setBackground(M3.roleDrawable(M3.SURFACE_CONTAINER_LOW));
-      addThemeInvalidateListener(footerView);
-      footerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f) + extraBottomInsetWithoutIme, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
-      Views.setPaddingBottom(footerView, extraBottomInsetWithoutIme);
-
-      for (int i = 0; i < 2; i++) {
-        TextView button = new NoScrollTextView(context);
-
-        int colorId = i == 1 ? b.saveColorId : b.cancelColorId;
-        button.setTextColor(Theme.getColor(colorId));
-        addThemeTextColorListener(button, colorId);
-        // M3 text buttons: LabelLarge 14sp, sentence case, 40dp high, pill state layer.
-        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-        button.setOnClickListener(onClickListener);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-          android.graphics.drawable.GradientDrawable mask = new android.graphics.drawable.GradientDrawable();
-          mask.setColor(0xffffffff);
-          mask.setCornerRadius(Screen.dp(20f));
-          button.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(ColorUtils.alphaColor(M3.STATE_PRESSED, Theme.getColor(colorId))), null, mask));
-        } else {
-          button.setBackgroundResource(R.drawable.bg_btn_header);
-        }
-        button.setGravity(Gravity.CENTER);
-        button.setMinWidth(Screen.dp(48f));
-        button.setPadding(Screen.dp(12f), 0, Screen.dp(12f), 0);
-
-        CharSequence text;
-        FrameLayoutFix.LayoutParams buttonParams;
-        if (i == 0) {
-          button.setId(R.id.btn_cancel);
-          button.setText(text = b.cancelStr);
-          buttonParams = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(40f), (Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT) | Gravity.BOTTOM);
-          settings.cancelButton = button;
-        } else {
-          button.setId(R.id.btn_save);
-          button.setText(text = b.saveStr);
-          buttonParams = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(40f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM);
-          settings.doneButton = button;
-        }
-        // Labels align with the 16dp start/end of the sheet rows (4dp margin + 12dp button padding).
-        buttonParams.leftMargin = buttonParams.rightMargin = Screen.dp(4f);
-        buttonParams.bottomMargin = Screen.dp(8f);
-        button.setLayoutParams(buttonParams);
-        Views.updateMediumTypeface(button, text);
-
-        // Don't use Views.setClickable() - it disables focusable states needed for ripple effect
-        button.setClickable(true);
-        footerView.addView(button);
+        super.onMeasure(widthSpec, heightSpec);
       }
-    }
-
-    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-    params.bottomMargin = footerView != null ? Screen.dp(56f) + extraBottomInsetWithoutIme : 0;
-
-    Views.applyBottomInset(recyclerView, footerView == null ? extraBottomInsetWithoutIme : 0);
+    };
+    settings.recyclerView = recyclerView;
+    recyclerView.setOverScrollMode(Config.HAS_NICE_OVER_SCROLL_EFFECT ? View.OVER_SCROLL_IF_CONTENT_SCROLLS : View.OVER_SCROLL_NEVER);
+    recyclerView.setItemAnimator(null);
+    recyclerView.setLayoutManager(new LinearLayoutManager(context(), RecyclerView.VERTICAL, false));
+    // Row content (16dp in TGX rows) lines up with the dialog's 24dp text and buttons.
+    recyclerView.setPadding(Screen.dp(8f), 0, Screen.dp(8f), 0);
     recyclerView.setAdapter(settings.adapter);
-    recyclerView.setLayoutParams(params);
     addThemeInvalidateListener(recyclerView);
 
-    SeparatorView shadowView = null;
-
-    settingsLayout.addView(recyclerView);
-    if (footerView != null) {
-      settingsLayout.addView(footerView);
+    DialogLayout dialog = new DialogLayout(context, this, null);
+    dialog.setListView(recyclerView);
+    if (!b.disableFooter) {
+      settings.cancelButton = dialog.addButton(R.id.btn_cancel, b.cancelStr, onClickListener);
+      settings.doneButton = dialog.addButton(R.id.btn_save, b.saveStr, onClickListener);
     }
 
-    // M3 sheet: actions share the container, no divider above them (shadowView stays null).
-
-    settingsLayout.setBottomInsetTargets(recyclerView, footerView, shadowView, extraBottomInset);
-
-    final int height = settings.adapter.measureHeight(-1) + sheetHandleOffset;
-    final int desiredHeight = height + (footerView != null ? Screen.dp(56f) : 0) + extraBottomInsetWithoutIme;
-    final int popupHeight = Math.min(Screen.currentHeight(), desiredHeight);
-
-    if (checkedIndex != -1 && desiredHeight > Screen.currentHeight() / 2 + Screen.dp(56f)) {
-      // M3: the sheet opens at its initial height (50%) even when the checked item is further down;
-      // once open, the list scrolls just enough to bring the checked item above the actions
-      // (the sheet grows with it, up to the full height, then the items scroll inside).
-      popupLayout.setShowListener(popup -> {
-        LinearLayoutManager manager = (LinearLayoutManager) recyclerView.getLayoutManager();
-        View checkedView = manager.findViewByPosition(checkedIndex);
-        int bottomLimit = recyclerView.getHeight() - recyclerView.getPaddingBottom() - Screen.dp(8f);
-        int scrollBy;
-        if (checkedView != null) {
-          scrollBy = checkedView.getBottom() - bottomLimit;
-        } else {
-          // Not laid out yet: below the visible rows. Measured heights of the rows up to the checked one.
-          View lastView = manager.findViewByPosition(manager.findLastVisibleItemPosition());
-          int distance = lastView != null ? lastView.getBottom() : recyclerView.getHeight();
-          for (int i = manager.findLastVisibleItemPosition() + 1; i <= checkedIndex && i < items.size(); i++) {
-            distance += SettingHolder.measureHeightForType(items.get(i).getViewType());
-          }
-          scrollBy = distance - bottomLimit;
-        }
-        if (scrollBy > 0) {
-          recyclerView.smoothScrollBy(0, scrollBy);
-        }
-      });
-    }
     popupLayout.addThemeListeners(this);
-    popupLayout.showSimplePopupView(settingsLayout, Math.min(Screen.currentHeight() / 2 + Screen.dp(56f), popupHeight));
+    popupLayout.showFadingPopupView(dialog);
 
     onCreatePopupLayout(popupLayout);
     return settings;
+  }
+
+  /** Pressed state layer of a list row inside a dialog: onSurface 10%, rounded like the dialog's other touch targets. */
+  private static Drawable newDialogRowStateLayer () {
+    GradientDrawable mask = new GradientDrawable();
+    mask.setColor(0xffffffff);
+    mask.setCornerRadius(Screen.dp(M3.CORNER_MEDIUM));
+    return new M3StateLayerDrawable(null, mask, ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface()));
   }
 
   // Copy text
@@ -2423,7 +2262,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   public final void showUnsavedChangesPromptBeforeLeaving (@Nullable CharSequence info, @NonNull String discardText, @Nullable Runnable onConfirm) {
-    showOptions(info, new int[]{R.id.btn_done, R.id.btn_cancel}, new String[]{discardText, Lang.getString(R.string.Cancel)}, new int[] {OptionColor.RED, OptionColor.NORMAL}, new int[] {R.drawable.baseline_delete_24, R.drawable.baseline_cancel_24}, (itemView, id) -> {
+    // Shown as an M3 dialog, which needs a text: «Discard current changes?» by default.
+    showOptions(info != null ? info : Lang.getString(R.string.DiscardCurrentChanges), new int[]{R.id.btn_done, R.id.btn_cancel}, new String[]{discardText, Lang.getString(R.string.Cancel)}, new int[] {OptionColor.RED, OptionColor.NORMAL}, new int[] {R.drawable.baseline_delete_24, R.drawable.baseline_cancel_24}, (itemView, id) -> {
       if (id == R.id.btn_done) {
         if (onConfirm != null)
           onConfirm.run();
@@ -2528,6 +2368,13 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
 
     public void setIgnoreOtherPopUps (boolean ignoreOtherPopUps) {
       this.ignoreOtherPopUps = ignoreOtherPopUps;
+    }
+
+    /** The caller patches the returned popup's {@link OptionsLayout}: show the bottom sheet on every width. */
+    public boolean needSheet;
+
+    public void setNeedSheet (boolean needSheet) {
+      this.needSheet = needSheet;
     }
 
     public static class Builder {
@@ -2641,66 +2488,107 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       popupLayout.setDisableCancelOnTouchDown(delegate.disableCancelOnTouchdown());
     }
 
+    // The Cancel item is not shown: M3 sheets, menus and dialogs are dismissed by swiping down, tapping outside or
+    // Back. Dismissing without a choice delivers btn_cancel to the delegate, as tapping the Cancel item did.
+    int cancelIndex = -1, actionIndex = -1, actionCount = 0;
+    for (int i = 0; i < options.items.length; i++) {
+      OptionItem item = options.items[i];
+      if (item == OptionItem.SEPARATOR) {
+        continue;
+      }
+      if (item.id == R.id.btn_cancel) {
+        if (cancelIndex == -1) {
+          cancelIndex = i;
+        }
+      } else {
+        actionIndex = i;
+        actionCount++;
+      }
+    }
+    final boolean[] choiceMade = new boolean[1];
+    if (cancelIndex != -1) {
+      final View cancelView = new View(context);
+      cancelView.setId(R.id.btn_cancel);
+      if (delegate != null) {
+        cancelView.setTag(delegate.getTagForItem(cancelIndex));
+      }
+      popupLayout.setDismissListener(new PopupLayout.DismissListener() {
+        @Override
+        public void onPopupDismissPrepare (PopupLayout popup) {
+          if (!choiceMade[0]) {
+            choiceMade[0] = true;
+            dispatchOptionItemPressed(delegate, cancelView);
+          }
+        }
+
+        @Override
+        public void onPopupDismiss (PopupLayout popup) { }
+      });
+    }
+    View.OnClickListener onClickListener = v -> {
+      choiceMade[0] = true;
+      if (dispatchOptionItemPressed(delegate, v)) {
+        popupLayout.hideWindow(true);
+      } else {
+        choiceMade[0] = false;
+      }
+    };
+
+    boolean isConfirmation = !options.needSheet && cancelIndex != -1 && actionCount == 1 && !(StringUtils.isEmpty(options.info) && StringUtils.isEmpty(options.title));
+    float[] touchPoint;
+    if (isConfirmation) {
+      popupLayout.showFadingPopupView(newOptionsDialog(options, cancelIndex, actionIndex, popupLayout, onClickListener, delegate, forcedTheme));
+    } else if (!options.needSheet && !isCompactWindow() && (touchPoint = context.getRecentTouchPoint()) != null) {
+      MenuMoreWrap menu = newOptionsMenu(options, onClickListener, delegate, forcedTheme);
+      menu.setAnchor((int) touchPoint[0], (int) touchPoint[1], (int) touchPoint[0], (int) touchPoint[1], false);
+      popupLayout.showMoreView(menu);
+    } else {
+      OptionsLayout optionsWrap = newOptionsSheet(options, onClickListener, delegate, forcedTheme);
+      popupLayout.showSimplePopupView(optionsWrap, optionsWrap.getEstimatedHeight() + extraBottomInsetWithoutIme);
+    }
+    onCreatePopupLayout(popupLayout);
+
+    return popupLayout;
+  }
+
+  /** @return true for windows narrower than 600dp (M3 compact and medium-phone width), where options open as a bottom sheet. */
+  public final boolean isCompactWindow () {
+    View contentView = context.getContentView();
+    int width = contentView != null && contentView.getMeasuredWidth() > 0 ? contentView.getMeasuredWidth() : Screen.currentWidth();
+    return width < Screen.dp(600f);
+  }
+
+  private boolean dispatchOptionItemPressed (@Nullable OptionDelegate delegate, View view) {
+    if (delegate != null) {
+      return delegate.onOptionItemPressed(view, view.getId());
+    }
+    ViewController<?> c = context.navigation().getCurrentStackItem();
+    return c instanceof OptionDelegate && ((OptionDelegate) c).onOptionItemPressed(view, view.getId());
+  }
+
+  /** Modal bottom sheet (compact windows, or anything that is not a confirmation without a recent touch). */
+  private OptionsLayout newOptionsSheet (Options options, View.OnClickListener onClickListener, @Nullable OptionDelegate delegate, @Nullable ThemeDelegate forcedTheme) {
     OptionsLayout optionsWrap = new OptionsLayout(context(), this, forcedTheme);
     optionsWrap.setHeader(options.title);
     if (options.subtitle != null) {
       optionsWrap.setSubtitle(options.subtitle);
     }
-
     optionsWrap.setInfo(this, tdlib(), options.info, false, options.maxLineCount);
     optionsWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
 
-    // M3 modal bottom sheet (replaces the legacy top shadow at index 0 with a spacer).
-    optionsWrap.setM3Sheet(this);
-
-    // Item generation
-    View.OnClickListener onClickListener;
-    if (delegate != null) {
-      onClickListener = v -> {
-        if (delegate.onOptionItemPressed(v, v.getId())) {
-          popupLayout.hideWindow(true);
-        }
-      };
-    } else {
-      onClickListener = v -> {
-        ViewController<?> c = context.navigation().getCurrentStackItem();
-        if (c instanceof OptionDelegate && ((OptionDelegate) c).onOptionItemPressed(v, v.getId())) {
-          popupLayout.hideWindow(true);
-        }
-      };
-    }
-    int totalHeight = Screen.dp(OptionsLayout.M3_TOP_SPACE) + optionsWrap.getTextHeight() + extraBottomInsetWithoutIme;
-    int index = 0;
-    for (OptionItem item : options.items) {
-      if (item == OptionItem.SEPARATOR && optionsWrap.isM3Sheet()) {
-        // M3: groups inside the sheet are split by a full-width outlineVariant divider with 8dp around it.
-        View divider = new View(context) {
-          @Override
-          protected void onDraw (Canvas c) {
-            c.drawRect(0, Screen.dp(8f), getMeasuredWidth(), Screen.dp(8f) + Math.max(1, Screen.dp(1f)), Paints.fillingPaint(M3.outlineVariant()));
-          }
-        };
-        divider.setWillNotDraw(false);
-        addThemeInvalidateListener(divider);
-        optionsWrap.addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(17f)));
-        index++;
-        totalHeight += Screen.dp(17f);
+    boolean pendingDivider = false;
+    for (int index = 0; index < options.items.length; index++) {
+      OptionItem item = options.items[index];
+      if (item == OptionItem.SEPARATOR) {
+        pendingDivider = optionsWrap.hasItems();
         continue;
       }
-      if (item == OptionItem.SEPARATOR) {
-        ShadowView shadowViewBottom = new ShadowView(context);
-        shadowViewBottom.setSimpleBottomTransparentShadow(false);
-        ViewSupport.setThemedBackground(shadowViewBottom, ColorId.background, this);
-        addThemeInvalidateListener(shadowViewBottom);
-        optionsWrap.addView(shadowViewBottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(6f)));
-
-        ShadowView shadowViewTop = new ShadowView(context);
-        shadowViewTop.setSimpleTopShadow(true, this);
-        addThemeInvalidateListener(shadowViewTop);
-        optionsWrap.addView(shadowViewTop, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(6f)));
-        index++;
-        totalHeight += shadowViewBottom.getLayoutParams().height + shadowViewTop.getLayoutParams().height;
+      if (item.id == R.id.btn_cancel) {
         continue;
+      }
+      if (pendingDivider) {
+        pendingDivider = false;
+        optionsWrap.addDivider();
       }
       TextView text = OptionsLayout.genOptionView(context, item.id, item.name, item.textColor, item.icon, item.iconColor, onClickListener, getThemeListeners(), forcedTheme);
       RippleSupport.setTransparentSelector(text);
@@ -2711,16 +2599,99 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
         text.setTag(delegate.getTagForItem(index));
       }
       optionsWrap.addView(text);
-      index++;
-      totalHeight += text.getLayoutParams().height;
     }
+    return optionsWrap;
+  }
 
-    // Window
+  /** M3 menu at the touch point that opened the options (windows 600dp and wider); the same component as the ⋮ menu. */
+  private MenuMoreWrap newOptionsMenu (Options options, View.OnClickListener onClickListener, @Nullable OptionDelegate delegate, @Nullable ThemeDelegate forcedTheme) {
+    MenuMoreWrap menu = new MenuMoreWrap(context);
+    menu.init(getThemeListeners(), forcedTheme);
+    int padding = Screen.dp(MenuMoreWrap.ITEM_PADDING);
+    if (!StringUtils.isEmpty(options.title)) {
+      CustomTextView titleView = new CustomTextView(context, tdlib);
+      titleView.setTextSize(16f);
+      titleView.setPadding(padding, Screen.dp(4f), padding, Screen.dp(4f));
+      titleView.setTextColorId(ColorId.text);
+      titleView.setMaxLineCount(1);
+      titleView.setBoldText(options.title, null, false);
+      menu.addHeaderView(themed(titleView, forcedTheme), Screen.dp(MenuMoreWrap.MAX_WIDTH), false);
+    }
+    if (options.subtitle != null) {
+      EmojiTextView subtitleView = OptionsLayout.genSubtitle(context);
+      subtitleView.setPadding(padding, 0, padding, 0);
+      OptionsLayout.updateSubtitle(subtitleView, options.subtitle.name, options.subtitle.icon, options.subtitle.textColor, options.subtitle.iconColor, forcedTheme, forcedTheme != null ? null : this);
+      subtitleView.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+      menu.addHeaderView(subtitleView, subtitleView.getMeasuredWidth(), false);
+    }
+    if (!StringUtils.isEmpty(options.info)) {
+      CustomTextView infoView = new CustomTextView(context, tdlib);
+      infoView.setTextSize(14f);
+      infoView.setPadding(padding, Screen.dp(4f), padding, Screen.dp(4f));
+      infoView.setTextColorId(ColorId.textLight);
+      infoView.setMaxLineCount(options.maxLineCount);
+      String info = options.info.toString();
+      infoView.setText(info, TD.collectAllEntities(this, tdlib, options.info, false, null), false);
+      // A short single-line info is the value the actions apply to (phone number, username):
+      // it may be dropped when the menu does not fit next to the touch point otherwise.
+      int infoWidth = (int) Math.ceil(Paints.getRegularTextPaint(14f).measureText(info)) + padding * 2;
+      boolean singleLine = info.indexOf('\n') == -1 && infoWidth <= Screen.dp(MenuMoreWrap.MAX_WIDTH);
+      menu.addHeaderView(themed(infoView, forcedTheme), infoWidth, singleLine);
+    }
+    boolean pendingDivider = menu.getChildCount() > 0;
+    for (int index = 0; index < options.items.length; index++) {
+      OptionItem item = options.items[index];
+      if (item == OptionItem.SEPARATOR) {
+        pendingDivider = menu.getChildCount() > 0;
+        continue;
+      }
+      if (item.id == R.id.btn_cancel) {
+        continue;
+      }
+      if (pendingDivider) {
+        pendingDivider = false;
+        menu.addDivider();
+      }
+      TextView view = menu.addItem(item.id, item.name, item.icon, null, onClickListener);
+      if (item.textColor == OptionColor.INACTIVE) {
+        // M3 disabled item: onSurface 38%.
+        view.setTextColor(ColorUtils.alphaColor(.38f, M3.get(M3.ON_SURFACE, forcedTheme)));
+      }
+      if (delegate != null) {
+        view.setTag(delegate.getTagForItem(index));
+      }
+    }
+    return menu;
+  }
 
-    popupLayout.showSimplePopupView(optionsWrap, totalHeight);
-    onCreatePopupLayout(popupLayout);
-    
-    return popupLayout;
+  private CustomTextView themed (CustomTextView view, @Nullable ThemeDelegate forcedTheme) {
+    if (forcedTheme != null) {
+      view.setForcedTheme(forcedTheme);
+    } else {
+      addThemeInvalidateListener(view);
+    }
+    return view;
+  }
+
+  /** Confirmation (text + one action + Cancel): M3 basic dialog in the centre of the window on every width. */
+  private DialogLayout newOptionsDialog (Options options, int cancelIndex, int actionIndex, PopupLayout popupLayout, View.OnClickListener onClickListener, @Nullable OptionDelegate delegate, @Nullable ThemeDelegate forcedTheme) {
+    DialogLayout dialog = new DialogLayout(context, this, forcedTheme);
+    dialog.setHeadline(options.title);
+    dialog.setSupportingText(this, tdlib, options.info, options.maxLineCount);
+    if (options.subtitle != null) {
+      EmojiTextView subtitleView = OptionsLayout.genSubtitle(context);
+      subtitleView.setPadding(Screen.dp(DialogLayout.PADDING), Screen.dp(8f), Screen.dp(DialogLayout.PADDING), 0);
+      OptionsLayout.updateSubtitle(subtitleView, options.subtitle.name, options.subtitle.icon, options.subtitle.textColor, options.subtitle.iconColor, forcedTheme, forcedTheme != null ? null : this);
+      dialog.addContentView(subtitleView);
+    }
+    // Dismissive action first, the confirming one closest to the trailing edge; Cancel dismisses (-> btn_cancel).
+    dialog.addButton(R.id.btn_cancel, options.items[cancelIndex].name, v -> popupLayout.hideWindow(true));
+    OptionItem action = options.items[actionIndex];
+    TextView actionButton = dialog.addButton(action.id, action.name, onClickListener);
+    if (delegate != null) {
+      actionButton.setTag(delegate.getTagForItem(actionIndex));
+    }
+    return dialog;
   }
 
   public interface PopUpBuilder {
@@ -2738,10 +2709,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     OptionsLayout optionsWrap = new OptionsLayout(context(), this, forcedTheme);
     optionsWrap.setInfo(this, tdlib(), title, isTitle, maxLineCount);
     optionsWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
-    totalHeight += optionsWrap.getTextHeight();
-
-    optionsWrap.setM3Sheet(this);
-    totalHeight += Screen.dp(OptionsLayout.M3_TOP_SPACE);
+    totalHeight += optionsWrap.getEstimatedHeight();
 
     totalHeight += popUpBuilder.onBuildPopUp(popupLayout, optionsWrap);
     totalHeight += extraBottomInsetWithoutIme;

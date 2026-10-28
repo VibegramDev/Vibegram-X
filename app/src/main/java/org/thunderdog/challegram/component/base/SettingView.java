@@ -60,7 +60,7 @@ import org.thunderdog.challegram.tool.PorterDuffPaint;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.ui.M3SettingsGroupDecoration;
+import org.thunderdog.challegram.ui.SettingHolder;
 import org.thunderdog.challegram.util.DrawModifier;
 import org.thunderdog.challegram.util.EmojiStatusHelper;
 import org.thunderdog.challegram.util.text.Counter;
@@ -878,7 +878,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     if (removeHelper != null) {
       removeHelper.restore(c);
       // Swipe-to-remove background: keep it inside the M3 segment shape (rounded corners) on segmented lists.
-      boolean clipped = M3SettingsGroupDecoration.clipToSegment(this, c);
+      boolean clipped = SettingHolder.clipToSegment(this, c);
       removeHelper.draw(c);
       if (clipped) {
         c.restore();

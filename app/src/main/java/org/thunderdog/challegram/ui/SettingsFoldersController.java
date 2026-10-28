@@ -103,7 +103,6 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
 
   private SettingsAdapter adapter;
   private ItemTouchHelper itemTouchHelper;
-  private M3SettingsGroupDecoration groupDecoration;
 
   public SettingsFoldersController (Context context, Tdlib tdlib) {
     super(context, tdlib);
@@ -320,7 +319,7 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     adapter.setItems(items, false);
     // M3 segmented groups; folder rows and recommended folders are custom SettingView rows on the filling color.
     // The 2dp gaps replace the folder separators the screen used to draw itself.
-    groupDecoration = M3SettingsGroupDecoration.attach(recyclerView, adapter, ListItem.TYPE_CUSTOM - TYPE_CHAT_FOLDER, ListItem.TYPE_CUSTOM - TYPE_RECOMMENDED_CHAT_FOLDER);
+    adapter.setSegmented(ListItem.TYPE_CUSTOM - TYPE_CHAT_FOLDER, ListItem.TYPE_CUSTOM - TYPE_RECOMMENDED_CHAT_FOLDER);
     recyclerView.setAdapter(adapter);
     addThemeInvalidateListener(recyclerView);
 
@@ -459,7 +458,6 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
       };
       SettingsWrapBuilder settings = new SettingsWrapBuilder(R.id.btn_chatFolderStyle)
         .setRawItems(items)
-        .setNeedSeparators(false)
         .setIntDelegate((id, result) -> {
           int selection = result.get(R.id.btn_chatFolderStyle);
           int style;
@@ -963,9 +961,7 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
 
     @Override
     public void onDragStateChanged (RecyclerView.ViewHolder viewHolder, boolean isDragging) {
-      if (groupDecoration != null) {
-        groupDecoration.setDragged(viewHolder.itemView, isDragging);
-      }
+      adapter.setSegmentDragged(viewHolder.itemView, isDragging);
     }
   }
 

@@ -50,6 +50,7 @@ public class SettingsPhoneController extends RecyclerViewController<Void> implem
       new ListItem(ListItem.TYPE_BUTTON, R.id.btn_changePhoneNumber, 0, R.string.PhoneNumberChange),
       new ListItem(ListItem.TYPE_SHADOW_BOTTOM)
     }, false);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
   }
 

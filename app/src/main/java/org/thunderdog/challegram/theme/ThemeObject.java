@@ -51,5 +51,12 @@ public abstract class ThemeObject implements ThemeDelegate {
 
   @ColorInt
   @Override
-  public abstract int getColor (@ColorId int colorId);
+  public abstract int getRawColor (@ColorId int colorId);
+
+  private final M3.Roles roles = new M3.Roles(false);
+
+  @Override
+  public final int getRoleColor (int role) {
+    return roles.get(this, role);
+  }
 }

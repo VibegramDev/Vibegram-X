@@ -17,6 +17,7 @@ package org.thunderdog.challegram.ui;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.drawable.Drawable;
 import android.util.SparseIntArray;
 import android.view.Gravity;
 import android.view.View;
@@ -66,6 +67,7 @@ import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibDelegate;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.ThemeListenerEntry;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
@@ -109,6 +111,7 @@ import java.util.Collections;
 import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.util.ClickHelper;
 import me.vkryl.android.widget.FrameLayoutFix;
@@ -224,6 +227,228 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
   @Override
   public void onDetachedFromRecyclerView (RecyclerView recyclerView) {
     parentViews.remove(recyclerView);
+  }
+
+  // Material 3 segmented groups
+
+  private static final int SEGMENT_NONE = 0, SEGMENT_CARD = 1, SEGMENT_SEPARATOR = 2, SEGMENT_SHADOW = 3, SEGMENT_TEXT = 4;
+  private static final float SEGMENT_INSET = 16f;
+  private static final float SEGMENT_GAP = 2f; // ListTokens.SegmentedGap
+  private static final float SEGMENT_SEPARATOR_HEIGHT = 1f; // SettingHolder TYPE_SEPARATOR height
+
+  private @Nullable int[] segmentExtraCardTypes;
+
+  /**
+   * Shows the rows as Material 3 segmented groups (opt-in per screen, every theme): the existing Telegram X sections
+   * (rows between shadows, headers and descriptions) become groups of cards with outer corners 16dp, inner corners 4dp
+   * and 2dp gaps ("4dp inner, 16dp outer", "Use gaps for contained lists", m3.material.io/components/lists). Shadows
+   * and separators are hidden, so gaps show the page background of the list. Every row type of the screen must be
+   * classified in {@link #segmentKind}.
+   *
+   * Call before {@link RecyclerView#setAdapter}: the shapes and margins of attached rows are updated by an observer
+   * that must run after the RecyclerView's own one (observers are notified in reverse order), so that adapter
+   * positions already include the change.
+   *
+   * @param extraCardViewTypes view types whose rows are cards on this screen only: screen-specific types
+   *                           ({@code ListItem.TYPE_CUSTOM - x}; other custom types are left untouched). Text fields
+   *                           are never cards: M3 outlined text fields stand on the page without a container.
+   */
+  public void setSegmented (int... extraCardViewTypes) {
+    if (segmentExtraCardTypes != null || !parentViews.isEmpty()) {
+      throw new IllegalStateException();
+    }
+    segmentExtraCardTypes = extraCardViewTypes;
+    // Neighbours of inserted, removed, moved or changed rows are neither rebound nor reattached.
+    registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
+      @Override
+      public void onChanged () {
+        updateSegments();
+      }
+
+      @Override
+      public void onItemRangeChanged (int positionStart, int itemCount) {
+        updateSegments();
+      }
+
+      @Override
+      public void onItemRangeInserted (int positionStart, int itemCount) {
+        updateSegments();
+      }
+
+      @Override
+      public void onItemRangeRemoved (int positionStart, int itemCount) {
+        updateSegments();
+      }
+
+      @Override
+      public void onItemRangeMoved (int fromPosition, int toPosition, int itemCount) {
+        updateSegments();
+      }
+    });
+  }
+
+  /** Dragged state of a reorderable card (call when ItemTouchHelper picks the row up and when it is released). */
+  public void setSegmentDragged (View view, boolean isDragged) {
+    Drawable background = view.getBackground();
+    if (background instanceof SettingHolder.SegmentBackground) {
+      ((SettingHolder.SegmentBackground) background).setDragged(view, isDragged);
+    }
+  }
+
+  private int segmentKind (int viewType) {
+    //noinspection ConstantConditions
+    for (int extraViewType : segmentExtraCardTypes) {
+      if (extraViewType == viewType) {
+        return SEGMENT_CARD;
+      }
+    }
+    if (viewType <= ListItem.TYPE_CUSTOM) {
+      return SEGMENT_NONE;
+    }
+    switch (viewType) {
+      // SettingView rows
+      case ListItem.TYPE_SETTING:
+      case ListItem.TYPE_VALUED_SETTING:
+      case ListItem.TYPE_VALUED_SETTING_WITH_RADIO:
+      case ListItem.TYPE_VALUED_SETTING_COMPACT:
+      case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_COLOR:
+      case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_RADIO:
+      case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_RADIO_2:
+      case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_TOGGLER:
+      case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_CHECKBOX:
+      case ListItem.TYPE_RADIO_SETTING:
+      case ListItem.TYPE_RADIO_SETTING_WITH_NEGATIVE_STATE:
+      case ListItem.TYPE_INFO_SETTING:
+      case ListItem.TYPE_INFO_MULTILINE:
+      case ListItem.TYPE_CHECKBOX_OPTION:
+      case ListItem.TYPE_CHECKBOX_OPTION_REVERSE:
+      case ListItem.TYPE_CHECKBOX_OPTION_MULTILINE:
+      case ListItem.TYPE_CHECKBOX_OPTION_WITH_AVATAR:
+      case ListItem.TYPE_RADIO_OPTION:
+      case ListItem.TYPE_RADIO_OPTION_LEFT:
+      case ListItem.TYPE_RADIO_OPTION_WITH_AVATAR:
+      // CustomTextView on the filling color (wrap content): a non-clickable card
+      case ListItem.TYPE_INFO:
+      // Other rows on the filling color: sliders (SliderWrapView), sessions and websites (RelativeLayout),
+      // chats and users (BetterChatView, UserView), cache entries (DoubleTextView), centered text buttons
+      case ListItem.TYPE_SLIDER:
+      case ListItem.TYPE_SLIDER_BRIGHTNESS:
+      case ListItem.TYPE_SESSION:
+      case ListItem.TYPE_SESSION_WITH_AVATAR:
+      case ListItem.TYPE_CHAT_BETTER:
+      case ListItem.TYPE_USER:
+      case ListItem.TYPE_DOUBLE_TEXTVIEW_ROUNDED:
+      case ListItem.TYPE_CHECKBOX_OPTION_DOUBLE_LINE:
+      case ListItem.TYPE_BUTTON:
+        return SEGMENT_CARD;
+      case ListItem.TYPE_SEPARATOR:
+      case ListItem.TYPE_SEPARATOR_FULL:
+        return SEGMENT_SEPARATOR;
+      case ListItem.TYPE_SHADOW_TOP:
+      case ListItem.TYPE_SHADOW_BOTTOM:
+        return SEGMENT_SHADOW;
+      case ListItem.TYPE_HEADER:
+      case ListItem.TYPE_HEADER_PADDED:
+      case ListItem.TYPE_HEADER_MULTILINE:
+      case ListItem.TYPE_DESCRIPTION:
+      case ListItem.TYPE_DESCRIPTION_SMALL:
+        return SEGMENT_TEXT;
+      // 4dp spacer painted with the page color, full-screen placeholder text (loading error): not part of a group.
+      case ListItem.TYPE_EMPTY_OFFSET_SMALL:
+      case ListItem.TYPE_EMPTY:
+      // Full-width "no other sessions / no websites" placeholders on the page color.
+      case ListItem.TYPE_SESSIONS_EMPTY:
+      case ListItem.TYPE_WEBSITES_EMPTY:
+      // Bottom spacer (PaddingView): transparent, or the filling color, which is the page color (M3 surface, ThemeDelegate.getColor).
+      case ListItem.TYPE_PADDING:
+      // Large icon with a text on the page color above a form or a button.
+      case ListItem.TYPE_ICONIZED_EMPTY:
+        return SEGMENT_NONE;
+    }
+    return SEGMENT_NONE;
+  }
+
+  private int segmentKindAt (int position) {
+    return position >= 0 && position < items.size() ? segmentKind(items.get(position).getViewType()) : SEGMENT_NONE;
+  }
+
+  /** Whether the row at position continues the group in the given direction (another card, maybe after a separator). */
+  private boolean isSegmentConnected (int position, int direction) {
+    int next = position + direction;
+    int kind = segmentKindAt(next);
+    return kind == SEGMENT_CARD || (kind == SEGMENT_SEPARATOR && segmentKindAt(next + direction) == SEGMENT_CARD);
+  }
+
+  private int segmentTopMargin (int position) {
+    // Height of the spacer rows (shadows, 4dp offsets) above the first row of the list, or -1 if any other row is above.
+    int leading = 0;
+    for (int i = 0; i < position && i < items.size() && leading != -1; i++) {
+      int viewType = items.get(i).getViewType();
+      leading = viewType == ListItem.TYPE_EMPTY_OFFSET_SMALL || segmentKind(viewType) == SEGMENT_SHADOW ? leading + SettingHolder.measureHeightForType(viewType) : -1;
+    }
+    if (leading != -1) {
+      // The list starts with a group (no section header above it): keep it off the app bar
+      // by the same 16dp as the side margins (our choice), counting spacer rows already there.
+      return Math.max(0, Screen.dp(SEGMENT_INSET) - leading);
+    }
+    switch (segmentKindAt(position - 1)) {
+      case SEGMENT_CARD:
+        return Screen.dp(SEGMENT_GAP);
+      case SEGMENT_SEPARATOR:
+        // The hidden separator row itself is part of the gap.
+        return segmentKindAt(position - 2) == SEGMENT_CARD ? Math.max(0, Screen.dp(SEGMENT_GAP) - Screen.dp(SEGMENT_SEPARATOR_HEIGHT)) : 0;
+    }
+    return 0;
+  }
+
+  /** Gives the row its place in the segmented list: margins, card shape and background, hidden shadows and separators. */
+  private void applySegment (View view, int viewType, int position) {
+    int kind = segmentKind(viewType);
+    if (kind == SEGMENT_SEPARATOR || kind == SEGMENT_SHADOW) {
+      if (view.getVisibility() != View.INVISIBLE) {
+        view.setVisibility(View.INVISIBLE);
+      }
+      return;
+    }
+    if (kind != SEGMENT_CARD && kind != SEGMENT_TEXT) {
+      return;
+    }
+    ViewGroup.LayoutParams params = view.getLayoutParams();
+    if (params instanceof ViewGroup.MarginLayoutParams) {
+      ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+      int inset = Screen.dp(SEGMENT_INSET);
+      int top = kind == SEGMENT_CARD ? segmentTopMargin(position) : margins.topMargin;
+      if (margins.leftMargin != inset || margins.rightMargin != inset || margins.topMargin != top) {
+        margins.leftMargin = margins.rightMargin = inset;
+        margins.topMargin = top;
+        view.requestLayout();
+      }
+    }
+    if (kind == SEGMENT_CARD) {
+      Drawable background = view.getBackground();
+      if (!(background instanceof SettingHolder.SegmentBackground)) {
+        ViewUtils.setBackground(view, background = new SettingHolder.SegmentBackground());
+        // Card colors are read at draw time.
+        if (themeProvider != null && themeProvider.getThemeListeners().findThemeListenerByTarget(view, ThemeListenerEntry.MODE_INVALIDATE) == null) {
+          themeProvider.addThemeInvalidateListener(view);
+        }
+      }
+      ((SettingHolder.SegmentBackground) background).setShape(view, isSegmentConnected(position, -1), isSegmentConnected(position, 1));
+    }
+  }
+
+  private void updateSegments () {
+    for (RecyclerView parentView : parentViews) {
+      for (int i = 0; i < parentView.getChildCount(); i++) {
+        View view = parentView.getChildAt(i);
+        RecyclerView.ViewHolder holder = parentView.getChildViewHolder(view);
+        int position = parentView.getChildAdapterPosition(view);
+        if (holder != null && position != RecyclerView.NO_POSITION) {
+          // Rows being removed keep their current look until they are detached.
+          applySegment(view, holder.getItemViewType(), position);
+        }
+      }
+    }
   }
 
   public void setInnerOnScrollListener (@Nullable RecyclerView.OnScrollListener innerOnScrollListener) {
@@ -1396,11 +1621,22 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
   @Override
   public void onViewAttachedToWindow (SettingHolder holder) {
     holder.attach();
+    if (segmentExtraCardTypes != null) {
+      // Before measure: covers the default layout params given after the first bind and cached rows reattached without a bind.
+      int position = holder.getAbsoluteAdapterPosition();
+      if (position != RecyclerView.NO_POSITION) {
+        applySegment(holder.itemView, holder.getItemViewType(), position);
+      }
+    }
   }
 
   @Override
   public void onViewDetachedFromWindow (SettingHolder holder) {
     holder.detach();
+    Drawable background = holder.itemView.getBackground();
+    if (background instanceof SettingHolder.SegmentBackground) {
+      ((SettingHolder.SegmentBackground) background).resetDragged(holder.itemView);
+    }
   }
 
   @Override
@@ -1897,6 +2133,9 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
   @Override
   public void onBindViewHolder (SettingHolder holder, int position) {
     updateView(holder, position, holder.getItemViewType());
+    if (segmentExtraCardTypes != null) {
+      applySegment(holder.itemView, holder.getItemViewType(), position);
+    }
   }
 
   public void resetRecyclerScrollById (int id) {

@@ -17,6 +17,8 @@ package org.thunderdog.challegram.ui;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
+import android.graphics.Outline;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -41,6 +43,7 @@ import android.widget.TextView;
 import androidx.annotation.IntRange;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -71,11 +74,13 @@ import org.thunderdog.challegram.mediaview.paint.ColorPaletteView;
 import org.thunderdog.challegram.mediaview.paint.widget.ColorPreviewView;
 import org.thunderdog.challegram.mediaview.paint.widget.ColorToneView;
 import org.thunderdog.challegram.navigation.DrawerItemView;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Drawables;
@@ -102,6 +107,7 @@ import org.thunderdog.challegram.widget.GiftHeaderView;
 import org.thunderdog.challegram.widget.JoinedUsersView;
 import org.thunderdog.challegram.widget.ListInfoView;
 import org.thunderdog.challegram.widget.LiveLocationView;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.NonMaterialButton;
@@ -123,9 +129,13 @@ import org.thunderdog.challegram.widget.WebsiteEmptyImageView;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.ViewUtils;
+import me.vkryl.android.animator.BoolAnimator;
+import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.text.AcceptFilter;
 import me.vkryl.android.util.ClickHelper;
 import me.vkryl.android.widget.FrameLayoutFix;
+import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.Destroyable;
 
 public class SettingHolder extends RecyclerView.ViewHolder {
@@ -2780,5 +2790,204 @@ public class SettingHolder extends RecyclerView.ViewHolder {
     textView.setOnClickListener(onClickListener);
     textView.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     return textView;
+  }
+
+  // Material 3 segmented groups (SettingsAdapter.setSegmented)
+
+  /**
+   * Clips the canvas to the segment shape of the row, if the row is a segment. Used by rows that draw over their
+   * whole bounds (swipe-to-remove background of {@code SettingView}). Returns whether {@link Canvas#save()} was called.
+   */
+  public static boolean clipToSegment (View view, Canvas c) {
+    Drawable background = view.getBackground();
+    if (background instanceof SegmentBackground) {
+      c.save();
+      c.clipPath(((SegmentBackground) background).content.buildPath());
+      return true;
+    }
+    return false;
+  }
+
+  private static int segmentRippleColor () {
+    return ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface());
+  }
+
+  /**
+   * Background of a row in a segmented group: surfaceContainer fill with outer corners 16dp and inner corners 4dp
+   * ("4dp inner, 16dp outer", m3.material.io/components/lists) and the M3 pressed state layer (onSurface 10%) clipped
+   * to the same shape. Colors are read at draw time, so a theme change only needs the row to be invalidated.
+   */
+  static final class SegmentBackground extends M3StateLayerDrawable implements FactorAnimator.Target {
+    private static final int ANIMATOR_SHAPE = 0, ANIMATOR_LIFT = 1;
+
+    private final SegmentShape content, mask;
+
+    private @Nullable View draggedView;
+    private @Nullable BoolAnimator shapeAnimator, liftAnimator;
+
+    SegmentBackground () {
+      this(new SegmentShape(true), new SegmentShape(false));
+    }
+
+    private SegmentBackground (SegmentShape content, SegmentShape mask) {
+      super(content, mask, segmentRippleColor());
+      this.content = content;
+      this.mask = mask;
+    }
+
+    /** Position of the row in its group: rounds the outer corners, keeps 4dp where it touches a neighbour. */
+    void setShape (View view, boolean connectedTop, boolean connectedBottom) {
+      content.row = view;
+      if (content.setShape(connectedTop, connectedBottom) | mask.setShape(connectedTop, connectedBottom)) {
+        invalidateSelf();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.invalidateOutline();
+        }
+      }
+    }
+
+    @Override
+    protected boolean onStateChange (@NonNull int[] state) {
+      // Theme may have changed since the last press.
+      setColor(segmentRippleColor());
+      return super.onStateChange(state);
+    }
+
+    /**
+     * Dragged state of a reorderable row (M3 ListItemTokens): shape CornerLarge (16dp on every corner) on the fast
+     * spatial spring, elevation Level4 (8dp) and state layer onSurface 16% on the fast effects spring.
+     */
+    void setDragged (View view, boolean isDragged) {
+      this.draggedView = view;
+      if (shapeAnimator == null || liftAnimator == null) {
+        if (!isDragged) {
+          return;
+        }
+        shapeAnimator = new BoolAnimator(ANIMATOR_SHAPE, this, M3.FAST_SPATIAL, M3.FAST_SPATIAL.duration);
+        liftAnimator = new BoolAnimator(ANIMATOR_LIFT, this, M3.FAST_EFFECTS, M3.FAST_EFFECTS.duration);
+      }
+      shapeAnimator.setValue(isDragged, true);
+      liftAnimator.setValue(isDragged, true);
+    }
+
+    void resetDragged (View view) {
+      if (shapeAnimator == null || liftAnimator == null) {
+        return;
+      }
+      shapeAnimator.setValue(false, false);
+      liftAnimator.setValue(false, false);
+      content.setDragFactors(0f, 0f);
+      mask.setDragFactors(0f, 0f);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.setTranslationZ(0f);
+      }
+      draggedView = null;
+      invalidateSelf();
+    }
+
+    @Override
+    public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
+      View view = draggedView;
+      if (id == ANIMATOR_SHAPE) {
+        content.setDragFactors(factor, content.liftFactor);
+        mask.setDragFactors(factor, mask.liftFactor);
+        if (view != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.invalidateOutline();
+        }
+      } else {
+        content.setDragFactors(content.shapeFactor, factor);
+        if (view != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          view.setTranslationZ(Screen.dp(M3.ELEVATION_LEVEL4) * factor);
+        }
+      }
+      invalidateSelf();
+    }
+  }
+
+  private static final class SegmentShape extends Drawable {
+    private final boolean isContent;
+    /** Row of the content shape: filled as selected in the tablet left pane. */
+    private @Nullable View row;
+    private boolean connectedTop, connectedBottom;
+    /** 0 = resting segment, 1 = dragged (16dp on every corner); may overshoot (spatial spring). */
+    private float shapeFactor;
+    /** Dragged state layer (onSurface 16%) and elevation, 0..1. */
+    private float liftFactor;
+    private final Path path = new Path();
+    private final RectF rect = new RectF();
+    private final float[] radii = new float[8];
+
+    SegmentShape (boolean isContent) {
+      this.isContent = isContent;
+    }
+
+    boolean setShape (boolean connectedTop, boolean connectedBottom) {
+      if (this.connectedTop != connectedTop || this.connectedBottom != connectedBottom) {
+        this.connectedTop = connectedTop;
+        this.connectedBottom = connectedBottom;
+        return true;
+      }
+      return false;
+    }
+
+    void setDragFactors (float shapeFactor, float liftFactor) {
+      this.shapeFactor = shapeFactor;
+      this.liftFactor = liftFactor;
+    }
+
+    Path buildPath () {
+      float outer = Screen.dp(M3.CORNER_LARGE);
+      float inner = Screen.dp(M3.CORNER_EXTRA_SMALL);
+      Rect bounds = getBounds();
+      float maxRadius = Math.min(bounds.width(), bounds.height()) / 2f;
+      float top = MathUtils.clamp(MathUtils.fromTo(connectedTop ? inner : outer, outer, shapeFactor), 0f, maxRadius);
+      float bottom = MathUtils.clamp(MathUtils.fromTo(connectedBottom ? inner : outer, outer, shapeFactor), 0f, maxRadius);
+      radii[0] = radii[1] = radii[2] = radii[3] = top;
+      radii[4] = radii[5] = radii[6] = radii[7] = bottom;
+      rect.set(bounds);
+      path.reset();
+      path.addRoundRect(rect, radii, Path.Direction.CW);
+      return path;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      Path path = buildPath();
+      // Cards on the surface page: one containment level up.
+      c.drawPath(path, Paints.fillingPaint(isContent ? M3.surfaceContainer() : 0xFFFFFFFF));
+      if (isContent && row != null && NavigationController.isTabletSelectedRow(row, null, 0)) {
+        c.drawPath(path, Paints.fillingPaint(NavigationController.getTabletSelectionColor()));
+      }
+      if (isContent && liftFactor > 0f) {
+        c.drawPath(path, Paints.fillingPaint(ColorUtils.alphaColor(M3.STATE_DRAGGED * MathUtils.clamp(liftFactor), M3.onSurface())));
+      }
+    }
+
+    /** Outline for the elevation shadow of a dragged segment. */
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+    @Override
+    public void getOutline (@NonNull Outline outline) {
+      Path path = buildPath();
+      if (radii[0] == radii[4]) {
+        outline.setRoundRect(getBounds(), radii[0]);
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        outline.setPath(path);
+      } else {
+        //noinspection deprecation
+        outline.setConvexPath(path);
+      }
+    }
+
+    @Override
+    public void setAlpha (int alpha) { }
+
+    @Override
+    public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public int getOpacity () {
+      return PixelFormat.TRANSLUCENT;
+    }
   }
 }

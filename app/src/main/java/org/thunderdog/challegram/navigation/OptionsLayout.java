@@ -56,7 +56,6 @@ import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.ui.M3SearchContainerDecoration;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.widget.CustomTextView;
 import org.thunderdog.challegram.widget.EmojiTextView;
@@ -100,15 +99,8 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     ViewUtils.setBackground(this, new Drawable() {
       @Override
       public void draw (@NonNull Canvas c) {
-        if (m3Sheet) {
-          // M3 sheet container; the shape (28dp top corners) is applied by the outline clip.
-          c.drawColor(getContainerColor());
-          return;
-        }
-        View view = getChildAt(0);
-        int height = view != null ? view.getMeasuredHeight() : 0;
-        if (height > 0)
-          c.drawRect(0, height, getMeasuredWidth(), getMeasuredHeight(), Paints.fillingPaint(forcedTheme != null ? forcedTheme.getColor(ColorId.filling) : Theme.getColor(ColorId.filling)));
+        // M3 sheet container; the shape (28dp top corners) is applied by the outline clip.
+        c.drawColor(getContainerColor());
       }
 
       @Override
@@ -133,28 +125,51 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
       parent.addThemeInvalidateListener(headerView);
       parent.addThemeInvalidateListener(this);
     }
-  }
 
-  private boolean m3Sheet;
-
-  /**
-   * M3 modal bottom sheet look (used by {@link ViewController#showOptions} and {@link ViewController#showPopup}):
-   * surfaceContainerLow container, 28dp top corners, width up to 640dp (centered, 56dp margins in wide windows).
-   * Index 0 keeps a top spacer instead of the legacy top shadow, so callers inserting views at index 1 still work.
-   */
-  public void setM3Sheet (ViewController<?> themeProvider) {
-    this.m3Sheet = true;
-    m3Spacer = new View(getContext());
+    // M3 modal bottom sheet (used by ViewController#showOptions and #showPopup): surfaceContainerLow container,
+    // 28dp top corners, width up to 640dp (centered, 56dp margins in wide windows). Index 0 is a top spacer
+    // (it replaced the old top shadow), so callers inserting views at index 1 still work.
+    m3Spacer = new View(context);
     m3Spacer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(M3_TOP_SPACE)));
     addView(m3Spacer, 0);
     M3Sheets.setOutline(this, this::getSheetTop);
     setWillNotDraw(false);
-    if (forcedTheme == null && themeProvider != null) {
-      themeProvider.addThemeInvalidateListener(this);
-    }
   }
 
   public static final float M3_TOP_SPACE = 8f;
+
+  /** Height before layout: top space, info text and fixed-height rows (items, dividers); used for the show animation. */
+  public int getEstimatedHeight () {
+    int height = Screen.dp(M3_TOP_SPACE) + getTextHeight();
+    for (int i = 0; i < getChildCount(); i++) {
+      View view = getChildAt(i);
+      ViewGroup.LayoutParams params = view != m3Spacer ? view.getLayoutParams() : null;
+      if (params != null && params.height > 0 && view.getVisibility() != View.GONE) {
+        height += params.height;
+      }
+    }
+    return height;
+  }
+
+  /** @return true if an option item has been added after the header and the info text. */
+  public boolean hasItems () {
+    return getChildCount() > indexOfChild(textView) + 1;
+  }
+
+  /** M3 divider between groups of options: full-width 1dp outlineVariant with 8dp above and below. */
+  public void addDivider () {
+    View divider = new View(getContext()) {
+      @Override
+      protected void onDraw (Canvas c) {
+        c.drawRect(0, Screen.dp(8f), getMeasuredWidth(), Screen.dp(8f) + Math.max(1, Screen.dp(1f)), Paints.fillingPaint(M3.get(M3.OUTLINE_VARIANT, forcedTheme)));
+      }
+    };
+    divider.setWillNotDraw(false);
+    if (forcedTheme == null) {
+      parent.addThemeInvalidateListener(divider);
+    }
+    addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(17f)));
+  }
 
   // Scrollable M3 sheet: when the options are taller than 50% of the window, the sheet opens partially expanded
   // (50%), gets a drag handle and is dragged up to expand; once it reaches the top inset the options scroll inside
@@ -189,13 +204,13 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     }
     // 48dp drag handle area; the header (18dp) or info text (14dp) brings its own top padding.
     int textPadding = headerView.getVisibility() != View.GONE ? headerView.getPaddingTop() : textView.getVisibility() != View.GONE ? textView.getPaddingTop() : 0;
-    return Screen.dp(M3SearchContainerDecoration.SHEET_HANDLE_AREA) - textPadding;
+    return Screen.dp(M3Sheets.HANDLE_AREA) - textPadding;
   }
 
   @Override
   protected void onScrollChanged (int l, int t, int oldl, int oldt) {
     super.onScrollChanged(l, t, oldl, oldt);
-    if (m3Sheet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       invalidateOutline();
     }
   }
@@ -203,17 +218,15 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
   @Override
   protected void onLayout (boolean changed, int l, int t, int r, int b) {
     super.onLayout(changed, l, t, r, b);
-    if (m3Sheet) {
-      int scrollY = scrollable ? MathUtils.clamp(getScrollY(), 0, maxScroll) : 0;
-      if (getScrollY() != scrollY) {
-        if (scroller != null) {
-          scroller.forceFinished(true);
-        }
-        scrollTo(0, scrollY);
+    int scrollY = scrollable ? MathUtils.clamp(getScrollY(), 0, maxScroll) : 0;
+    if (getScrollY() != scrollY) {
+      if (scroller != null) {
+        scroller.forceFinished(true);
       }
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        invalidateOutline();
-      }
+      scrollTo(0, scrollY);
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      invalidateOutline();
     }
     if (pendingAction != null) {
       pendingAction.run();
@@ -229,7 +242,7 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
       if (handlePaint == null) {
         handlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
       }
-      handlePaint.setColor(forcedTheme != null ? forcedTheme.getColor(ColorId.textLight) : M3.onSurfaceVariant());
+      handlePaint.setColor(M3.get(M3.ON_SURFACE_VARIANT, forcedTheme));
       float width = Screen.dp(32f), height = Screen.dp(4f);
       float top = sheetOffset + Screen.dp(22f);
       float cx = getWidth() / 2f;
@@ -389,12 +402,8 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     }
   }
 
-  public boolean isM3Sheet () {
-    return m3Sheet;
-  }
-
   public @ColorInt int getContainerColor () {
-    return forcedTheme != null ? forcedTheme.getColor(ColorId.filling) : M3.surfaceContainerLow();
+    return M3.get(M3.SURFACE_CONTAINER_LOW, forcedTheme);
   }
 
   @Override
@@ -409,11 +418,9 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
 
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
-    if (m3Sheet) {
-      widthMeasureSpec = M3Sheets.measureSpec(widthMeasureSpec);
-      if (measureM3Sheet(widthMeasureSpec, heightMeasureSpec)) {
-        return;
-      }
+    widthMeasureSpec = M3Sheets.measureSpec(widthMeasureSpec);
+    if (measureM3Sheet(widthMeasureSpec, heightMeasureSpec)) {
+      return;
     }
     super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
@@ -499,7 +506,8 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     text.setId(id);
     text.setTypeface(Fonts.getRobotoRegular());
     text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-    final int textColorId = getOptionColorId(textColor);
+    // M3 has no coloured (red / blue) list items: items use the normal colour, only INACTIVE stays (disabled look).
+    final int textColorId = textColor == ViewController.OptionColor.INACTIVE ? ColorId.controlInactive : ColorId.text;
     if (forcedTheme != null) {
       text.setTextColor(forcedTheme.getColor(textColorId));
     } else {
@@ -516,14 +524,7 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     if (icon != 0) {
       Drawable drawable = Drawables.get(context.getResources(), icon);
       if (drawable != null) {
-        final int drawableColorId;
-        if (iconColor == ViewController.OptionColor.NORMAL) {
-          drawableColorId = ColorId.icon;
-        } else if (iconColor == ViewController.OptionColor.INACTIVE) {
-          drawableColorId = ColorId.controlInactive;
-        } else {
-          drawableColorId = getOptionColorId(iconColor);
-        }
+        final int drawableColorId = iconColor == ViewController.OptionColor.INACTIVE ? ColorId.controlInactive : ColorId.icon;
         drawable.setColorFilter(Paints.getColorFilter(forcedTheme != null ? forcedTheme.getColor(drawableColorId) : Theme.getColor(drawableColorId)));
         if (themeProvider != null) {
           themeProvider.addThemeFilterListener(drawable, drawableColorId);

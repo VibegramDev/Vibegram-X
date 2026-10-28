@@ -243,6 +243,7 @@ public class EditSessionController extends EditBaseController<EditSessionControl
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     adapter.setItems(items, false);
+    adapter.setSegmented();
     recyclerView.setOverScrollMode(View.OVER_SCROLL_NEVER);
     recyclerView.setAdapter(adapter);
     checkDoneButton();

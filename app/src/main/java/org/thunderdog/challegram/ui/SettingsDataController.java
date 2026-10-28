@@ -290,7 +290,7 @@ public class SettingsDataController extends RecyclerViewController<SettingsDataC
         }
       }
     }
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
 
     switch (mode) {

@@ -53,7 +53,8 @@ import tgx.td.Td;
 /**
  * «Аккаунт» section of the Settings (Vibegram X): only what Telegram X already had, gathered in one screen —
  * the name and «О себе» (rows; tap opens the existing EditNameController / EditBioController pages), phone (change number flow), username, birthday, user ID
- * (when "show IDs" is on), the «Аккаунты» group (switch / add) and «Выйти» (the existing log out flow) at the bottom.
+ * (when "show IDs" is on) and «Выйти» (the existing log out flow) at the bottom. Switching / adding accounts lives on
+ * the main Settings page and in the long-press menu of the dock avatar.
  */
 public class SettingsAccountController extends ViewController<Void> implements
   View.OnClickListener, OptionDelegate,
@@ -61,7 +62,6 @@ public class SettingsAccountController extends ViewController<Void> implements
 
   private RecyclerView contentView;
   private SettingsAdapter adapter;
-  private SettingsAccountsBlock accountsBlock;
 
   private @Nullable TdApi.Usernames myUsernames;
   private @Nullable String myPhone;
@@ -112,21 +112,7 @@ public class SettingsAccountController extends ViewController<Void> implements
     contentView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     Views.applyBottomInset(contentView, extraBottomInset);
 
-    accountsBlock = new SettingsAccountsBlock(this, tdlib);
     adapter = new SettingsAdapter(this) {
-      @Override
-      protected SettingHolder initCustom (ViewGroup parent, int customViewType) {
-        if (customViewType == SettingsAccountsBlock.VIEW_TYPE_ACCOUNT) {
-          return accountsBlock.createView(parent);
-        }
-        return super.initCustom(parent, customViewType);
-      }
-
-      @Override
-      protected void modifyCustom (SettingHolder holder, int position, ListItem item, int customViewType, View view, boolean isUpdate) {
-        accountsBlock.bindView(item, view, isUpdate);
-      }
-
       @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         final int itemId = item.getId();
@@ -198,17 +184,14 @@ public class SettingsAccountController extends ViewController<Void> implements
     }
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
-    accountsBlock.fillItems(items);
-
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_logout, R.drawable.baseline_logout_24, R.string.LogOut).setTextColorId(ColorId.textNegative));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     adapter.setItems(items, false);
-    M3SettingsGroupDecoration.attach(contentView, adapter, SettingsAccountsBlock.LIST_TYPE_ACCOUNT);
+    adapter.setSegmented();
     contentView.setAdapter(adapter);
 
-    accountsBlock.attach(adapter);
     tdlib.cache().addMyUserListener(this);
     setMyUserId(tdlib.myUserId());
 
@@ -339,10 +322,7 @@ public class SettingsAccountController extends ViewController<Void> implements
 
   @Override
   public void onClick (View v) {
-    if (accountsBlock.onClick(v)) {
-      return;
-    }
-    // M3 (Compose) sheets/menus and birthday picker for phone, username, ID, birthday; false on legacy → classic popups below.
+    // Options of phone, username, ID, birthday (sheet / menu at the tapped row); false → classic handling below.
     if (SettingsAccountPopups.onClick(this, v)) {
       return;
     }
@@ -380,9 +360,6 @@ public class SettingsAccountController extends ViewController<Void> implements
   @Override
   public void destroy () {
     super.destroy();
-    if (accountsBlock != null) {
-      accountsBlock.destroy();
-    }
     tdlib.cache().removeMyUserListener(this);
     setMyUserId(0);
   }

@@ -28,8 +28,6 @@ import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
-import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -88,9 +86,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   private static final float RAIL_ITEM_SIZE = 56f;
   private static final float RAIL_PADDING = 6f;
-  private static final float BAR_HEIGHT = 64f;
-  /** Center of the icon (and the active indicator) from the top of the tablet bar. */
-  private static final float BAR_ICON_CENTER_Y = 23f;
+  /** Tablet bar: icons only, full corner radius (pill). Also the height of the floating message composer. */
+  private static final float BAR_HEIGHT = 56f;
+  /** Center of the icon (and the active indicator) from the top of the tablet bar: vertically centered. */
+  private static final float BAR_ICON_CENTER_Y = BAR_HEIGHT / 2f;
   private static final float ICON_SIZE = 24f;
   private static final float AVATAR_SIZE = 28f;
   /** Active indicator (and pressed state layer) size. */
@@ -104,6 +103,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private final AvatarView avatarView;
   private final Counter unreadCounter;
   private @Nullable Callback callback;
+  private @Nullable View.OnLongClickListener settingsLongClickListener;
   private @Nullable CollapseListener collapseListener;
   /** Phone: the rail collapses into the scroll to top button while the chat list is scrolled. */
   private final FactorAnimator collapseAnimator;
@@ -187,18 +187,29 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     addView(scrollTopView);
     themeProvider.addThemeInvalidateListener(this);
 
-    // Phone rail has no labels (accepted deviation): plain tooltip with the label on tap and hold,
-    // before the rail, 4dp from its edge. The tablet bar shows labels, so no tooltips there.
+    // Phone rail and tablet bar have no labels (accepted deviation): plain tooltip with the label on tap and hold,
+    // 4dp from the dock edge: before the rail, above the bar.
     M3Tooltip.BoundsProvider railBounds = (anchor, outRect) -> {
-      // Horizontal bounds of the rail container (the visual boundary), vertical bounds of the item.
-      outRect.set(-anchor.getLeft(), 0, getWidth() - anchor.getLeft(), anchor.getHeight());
+      if (isBar) {
+        // Horizontal bounds of the item, vertical bounds of the bar container (the visual boundary).
+        outRect.set(0, -anchor.getTop(), anchor.getWidth(), getHeight() - anchor.getTop());
+      } else {
+        // Horizontal bounds of the rail container (the visual boundary), vertical bounds of the item.
+        outRect.set(-anchor.getLeft(), 0, getWidth() - anchor.getLeft(), anchor.getHeight());
+      }
     };
-    M3Tooltip.TextProvider tooltipText = anchor -> isBar ? null : anchor == searchView && searchOpenFactor >= .5f ? Lang.getString(R.string.vg_CloseSearch) : anchor instanceof ItemView ? ((ItemView) anchor).label : anchor.getContentDescription();
+    M3Tooltip.PlacementProvider tooltipPlacement = anchor -> isBar ? M3Tooltip.PLACEMENT_ABOVE : M3Tooltip.PLACEMENT_START;
+    M3Tooltip.TextProvider tooltipText = anchor -> anchor == searchView && searchOpenFactor >= .5f ? Lang.getString(R.string.vg_CloseSearch) : anchor instanceof ItemView ? ((ItemView) anchor).label : anchor.getContentDescription();
     M3Tooltip.bind(searchView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
     M3Tooltip.bind(scrollTopView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
     for (ItemView item : items) {
-      M3Tooltip.bind(item, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
+      M3Tooltip.bind(item, tooltipPlacement, railBounds, tooltipText);
     }
+    // Settings (avatar), tap and hold: account switcher in both layouts, instead of the tooltip.
+    items[ITEM_SETTINGS].setOnLongClickListener(v -> {
+      M3Tooltip.hideCurrent(true);
+      return settingsLongClickListener != null && settingsLongClickListener.onLongClick(v);
+    });
     // Screen readers: the sections are tabs of a single-selection collection (as MDC NavigationBarMenuView).
     ViewCompat.setAccessibilityDelegate(this, new AccessibilityDelegateCompat() {
       @Override
@@ -228,6 +239,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   public void setCallback (@Nullable Callback callback) {
     this.callback = callback;
+  }
+
+  public void setSettingsLongClickListener (@Nullable View.OnLongClickListener listener) {
+    this.settingsLongClickListener = listener;
   }
 
   public void setCollapseListener (@Nullable CollapseListener listener) {
@@ -388,10 +403,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return Screen.dp(12f);
   }
 
-  /**
-   * Corner radius concentric with the active indicator: indicator radius (16dp) + its distance to the top edge
-   * (icon center 23dp - 16dp = 7dp) = 23dp.
-   */
+  /** Full corner radius: half of the bar height (pill), concentric with the vertically centered indicator. */
   public static float getBarRadius () {
     return Screen.dp(BAR_ICON_CENTER_Y);
   }
@@ -455,7 +467,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
       params.leftMargin = params.rightMargin = getBarMargin();
       params.bottomMargin = getBarMargin() + bottomInset;
-      // Keeps the outer labels away from the rounded ends.
+      // Keeps the outer indicators away from the rounded ends.
       setPadding(Screen.dp(8f), 0, Screen.dp(8f), 0);
     } else {
       params = FrameLayoutFix.newParams(getRailWidth(), getRailHeight(), Gravity.BOTTOM | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT));
@@ -469,11 +481,11 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
     scrollTopParams.topMargin = itemSize * items.length;
     scrollTopView.setLayoutParams(scrollTopParams);
-    // Tooltips: rail only (the bar has labels). Also keeps "double tap and hold" out of screen reader hints.
+    // Tooltips on every section item (no labels in both modes); search and scroll to top exist in the rail only.
     searchView.setLongClickable(!isBar);
     scrollTopView.setLongClickable(!isBar);
     for (ItemView item : items) {
-      item.setLongClickable(!isBar);
+      item.setLongClickable(true);
     }
     if (!isBar) {
       M3Tooltip.hideCurrent(false);
@@ -788,16 +800,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       }
       if (selectedIcon != null && selected > 0f) {
         Drawables.draw(c, selectedIcon, cx - selectedIcon.getMinimumWidth() / 2f, cy - selectedIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(selected, M3.onSecondaryContainer())));
-      }
-      if (isBar) {
-        // Labels: selected = bold secondary, others = medium onSurfaceVariant.
-        float textSize = 12f;
-        int color = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.secondary(), selected);
-        TextPaint paint = selected >= .5f ? Paints.getBoldTextPaint(textSize, color) : Paints.getMediumTextPaint(textSize, color, false);
-        float maxWidth = getWidth() - Screen.dp(8f);
-        CharSequence text = TextUtils.ellipsize(label, paint, maxWidth, TextUtils.TruncateAt.END);
-        float textWidth = paint.measureText(text, 0, text.length());
-        c.drawText(text, 0, text.length(), cx - textWidth / 2f, Screen.dp(56f), paint);
       }
     }
 

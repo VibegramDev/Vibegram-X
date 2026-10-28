@@ -243,7 +243,7 @@ public class SettingsBlockedController extends RecyclerViewController<TdApi.Bloc
       }
     });
 
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
 
     recyclerView.setAdapter(adapter);
     tdlib.client().send(new TdApi.GetBlockedMessageSenders(getArgumentsStrict(), 0, 20), result -> {

@@ -48,6 +48,8 @@ import me.vkryl.core.lambda.Destroyable;
 public class M3AccountItemView extends BaseView implements AttachDelegate, Destroyable, TGLegacyManager.EmojiLoadListener {
   private static final float HEIGHT = 56f, AVATAR_SIZE = 40f, PADDING = 16f;
 
+  private float avatarSizeDp = AVATAR_SIZE, avatarStartDp = PADDING, textStartDp = PADDING + AVATAR_SIZE + PADDING, endPaddingDp = PADDING;
+
   private final AvatarReceiver receiver;
   private final EmojiStatusHelper emojiStatusHelper;
   private final Counter counter;
@@ -103,7 +105,33 @@ public class M3AccountItemView extends BaseView implements AttachDelegate, Destr
   }
 
   private int textStart () {
-    return Screen.dp(PADDING + AVATAR_SIZE + PADDING);
+    return Screen.dp(textStartDp);
+  }
+
+  /**
+   * Row of a menu or a bottom sheet (dock avatar account switcher): the avatar takes the leading icon slot of the
+   * other items, so names line up with their labels. Settings list rows keep the defaults (56dp list item).
+   */
+  public void setMetrics (float avatarSizeDp, float avatarStartDp, float textStartDp, float endPaddingDp) {
+    this.avatarSizeDp = avatarSizeDp;
+    this.avatarStartDp = avatarStartDp;
+    this.textStartDp = textStartDp;
+    this.endPaddingDp = endPaddingDp;
+    trimName(true);
+    invalidate();
+  }
+
+  /** @return width the row needs to show the whole name and the counter. */
+  public int getDesiredWidth () {
+    int width = textStart() + Screen.dp(endPaddingDp);
+    if (!StringUtils.isEmpty(name)) {
+      width += (int) Math.ceil(Paints.getRegularTextPaint(16f).measureText(name));
+    }
+    if (emojiStatusHelper.needDrawEmojiStatus()) {
+      width += emojiStatusHelper.getWidth() + Screen.dp(6f);
+    }
+    width += counter.getScaledWidth(Screen.dp(8f));
+    return width;
   }
 
   private void trimName (boolean force) {
@@ -111,7 +139,7 @@ public class M3AccountItemView extends BaseView implements AttachDelegate, Destr
       trimmedName = null;
       return;
     }
-    int availWidth = getMeasuredWidth() - textStart() - Screen.dp(PADDING);
+    int availWidth = getMeasuredWidth() - textStart() - Screen.dp(endPaddingDp);
     availWidth -= counter.getScaledWidth(Screen.dp(8f));
     if (emojiStatusHelper.needDrawEmojiStatus()) {
       availWidth -= emojiStatusHelper.getWidth() + Screen.dp(6f);
@@ -131,8 +159,8 @@ public class M3AccountItemView extends BaseView implements AttachDelegate, Destr
     final boolean rtl = Lang.rtl();
     final int width = getMeasuredWidth();
     final int height = getMeasuredHeight();
-    final int avatarSize = Screen.dp(AVATAR_SIZE);
-    final int avatarStart = Screen.dp(PADDING);
+    final int avatarSize = Screen.dp(avatarSizeDp);
+    final int avatarStart = Screen.dp(avatarStartDp);
     final int avatarTop = (height - avatarSize) / 2;
     if (rtl) {
       receiver.setBounds(width - avatarStart - avatarSize, avatarTop, width - avatarStart, avatarTop + avatarSize);
@@ -156,7 +184,7 @@ public class M3AccountItemView extends BaseView implements AttachDelegate, Destr
         emojiStatusHelper.draw(c, emojiLeft, textTop);
       }
     }
-    counter.draw(c, rtl ? Screen.dp(24f) : width - Screen.dp(24f), height / 2f, rtl ? Gravity.LEFT : Gravity.RIGHT, 1f, this, ColorId.badgeFailedText);
+    counter.draw(c, rtl ? Screen.dp(endPaddingDp + 8f) : width - Screen.dp(endPaddingDp + 8f), height / 2f, rtl ? Gravity.LEFT : Gravity.RIGHT, 1f, this, ColorId.badgeFailedText);
   }
 
   @Override

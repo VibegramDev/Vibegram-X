@@ -25,6 +25,8 @@ public final class M3Sheets {
   private M3Sheets () { }
 
   public static final int MAX_WIDTH = 640, SIDE_MARGIN = 56;
+  /** Drag handle area at the top of the sheet (DragHandle: 32x4dp, 22dp vertical padding = 48dp). */
+  public static final float HANDLE_AREA = 48f;
 
   public interface TopProvider {
     /** Top edge of the visible container inside the view, in px. */

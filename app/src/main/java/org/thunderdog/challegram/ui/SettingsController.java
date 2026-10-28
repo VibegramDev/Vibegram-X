@@ -691,7 +691,7 @@ public class SettingsController extends ViewController<Void> implements
 
     processUserFull(tdlib.myUserFull());
 
-    M3SettingsGroupDecoration.attach(this.contentView, adapter, SettingsAccountsBlock.LIST_TYPE_ACCOUNT);
+    adapter.setSegmented(SettingsAccountsBlock.LIST_TYPE_ACCOUNT);
     this.contentView.setAdapter(adapter);
     accountsBlock.attach(adapter);
     updateHeader();
@@ -978,6 +978,9 @@ public class SettingsController extends ViewController<Void> implements
   public void onOpenedAsTabletSection () {
     // Tablet split: Settings in the left pane, the «Аккаунт» section in the right one.
     context.navigation().prepareTabletDefaultDetail();
+    // Its row stays selected in the left pane while it's open.
+    int index = adapter.indexOfViewById(R.id.btn_vgAccount);
+    context.navigation().setTabletDetailOpener(index != -1 ? adapter.getItems().get(index) : null);
     navigateTo(new SettingsAccountController(context, tdlib));
   }
 
@@ -1139,6 +1142,8 @@ public class SettingsController extends ViewController<Void> implements
   @Override
   public void onClick (View v) {
     cancelSupportOpen();
+    // Tablet: the row stays selected in the left pane while the screen it opens is in the right pane.
+    context.navigation().setTabletDetailOpener(v.getTag());
     if (accountsBlock.onClick(v)) {
       return;
     }

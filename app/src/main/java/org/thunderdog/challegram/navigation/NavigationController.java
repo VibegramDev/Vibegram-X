@@ -35,8 +35,10 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.support.SimpleShapeDrawable;
+import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.theme.ThemeManager;
@@ -56,6 +58,7 @@ import java.util.ArrayList;
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.annotation.MadeByLLM;
+import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.Future;
 
@@ -239,6 +242,82 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return false;
   }
 
+  /** Fill of the left pane row whose screen is opened in the right pane (the opened chat, the section row). */
+  public static int getTabletSelectionColor () {
+    return ColorUtils.alphaColor(.15f, Theme.getColor(ColorId.controlActive));
+  }
+
+  // Left pane row that opened the root screen of the right pane: it stays selected while that root is there
+  // (also under the screens pushed on top of it in the right pane). Key: the ListItem of the row.
+
+  /** Row clicked in the left pane, until the next touch; taken by the right pane root its click opens. */
+  @Nullable Object pendingTabletOpener;
+  private @Nullable Object tabletOpener;
+  private @Nullable ViewController<?> tabletOpenerRoot;
+
+  /** Call from the click of a left pane row (dock section) that may open a screen in the right pane. */
+  public void setTabletDetailOpener (@Nullable Object rowKey) {
+    pendingTabletOpener = isTabletSplit() ? rowKey : null;
+  }
+
+  private int getTabletDetailRootIndex () {
+    return tabletLayout.getSection() != null ? 2 : 1;
+  }
+
+  private void updateTabletDetailOpener (ViewController<?> controller, boolean forward) {
+    NavigationStack stack = getStack();
+    int rootIndex = getTabletDetailRootIndex();
+    if (forward && stack.size() == rootIndex + 1 && stack.get(rootIndex) == controller) {
+      // New root of the right pane: opened by the row clicked last, or not from a row.
+      tabletOpenerRoot = controller;
+      tabletOpener = pendingTabletOpener;
+    } else if (stack.size() <= rootIndex || stack.get(rootIndex) != tabletOpenerRoot) {
+      tabletOpenerRoot = null;
+      tabletOpener = null;
+    }
+    pendingTabletOpener = null;
+  }
+
+  public boolean isTabletDetailOpener (@Nullable Object rowKey) {
+    if (rowKey == null || rowKey != tabletOpener || !isTabletSplit()) {
+      return false;
+    }
+    NavigationStack stack = getStack();
+    int rootIndex = getTabletDetailRootIndex();
+    return stack.size() > rootIndex && stack.get(rootIndex) == tabletOpenerRoot;
+  }
+
+  /**
+   * Whether the left pane row is selected in the tablet layout: it opened the root screen of the right pane (the row
+   * is tagged with its ListItem), or, when {@code chatId} is set, a dock section row whose chat is open in the right pane.
+   */
+  public static boolean isTabletSelectedRow (View row, @Nullable Tdlib tdlib, long chatId) {
+    BaseActivity context = UI.getContext(row.getContext());
+    NavigationController navigation = context != null ? context.navigation() : null;
+    if (navigation == null || !navigation.isTabletSplit()) {
+      return false;
+    }
+    if (navigation.isTabletDetailOpener(row.getTag())) {
+      return true;
+    }
+    return tdlib != null && chatId != 0 && navigation.isTabletChatOpened(tdlib, chatId) && navigation.isInTabletSection(row);
+  }
+
+  /** Whether the view belongs to the dock section shown in the left pane. */
+  public boolean isInTabletSection (View view) {
+    ViewController<?> section = isTabletSplit() ? tabletLayout.getSection() : null;
+    if (section == null) {
+      return false;
+    }
+    View sectionView = section.getValue();
+    for (View v = view; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) {
+      if (v == sectionView) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public @Nullable ViewController<?> getDrawerController () {
     return isTabletSplit() ? tabletLayout.getMain() : getCurrentStackItem();
   }
@@ -300,7 +379,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         if (childWrappers != null && childWrappers.remove(section)) {
           contentWrapper.removeView(section.getValue());
         }
-        tabletLayout.setSection(section);
+        tabletLayout.setSection(section, false);
         if (section != getCurrentStackItem() && !section.isFocused()) {
           section.onFocus();
         }
@@ -330,7 +409,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     while (stack.size() > 2) {
       ViewController<?> c = stack.remove(1);
       if (c != null && c == tabletLayout.getSection()) {
-        tabletLayout.setSection(null);
+        tabletLayout.setSection(null, true);
         if (c.isFocused()) {
           c.onBlur();
         }
@@ -366,9 +445,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       if (oldSection != controller && oldSection.isFocused()) {
         oldSection.onBlur();
       }
-      tabletLayout.setSection(enterSection ? controller : null);
+      tabletLayout.setSection(enterSection ? controller : null, true);
     } else if (enterSection) {
-      tabletLayout.setSection(controller);
+      tabletLayout.setSection(controller, true);
     }
     if (!isTabletPane(controller)) {
       // A reused controller may keep the end state of a single-pane transition
@@ -392,6 +471,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       int keepCount = !saveFirst ? 0 : section != null && section != controller ? 2 : 1;
       getStack().reset(this, keepCount);
     }
+    updateTabletDetailOpener(controller, forward);
     if (defaultDetail) {
       controller.setTabletDefaultDetail(true);
     }
@@ -932,7 +1012,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   private int translationMode;
   private boolean translatingForward;
   /**
-   * M3 forward/backward ({@link M3#SHARED_AXIS_NAVIGATION}): horizontal transitions draw no shadow and no scrim.
+   * M3 forward/backward (shared axis X, {@link M3#SHARED_AXIS_DISTANCE}): horizontal transitions draw no shadow and no scrim.
    * Taps and buttons: shared axis X (both screens slide {@link M3#SHARED_AXIS_DISTANCE} of the width, the outgoing
    * screen fades out, then the incoming one fades in). Gestures ({@link #m3Gesture}): the screen follows the finger.
    */
@@ -1037,8 +1117,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       direction = TRANSLATION_FADE;
     }
     // Popup-mode screens below keep the original slide: their app bar pixels are restored by the offset.
-    m3Horizontal = M3.SHARED_AXIS_NAVIGATION && direction == TRANSLATION_HORIZONTAL && !left.usePopupMode();
+    m3Horizontal = direction == TRANSLATION_HORIZONTAL && !left.usePopupMode();
     m3Gesture = m3Horizontal && isGesture;
+    // Both M3 transitions fade both screens out in the middle: shared axis X showed the black window background too.
+    contentWrapper.setFadeThroughBackdrop(m3FadeThrough || m3Horizontal);
 
     if (forward) {
       right.applyPlayerOffset(currentPlayerFactor, currentPlayerOffset);
@@ -1277,7 +1359,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       }
       if (Settings.instance().needReduceMotion() && (direction == TRANSLATION_HORIZONTAL)) {
         direction = TRANSLATION_FADE;
-      } else if (M3.SHARED_AXIS_NAVIGATION && direction == TRANSLATION_HORIZONTAL) {
+      } else if (direction == TRANSLATION_HORIZONTAL) {
         // Dock sections are top-level destinations: fade-through when opening them and when going back from them.
         ViewController<?> target = forward ? controller : getStack().getCurrent();
         if (target != null && target.isTopLevelDestination()) {
@@ -1359,6 +1441,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
           // Faded out by the M3 transition; it stays in the stack (other paths expect it opaque).
           left.getValue().setAlpha(1f);
         }
+        contentWrapper.setFadeThroughBackdrop(false);
         completeNextLayout();
         if (Views.HARDWARE_LAYER_ENABLED) {
           setLayerType(View.LAYER_TYPE_NONE, left, right);
@@ -1682,6 +1765,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   private void finishTransaction (int mode) {
     completeNextLayout();
+    contentWrapper.setFadeThroughBackdrop(false);
 
     preventLayout();
     ViewController<?> current = getStack().getPrevious();
@@ -1788,6 +1872,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
           View incomingWrap = translatingForward ? rightWrap : leftWrap;
           View outgoingWrap = translatingForward ? leftWrap : rightWrap;
           float scale = M3.fadeThroughScale(progress);
+          // Scaled about the bottom edge: the screens are edge-to-edge, and a centered scale left the strip under
+          // the gesture handle uncovered until the very end, so its color jumped when the transition finished.
+          incomingWrap.setPivotX(incomingWrap.getWidth() / 2f);
+          incomingWrap.setPivotY(incomingWrap.getHeight());
           incomingWrap.setScaleX(scale);
           incomingWrap.setScaleY(scale);
           outgoingWrap.setScaleX(1f);
@@ -1948,7 +2036,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   @Override
   public boolean onSystemBackStarted (@NonNull BackEventCompat backEvent) {
     int edge = backEvent.getSwipeEdge();
-    if (M3.SHARED_AXIS_NAVIGATION && edge != BackEventCompat.EDGE_LEFT && edge != BackEventCompat.EDGE_RIGHT) {
+    if (edge != BackEventCompat.EDGE_LEFT && edge != BackEventCompat.EDGE_RIGHT) {
       // Back button / key (EDGE_NONE, Android 16+): no gesture to follow, the press runs the regular
       // M3 backward (or fade-through) transition from onBackPressed.
       return false;

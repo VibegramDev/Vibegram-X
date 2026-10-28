@@ -15,7 +15,6 @@
 package org.thunderdog.challegram.ui;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -166,6 +165,7 @@ import org.thunderdog.challegram.mediaview.SliderView;
 import org.thunderdog.challegram.mediaview.data.MediaItem;
 import org.thunderdog.challegram.mediaview.data.MediaStack;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.ComplexHeaderView;
 import org.thunderdog.challegram.navigation.DoubleHeaderView;
@@ -4875,6 +4875,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
               });
             }
           } else {
+            // Read receipts, emoji packs and the read date are added to the returned OptionsLayout.
+            messageOptions.setNeedSheet(true);
             PopupLayout popupLayout = showOptions(messageOptions, messageHandler);
             patchReadReceiptsOptions(popupLayout, messageContext);
             patchUsedEmojiPacks(popupLayout, messageContext);
@@ -7855,7 +7857,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
-  /** Buttons are 49dp tall; in the floating composer (64dp, like the tablet bar) they are centered. */
+  /** Buttons are 49dp tall; in the floating composer (56dp, like the tablet bar) they are centered. */
   private int getComposerButtonInset () {
     return composerFloating ? (MainNavigationBar.getBarHeight() - Screen.dp(49f)) / 2 : 0;
   }
@@ -7890,7 +7892,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
       replyParams.leftMargin = replyParams.rightMargin = margin;
       replyBarView.setLayoutParams(replyParams);
       // Slides out from behind the input field: rounded top merges with the field into one container.
-      replyBackground.setRadii(radius, 0f);
     }
     // Floating: the space below the composer shows the chat background.
     ViewUtils.setBackground(bottomSpace, floating ? null : bottomSpaceBackground);
@@ -7928,6 +7929,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
     float replyFactor = replyBarView != null && replyBarView.getLayoutParams() != null && replyBarView.getLayoutParams().height > 0 ?
       MathUtils.clamp(getReplyOffset() / replyBarView.getLayoutParams().height) : 0f;
     inputBackground.setRadii(radius * (1f - replyFactor), radius);
+    if (replyBarView != null) {
+      // Hidden behind the pill-shaped field (full corner radius), the reply bar's square bottom corners stuck out at
+      // its sides: round them while the bar is hidden, square them off as the field's top corners square off.
+      replyBackground.setRadii(radius, radius * (1f - replyFactor));
+      replyBarView.setAlpha(composerFloating && replyFactor == 0f ? 0f : 1f);
+    }
   }
 
   private static void setComposerButtonMargin (View view, int margin, boolean right) {
@@ -8019,7 +8026,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void onRequestContact (final boolean oneTime) {
     if (chat != null && ChatId.isPrivate(getChatId())) {
-      AlertDialog.Builder builder = new AlertDialog.Builder(context(), Theme.dialogTheme());
+      AlertPopup.Builder builder = new AlertPopup.Builder(context());
       builder.setTitle(Lang.getString(R.string.ShareYourPhoneNumberTitle));
       builder.setMessage(Lang.getString(R.string.ShareYourPhoneNumberDesc, tdlib.chatTitle(chat)));
       builder.setPositiveButton(Lang.getOK(), (dialog, which) -> {
@@ -8036,7 +8043,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void onRequestLocation (final boolean oneTime) {
     if (chat != null && ChatId.isPrivate(chat.id)) {
-      AlertDialog.Builder builder = new AlertDialog.Builder(context(), Theme.dialogTheme());
+      AlertPopup.Builder builder = new AlertPopup.Builder(context());
       builder.setTitle(Lang.getString(R.string.ShareYourLocation));
       builder.setMessage(Lang.getString(R.string.ShareYouLocationInfo));
       builder.setPositiveButton(Lang.getOK(), (dialog, which) -> shareCurrentLocation(oneTime));
@@ -8134,7 +8141,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private void getCustomCurrentLocation (final boolean destroyKeyboard, boolean byError, boolean byTimeout) {
     if (getChatId() == currentShareLocationChatId) {
-      AlertDialog.Builder builder = new AlertDialog.Builder(context(), Theme.dialogTheme());
+      AlertPopup.Builder builder = new AlertPopup.Builder(context());
       builder.setTitle(Lang.getString(R.string.AppName));
       builder.setMessage(Lang.getString(R.string.DetectLocationError));
       builder.setPositiveButton(Lang.getOK(), (dialog, which) -> dialog.dismiss());
@@ -8592,8 +8599,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
             deleteAndLeave();
           }
         })
-        .setSaveStr(R.string.Done)
-        .setSaveColorId(ColorId.textNegative));
+        .setSaveStr(R.string.Done));
     }).setIsNegative();
   }
 
@@ -9779,7 +9785,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
         final SettingsWrapBuilder b = new SettingsWrapBuilder(R.id.btn_filter);
         showSettings(b
-          .setNeedSeparators(false)
           .setNeedRootInsets(true)
           .setRawItems(array)
           .setSaveStr(R.string.Apply)

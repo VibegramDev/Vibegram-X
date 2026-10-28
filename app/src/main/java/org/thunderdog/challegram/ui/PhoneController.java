@@ -14,7 +14,6 @@
  */
 package org.thunderdog.challegram.ui;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
@@ -50,6 +49,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.emoji.EmojiFilter;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
@@ -1324,7 +1324,7 @@ public class PhoneController extends EditBaseController<Void> implements Setting
     }
   }
 
-  private AlertDialog emulatorPrompt;
+  private AlertPopup emulatorPrompt;
 
   private void showEmulatorPrompt () {
     if (mode != MODE_LOGIN) {
@@ -1338,7 +1338,7 @@ public class PhoneController extends EditBaseController<Void> implements Setting
         return;
       }
       boolean mayBeFalsePositive = detectionResult.mayBeFalsePositive();
-      AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+      AlertPopup.Builder b = new AlertPopup.Builder(context);
       b.setTitle(Lang.getString(R.string.EmulatorWarningTitle));
       b.setMessage(Lang.getMarkdownStringSecure(this, mayBeFalsePositive ? R.string.EmulatorWarning : R.string.EmulatorWarningStrict));
       b.setPositiveButton(Lang.getString(R.string.EmulatorWarningBtnOk), (dialog, which) -> dialog.dismiss());

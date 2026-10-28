@@ -1080,19 +1080,26 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
         }
       };
     }
-    moreWrap.setAnchorMode(MenuMoreWrap.ANCHOR_MODE_RIGHT);
-    moreWrap.setRightNumber(buttonIndex);
-    // The popup covers the whole window, while this header may be narrower (master pane of the tablet layout):
-    // anchor the menu to the trailing edge of this header, not of the window.
-    int windowWidth = getRootView().getWidth();
-    if (windowWidth > 0 && getWidth() > 0) {
-      int left = Views.getLocationInWindow(this)[0];
-      int trailingGap = Lang.rtl() ? left : windowWidth - (left + getWidth());
-      if (trailingGap > 0) {
-        moreWrap.setTranslationX(moreWrap.getTranslationX() + (Lang.rtl() ? trailingGap : -trailingGap));
+    View moreButton = menu != null ? menu.findViewById(R.id.menu_btn_more) : null;
+    if (moreButton != null && moreButton.isShown() && moreButton.getWidth() > 0) {
+      // M3 menu anchored at the ⋮ button: below it, aligned to its trailing edge, flipped when cut off.
+      int[] location = Views.getLocationOnScreen(moreButton);
+      moreWrap.setAnchor(location[0], location[1], location[0] + moreButton.getWidth(), location[1] + moreButton.getHeight(), true);
+    } else {
+      moreWrap.setAnchorMode(MenuMoreWrap.ANCHOR_MODE_RIGHT);
+      moreWrap.setRightNumber(buttonIndex);
+      // The popup covers the whole window, while this header may be narrower (master pane of the tablet layout):
+      // anchor the menu to the trailing edge of this header, not of the window.
+      int windowWidth = getRootView().getWidth();
+      if (windowWidth > 0 && getWidth() > 0) {
+        int left = Views.getLocationInWindow(this)[0];
+        int trailingGap = Lang.rtl() ? left : windowWidth - (left + getWidth());
+        if (trailingGap > 0) {
+          moreWrap.setTranslationX(moreWrap.getTranslationX() + (Lang.rtl() ? trailingGap : -trailingGap));
+        }
       }
+      moreWrap.setTranslationY(getTranslationY() + getCurrentHeaderOffset());
     }
-    moreWrap.setTranslationY(getTranslationY() + getCurrentHeaderOffset());
     showMore(ids, titles, icons, onMoreItemClick, isLayered, themeListenerList);
   }
 

@@ -26,8 +26,7 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -140,11 +139,12 @@ public class RemoveHelper implements FactorAnimator.Target {
 
 
     float alpha = (1f - fadeFactor);
-    Paint bitmapPaint = Paints.whitePorterDuffPaint();
+    // Destructive swipe background: M3 roles error / onError.
+    Paint bitmapPaint = Paints.getPorterDuffPaint(M3.onError());
     if (alpha < 1f) {
       bitmapPaint.setAlpha((int) (255f * alpha));
     }
-    int color = ColorUtils.alphaColor(alpha, Theme.getColor(ColorId.fillingNegative));
+    int color = ColorUtils.alphaColor(alpha, M3.error());
     int iconX = Lang.rtl() ? Screen.dp(18f) : right - Screen.dp(18f) - icon.getMinimumWidth();
     int iconY = height / 2 - icon.getMinimumHeight() / 2;
 
