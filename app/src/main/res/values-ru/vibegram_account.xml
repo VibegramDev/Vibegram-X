@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: Settings profile block and the «Account» section (not in the cloud language pack). -->
+<resources>
+  <string name="vg_Account">Аккаунт</string>
+  <string name="vg_AccountHint">Номер, имя пользователя, «О себе»</string>
+  <string name="vg_Accounts">Аккаунты</string>
+  <string name="vg_Name">Имя</string>
+</resources>

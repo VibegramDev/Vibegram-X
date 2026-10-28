@@ -18,6 +18,7 @@ import android.os.Build;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
 import java.util.Arrays;
 
@@ -73,6 +74,7 @@ final class MonetPalette {
     }
   }
 
+  @RequiresApi(Build.VERSION_CODES.S)
   private static int[][] loadSystem (Resources resources) throws Resources.NotFoundException {
     final int[][] ids = {
       {android.R.color.system_accent1_0, android.R.color.system_accent1_10, android.R.color.system_accent1_50, android.R.color.system_accent1_100, android.R.color.system_accent1_200, android.R.color.system_accent1_300, android.R.color.system_accent1_400, android.R.color.system_accent1_500, android.R.color.system_accent1_600, android.R.color.system_accent1_700, android.R.color.system_accent1_800, android.R.color.system_accent1_900, android.R.color.system_accent1_1000},

@@ -83,7 +83,9 @@ public final class M3Dialogs {
     background.setColor(colors.container);
     background.setCornerRadius(Screen.dp(M3.CORNER_EXTRA_LARGE));
     window.setBackgroundDrawable(background);
-    window.setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+      window.setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+    }
     updateWidth(context, window);
     if (context instanceof android.app.Activity) {
       // Fold/unfold or a window resize keeps the dialog: follow the new activity width while the dialog is shown.
@@ -235,7 +237,11 @@ public final class M3Dialogs {
     LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(40f));
     params.gravity = Gravity.START;
     // Label aligned with the 24dp content edge (button has 12dp inner padding).
-    params.setMarginStart(Screen.dp(PADDING - 12));
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+      params.setMarginStart(Screen.dp(PADDING - 12));
+    } else {
+      params.leftMargin = Screen.dp(PADDING - 12);
+    }
     params.topMargin = Screen.dp(8f);
     panel.addView(inline, panel.indexOfChild(buttonPanel), params);
     neutral.setVisibility(View.GONE);

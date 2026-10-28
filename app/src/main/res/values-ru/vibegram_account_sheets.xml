@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: M3 sheets and the birthday page of the «Account» section (not in the cloud language pack). -->
+<resources>
+  <string name="vg_BirthdateField">Дата рождения</string>
+  <string name="vg_BirthdateHint">ДД.ММ.ГГГГ, год можно не указывать. После сохранения сменить дату рождения можно будет не сразу.</string>
+  <string name="vg_BirthdateEmpty">Введите дату</string>
+  <string name="vg_BirthdateInvalid">Неверная дата. Формат: ДД.ММ.ГГГГ или ДД.ММ</string>
+</resources>

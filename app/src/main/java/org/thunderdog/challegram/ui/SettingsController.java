@@ -18,12 +18,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.text.SpannableStringBuilder;
+import android.text.TextUtils;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.IntDef;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.collection.SparseArrayCompat;
@@ -47,8 +52,6 @@ import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ImageGalleryFile;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
-import org.thunderdog.challegram.navigation.ComplexHeaderView;
-import org.thunderdog.challegram.navigation.ComplexRecyclerView;
 import org.thunderdog.challegram.navigation.HeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
@@ -69,6 +72,7 @@ import org.thunderdog.challegram.telegram.TdlibOptionListener;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
@@ -83,6 +87,8 @@ import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.util.text.TextWrapper;
+import org.thunderdog.challegram.widget.EmojiTextView;
+import org.thunderdog.challegram.widget.M3SettingsProfileView;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -94,6 +100,7 @@ import me.vkryl.android.AppInstallationUtil;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntList;
 import me.vkryl.core.lambda.CancellableRunnable;
@@ -102,15 +109,21 @@ import tgx.td.ChatId;
 import tgx.td.Td;
 
 public class SettingsController extends ViewController<Void> implements
-  View.OnClickListener, ComplexHeaderView.Callback,
+  View.OnClickListener,
   Menu, MoreDelegate, OptionDelegate,
   TdlibCache.MyUserDataChangeListener, ConnectionListener, StickersListener, MediaLayout.MediaGalleryCallback,
   ActivityResultHandler, View.OnLongClickListener, SessionListener, GlobalTokenStateListener, TdlibCache.UserDataChangeListener,
   TdlibOptionListener {
 
   private final AvatarPickerManager avatarPickerManager;
-  private ComplexHeaderView headerCell;
-  private ComplexRecyclerView contentView;
+  // Vibegram X: round avatar profile block as the first list row, the name fades into the app bar on scroll.
+  private static final int VIEW_TYPE_PROFILE = 71;
+  private static final int LIST_TYPE_PROFILE = ListItem.TYPE_CUSTOM - VIEW_TYPE_PROFILE;
+  private @Nullable M3SettingsProfileView profileView;
+  private FrameLayoutFix headerTitleWrap;
+  private TextView headerTitleView;
+  private SettingsAccountsBlock accountsBlock;
+  private RecyclerView contentView;
   private SettingsAdapter adapter;
 
   public SettingsController (Context context, Tdlib tdlib) {
@@ -133,7 +146,6 @@ public class SettingsController extends ViewController<Void> implements
   @Override
   public void onFocus () {
     super.onFocus();
-    contentView.setFactorLocked(false);
     stickerSetsPreloader.preloadStickers();
     emojiPacksPreloader.preloadStickers();
     if (!oneShot) {
@@ -154,59 +166,18 @@ public class SettingsController extends ViewController<Void> implements
   @Override
   public void onBlur () {
     super.onBlur();
-    contentView.setFactorLocked(true);
     cancelSupportOpen();
   }
 
   @Override
-  protected int getHeaderIconColorId () {
-    return headerCell != null && !headerCell.isCollapsed() ? ColorId.white : ColorId.headerIcon;
-  }
+  public void fillMenuItems (int id, HeaderView header, LinearLayout menu) { }
 
   @Override
-  protected int getHeaderHeight () {
-    return (int) (Size.getHeaderPortraitSize() + Size.getHeaderSizeDifference(true) * contentView.getScrollFactor());
-  }
-
-  @Override
-  protected int getMaximumHeaderHeight () {
-    return Size.getHeaderBigPortraitSize(true);
-  }
-
-  @Override
-  protected int getFloatingButtonId () {
-    return R.drawable.baseline_edit_24;
-  }
-
-  @Override
-  protected int getMenuId () {
-    return R.id.menu_more_settings;
-  }
-
-  @Override
-  public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
-    if (id == R.id.menu_more_settings) {
-      header.addMoreButton(menu, this);
-    }
-  }
-
-  @Override
-  public void onMenuItemPressed (int id, View view) {
-    if (id == R.id.menu_btn_more) {
-      showMore(new int[] {R.id.more_btn_logout}, new String[] {Lang.getString(R.string.LogOut)}, 0);
-    }
-  }
+  public void onMenuItemPressed (int id, View view) { }
 
   @Override
   public boolean onOptionItemPressed (View optionItemView, int id) {
     return tdlib.ui().handleProfileOption(this, id, tdlib.myUser());
-  }
-
-  @Override
-  protected void onFloatingButtonPressed () {
-    EditNameController editNameController = new EditNameController(context, tdlib);
-    editNameController.setMode(EditNameController.Mode.RENAME_SELF);
-    navigateTo(editNameController);
   }
 
   // https://bitbucket.org/challegram/challegram/issues/416
@@ -242,24 +213,22 @@ public class SettingsController extends ViewController<Void> implements
   }
 
   @Override
-  protected void attachNavigationController (NavigationController navigationController) {
-    super.attachNavigationController(navigationController);
-    contentView.setFloatingButton(navigationController.getFloatingButton());
-  }
-
-  @Override
-  protected void detachNavigationController () {
-    super.detachNavigationController();
-    contentView.setFloatingButton(null);
-  }
-
-  @Override
   public View getCustomHeaderCell () {
-    return headerCell;
+    if (headerTitleWrap != null) {
+      // Same title insets as HeaderView.updateTextMargins: after the back button, or 18dp without it (tablet section).
+      int start = Screen.dp(getHeaderBackButton() != BackHeaderButton.TYPE_NONE ? 68f : 18f);
+      if (Lang.rtl()) {
+        headerTitleWrap.setPadding(0, 0, start, 0);
+      } else {
+        headerTitleWrap.setPadding(start, 0, 0, 0);
+      }
+      headerTitleView.setGravity(Gravity.CENTER_VERTICAL | Lang.gravity());
+    }
+    return headerTitleWrap;
   }
 
   private void changeProfilePhoto () {
-    avatarPickerManager.showMenuForProfile(headerCell, false);
+    avatarPickerManager.showMenuForProfile(null, false);
   }
 
   @Override
@@ -370,24 +339,6 @@ public class SettingsController extends ViewController<Void> implements
     checkErrors(true);
   }
 
-  private void updateButtonsColor () {
-    if (headerView != null) {
-      headerView.getBackButton().setColor(ColorUtils.fromToArgb(Theme.headerBackColor(), Color.WHITE, headerCell != null ? headerCell.getAvatarExpandFactor() : 0f));
-      headerView.updateButtonsTransform(getMenuId(), this, getTransformFactor());
-    }
-  }
-
-  @Override
-  protected void applyHeaderMenuTransform (LinearLayout menu, float factor) {
-    super.applyHeaderMenuTransform(menu, factor);
-    for (int i = 0; i < menu.getChildCount(); i++ ){
-      View v = menu.getChildAt(i);
-      if (v instanceof HeaderButton) {
-        ((HeaderButton) v).setThemeColorId(ColorId.headerIcon, ColorId.white, headerCell != null ? headerCell.getAvatarExpandFactor() : 0f);
-      }
-    }
-  }
-
   private AppBuildInfo previousBuildInfo;
 
   @Override
@@ -403,49 +354,62 @@ public class SettingsController extends ViewController<Void> implements
 
   @Override
   protected View onCreateView (Context context) {
-    this.headerCell = new ComplexHeaderView(context, tdlib, this);
-    this.headerCell.setAvatarExpandListener((headerView1, expandFactor, byCollapse, allowanceFactor, collapseFactor) -> updateButtonsColor());
-    this.headerCell.setAllowEmptyClick();
-    this.headerCell.initWithController(this, true);
-    this.headerCell.setInnerMargins(Screen.dp(56f), Screen.dp(49f));
-    this.headerCell.setPhotoOpenCallback(this);
-    this.headerCell.setOnEmojiStatusClickListener(v -> {
-      EmojiStatusSelectorEmojiPage.Wrapper c = new EmojiStatusSelectorEmojiPage.Wrapper(context, tdlib, SettingsController.this, new EmojiStatusSelectorEmojiPage.AnimationsEmojiStatusSetDelegate() {
-        @Override
-        public void onAnimationStart () {
-          headerCell.setIgnoreDrawEmojiStatus(true);
-        }
-
-        @Override
-        public void onAnimationEnd () {
-          headerCell.setIgnoreDrawEmojiStatus(false);
-        }
-
-        @Override
-        public int getDestX () {
-          return headerCell.getEmojiStatusLastDrawX() + Screen.dp(12);
-        }
-
-        @Override
-        public int getDestY () {
-          return headerCell.getEmojiStatusLastDrawY() + Screen.dp(12);
-        }
-      });
-      c.show();
-    });
-    updateHeader();
+    headerTitleView = new EmojiTextView(context);
+    ((EmojiTextView) headerTitleView).setScrollDisabled(true);
+    headerTitleView.setTypeface(Fonts.getRobotoMedium());
+    headerTitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 19f);
+    headerTitleView.setSingleLine();
+    headerTitleView.setEllipsize(TextUtils.TruncateAt.END);
+    headerTitleView.setTextColor(Theme.headerTextColor());
+    headerTitleView.setAlpha(0f);
+    headerTitleView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    addThemeTextColorListener(headerTitleView, ColorId.headerText);
+    headerTitleWrap = new FrameLayoutFix(context);
+    headerTitleWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Size.getHeaderPortraitSize()));
+    headerTitleWrap.addView(headerTitleView);
 
     initMyUser();
 
-    this.contentView = new ComplexRecyclerView(context, this);
+    this.contentView = new RecyclerView(context);
     Views.applyBottomInset(contentView, extraBottomInset);
     this.contentView.setHasFixedSize(true);
-    this.contentView.setHeaderView(headerCell, this);
     this.contentView.setItemAnimator(null);
     ViewSupport.setThemedBackground(contentView, ColorId.background, this);
     this.contentView.setLayoutManager(new LinearLayoutManager(context, RecyclerView.VERTICAL, false));
     this.contentView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    this.contentView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+      @Override
+      public void onScrolled (@NonNull RecyclerView recyclerView, int dx, int dy) {
+        updateHeaderTitleAlpha();
+      }
+    });
+    this.accountsBlock = new SettingsAccountsBlock(this, tdlib);
     this.adapter = new SettingsAdapter(this) {
+      @Override
+      protected SettingHolder initCustom (ViewGroup parent, int customViewType) {
+        if (customViewType == VIEW_TYPE_PROFILE) {
+          M3SettingsProfileView view = new M3SettingsProfileView(parent.getContext(), tdlib);
+          view.setOnPhotoClickListener(v -> changeProfilePhoto());
+          view.setOnEmojiStatusClickListener(v -> openEmojiStatusSelector());
+          addThemeInvalidateListener(view);
+          return new SettingHolder(view);
+        }
+        if (customViewType == SettingsAccountsBlock.VIEW_TYPE_ACCOUNT) {
+          return accountsBlock.createView(parent);
+        }
+        return super.initCustom(parent, customViewType);
+      }
+
+      @Override
+      protected void modifyCustom (SettingHolder holder, int position, ListItem item, int customViewType, View view, boolean isUpdate) {
+        if (customViewType == VIEW_TYPE_PROFILE) {
+          profileView = (M3SettingsProfileView) view;
+          bindProfile();
+        } else if (customViewType == SettingsAccountsBlock.VIEW_TYPE_ACCOUNT) {
+          accountsBlock.bindView(item, view, isUpdate);
+        }
+      }
+
       @Override
       public void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         boolean hasError = false;
@@ -485,6 +449,8 @@ public class SettingsController extends ViewController<Void> implements
           view.setData(buildInfoShort);
         } else if (itemId == R.id.btn_tdlib) {
           view.setData(TdlibUi.getTdlibVersionSignature());
+        } else if (itemId == R.id.btn_vgAccount) {
+          view.setData(R.string.vg_AccountHint);
         } else if (itemId == R.id.btn_sourceCodeChanges) {
           String previousVersionName = previousBuildInfo.getVersionName();
           int index = previousVersionName.indexOf('-');
@@ -597,21 +563,10 @@ public class SettingsController extends ViewController<Void> implements
     List<ListItem> items = adapter.getItems();
     ArrayUtils.ensureCapacity(items, 27);
 
-    items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET));
-    if (Settings.instance().showPeerIds()) {
-      items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_peer_id, R.drawable.baseline_identifier_24, R.string.UserId).setContentStrings(R.string.LoadingInformation, R.string.LoadingInformation));
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-    }
-    items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_username, R.drawable.baseline_alternate_email_24, R.string.Username).setContentStrings(R.string.LoadingUsername, R.string.SetUpUsername));
-    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-    items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_phone, R.drawable.baseline_phone_24, R.string.Phone));
-    if (userFull != null && userFull.birthdate != null) {
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-      items.add(newBirthdateItem());
-    }
-    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-    items.add(new ListItem(ListItem.TYPE_INFO_MULTILINE, R.id.btn_bio, R.drawable.baseline_info_24, R.string.UserBio).setContentStrings(R.string.LoadingInformation, R.string.BioNone));
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+    // Profile (avatar, name, phone • username) and the other accounts. Username, phone, birthday, bio and ID
+    // rows moved to the «Аккаунт» section.
+    items.add(new ListItem(LIST_TYPE_PROFILE, R.id.vg_settingsProfile));
+    accountsBlock.fillItems(items);
 
     TdApi.SuggestedAction[] actions = tdlib.getSuggestedActions();
     int addedActionItems = 0;
@@ -628,6 +583,8 @@ public class SettingsController extends ViewController<Void> implements
     }
 
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgAccount, R.drawable.baseline_account_circle_24, R.string.vg_Account));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_devices, R.drawable.baseline_devices_other_24, R.string.Devices));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
 
@@ -734,8 +691,10 @@ public class SettingsController extends ViewController<Void> implements
 
     processUserFull(tdlib.myUserFull());
 
-    M3SettingsGroupDecoration.attach(this.contentView, adapter);
+    M3SettingsGroupDecoration.attach(this.contentView, adapter, SettingsAccountsBlock.LIST_TYPE_ACCOUNT);
     this.contentView.setAdapter(adapter);
+    accountsBlock.attach(adapter);
+    updateHeader();
 
     tdlib.cache().addMyUserListener(this);
     setMyUserId(tdlib.myUserId());
@@ -807,9 +766,7 @@ public class SettingsController extends ViewController<Void> implements
       switch (event) {
         case Lang.EVENT_PACK_CHANGED:
           adapter.notifyAllStringsChanged();
-          if (headerCell != null) {
-            headerCell.setSubtitle(getSubtext());
-          }
+          updateHeader();
           break;
         case Lang.EVENT_DIRECTION_CHANGED:
           adapter.notifyAllStringsChanged();
@@ -886,22 +843,7 @@ public class SettingsController extends ViewController<Void> implements
   }
 
   private void checkBirthdate () {
-    int position = adapter.indexOfViewById(R.id.btn_birthdate);
-    boolean hadBirthdate = position != -1;
-    boolean hasBirthdate = userFull != null && userFull.birthdate != null;
-    if (hadBirthdate != hasBirthdate) {
-      if (hasBirthdate) {
-        position = adapter.indexOfViewById(R.id.btn_phone);
-        adapter.addItems(position + 1,
-          new ListItem(ListItem.TYPE_SEPARATOR),
-          newBirthdateItem()
-        );
-      } else {
-        adapter.removeRange(position - 1, 2);
-      }
-    } else if (hasBirthdate) {
-      adapter.updateValuedSettingByPosition(position);
-    }
+    // Birthday row lives in the «Аккаунт» section (SettingsAccountController).
   }
 
   private void setBio (@Nullable TdApi.FormattedText about) {
@@ -937,30 +879,107 @@ public class SettingsController extends ViewController<Void> implements
     tdlib.listeners().removeOptionListener(this);
     TGLegacyManager.instance().removeEmojiListener(adapter);
     TdlibManager.instance().global().removeTokenStateListener(this);
-    headerCell.performDestroy();
+    if (accountsBlock != null) {
+      accountsBlock.destroy();
+    }
   }
 
   private void updateHeader () {
     TdApi.User user = tdlib.myUser();
-    if (headerCell != null) {
-      long chatId = user != null ? ChatId.fromUserId(user.id) : 0;
-      headerCell.getAvatarReceiver().requestUser(tdlib, tdlib.myUserId(), AvatarReceiver.Options.FULL_SIZE);
-      headerCell.setText(user != null ? TD.getUserName(user) : Lang.getString(R.string.LoadingUser), getSubtext());
-      headerCell.setEmojiStatus(user);
-      headerCell.setAllowTitleClick(chatId);
-      headerCell.invalidate();
+    if (headerTitleView != null) {
+      Views.setMediumText(headerTitleView, user != null ? TD.getUserName(user) : Lang.getString(R.string.LoadingUser));
+    }
+    if (adapter != null) {
+      int position = adapter.indexOfViewById(R.id.vg_settingsProfile);
+      if (position != -1) {
+        adapter.notifyItemChanged(position);
+      }
     }
   }
 
-  private String getSubtext () {
-    if (tdlib.isConnected()) {
-      return Lang.lowercase(Lang.getString(tdlib.myUser() != null ? R.string.status_Online : R.string.network_Connecting));
-    } else {
-      return Lang.lowercase(tdlib.connectionStateText());
+  private void bindProfile () {
+    if (profileView == null) {
+      return;
     }
+    TdApi.User user = tdlib.myUser();
+    String name = user != null ? TD.getUserName(user) : Lang.getString(R.string.LoadingUser);
+    StringBuilder subtitle = new StringBuilder();
+    if (!StringUtils.isEmpty(myPhone)) {
+      subtitle.append(myPhone);
+    }
+    if (myUsernames != null && !StringUtils.isEmpty(myUsernames.editableUsername)) {
+      if (subtitle.length() > 0) {
+        subtitle.append(" \u2022 ");
+      }
+      subtitle.append('@').append(myUsernames.editableUsername);
+    }
+    profileView.setUser(user, name, subtitle.toString());
+  }
+
+  /** App bar title: the name fades in while the name line of the profile block scrolls under the app bar. */
+  private void updateHeaderTitleAlpha () {
+    if (headerTitleView == null || contentView == null) {
+      return;
+    }
+    float alpha;
+    int position = adapter != null ? adapter.indexOfViewById(R.id.vg_settingsProfile) : -1;
+    View view = position != -1 ? contentView.getLayoutManager().findViewByPosition(position) : null;
+    if (position == -1) {
+      alpha = 1f;
+    } else if (view == null) {
+      alpha = ((LinearLayoutManager) contentView.getLayoutManager()).findFirstVisibleItemPosition() > position ? 1f : 0f;
+    } else {
+      int nameTop = view.getTop() + Screen.dp(M3SettingsProfileView.AVATAR_SIZE + 8f + 16f);
+      alpha = MathUtils.clamp(-nameTop / (float) Screen.dp(32f));
+    }
+    headerTitleView.setAlpha(alpha);
+  }
+
+  private void openEmojiStatusSelector () {
+    EmojiStatusSelectorEmojiPage.Wrapper c = new EmojiStatusSelectorEmojiPage.Wrapper(context, tdlib, SettingsController.this, new EmojiStatusSelectorEmojiPage.AnimationsEmojiStatusSetDelegate() {
+      @Override
+      public void onAnimationStart () {
+        if (profileView != null) {
+          profileView.setIgnoreDrawEmojiStatus(true);
+        }
+      }
+
+      @Override
+      public void onAnimationEnd () {
+        if (profileView != null) {
+          profileView.setIgnoreDrawEmojiStatus(false);
+        }
+      }
+
+      private int[] location () {
+        int[] location = new int[2];
+        if (profileView != null) {
+          profileView.getLocationInWindow(location);
+        }
+        return location;
+      }
+
+      @Override
+      public int getDestX () {
+        return profileView != null ? location()[0] + profileView.getEmojiStatusLastDrawX() + Screen.dp(12) : 0;
+      }
+
+      @Override
+      public int getDestY () {
+        return profileView != null ? location()[1] + profileView.getEmojiStatusLastDrawY() + Screen.dp(12) : 0;
+      }
+    });
+    c.show();
   }
 
   // Callbacks
+
+  @Override
+  public void onOpenedAsTabletSection () {
+    // Tablet split: Settings in the left pane, the «Аккаунт» section in the right one.
+    context.navigation().prepareTabletDefaultDetail();
+    navigateTo(new SettingsAccountController(context, tdlib));
+  }
 
   private long myUserId;
 
@@ -993,14 +1012,11 @@ public class SettingsController extends ViewController<Void> implements
     }
     runOnUiThreadOptional(() -> {
       setMyUserId(myUser.id);
-      updateHeader();
-      if (setUsername(myUser)) {
-        adapter.updateValuedSettingById(R.id.btn_username);
-      }
+      setUsername(myUser);
       if (setPhoneNumber(myUser)) {
-        adapter.updateValuedSettingById(R.id.btn_phone);
         adapter.updateValuedSettingById(R.id.btn_changePhoneNumber);
       }
+      updateHeader();
     });
   }
 
@@ -1051,19 +1067,7 @@ public class SettingsController extends ViewController<Void> implements
 
   @Override
   public void onConnectionDisplayStatusChanged () {
-    runOnUiThreadOptional(() -> {
-      if (headerCell != null) {
-        headerCell.setSubtitle(getSubtext());
-      }
-    });
-  }
-
-  @Override
-  public void performComplexPhotoOpen () {
-    TdApi.User user = tdlib.myUser();
-    if (user != null) {
-      changeProfilePhoto();
-    }
+    // The connection state is shown in the chat list app bar; the profile block shows phone • username.
   }
 
   @Override
@@ -1135,11 +1139,16 @@ public class SettingsController extends ViewController<Void> implements
   @Override
   public void onClick (View v) {
     cancelSupportOpen();
+    if (accountsBlock.onClick(v)) {
+      return;
+    }
     if (tdlib.ui().handleProfileClick(this, v, v.getId(), tdlib.myUser(), true)) {
       return;
     }
     final int viewId = v.getId();
-    if (viewId == R.id.btn_bio) {
+    if (viewId == R.id.btn_vgAccount) {
+      navigateTo(new SettingsAccountController(context, tdlib));
+    } else if (viewId == R.id.btn_bio) {
       EditBioController c = new EditBioController(context, tdlib);
       c.setArguments(new EditBioController.Arguments(about != null ? about.text : "", 0));
       navigateTo(c);

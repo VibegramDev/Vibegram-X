@@ -48,6 +48,7 @@ import org.thunderdog.challegram.component.base.SwitchDrawable;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.telegram.TGLegacyManager;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeDeprecated;
 import org.thunderdog.challegram.theme.ThemeListenerList;
@@ -91,6 +92,12 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
   private NavigationStack stack;
   private boolean isOwningStack;
+  /** Single-controller app bar that may expand like the navigation one (Settings photo in the tablet left pane). */
+  private boolean allowExpandedHeight;
+
+  public void setAllowExpandedHeight () {
+    this.allowExpandedHeight = true;
+  }
   private @Nullable NavigationController navigation;
 
   private LinearLayout menu;
@@ -265,7 +272,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
         invalidateOutline();
       }
-      if (isOwningStack) {
+      if (isOwningStack && !allowExpandedHeight) {
         setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getSize(true) + filling.getExtraHeight(), Gravity.TOP));
       } else {
         setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Size.getMaximumHeaderSize() + getEffectiveTopOffset() + filling.getExtraHeight() + Size.getHeaderPortraitSize(), Gravity.TOP));
@@ -1207,7 +1214,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
       return;
     boolean updated;
     int top = Screen.dp(15f) + currentHeaderOffset;
-    if (item.getBackButton() != BackHeaderButton.TYPE_NONE) {
+    if (item.getHeaderBackButton() != BackHeaderButton.TYPE_NONE) {
       if (Lang.rtl()) {
         updated = Views.setMargins((FrameLayout.LayoutParams) textTitle.getLayoutParams(), menuWidth, top, Screen.dp(68f), 0);
       } else {
@@ -1446,6 +1453,27 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
   private float translationFactor;
   private boolean forceRtlAnimation;
 
+  /**
+   * M3 transitions (NavigationController): the outgoing contents fade out before the incoming ones fade in
+   * ({@link M3#fadeThroughOut}/{@link M3#fadeThroughIn}), horizontal contents move {@link #nextAxisFactor} of the width.
+   * Set right before {@link #openPreview}, which consumes it: search/select transforms keep the default.
+   */
+  private boolean nextCleanFade, cleanFade;
+  private float nextAxisFactor;
+
+  void setNextTransitionStyle (boolean cleanFade, float axisFactor) {
+    this.nextCleanFade = cleanFade;
+    this.nextAxisFactor = axisFactor;
+  }
+
+  private float outgoingAlpha (float raptor) {
+    return cleanFade ? M3.fadeThroughOut(raptor) : 1f - raptor;
+  }
+
+  private float incomingAlpha (float raptor) {
+    return cleanFade ? M3.fadeThroughIn(raptor) : raptor;
+  }
+
   public float getTranslation () {
     return translationFactor;
   }
@@ -1502,8 +1530,8 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
           }
         }
 
-        title.setAlpha(1f - raptor);
-        preview.setAlpha(raptor);
+        title.setAlpha(outgoingAlpha(raptor));
+        preview.setAlpha(incomingAlpha(raptor));
 
         break;
       }
@@ -1528,8 +1556,8 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
         break;
       }
       case MODE_FADE: {
-        title.setAlpha(1f - raptor);
-        preview.setAlpha(raptor);
+        title.setAlpha(outgoingAlpha(raptor));
+        preview.setAlpha(incomingAlpha(raptor));
 
         break;
       }
@@ -1537,14 +1565,14 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
     if (useMenuSwitch) {
       if (useMenu) {
-        menu.setAlpha(1f - raptor);
+        menu.setAlpha(outgoingAlpha(raptor));
         if (translationMode == MODE_VERTICAL) {
           //noinspection ResourceType
           menu.setTranslationY(translateForward ? -(Size.getHeaderPortraitSize() + getEffectiveTopOffset()) * raptor : currentY * raptor);
         }
       }
       if (useMenuPreview) {
-        menuPreview.setAlpha(raptor);
+        menuPreview.setAlpha(incomingAlpha(raptor));
         if (translationMode == MODE_VERTICAL) {
           //noinspection ResourceType
           menuPreview.setTranslationY(translateForward ? currentY * (1f - raptor) : -((Size.getHeaderPortraitSize() + getEffectiveTopOffset()) * (1f - raptor)));
@@ -1554,13 +1582,13 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
     if (useBackFade) {
       if (backFade) {
-        backButton.setAlpha(raptor);
+        backButton.setAlpha(incomingAlpha(raptor));
         if (translationMode == MODE_VERTICAL) {
           backButton.setTranslationY(-(Size.getHeaderPortraitSize() + getEffectiveTopOffset()) * (1f - raptor));
         }
         backButton.setTranslationX(preview.getTranslationX());
       } else {
-        backButton.setAlpha(1f - raptor);
+        backButton.setAlpha(outgoingAlpha(raptor));
         if (translationMode == MODE_VERTICAL) {
           backButton.setTranslationY((Size.getHeaderPortraitSize() + getEffectiveTopOffset()) * raptor);
         }
@@ -2134,10 +2162,10 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
       }
     }
 
-    // title.setPadding(item.getBackButton() != BackHeaderButton.TYPE_NONE ? Size._68 : Size._18, 0, -, 0);
+    // title.setPadding(item.getHeaderBackButton() != BackHeaderButton.TYPE_NONE ? Size._68 : Size._18, 0, -, 0);
 
-    if (item.getBackButton() != BackHeaderButton.TYPE_NONE) {
-      backButton.setButtonFactor(item.getBackButton());
+    if (item.getHeaderBackButton() != BackHeaderButton.TYPE_NONE) {
+      backButton.setButtonFactor(item.getHeaderBackButton());
       backButton.setVisibility(View.VISIBLE);
       if (item.getBackButtonResource() != 0) {
         backButton.setBackgroundResource(item.getBackButtonResource());
@@ -2292,7 +2320,10 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
   void openPreview (ViewController<?> left, ViewController<?> right, boolean forward, int direction, float factor, boolean forceRtl) {
     this.previewOpened = true;
-    this.currentX = (float) getMeasuredWidth() * TRANSLATION_FACTOR;
+    this.cleanFade = nextCleanFade;
+    this.currentX = (float) getMeasuredWidth() * (nextAxisFactor > 0f ? nextAxisFactor : TRANSLATION_FACTOR);
+    this.nextCleanFade = false;
+    this.nextAxisFactor = 0f;
     this.translationMode = direction;
     this.translationFactor = factor;
     this.forceRtlAnimation = direction == MODE_HORIZONTAL && forceRtl;
@@ -2692,10 +2723,10 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     removeView(menuPreview);
     ViewController<?> current = stack.getCurrent();
     if (current != null) {
-      if (current.getBackButton() == BackHeaderButton.TYPE_NONE) {
+      if (current.getHeaderBackButton() == BackHeaderButton.TYPE_NONE) {
         backButton.setVisibility(View.GONE);
       } else {
-        backButton.setButtonFactor(current.getBackButton());
+        backButton.setButtonFactor(current.getHeaderBackButton());
         backButton.invalidate();
       }
       int menuId = getMenuId(current, true);
@@ -2788,7 +2819,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
         return BackHeaderButton.TYPE_BACK;
       }
     }
-    return c.getBackButton();
+    return c.getHeaderBackButton();
   }
 
   public static int getHeaderHeight (ViewController<?> c) {

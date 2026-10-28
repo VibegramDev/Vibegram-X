@@ -35,6 +35,7 @@ public class ProgressComponentView extends View implements FactorAnimator.Target
   // private static final ColorChanger changer = new ColorChanger(0x001EAAF1, );
 
   private @Nullable ProgressComponent progress;
+  private @Nullable M3LoadingIndicator loadingIndicator;
 
   public ProgressComponentView (Context context) {
     super(context);
@@ -59,6 +60,28 @@ public class ProgressComponentView extends View implements FactorAnimator.Target
     if (progress != null) {
       progress.forceColor(color);
     }
+    if (loadingIndicator != null) {
+      loadingIndicator.forceColor(color);
+    }
+  }
+
+  /**
+   * M3 Expressive loading indicator (48dp, morphing shapes) for short indeterminate waits of a whole screen or list.
+   * Opt-in per caller; falls back to {@link #initLarge(float)} where androidx.graphics.shapes is unavailable.
+   * {@link #getProgress()} is null in this mode.
+   */
+  public void initLoadingIndicator (float forceFactor) {
+    if (!M3LoadingIndicator.isSupported()) {
+      initLarge(forceFactor);
+      return;
+    }
+    loadingIndicator = new M3LoadingIndicator();
+    loadingIndicator.setAlpha(forceFactor);
+    forceFactor(forceFactor);
+    updateProgressView();
+
+    setMinimumWidth(Screen.dp(M3LoadingIndicator.CONTAINER_SIZE));
+    setMinimumHeight(Screen.dp(M3LoadingIndicator.CONTAINER_SIZE));
   }
 
   public void initCustom (float radius, float forceFactor, float minSize) {
@@ -133,6 +156,9 @@ public class ProgressComponentView extends View implements FactorAnimator.Target
     if (progress != null) {
       progress.forceColor(color);
     }
+    if (loadingIndicator != null) {
+      loadingIndicator.forceColor(color);
+    }
   }
 
   @Override
@@ -148,18 +174,26 @@ public class ProgressComponentView extends View implements FactorAnimator.Target
   }
 
   private void updateProgressView () {
+    boolean visible = getVisibility() == View.VISIBLE && getAlpha() > 0f;
     if (progress != null) {
-      if (getVisibility() == View.VISIBLE && getAlpha() > 0f) {
+      if (visible) {
         progress.attachToView(this);
       } else {
         progress.detachFromView(this);
+      }
+    }
+    if (loadingIndicator != null) {
+      if (visible) {
+        loadingIndicator.attachToView(this);
+      } else {
+        loadingIndicator.detachFromView(this);
       }
     }
   }
 
   @Override
   public void attach () {
-    if (progress != null) {
+    if (progress != null || loadingIndicator != null) {
       updateProgressView();
     }
   }
@@ -168,6 +202,9 @@ public class ProgressComponentView extends View implements FactorAnimator.Target
   public void detach () {
     if (progress != null) {
       progress.detachFromView(this);
+    }
+    if (loadingIndicator != null) {
+      loadingIndicator.detachFromView(this);
     }
   }
 
@@ -218,6 +255,9 @@ public class ProgressComponentView extends View implements FactorAnimator.Target
       if (progress != null) {
         progress.setAlpha(factor);
       }
+      if (loadingIndicator != null) {
+        loadingIndicator.setAlpha(factor);
+      }
       if (inverseView != null) {
         inverseView.setAlpha(1f - factor);
       }
@@ -239,6 +279,9 @@ public class ProgressComponentView extends View implements FactorAnimator.Target
   protected void onDraw (Canvas c) {
     if (progress != null) {
       progress.draw(c);
+    }
+    if (loadingIndicator != null) {
+      loadingIndicator.draw(c, getPaddingLeft(), getPaddingTop(), getWidth() - getPaddingRight(), getHeight() - getPaddingBottom());
     }
   }
 }

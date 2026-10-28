@@ -13,13 +13,12 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
-import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Outline;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
+import android.os.Build;
 import android.view.View;
 import android.view.ViewOutlineProvider;
 
@@ -42,7 +41,51 @@ import me.vkryl.core.MathUtils;
  * Closed: baseline FAB, 56dp, CornerLarge (16dp), primaryContainer / onPrimaryContainer, 24dp icon, Level3.
  * Open: CornerFull, primary / onPrimary, 20dp close icon (FabMenuBaselineTokens.CloseButton*).
  */
-public class M3FabView extends View {
+public class M3FabView extends View implements ForegroundCompat.Host {
+  private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
+
+  @Nullable
+  @Override
+  public ForegroundCompat foregroundCompat () {
+    return foregroundCompat;
+  }
+
+  @Override
+  public void draw (@NonNull Canvas c) {
+    super.draw(c);
+    if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      foregroundCompat.draw(c);
+    }
+  }
+
+  @Override
+  protected boolean verifyDrawable (@NonNull Drawable who) {
+    return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+  }
+
+  @Override
+  protected void drawableStateChanged () {
+    super.drawableStateChanged();
+    if (foregroundCompat != null) {
+      foregroundCompat.drawableStateChanged();
+    }
+  }
+
+  @Override
+  public void drawableHotspotChanged (float x, float y) {
+    super.drawableHotspotChanged(x, y);
+    if (foregroundCompat != null) {
+      foregroundCompat.drawableHotspotChanged(x, y);
+    }
+  }
+
+  @Override
+  public void jumpDrawablesToCurrentState () {
+    super.jumpDrawablesToCurrentState();
+    if (foregroundCompat != null) {
+      foregroundCompat.jumpDrawablesToCurrentState();
+    }
+  }
   public static final float SIZE = 56f;
   private static final float ICON_SIZE = 24f;
   private static final float CLOSE_ICON_SIZE = 20f;
@@ -54,7 +97,7 @@ public class M3FabView extends View {
   private float colorFactor;
 
   private final GradientDrawable rippleMask;
-  private final RippleDrawable ripple;
+  private final M3StateLayerDrawable ripple;
   private int rippleColor;
   private final RectF rect = new RectF();
 
@@ -65,16 +108,18 @@ public class M3FabView extends View {
     rippleMask.setColor(0xFFFFFFFF);
     rippleMask.setCornerRadius(Screen.dp(M3.CORNER_LARGE));
     rippleColor = computeRippleColor();
-    ripple = new RippleDrawable(ColorStateList.valueOf(rippleColor), null, rippleMask);
-    setForeground(ripple);
-    setOutlineProvider(new ViewOutlineProvider() {
-      @Override
-      public void getOutline (View view, Outline outline) {
-        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), getCornerRadius());
-      }
-    });
-    setClipToOutline(true);
-    setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+    ripple = new M3StateLayerDrawable(null, rippleMask, rippleColor);
+    ForegroundCompat.set(this, ripple);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), getCornerRadius());
+        }
+      });
+      setClipToOutline(true);
+      setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+    }
   }
 
   public void setIcon (@DrawableRes int iconRes) {
@@ -95,7 +140,9 @@ public class M3FabView extends View {
     if (this.openFactor != factor) {
       this.openFactor = factor;
       rippleMask.setCornerRadius(getCornerRadius());
-      invalidateOutline();
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        invalidateOutline();
+      }
       invalidate();
     }
   }
@@ -124,7 +171,9 @@ public class M3FabView extends View {
   protected void onSizeChanged (int w, int h, int oldw, int oldh) {
     super.onSizeChanged(w, h, oldw, oldh);
     rippleMask.setCornerRadius(getCornerRadius());
-    invalidateOutline();
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      invalidateOutline();
+    }
   }
 
   @Override
@@ -132,7 +181,7 @@ public class M3FabView extends View {
     int newRippleColor = computeRippleColor();
     if (newRippleColor != rippleColor) {
       rippleColor = newRippleColor;
-      ripple.setColor(ColorStateList.valueOf(newRippleColor));
+      ripple.setColor(newRippleColor);
     }
     float radius = getCornerRadius();
     rect.set(0, 0, getWidth(), getHeight());

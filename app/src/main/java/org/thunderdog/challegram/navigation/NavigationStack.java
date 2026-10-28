@@ -281,25 +281,30 @@ public class NavigationStack {
   }
 
   public void reset (NavigationController navigation, boolean saveFirst) {
+    reset(navigation, saveFirst ? 1 : 0);
+  }
+
+  /** Replaces everything above the first {@code keepCount} items with the last one. */
+  public void reset (NavigationController navigation, int keepCount) {
     if (isEmpty()) {
       return;
     }
     ViewController<?> last = removeLast();
-    if (saveFirst) {
-      if (stack.size() > 1) {
-        ViewController<?> first = stack.get(0);
+    if (keepCount > 0) {
+      if (stack.size() > keepCount) {
         int i = 0;
         for (ViewController<?> c : stack) {
-          if (i != 0 && !c.isDestroyed()) {
+          if (i >= keepCount && !c.isDestroyed()) {
             c.attachNavigationController(navigation);
             c.destroy();
             c.detachNavigationController();
           }
           i++;
         }
+        ArrayList<ViewController<?>> kept = new ArrayList<>(stack.subList(0, keepCount));
         stack.clear();
-        stack.add(first);
-        currentIndex = 0;
+        stack.addAll(kept);
+        currentIndex = keepCount - 1;
       }
     } else {
       clear(navigation);

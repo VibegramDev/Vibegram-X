@@ -36,6 +36,7 @@ import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.support.SimpleShapeDrawable;
 import org.thunderdog.challegram.theme.ColorState;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.theme.ThemeManager;
@@ -195,11 +196,24 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public HeaderView getHeaderViewFor (ViewController<?> controller) {
+    if (isTabletSection(controller)) {
+      return tabletLayout.getSectionHeader();
+    }
     return isTabletMaster(controller) ? tabletLayout.getMasterHeader() : headerView;
   }
 
   public boolean isTabletMaster (ViewController<?> controller) {
     return tabletLayout != null && tabletLayout.getMain() == controller;
+  }
+
+  /** Dock section shown in the left pane instead of the chat list. */
+  public boolean isTabletSection (ViewController<?> controller) {
+    return controller != null && tabletLayout != null && tabletLayout.getSection() == controller;
+  }
+
+  /** Lives in the left pane: the chat list or the dock section. */
+  private boolean isTabletPane (ViewController<?> controller) {
+    return isTabletMaster(controller) || isTabletSection(controller);
   }
 
   public boolean isTabletSplit () {
@@ -250,7 +264,19 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       if (previous.isFocused() && previous != getCurrentStackItem()) {
         previous.onBlur();
       }
+      ViewController<?> section = tabletLayout.getSection();
       tabletLayout.clearMain();
+      if (section != null && !section.isDestroyed()) {
+        // Single pane again: the dock section is a regular screen of the stack.
+        if (section == getCurrentStackItem()) {
+          TabletNavigationLayout.resetTransition(section.getValue());
+          addChildWrapper(section);
+          headerView.setTitle(section);
+          headerView.resetTitleTransition(section);
+        } else if (section.isFocused()) {
+          section.onBlur();
+        }
+      }
       if (!previous.isDestroyed()) {
         if (previous == getCurrentStackItem()) {
           contentWrapper.addView(previous.getValue());
@@ -268,6 +294,17 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         addChildWrapper(target, 0);
       }
       tabletLayout.setMain(target);
+      ViewController<?> section = getStack().size() > 1 ? getStack().get(1) : null;
+      if (section != null && section.isTopLevelDestination() && !section.isDestroyed()) {
+        // Opened from the dock in the single pane layout: moves to the left pane.
+        if (childWrappers != null && childWrappers.remove(section)) {
+          contentWrapper.removeView(section.getValue());
+        }
+        tabletLayout.setSection(section);
+        if (section != getCurrentStackItem() && !section.isFocused()) {
+          section.onFocus();
+        }
+      }
       if (!target.isFocused()) {
         target.onFocus();
         ViewController<?> current = getCurrentStackItem();
@@ -292,6 +329,12 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     NavigationStack stack = getStack();
     while (stack.size() > 2) {
       ViewController<?> c = stack.remove(1);
+      if (c != null && c == tabletLayout.getSection()) {
+        tabletLayout.setSection(null);
+        if (c.isFocused()) {
+          c.onBlur();
+        }
+      }
       if (c != null) {
         c.attachNavigationController(this);
         c.destroy();
@@ -306,17 +349,34 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       return false;
     }
     boolean forward = (mode & MODE_BACKWARD) == 0;
+    boolean rebase = forward && (mode & MODE_REBASE) != 0;
+    boolean saveFirst = (mode & MODE_ARG_SAVE_FIRST) != 0;
     ViewController<?> previous = forward ? getPreviousStackItem() : getCurrentStackItem();
-    if (previous != null && previous.isFocused() && !isTabletMaster(previous)) {
+    ViewController<?> oldSection = tabletLayout.getSection();
+    // A dock section (opened from the bar, rebasing on the chat list) replaces the chat list in the left pane.
+    boolean enterSection = rebase && saveFirst && controller.isTopLevelDestination();
+    boolean leaveSection = !forward && previous != null && previous == oldSection;
+    boolean previousInPane = previous != null && isTabletPane(previous);
+    boolean defaultDetail = forward && !rebase && pendingTabletDefaultDetail && oldSection != null && previous == oldSection;
+    pendingTabletDefaultDetail = false;
+    if (previous != null && previous.isFocused() && !previousInPane) {
       previous.onBlur();
     }
-    if (!isTabletMaster(controller)) {
+    if (oldSection != null && (enterSection || leaveSection || (rebase && !saveFirst))) {
+      if (oldSection != controller && oldSection.isFocused()) {
+        oldSection.onBlur();
+      }
+      tabletLayout.setSection(enterSection ? controller : null);
+    } else if (enterSection) {
+      tabletLayout.setSection(controller);
+    }
+    if (!isTabletPane(controller)) {
       // A reused controller may keep the end state of a single-pane transition
       // (e.g. translated off-screen after closing a chat on the cover screen).
       TabletNavigationLayout.resetTransition(controller.getValue());
       addChildWrapper(controller);
     }
-    if (previous != null && !isTabletMaster(previous)) {
+    if (previous != null && !previousInPane) {
       removeChildWrapper(previous);
     }
     if (!forward) {
@@ -326,21 +386,37 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         previous.destroy();
         previous.detachNavigationController();
       }
-    } else if ((mode & MODE_REBASE) != 0) {
-      getStack().reset(this, (mode & MODE_ARG_SAVE_FIRST) != 0);
+    } else if (rebase) {
+      // Screens opened next to a dock section keep it in the left pane: [main, section, new screen].
+      ViewController<?> section = tabletLayout.getSection();
+      int keepCount = !saveFirst ? 0 : section != null && section != controller ? 2 : 1;
+      getStack().reset(this, keepCount);
     }
-    if (!isTabletMaster(controller)) {
+    if (defaultDetail) {
+      controller.setTabletDefaultDetail(true);
+    }
+    boolean inPane = isTabletPane(controller);
+    if (!inPane) {
       headerView.setTitle(controller);
       // No header animation here: show the title and the back button even if the last
       // single-pane transition faded them out (e.g. back from a chat to the list on the cover screen).
       headerView.resetTitleTransition(controller);
     }
-    if (isTabletMaster(controller) || HeaderView.getFloatingButtonId(controller) == 0) {
+    if (inPane || HeaderView.getFloatingButtonId(controller) == 0) {
       // setTitle() only shows the shared floating button; hide the one left from the previous screen
       // (e.g. edit button of settings), as there's no switch animation in the split layout.
       floatingButton.setHeightFactor(0f, 0f, false);
     }
     tabletLayout.updateVisibility();
+    if (!inPane) {
+      // M3: the new detail screen enters with shared axis X, dock sections (and going back from them) with fade-through.
+      // A rebase replaces the whole detail pane (another chat selected in the list): fade-through as well,
+      // the panes have no forward/backward relationship. Pushes inside the pane: shared axis X.
+      boolean fadeThrough = forward ? controller.isTopLevelDestination() || rebase || defaultDetail : previous != null && previous.isTopLevelDestination();
+      tabletLayout.animateDetailEnter(Settings.instance().needReduceMotion() || fadeThrough ? 0 : forward ? 1 : -1);
+    } else {
+      tabletLayout.cancelDetailAnimation();
+    }
     tabletLayout.invalidateMaster();
     MainController main = tabletLayout.getMain();
     if (main != null) {
@@ -353,7 +429,24 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       controller.onFocus();
     }
     controller.onAfterShow();
+    if (enterSection) {
+      rootView.post(() -> {
+        if (!controller.isDestroyed() && tabletLayout != null && tabletLayout.getSection() == controller && getCurrentStackItem() == controller) {
+          controller.onOpenedAsTabletSection();
+        }
+      });
+    }
     return true;
+  }
+
+  private boolean pendingTabletDefaultDetail;
+
+  /**
+   * Tablet split: the next screen opened from the dock section is its default right pane content
+   * (e.g. the own profile next to Settings). It enters with fade-through, Back from it brings the chat list back.
+   */
+  public void prepareTabletDefaultDetail () {
+    pendingTabletDefaultDetail = isTabletSplit() && tabletLayout.getSection() != null;
   }
 
   public void setShadowsVisibility (int visibility) {
@@ -796,6 +889,12 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public final boolean navigateTo (ViewController<?> controller) {
+    if (!isAnimating && controller != null && isTabletSplit() && tabletLayout.getSection() != null
+      && getStackSize() > 2 && tabletLayout.isLastTouchInMaster() && !isCurrentControllerAnimating()) {
+      // Tablet split: a screen opened from the dock section in the left pane replaces the right pane.
+      setControllerAnimated(controller, true, true);
+      return true;
+    }
     if (!isAnimating && getStackSize() > 0 && controller != null && !isCurrentControllerAnimating()) {
       isAnimating = true;
       UI.getContext(context).notifyBackPressAvailabilityChanged();
@@ -808,6 +907,13 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public final boolean navigateBack () {
+    if (!isAnimating && isTabletSplit() && tabletLayout.getSection() != null && getStackSize() == 3) {
+      ViewController<?> current = getCurrentStackItem();
+      if (current != null && current.isTabletDefaultDetail() && !isCurrentControllerAnimating()) {
+        // The default right pane screen of the section (own profile next to Settings): back to the chat list.
+        return closeTabletDetail();
+      }
+    }
     if (!isAnimating && getStack().getCurrentIndex() > 0 && !isCurrentControllerAnimating()) {
       processor.navigateBack();
       return true;
@@ -820,9 +926,22 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   private static final int TRANSLATION_VERTICAL = 2;
   private static final int TRANSLATION_FADE = 3;
   private static final int TRANSLATION_NONE = 4;
+  /** M3 top-level transition request; prepareFactorAnimation turns it into TRANSLATION_FADE + {@link #m3FadeThrough}. */
+  private static final int TRANSLATION_FADE_THROUGH = 5;
 
   private int translationMode;
   private boolean translatingForward;
+  /**
+   * M3 forward/backward ({@link M3#SHARED_AXIS_NAVIGATION}): horizontal transitions draw no shadow and no scrim.
+   * Taps and buttons: shared axis X (both screens slide {@link M3#SHARED_AXIS_DISTANCE} of the width, the outgoing
+   * screen fades out, then the incoming one fades in). Gestures ({@link #m3Gesture}): the screen follows the finger.
+   */
+  private boolean m3Horizontal, m3Gesture;
+  /** M3 top-level destinations: fade-through (outgoing fades out, then incoming fades in), no movement. */
+  private boolean m3FadeThrough;
+  /** Set by swipe back / predictive back right before {@link #prepareFactorAnimation}. */
+  private boolean nextTransitionIsGesture;
+  private float sharedAxisDistance, lastRightTranslationX;
   private float fromHeaderHeight;
   private float currentWidth, currentHeight, currentPrevWidth;
   private float lastTranslation, lastHeaderFactor;
@@ -864,6 +983,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   private void prepareHeaderAnimation (ViewController<?> left, ViewController<?> right, boolean forward, int direction, boolean forceRtl) {
     lastHeaderFactor = forward ? 1f : 0f;
+    if (m3FadeThrough || (m3Horizontal && !m3Gesture)) {
+      // App bar contents follow the screens: clean fade, and the same slide distance for shared axis.
+      headerView.setNextTransitionStyle(true, m3Horizontal ? M3.SHARED_AXIS_DISTANCE : 0f);
+    }
     headerView.openPreview(left, right, forward, direction, lastHeaderFactor, forceRtl);
 
     if (!forward && right.usePopupMode()) {
@@ -907,6 +1030,16 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       checkShadowDirection();
     }
 
+    boolean isGesture = nextTransitionIsGesture;
+    nextTransitionIsGesture = false;
+    m3FadeThrough = direction == TRANSLATION_FADE_THROUGH;
+    if (m3FadeThrough) {
+      direction = TRANSLATION_FADE;
+    }
+    // Popup-mode screens below keep the original slide: their app bar pixels are restored by the offset.
+    m3Horizontal = M3.SHARED_AXIS_NAVIGATION && direction == TRANSLATION_HORIZONTAL && !left.usePopupMode();
+    m3Gesture = m3Horizontal && isGesture;
+
     if (forward) {
       right.applyPlayerOffset(currentPlayerFactor, currentPlayerOffset);
       addChildWrapper(right);
@@ -919,7 +1052,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     }
 
     if (USE_PREVIEW_FADE) {
-      if (direction != TRANSLATION_FADE && direction != TRANSLATION_NONE && !left.usePopupMode()) {
+      if (direction != TRANSLATION_FADE && direction != TRANSLATION_NONE && !left.usePopupMode() && !m3Horizontal) {
         showFadeView();
       }
     }
@@ -936,6 +1069,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     currentWidth = rootView.getMeasuredWidth();
     currentHeight = rootView.getMeasuredHeight();
     currentPrevWidth = -(currentWidth / Size.NAVIGATION_PREVIEW_TRANSLATE_FACTOR);
+    sharedAxisDistance = currentWidth * M3.SHARED_AXIS_DISTANCE;
 
     if (forward) {
       currentLeft.onBlur();
@@ -993,6 +1127,11 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
           headerView.getFilling().setRestorePixels(left.usePopupMode(), 0f, left.getPopupRestoreColor());
 
+          if (m3Horizontal) {
+            applyM3Horizontal(translationFactor);
+            break;
+          }
+
           if (USE_PREVIEW_FADE) {
             if (!left.usePopupMode()) {
               fadeView.setAlpha(0f);
@@ -1031,6 +1170,11 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
           leftWrap.setTranslationX(0f);
           rightWrap.setTranslationX(0f);
           rightWrap.setTranslationY(0f);
+          if (m3FadeThrough) {
+            // The incoming screen appears only after the outgoing one has faded out.
+            leftWrap.setAlpha(0f);
+            rightWrap.setAlpha(1f);
+          }
 
           headerView.getFilling().setRestorePixels(false, 0f, 0);
           break;
@@ -1068,6 +1212,11 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
           leftWrap.setAlpha(1f);
 
           headerView.getFilling().setRestorePixels(left.usePopupMode(), -currentPrevWidth, left.getPopupRestoreColor());
+
+          if (m3Horizontal) {
+            applyM3Horizontal(translationFactor);
+            break;
+          }
 
           if (USE_PREVIEW_FADE) {
             if (!left.usePopupMode()) {
@@ -1128,6 +1277,12 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       }
       if (Settings.instance().needReduceMotion() && (direction == TRANSLATION_HORIZONTAL)) {
         direction = TRANSLATION_FADE;
+      } else if (M3.SHARED_AXIS_NAVIGATION && direction == TRANSLATION_HORIZONTAL) {
+        // Dock sections are top-level destinations: fade-through when opening them and when going back from them.
+        ViewController<?> target = forward ? controller : getStack().getCurrent();
+        if (target != null && target.isTopLevelDestination()) {
+          direction = TRANSLATION_FADE_THROUGH;
+        }
       }
     }
 
@@ -1200,6 +1355,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
           headerView.applyPreview(getStack().getCurrent());
           processor.setNextAsCurrent();
         }
+        if (left != null && (m3Horizontal || m3FadeThrough)) {
+          // Faded out by the M3 transition; it stays in the stack (other paths expect it opaque).
+          left.getValue().setAlpha(1f);
+        }
         completeNextLayout();
         if (Views.HARDWARE_LAYER_ENABLED) {
           setLayerType(View.LAYER_TYPE_NONE, left, right);
@@ -1235,6 +1394,11 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     }
 
     switch (direction) {
+      case TRANSLATION_FADE_THROUGH: {
+        animator.setDuration(Config.DEBUG_NAV_ANIM ? 1000l : M3.TRANSITION_DURATION);
+        animator.setInterpolator(M3.EMPHASIZED);
+        break;
+      }
       case TRANSLATION_FADE: {
         animator.setDuration(Config.DEBUG_NAV_ANIM ? 1000l : fastAnimation ? 120l : 180l);
         animator.setInterpolator(AnimatorUtils.DECELERATE_INTERPOLATOR);
@@ -1246,8 +1410,13 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         break;
       }
       case TRANSLATION_HORIZONTAL: {
-        animator.setDuration(HARD_TRANSITION_DURATION);
-        animator.setInterpolator(AnimatorUtils.NAVIGATION_INTERPOLATOR);
+        if (m3Horizontal) {
+          animator.setDuration(Config.DEBUG_NAV_ANIM ? 1000l : M3.TRANSITION_DURATION);
+          animator.setInterpolator(M3.EMPHASIZED);
+        } else {
+          animator.setDuration(HARD_TRANSITION_DURATION);
+          animator.setInterpolator(AnimatorUtils.NAVIGATION_INTERPOLATOR);
+        }
         break;
       }
     }
@@ -1387,6 +1556,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
     setIsAnimating(true);
 
+    nextTransitionIsGesture = true;
     if (right.usePopupMode()) {
       prepareFactorAnimation(getStack().getPrevious(), right, false, force ? TRANSLATION_NONE : TRANSLATION_VERTICAL, predictiveGestureMode);
     } else {
@@ -1609,12 +1779,31 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     switch (translationMode) {
       case TRANSLATION_FADE: {
         headerView.setTranslation(factor);
-        rightWrap.setAlpha(1f - factor);
+        if (m3FadeThrough) {
+          float progress = translatingForward ? 1f - factor : factor;
+          float outgoing = M3.fadeThroughOut(progress), incoming = M3.fadeThroughIn(progress);
+          leftWrap.setAlpha(translatingForward ? outgoing : incoming);
+          rightWrap.setAlpha(translatingForward ? incoming : outgoing);
+          // MaterialFadeThrough: the incoming screen scales up from 92%.
+          View incomingWrap = translatingForward ? rightWrap : leftWrap;
+          View outgoingWrap = translatingForward ? leftWrap : rightWrap;
+          float scale = M3.fadeThroughScale(progress);
+          incomingWrap.setScaleX(scale);
+          incomingWrap.setScaleY(scale);
+          outgoingWrap.setScaleX(1f);
+          outgoingWrap.setScaleY(1f);
+        } else {
+          rightWrap.setAlpha(1f - factor);
+        }
 
         break;
       }
       case TRANSLATION_HORIZONTAL: {
         headerView.setTranslation(factor);
+        if (m3Horizontal) {
+          applyM3Horizontal(factor);
+          break;
+        }
         factor = 1f - factor;
 
         float px2 = factor * currentPrevWidth;
@@ -1699,7 +1888,39 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return rootView.getMeasuredWidth();
   }
 
+  /**
+   * M3 horizontal transition at {@code factor} (1: the right screen is gone, 0: it is in place).
+   * Shared axis: both screens move {@link #sharedAxisDistance}, alphas follow the fade-through thresholds.
+   * Gesture: the right screen follows the finger, the left one moves the short distance, both stay opaque.
+   */
+  private void applyM3Horizontal (float factor) {
+    float sign = needRtl() ? -1f : 1f;
+    float rightX, rightAlpha = 1f, leftAlpha = 1f;
+    if (m3Gesture) {
+      rightX = currentWidth * factor;
+    } else {
+      rightX = sharedAxisDistance * factor;
+      float progress = translatingForward ? 1f - factor : factor;
+      float outgoing = M3.fadeThroughOut(progress), incoming = M3.fadeThroughIn(progress);
+      leftAlpha = translatingForward ? outgoing : incoming;
+      rightAlpha = translatingForward ? incoming : outgoing;
+    }
+    float leftX = -sharedAxisDistance * (1f - factor);
+    rightX *= sign;
+    leftX *= sign;
+    lastRightTranslationX = rightX;
+    rightWrap.setTranslationX(rightX);
+    rightWrap.setAlpha(rightAlpha);
+    currentRight.onTranslationChanged(rightX);
+    leftWrap.setTranslationX(leftX);
+    leftWrap.setAlpha(leftAlpha);
+    currentLeft.onTranslationChanged(leftX);
+  }
+
   public int getHorizontalTranslate () {
+    if (isAnimating && translationMode == TRANSLATION_HORIZONTAL && m3Horizontal) {
+      return (int) Math.abs(lastRightTranslationX);
+    }
     if (isAnimating && translationMode == TRANSLATION_HORIZONTAL) {
       return (int) ((float) rootView.getMeasuredWidth() * translationFactor);
     }
@@ -1726,6 +1947,12 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   @Override
   public boolean onSystemBackStarted (@NonNull BackEventCompat backEvent) {
+    int edge = backEvent.getSwipeEdge();
+    if (M3.SHARED_AXIS_NAVIGATION && edge != BackEventCompat.EDGE_LEFT && edge != BackEventCompat.EDGE_RIGHT) {
+      // Back button / key (EDGE_NONE, Android 16+): no gesture to follow, the press runs the regular
+      // M3 backward (or fade-through) transition from onBackPressed.
+      return false;
+    }
     if (swipeNavigationEnabled()) {
       if (openPreviewImpl(backEvent.getTouchY(), false, backEvent.getSwipeEdge() == BackEventCompat.EDGE_RIGHT ? PredictiveGesture.BACK_FROM_RIGHT_EDGE : PredictiveGesture.BACK_FROM_LEFT_EDGE)) {
         setFactor(backEvent.getProgress());
@@ -1856,6 +2083,16 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   private int bottomInset, bottomInsetWithoutIme;
 
   public void applyBottomInset (ViewController<?> controller) {
+    if (isTabletSection(controller) && tabletLayout.getMain() != null) {
+      // Left pane: the list scrolls under the floating bar of the chat list screen.
+      int inset = bottomInsetWithoutIme + tabletLayout.getMain().getTabletSectionNavigationInset();
+      if (controller.supportsBottomInset()) {
+        controller.setBottomInset(inset, inset);
+      } else {
+        Views.setPaddingBottom(controller.getValue(), inset);
+      }
+      return;
+    }
     int effectiveBottomInset = isTabletMaster(controller) ? bottomInsetWithoutIme : bottomInset;
     if (controller.supportsBottomInset()) {
       controller.setBottomInset(effectiveBottomInset, bottomInsetWithoutIme);
@@ -1873,6 +2110,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         for (ViewController<?> controller : childWrappers) {
           applyBottomInset(controller);
         }
+      }
+      if (tabletLayout != null && tabletLayout.getSection() != null) {
+        applyBottomInset(tabletLayout.getSection());
       }
     }
   }

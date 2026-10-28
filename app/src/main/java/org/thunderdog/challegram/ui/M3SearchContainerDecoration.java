@@ -17,13 +17,13 @@
  */
 package org.thunderdog.challegram.ui;
 
-import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.RippleDrawable;
 import android.view.View;
 
 import androidx.annotation.ColorInt;
@@ -31,7 +31,9 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.SeparatorView;
 import org.thunderdog.challegram.widget.ShadowView;
 
@@ -70,13 +72,26 @@ public final class M3SearchContainerDecoration extends RecyclerView.ItemDecorati
     return decoration;
   }
 
-  /** Top of the sheet container inside the list: top of the first item, or above the view when it is scrolled away. */
+  /**
+   * Space above the first item for the drag handle (DragHandle: 32x4dp, 22dp vertical padding = 48dp). The first
+   * item of a settings sheet is the 6dp TYPE_SHADOW_TOP row, so the offset added above it is 48 - 6 = 42dp.
+   */
+  public static final float SHEET_HANDLE_AREA = 48f, SHEET_HANDLE_OFFSET = 42f;
+
+  /** Top of the sheet container inside the list (incl. the handle area), or above the view when it is scrolled away. */
   public static int sheetTop (RecyclerView parent) {
     RecyclerView.ViewHolder holder = parent.findViewHolderForAdapterPosition(0);
     if (holder == null) {
       return -Screen.dp(M3.CORNER_EXTRA_LARGE);
     }
-    return holder.itemView.getTop() + Math.round(holder.itemView.getTranslationY());
+    return holder.itemView.getTop() + Math.round(holder.itemView.getTranslationY()) - Screen.dp(SHEET_HANDLE_OFFSET);
+  }
+
+  @Override
+  public void getItemOffsets (@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+    if (sheet && parent.getChildAdapterPosition(view) == 0) {
+      outRect.top = Screen.dp(SHEET_HANDLE_OFFSET);
+    }
   }
 
   /** The recycler background must not be set by the caller (the decoration draws the container). */
@@ -94,7 +109,16 @@ public final class M3SearchContainerDecoration extends RecyclerView.ItemDecorati
       float radius = Screen.dp(M3.CORNER_EXTRA_LARGE);
       int top = sheetTop(parent);
       paint.setColor(containerColor);
-      c.drawRoundRect(0, top, parent.getWidth(), parent.getHeight() + radius, radius, radius, paint);
+      RectF rect = Paints.getRectF();
+      rect.set(0, top, parent.getWidth(), parent.getHeight() + radius);
+      c.drawRoundRect(rect, radius, radius, paint);
+      // Drag handle: 32x4dp, onSurfaceVariant, 22dp below the container top.
+      float handleWidth = Screen.dp(32f), handleHeight = Screen.dp(4f);
+      float handleTop = top + Screen.dp(22f);
+      paint.setColor(M3.onSurfaceVariant());
+      float cx = parent.getWidth() / 2f;
+      rect.set(cx - handleWidth / 2f, handleTop, cx + handleWidth / 2f, handleTop + handleHeight);
+      c.drawRoundRect(rect, handleHeight / 2f, handleHeight / 2f, paint);
     } else {
       c.drawColor(containerColor);
     }
@@ -130,19 +154,13 @@ public final class M3SearchContainerDecoration extends RecyclerView.ItemDecorati
   }
 
   /** Transparent container with the M3 pressed state layer. */
-  private static final class StateLayer extends RippleDrawable {
-    private int stateLayerColor;
-
+  private static final class StateLayer extends M3StateLayerDrawable {
     StateLayer (int stateLayerColor) {
-      super(ColorStateList.valueOf(stateLayerColor), null, new ColorDrawable(Color.WHITE));
-      this.stateLayerColor = stateLayerColor;
+      super(null, new ColorDrawable(Color.WHITE), stateLayerColor);
     }
 
     void setStateLayerColor (int color) {
-      if (this.stateLayerColor != color) {
-        this.stateLayerColor = color;
-        setColor(ColorStateList.valueOf(color));
-      }
+      setColor(color);
     }
   }
 }

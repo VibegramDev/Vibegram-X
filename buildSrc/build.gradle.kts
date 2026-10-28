@@ -42,6 +42,7 @@ dependencies {
   compileOnly(gradleApi())
   implementation(libs.android.gradle.plugin)
   implementation(libs.kotlin.gradle.plugin)
+  implementation(libs.kotlin.compose.gradle.plugin)
   implementation(libs.okhttp.latest)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.jgit)

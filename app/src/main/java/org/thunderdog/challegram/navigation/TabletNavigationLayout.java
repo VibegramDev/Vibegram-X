@@ -1,5 +1,8 @@
 package org.thunderdog.challegram.navigation;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.view.Gravity;
 import android.view.View;
@@ -8,12 +11,16 @@ import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 
+import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.MainController;
 import org.thunderdog.challegram.widget.M3FolderRailView;
 
+import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
 
 /** Two viewports over the existing stack: account/deep-link/back ownership stays unchanged. */
@@ -29,6 +36,15 @@ final class TabletNavigationLayout extends FrameLayoutFix {
   /** Chat folders rail of the main screen, at the leading edge along the full height of the left pane. */
   private @Nullable View folderRail;
   private int railWidth;
+  /**
+   * Dock section (Calls, Contacts, Settings) shown in the left pane instead of the chat list. Its content is hosted
+   * by the main screen (under its navigation bar), its app bar replaces the chat list one. Screens opened from it go
+   * to the right pane. Stack: [main, section, right pane screens...].
+   */
+  private @Nullable ViewController<?> section;
+  private @Nullable HeaderView sectionHeader;
+  /** Whether the last touch started in the left pane: screens opened from a section replace the right pane. */
+  private boolean lastTouchInMaster;
 
   TabletNavigationLayout (Context context, NavigationController navigation, View detail) {
     super(context);
@@ -59,14 +75,185 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     return masterHeader;
   }
 
+  @Nullable ViewController<?> getSection () {
+    return section;
+  }
+
+  @Nullable HeaderView getSectionHeader () {
+    return sectionHeader;
+  }
+
+  boolean isLastTouchInMaster () {
+    return lastTouchInMaster;
+  }
+
+  @Override
+  public boolean dispatchTouchEvent (android.view.MotionEvent ev) {
+    if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+      lastTouchInMaster = isSplit() && ev.getX() < listWidth;
+    }
+    return super.dispatchTouchEvent(ev);
+  }
+
+  /** Shows the dock section in the left pane (or the chat list again, when {@code controller} is null). */
+  void setSection (@Nullable ViewController<?> controller) {
+    if (section == controller || main == null) {
+      return;
+    }
+    clearSection();
+    if (controller == null) {
+      return;
+    }
+    section = controller;
+    View view = controller.getValue();
+    if (view.getParent() != null) {
+      ((ViewGroup) view.getParent()).removeView(view);
+    }
+    resetTransition(view);
+    main.setTabletSectionView(view);
+    navigation.getHeaderView().detachControllerTitle(controller);
+    View customTitle = controller.getCustomHeaderCell();
+    if (customTitle != null) {
+      resetTransition(customTitle);
+    }
+    sectionHeader = new HeaderView(getContext());
+    // Expandable app bars (Settings photo) need the height of the single pane app bar.
+    sectionHeader.setAllowExpandedHeight();
+    sectionHeader.initWithSingleController(controller, true);
+    // Expandable app bars (Settings photo): the filling follows the list scroll only after it moves.
+    sectionHeader.setBackgroundHeight(controller.getHeaderHeight());
+    addView(sectionHeader, indexOfChild(masterHeader) + 1);
+    masterHeader.setVisibility(INVISIBLE);
+    controller.attachNavigationController(navigation);
+    navigation.applyBottomInset(controller);
+    if (folderRail != null) {
+      folderRail.bringToFront();
+    }
+    divider.bringToFront();
+    requestLayout();
+  }
+
+  private void clearSection () {
+    if (section == null) {
+      return;
+    }
+    ViewController<?> controller = section;
+    HeaderView header = sectionHeader;
+    section = null;
+    sectionHeader = null;
+    if (header != null) {
+      leaveTransformModes(header, controller);
+      header.detachControllerTitle(controller);
+      controller.removeDestroyListener(header);
+      header.performDestroy();
+      removeView(header);
+    }
+    if (main != null) {
+      main.setTabletSectionView(null);
+    }
+    if (masterHeader != null) {
+      masterHeader.setVisibility(VISIBLE);
+    }
+    requestLayout();
+  }
+
   int getDetailWidth () {
     return getMeasuredWidth() - listWidth;
+  }
+
+  // M3 transitions in the detail pane. Split navigation swaps screens without the single-pane animation;
+  // the new detail screen then enters on its own: shared axis X (slides in from the side, fades in) or
+  // fade-through for top-level destinations. The outgoing screen is removed at once (its fade-out takes no time).
+
+  private @Nullable ValueAnimator detailAnimator;
+  /**
+   * While the detail pane fades in, its area is filled with the screen background: the incoming screen appears
+   * on the pane surface, not out of the black window behind it.
+   */
+  private boolean drawDetailBackdrop;
+  private final android.graphics.Paint backdropPaint = new android.graphics.Paint();
+
+  @Override
+  protected boolean drawChild (android.graphics.Canvas canvas, View child, long drawingTime) {
+    if (child == detail && drawDetailBackdrop) {
+      backdropPaint.setColor(Theme.backgroundColor());
+      canvas.drawRect(detail.getLeft(), detail.getTop(), detail.getRight(), detail.getBottom(), backdropPaint);
+    }
+    return super.drawChild(canvas, child, drawingTime);
+  }
+
+  /** @param direction 1: forward (enters from the trailing side), -1: backward, 0: fade-through (no movement) */
+  void animateDetailEnter (int direction) {
+    cancelDetailAnimation();
+    if (!M3.SHARED_AXIS_NAVIGATION || getWindowToken() == null || detail.getVisibility() != VISIBLE) {
+      return;
+    }
+    float sign = Lang.rtl() ? -1f : 1f;
+    final float fromX = getDetailWidth() * M3.SHARED_AXIS_DISTANCE * direction * sign;
+    detail.setAlpha(0f);
+    detail.setTranslationX(fromX);
+    drawDetailBackdrop = true;
+    invalidate();
+    Views.setLayerType(detail, LAYER_TYPE_HARDWARE);
+    ValueAnimator animator = AnimatorUtils.simpleValueAnimator();
+    animator.setDuration(M3.TRANSITION_DURATION);
+    // Linear fraction, eased in the listener (getFraction() is the interpolated value below API 12).
+    animator.setInterpolator(new android.view.animation.LinearInterpolator());
+    final boolean fadeThrough = direction == 0;
+    animator.addUpdateListener(animation -> {
+      float progress = M3.EMPHASIZED.getInterpolation(AnimatorUtils.getFraction(animation));
+      detail.setTranslationX(fromX * (1f - progress));
+      // The outgoing screen is already gone: the incoming one fades in after the fade-out part.
+      detail.setAlpha(M3.fadeThroughIn(progress));
+      if (fadeThrough) {
+        float scale = M3.fadeThroughScale(progress);
+        detail.setScaleX(scale);
+        detail.setScaleY(scale);
+      }
+    });
+    animator.addListener(new AnimatorListenerAdapter() {
+      @Override
+      public void onAnimationEnd (Animator animation) {
+        if (detailAnimator == animation) {
+          detailAnimator = null;
+          resetDetail();
+        }
+      }
+    });
+    detailAnimator = animator;
+    animator.start();
+  }
+
+  void cancelDetailAnimation () {
+    if (detailAnimator != null) {
+      ValueAnimator animator = detailAnimator;
+      detailAnimator = null;
+      animator.cancel();
+      resetDetail();
+    }
+  }
+
+  private void resetDetail () {
+    drawDetailBackdrop = false;
+    invalidate();
+    detail.setAlpha(1f);
+    detail.setTranslationX(0f);
+    detail.setScaleX(1f);
+    detail.setScaleY(1f);
+    Views.setLayerType(detail, LAYER_TYPE_NONE);
+  }
+
+  @Override
+  protected void onDetachedFromWindow () {
+    super.onDetachedFromWindow();
+    cancelDetailAnimation();
   }
 
   void setMain (MainController controller) {
     if (main == controller) {
       return;
     }
+    cancelDetailAnimation();
     clearMain();
     main = controller;
     if (main == null) {
@@ -160,6 +347,8 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     if (main == null) {
       return;
     }
+    cancelDetailAnimation();
+    clearSection();
     leaveTransformModes(masterHeader, main);
     master.removeView(main.getValue());
     if (folderRail != null) {
@@ -186,10 +375,14 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       masterHeader.resetColors(main, null);
       main.getValue().invalidate();
     }
+    if (section != null && sectionHeader != null) {
+      sectionHeader.resetColors(section, null);
+    }
   }
 
   void updateVisibility () {
-    boolean showEmpty = isSplit() && navigation.getCurrentStackItem() == main;
+    ViewController<?> current = navigation.getCurrentStackItem();
+    boolean showEmpty = isSplit() && (current == main || (section != null && current == section));
     empty.setVisibility(showEmpty ? VISIBLE : GONE);
     detail.setVisibility(showEmpty ? INVISIBLE : VISIBLE);
     divider.setVisibility(isSplit() ? VISIBLE : GONE);
@@ -213,6 +406,9 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       int masterSpec = MeasureSpec.makeMeasureSpec(listWidth - railWidth, MeasureSpec.EXACTLY);
       master.measure(masterSpec, heightSpec);
       measureChild(masterHeader, masterSpec, heightSpec);
+      if (sectionHeader != null) {
+        measureChild(sectionHeader, masterSpec, heightSpec);
+      }
     }
     if (folderRail != null) {
       folderRail.measure(MeasureSpec.makeMeasureSpec(railWidth, MeasureSpec.EXACTLY), heightSpec);
@@ -230,6 +426,9 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     if (master != null) {
       master.layout(railWidth, 0, listWidth, height);
       masterHeader.layout(railWidth, 0, listWidth, masterHeader.getMeasuredHeight());
+      if (sectionHeader != null) {
+        sectionHeader.layout(railWidth, 0, listWidth, sectionHeader.getMeasuredHeight());
+      }
     }
     if (folderRail != null) {
       folderRail.layout(0, 0, railWidth, railWidth > 0 ? height : 0);

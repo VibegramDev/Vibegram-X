@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: Settings profile block and the «Account» section (not in the cloud language pack). -->
+<resources>
+  <item type="id" name="vg_accountsHeader" />
+  <item type="id" name="btn_vgAccount" />
+  <item type="id" name="controller_vgAccount" />
+  <item type="id" name="vg_settingsProfile" />
+  <item type="id" name="vg_name" />
+  <string name="vg_Account">Account</string>
+  <string name="vg_AccountHint">Phone number, username, bio</string>
+  <string name="vg_Accounts">Accounts</string>
+  <string name="vg_Name">Name</string>
+</resources>

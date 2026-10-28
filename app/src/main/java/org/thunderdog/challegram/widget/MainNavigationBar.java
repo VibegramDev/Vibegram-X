@@ -38,6 +38,9 @@ import android.view.ViewOutlineProvider;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.view.AccessibilityDelegateCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
@@ -112,6 +115,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   /** 0: search icon, 1: search is open, the segment shows a close icon. */
   private float searchOpenFactor;
+  /** Number shown by the badge of the chats item, read by screen readers after the label. */
+  private long unreadCount;
 
   public MainNavigationBar (Context context, ViewController<?> themeProvider) {
     super(context);
@@ -181,6 +186,28 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     // Above the settings item: they swap places when the rail collapses.
     addView(scrollTopView);
     themeProvider.addThemeInvalidateListener(this);
+
+    // Phone rail has no labels (accepted deviation): plain tooltip with the label on tap and hold,
+    // before the rail, 4dp from its edge. The tablet bar shows labels, so no tooltips there.
+    M3Tooltip.BoundsProvider railBounds = (anchor, outRect) -> {
+      // Horizontal bounds of the rail container (the visual boundary), vertical bounds of the item.
+      outRect.set(-anchor.getLeft(), 0, getWidth() - anchor.getLeft(), anchor.getHeight());
+    };
+    M3Tooltip.TextProvider tooltipText = anchor -> isBar ? null : anchor == searchView && searchOpenFactor >= .5f ? Lang.getString(R.string.vg_CloseSearch) : anchor instanceof ItemView ? ((ItemView) anchor).label : anchor.getContentDescription();
+    M3Tooltip.bind(searchView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
+    M3Tooltip.bind(scrollTopView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
+    for (ItemView item : items) {
+      M3Tooltip.bind(item, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
+    }
+    // Screen readers: the sections are tabs of a single-selection collection (as MDC NavigationBarMenuView).
+    ViewCompat.setAccessibilityDelegate(this, new AccessibilityDelegateCompat() {
+      @Override
+      public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
+        super.onInitializeAccessibilityNodeInfo(host, info);
+        int rows = isBar ? 1 : items.length, columns = isBar ? items.length : 1;
+        info.setCollectionInfo(AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(rows, columns, false, AccessibilityNodeInfoCompat.CollectionInfoCompat.SELECTION_MODE_SINGLE));
+      }
+    });
     // Container height: spatial spring; contents fade with derived factors.
     collapseAnimator = new FactorAnimator(0, (id, factor, fraction, callee) -> setCollapseFactor(factor), M3.DEFAULT_SPATIAL, M3.DEFAULT_SPATIAL.duration, 0f);
 
@@ -220,7 +247,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     }
     this.isCollapsed = collapsed;
     float to = collapsed ? 1f : 0f;
-    if (animated && isLaidOut() && getVisibility() == View.VISIBLE) {
+    if (animated && ViewCompat.isLaidOut(this) && getVisibility() == View.VISIBLE) {
       collapseAnimator.animateTo(to);
     } else {
       collapseAnimator.forceFactor(to);
@@ -294,6 +321,18 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return unreadCounter;
   }
 
+  /**
+   * Badge for screen readers: M3 "Badges with numbers should announce the count", after the label
+   * ("Chats, 5 unread"). The real number, not the shortened one drawn by the badge.
+   */
+  public void setUnreadCount (long count) {
+    count = Math.max(0, count);
+    if (this.unreadCount != count) {
+      this.unreadCount = count;
+      items[ITEM_CHATS].updateDescription();
+    }
+  }
+
   public void setUser (Tdlib tdlib, long userId) {
     avatarView.setUser(tdlib, userId, false);
   }
@@ -301,7 +340,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   public void setSelectedItem (int item) {
     if (this.selectedItem != item) {
       this.selectedItem = item;
-      boolean animated = isLaidOut() && getVisibility() == View.VISIBLE;
+      boolean animated = ViewCompat.isLaidOut(this) && getVisibility() == View.VISIBLE;
       for (ItemView view : items) {
         view.setItemSelected(view.id == item, animated);
       }
@@ -329,7 +368,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       ripple = Theme.transparentRoundSelector(Screen.dp(INDICATOR_HEIGHT / 2f));
     }
     view.setBackground(null);
-    view.setForeground(ripple);
+    ForegroundCompat.set(view, ripple);
   }
 
 
@@ -383,8 +422,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   public void setSearchOpenFactor (float factor) {
     factor = MathUtils.clamp(factor);
     if (this.searchOpenFactor != factor) {
+      boolean wasOpen = this.searchOpenFactor >= .5f;
       this.searchOpenFactor = factor;
       searchView.invalidate();
+      if (wasOpen != factor >= .5f) {
+        searchView.setContentDescription(Lang.getString(factor >= .5f ? R.string.vg_CloseSearch : R.string.Search));
+      }
     }
   }
 
@@ -426,6 +469,15 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
     scrollTopParams.topMargin = itemSize * items.length;
     scrollTopView.setLayoutParams(scrollTopParams);
+    // Tooltips: rail only (the bar has labels). Also keeps "double tap and hold" out of screen reader hints.
+    searchView.setLongClickable(!isBar);
+    scrollTopView.setLongClickable(!isBar);
+    for (ItemView item : items) {
+      item.setLongClickable(!isBar);
+    }
+    if (!isBar) {
+      M3Tooltip.hideCurrent(false);
+    }
     if (isBar && isCollapsed) {
       // Tablet bar never collapses.
       isCollapsed = false;
@@ -555,7 +607,51 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
    * Icon-only item of the rail without a section: search (its icon turns into a close icon with the
    * active indicator while search is open) and scroll to top.
    */
-  private class SimpleItemView extends View {
+  private class SimpleItemView extends View implements ForegroundCompat.Host {
+    private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
+
+    @Nullable
+    @Override
+    public ForegroundCompat foregroundCompat () {
+      return foregroundCompat;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      super.draw(c);
+      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        foregroundCompat.draw(c);
+      }
+    }
+
+    @Override
+    protected boolean verifyDrawable (@NonNull Drawable who) {
+      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+    }
+
+    @Override
+    protected void drawableStateChanged () {
+      super.drawableStateChanged();
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableStateChanged();
+      }
+    }
+
+    @Override
+    public void drawableHotspotChanged (float x, float y) {
+      super.drawableHotspotChanged(x, y);
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableHotspotChanged(x, y);
+      }
+    }
+
+    @Override
+    public void jumpDrawablesToCurrentState () {
+      super.jumpDrawablesToCurrentState();
+      if (foregroundCompat != null) {
+        foregroundCompat.jumpDrawablesToCurrentState();
+      }
+    }
     private final Drawable icon;
     private final @Nullable Drawable openIcon;
 
@@ -614,6 +710,25 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       setWillNotDraw(false);
       setContentDescription(label);
       setSelected(id == selectedItem);
+      ViewCompat.setAccessibilityDelegate(this, new AccessibilityDelegateCompat() {
+        @Override
+        public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
+          super.onInitializeAccessibilityNodeInfo(host, info);
+          // Tab, "N of M", selected (MDC NavigationBarItemView).
+          info.setRoleDescription(getResources().getString(R.string.vg_TabRole));
+          int index = ItemView.this.id - ITEM_CHATS;
+          info.setCollectionItemInfo(AccessibilityNodeInfoCompat.CollectionItemInfoCompat.obtain(isBar ? 0 : index, 1, isBar ? index : 0, 1, false, isSelected()));
+        }
+      });
+    }
+
+    void updateDescription () {
+      if (id == ITEM_CHATS && unreadCount > 0) {
+        int count = (int) Math.min(Integer.MAX_VALUE, unreadCount);
+        setContentDescription(label + ", " + getResources().getQuantityString(R.plurals.vg_UnreadBadge, count, count));
+      } else {
+        setContentDescription(label);
+      }
     }
 
     /** The ripple mask depends on the layout mode. */

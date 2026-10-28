@@ -17,17 +17,24 @@ package org.thunderdog.challegram.navigation;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewParent;
+import android.view.VelocityTracker;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.OverScroller;
 import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
@@ -49,13 +56,16 @@ import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.ui.M3SearchContainerDecoration;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.widget.CustomTextView;
 import org.thunderdog.challegram.widget.EmojiTextView;
 import org.thunderdog.challegram.widget.M3Sheets;
+import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 
 import me.vkryl.android.ViewUtils;
+import me.vkryl.core.MathUtils;
 import me.vkryl.android.animator.Animated;
 import me.vkryl.core.StringUtils;
 
@@ -134,16 +144,250 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
    */
   public void setM3Sheet (ViewController<?> themeProvider) {
     this.m3Sheet = true;
-    View spacer = new View(getContext());
-    spacer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(M3_TOP_SPACE)));
-    addView(spacer, 0);
-    M3Sheets.setOutline(this, () -> 0);
+    m3Spacer = new View(getContext());
+    m3Spacer.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(M3_TOP_SPACE)));
+    addView(m3Spacer, 0);
+    M3Sheets.setOutline(this, this::getSheetTop);
+    setWillNotDraw(false);
     if (forcedTheme == null && themeProvider != null) {
       themeProvider.addThemeInvalidateListener(this);
     }
   }
 
   public static final float M3_TOP_SPACE = 8f;
+
+  // Scrollable M3 sheet: when the options are taller than 50% of the window, the sheet opens partially expanded
+  // (50%), gets a drag handle and is dragged up to expand; once it reaches the top inset the options scroll inside
+  // it. Dragging it down from the initial position dismisses it. The view then fills the window: the transparent
+  // part above the container (sheetOffset - scrollY) passes touches to the PopupLayout (tap outside = dismiss).
+
+  private View m3Spacer;
+  private boolean scrollable;
+  private int sheetOffset, maxScroll, topInset;
+  private Paint handlePaint;
+  private OverScroller scroller;
+  private VelocityTracker velocityTracker;
+  private int touchSlop, minFlingVelocity, maxFlingVelocity;
+  private boolean isDragging;
+  private float lastTouchY, downTouchY;
+
+  /** Top of the sheet container in view coordinates (pinned to the status bar inset when expanded). */
+  private int getSheetTop () {
+    if (!scrollable) {
+      return 0;
+    }
+    return Math.max(topInset, sheetOffset - getScrollY());
+  }
+
+  public boolean isM3Scrollable () {
+    return scrollable;
+  }
+
+  private int getSpacerBaseHeight (boolean scrollable) {
+    if (!scrollable) {
+      return Screen.dp(M3_TOP_SPACE);
+    }
+    // 48dp drag handle area; the header (18dp) or info text (14dp) brings its own top padding.
+    int textPadding = headerView.getVisibility() != View.GONE ? headerView.getPaddingTop() : textView.getVisibility() != View.GONE ? textView.getPaddingTop() : 0;
+    return Screen.dp(M3SearchContainerDecoration.SHEET_HANDLE_AREA) - textPadding;
+  }
+
+  @Override
+  protected void onScrollChanged (int l, int t, int oldl, int oldt) {
+    super.onScrollChanged(l, t, oldl, oldt);
+    if (m3Sheet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      invalidateOutline();
+    }
+  }
+
+  @Override
+  protected void onLayout (boolean changed, int l, int t, int r, int b) {
+    super.onLayout(changed, l, t, r, b);
+    if (m3Sheet) {
+      int scrollY = scrollable ? MathUtils.clamp(getScrollY(), 0, maxScroll) : 0;
+      if (getScrollY() != scrollY) {
+        if (scroller != null) {
+          scroller.forceFinished(true);
+        }
+        scrollTo(0, scrollY);
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        invalidateOutline();
+      }
+    }
+    if (pendingAction != null) {
+      pendingAction.run();
+      pendingAction = null;
+    }
+  }
+
+  @Override
+  protected void dispatchDraw (Canvas c) {
+    super.dispatchDraw(c);
+    if (scrollable) {
+      // Drag handle: 32x4dp, onSurfaceVariant, 22dp below the container top; scrolls with the content.
+      if (handlePaint == null) {
+        handlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+      }
+      handlePaint.setColor(forcedTheme != null ? forcedTheme.getColor(ColorId.textLight) : M3.onSurfaceVariant());
+      float width = Screen.dp(32f), height = Screen.dp(4f);
+      float top = sheetOffset + Screen.dp(22f);
+      float cx = getWidth() / 2f;
+      RectF rect = Paints.getRectF();
+      rect.set(cx - width / 2f, top, cx + width / 2f, top + height);
+      c.drawRoundRect(rect, height / 2f, height / 2f, handlePaint);
+    }
+  }
+
+  private void ensureScroller () {
+    if (scroller == null) {
+      scroller = new OverScroller(getContext());
+      ViewConfiguration configuration = ViewConfiguration.get(getContext());
+      touchSlop = configuration.getScaledTouchSlop();
+      minFlingVelocity = configuration.getScaledMinimumFlingVelocity();
+      maxFlingVelocity = configuration.getScaledMaximumFlingVelocity();
+    }
+  }
+
+  @Override
+  public boolean dispatchTouchEvent (MotionEvent e) {
+    if (scrollable && e.getActionMasked() == MotionEvent.ACTION_DOWN && e.getY() < getSheetTop()) {
+      // Transparent area above the sheet: let the PopupLayout handle it (dismiss).
+      return false;
+    }
+    return super.dispatchTouchEvent(e);
+  }
+
+  @Override
+  public boolean onInterceptTouchEvent (MotionEvent e) {
+    if (!scrollable) {
+      return super.onInterceptTouchEvent(e);
+    }
+    ensureScroller();
+    switch (e.getActionMasked()) {
+      case MotionEvent.ACTION_DOWN: {
+        downTouchY = lastTouchY = e.getY();
+        isDragging = !scroller.isFinished();
+        if (isDragging) {
+          scroller.forceFinished(true);
+        }
+        trackVelocity(e, true);
+        break;
+      }
+      case MotionEvent.ACTION_MOVE: {
+        trackVelocity(e, false);
+        if (!isDragging && Math.abs(e.getY() - downTouchY) > touchSlop) {
+          isDragging = true;
+          lastTouchY = e.getY();
+          if (getParent() != null) {
+            getParent().requestDisallowInterceptTouchEvent(true);
+          }
+        }
+        break;
+      }
+      case MotionEvent.ACTION_UP:
+      case MotionEvent.ACTION_CANCEL: {
+        isDragging = false;
+        break;
+      }
+    }
+    return isDragging;
+  }
+
+  @Override
+  public boolean onTouchEvent (MotionEvent e) {
+    if (!scrollable) {
+      super.onTouchEvent(e);
+      return true;
+    }
+    ensureScroller();
+    switch (e.getActionMasked()) {
+      case MotionEvent.ACTION_DOWN: {
+        downTouchY = lastTouchY = e.getY();
+        trackVelocity(e, true);
+        return true;
+      }
+      case MotionEvent.ACTION_MOVE: {
+        trackVelocity(e, false);
+        if (!isDragging && Math.abs(e.getY() - downTouchY) > touchSlop) {
+          isDragging = true;
+          lastTouchY = e.getY();
+        }
+        if (isDragging) {
+          int dy = Math.round(lastTouchY - e.getY());
+          lastTouchY = e.getY();
+          // Below 0 the whole sheet follows the finger down (swipe to dismiss).
+          int minScroll = -(getHeight() - sheetOffset);
+          scrollTo(0, MathUtils.clamp(getScrollY() + dy, minScroll, maxScroll));
+        }
+        return true;
+      }
+      case MotionEvent.ACTION_UP: {
+        float velocity = 0;
+        if (velocityTracker != null) {
+          velocityTracker.computeCurrentVelocity(1000, maxFlingVelocity);
+          velocity = velocityTracker.getYVelocity();
+        }
+        if (isDragging) {
+          onDragEnd(velocity);
+        }
+        isDragging = false;
+        recycleVelocity();
+        return true;
+      }
+      case MotionEvent.ACTION_CANCEL: {
+        if (isDragging) {
+          onDragEnd(0);
+        }
+        isDragging = false;
+        recycleVelocity();
+        return true;
+      }
+    }
+    return true;
+  }
+
+  private void onDragEnd (float velocityY) {
+    int scrollY = getScrollY();
+    if (scrollY < 0) {
+      int visible = getHeight() - sheetOffset;
+      if (-scrollY > visible / 4 || velocityY > minFlingVelocity * 8) {
+        ViewParent parent = getParent();
+        if (parent instanceof PopupLayout) {
+          ((PopupLayout) parent).hideWindow(true);
+          return;
+        }
+      }
+      scroller.startScroll(0, scrollY, 0, -scrollY);
+    } else if (Math.abs(velocityY) > minFlingVelocity) {
+      scroller.fling(0, scrollY, 0, Math.round(-velocityY), 0, 0, 0, maxScroll);
+    }
+    postInvalidateOnAnimation();
+  }
+
+  @Override
+  public void computeScroll () {
+    if (scroller != null && scroller.computeScrollOffset()) {
+      scrollTo(0, scroller.getCurrY());
+      postInvalidateOnAnimation();
+    }
+  }
+
+  private void trackVelocity (MotionEvent e, boolean reset) {
+    if (velocityTracker == null) {
+      velocityTracker = VelocityTracker.obtain();
+    } else if (reset) {
+      velocityTracker.clear();
+    }
+    velocityTracker.addMovement(e);
+  }
+
+  private void recycleVelocity () {
+    if (velocityTracker != null) {
+      velocityTracker.recycle();
+      velocityTracker = null;
+    }
+  }
 
   public boolean isM3Sheet () {
     return m3Sheet;
@@ -156,6 +400,10 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
   @Override
   public void onApplyMarginInsets (View child, FrameLayout.LayoutParams params, Rect legacyInsets, Rect insets, Rect insetsWithoutIme) {
     Views.setMargins(params, insets.left, 0, insets.right, 0);
+    if (topInset != insets.top) {
+      topInset = insets.top;
+      requestLayout();
+    }
     Views.setPaddingBottom(this, insetsWithoutIme.bottom);
   }
 
@@ -163,6 +411,9 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
     if (m3Sheet) {
       widthMeasureSpec = M3Sheets.measureSpec(widthMeasureSpec);
+      if (measureM3Sheet(widthMeasureSpec, heightMeasureSpec)) {
+        return;
+      }
     }
     super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
@@ -181,6 +432,46 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
         view.setTranslationY(diff);
       }
     }
+  }
+
+  /** @return true if the sheet is scrollable and has been measured to fill the available height */
+  private boolean measureM3Sheet (int widthMeasureSpec, int heightMeasureSpec) {
+    int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+    int availableHeight = MeasureSpec.getSize(heightMeasureSpec);
+    LinearLayout.LayoutParams spacerParams = (LinearLayout.LayoutParams) m3Spacer.getLayoutParams();
+    spacerParams.height = getSpacerBaseHeight(false);
+    boolean scrollable = false;
+    if (heightMode != MeasureSpec.UNSPECIFIED && availableHeight > 0) {
+      super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+      int limit = availableHeight / 2;
+      if (getMeasuredHeight() > limit) {
+        scrollable = true;
+        int contentHeight = getMeasuredHeight() - spacerParams.height + getSpacerBaseHeight(true);
+        sheetOffset = availableHeight - limit;
+        spacerParams.height = getSpacerBaseHeight(true) + sheetOffset;
+        // Content bottom reaches the view bottom; above the top inset the container is pinned and clips it.
+        maxScroll = Math.max(0, sheetOffset + contentHeight - availableHeight);
+      }
+    }
+    if (this.scrollable != scrollable) {
+      this.scrollable = scrollable;
+      if (!scrollable) {
+        sheetOffset = maxScroll = 0;
+      }
+    }
+    if (!scrollable) {
+      return false;
+    }
+    // UNSPECIFIED: an EXACTLY spec would measure WRAP_CONTENT children below the viewport with 0 height.
+    super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+    setMeasuredDimension(getMeasuredWidth(), availableHeight);
+    for (int i = 0; i < getChildCount(); i++) {
+      View view = getChildAt(i);
+      if (view != null) {
+        view.setTranslationY(0);
+      }
+    }
+    return true;
   }
 
   public static @ColorId int getOptionColorId (@ViewController.OptionColor int color) {
@@ -361,12 +652,6 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     }
   }
 
-  @Override
-  public boolean onTouchEvent (MotionEvent event) {
-    super.onTouchEvent(event);
-    return true;
-  }
-
   private Runnable pendingAction;
 
   @Override
@@ -374,12 +659,4 @@ public class OptionsLayout extends LinearLayout implements Animated, RootFrameLa
     pendingAction = action;
   }
 
-  @Override
-  protected void onLayout (boolean changed, int l, int t, int r, int b) {
-    super.onLayout(changed, l, t, r, b);
-    if (pendingAction != null) {
-      pendingAction.run();
-      pendingAction = null;
-    }
-  }
 }

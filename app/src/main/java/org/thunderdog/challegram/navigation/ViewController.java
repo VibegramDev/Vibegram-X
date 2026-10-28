@@ -94,6 +94,8 @@ import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.Keyboard;
 import org.thunderdog.challegram.tool.Paints;
+import org.thunderdog.challegram.widget.M3Sheets;
+import org.thunderdog.challegram.ui.M3SearchContainerDecoration;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
@@ -125,7 +127,6 @@ import org.thunderdog.challegram.widget.RootFrameLayout;
 import org.thunderdog.challegram.widget.SeparatorView;
 import org.thunderdog.challegram.widget.ShadowView;
 import org.thunderdog.challegram.widget.TimerView;
-import org.thunderdog.challegram.widget.decoration.BottomInsetFillingDecoration;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -137,6 +138,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import me.vkryl.core.ColorUtils;
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.ViewUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
@@ -895,6 +897,15 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return BackHeaderButton.TYPE_NONE;
   }
 
+  /** App bar back button: none for the dock section in the tablet left pane (the navigation bar switches sections). */
+  public final int getHeaderBackButton () {
+    NavigationController navigation = context != null ? context.navigation() : null;
+    if (navigation != null && navigation.isTabletSection(this)) {
+      return BackHeaderButton.TYPE_NONE;
+    }
+    return getBackButton();
+  }
+
   /*protected final int getBackButtonColor () {
     return Theme.headerBackColor();
   }
@@ -1026,6 +1037,39 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
 
   protected boolean forceFadeMode () {
     return false;
+  }
+
+  private boolean isTopLevelDestination;
+
+  /**
+   * M3 top-level destination (opened from the navigation dock): opening it and going back from it use the
+   * fade-through transition instead of forward/backward (m3.material.io/styles/motion/transitions › Top level).
+   */
+  public final void setTopLevelDestination (boolean isTopLevelDestination) {
+    this.isTopLevelDestination = isTopLevelDestination;
+  }
+
+  public final boolean isTopLevelDestination () {
+    return isTopLevelDestination;
+  }
+
+  private boolean isTabletDefaultDetail;
+
+  /** Tablet split: opened automatically in the right pane next to its dock section; Back from it closes the section. */
+  public final void setTabletDefaultDetail (boolean isTabletDefaultDetail) {
+    this.isTabletDefaultDetail = isTabletDefaultDetail;
+  }
+
+  public final boolean isTabletDefaultDetail () {
+    return isTabletDefaultDetail;
+  }
+
+  /**
+   * Tablet split: the screen has just become the dock section in the left pane, the right pane is empty.
+   * May open the default right pane content (see {@link NavigationController#prepareTabletDefaultDetail()}).
+   */
+  public void onOpenedAsTabletSection () {
+    // Override
   }
 
   protected boolean forceFastAnimation () {
@@ -1935,7 +1979,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       if (this.bottomInset != extraBottomInsetWithoutIme) {
         this.bottomInset = extraBottomInsetWithoutIme;
         if (footerView != null) {
-          footerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f) + extraBottomInsetWithoutIme, Gravity.BOTTOM));
+          footerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f) + extraBottomInsetWithoutIme, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
           Views.setPaddingBottom(footerView, extraBottomInsetWithoutIme);
         }
         Views.applyBottomInset(recyclerView, footerView == null ? extraBottomInsetWithoutIme : 0);
@@ -1992,6 +2036,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     settingsLayout.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
     final SettingsWrap settings = new SettingsWrap();
+    // M3 modal bottom sheet: handle area above the first row (drawn by M3SearchContainerDecoration.attachSheet).
+    final int sheetHandleOffset = Screen.dp(M3SearchContainerDecoration.SHEET_HANDLE_OFFSET);
 
     final RecyclerView recyclerView = new RecyclerView(context) {
       @Override
@@ -2000,7 +2046,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
           int i = ((LinearLayoutManager) getLayoutManager()).findFirstVisibleItemPosition();
           if (i == 0) {
             View view = getLayoutManager().findViewByPosition(i);
-            if (view != null && e.getY() < view.getTop()) {
+            // Touches above the sheet (scrim) close it; the handle area belongs to the sheet and drags the list.
+            if (view != null && e.getY() < view.getTop() - sheetHandleOffset) {
               return false;
             }
           }
@@ -2012,6 +2059,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
 
       @Override
       protected void onMeasure (int widthSpec, int heightSpec) {
+        // M3 sheet width: up to 640dp, centered with 56dp margins in wide windows.
+        widthSpec = M3Sheets.measureSpec(widthSpec);
         super.onMeasure(widthSpec, heightSpec);
 
         final int height = getMeasuredHeight();
@@ -2023,24 +2072,25 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
         }
       }
     };
-    recyclerView.addItemDecoration(new BottomInsetFillingDecoration(ColorId.filling));
     settings.recyclerView = recyclerView;
-    if (b.allowResize) {
-      recyclerView.addItemDecoration(new RecyclerView.ItemDecoration() {
-        @Override
-        public void getItemOffsets (@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
-          int position = parent.getChildAdapterPosition(view);
+    // M3 sheet container, drag handle and transparent state-layer rows (replaces the filling backgrounds).
+    M3SearchContainerDecoration.attachSheet(recyclerView, M3::surfaceContainerLow);
+    // M3: the initial height of a modal bottom sheet is at most 50% of the screen, the list scrolls (drags) it up.
+    // Applied to every sheet: short sheets keep their content height, long ones start at half the screen.
+    recyclerView.addItemDecoration(new RecyclerView.ItemDecoration() {
+      @Override
+      public void getItemOffsets (@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+        int position = parent.getChildAdapterPosition(view);
 
-          if (position == 0) {
-            int contentHeight = settings.adapter.measureHeight(-1);
-            int controlsHeight = context.getRootView().getSystemInsetsWithoutIme().bottom + (b.disableFooter ? 0 : Screen.dp(56f));
-            outRect.top = Math.max((Screen.currentHeight() - controlsHeight) / 2, Screen.currentHeight() - contentHeight - controlsHeight);
-          } else {
-            outRect.top = 0;
-          }
+        if (position == 0) {
+          int contentHeight = settings.adapter.measureHeight(-1) + sheetHandleOffset;
+          int controlsHeight = context.getRootView().getSystemInsetsWithoutIme().bottom + (b.disableFooter ? 0 : Screen.dp(56f));
+          outRect.top = Math.max(Screen.currentHeight() / 2, Screen.currentHeight() - contentHeight - controlsHeight);
+        } else {
+          outRect.top = 0;
         }
-      });
-    }
+      }
+    });
     recyclerView.setOverScrollMode(Config.HAS_NICE_OVER_SCROLL_EFFECT ? View.OVER_SCROLL_IF_CONTENT_SCROLLS : View.OVER_SCROLL_NEVER);
     recyclerView.setItemAnimator(null);
     recyclerView.setLayoutManager(new LinearLayoutManager(context(), RecyclerView.VERTICAL, false));
@@ -2052,7 +2102,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       if (firstPosition == 0) {
         View view = manager.findViewByPosition(0);
         if (view != null) {
-          return Math.min(Screen.currentHeight(), Math.min(settingsLayout.getMeasuredHeight() - view.getTop(), settings.adapter.measureHeight(-1)) + Screen.dp(56f) + extraBottomInsetWithoutIme);
+          return Math.min(Screen.currentHeight(), Math.min(settingsLayout.getMeasuredHeight() - view.getTop() + sheetHandleOffset, settings.adapter.measureHeight(-1) + sheetHandleOffset) + Screen.dp(56f) + extraBottomInsetWithoutIme);
         }
       }
       return Screen.currentHeight();
@@ -2142,9 +2192,16 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
           super.onTouchEvent(event);
           return true;
         }
+
+        @Override
+        protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+          super.onMeasure(M3Sheets.measureSpec(widthMeasureSpec), heightMeasureSpec);
+        }
       };
-      ViewSupport.setThemedBackground(footerView, ColorId.filling, this);
-      footerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f) + extraBottomInsetWithoutIme, Gravity.BOTTOM));
+      // M3 sheet actions sit on the sheet container.
+      footerView.setBackground(M3.roleDrawable(M3.SURFACE_CONTAINER_LOW));
+      addThemeInvalidateListener(footerView);
+      footerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f) + extraBottomInsetWithoutIme, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
       Views.setPaddingBottom(footerView, extraBottomInsetWithoutIme);
 
       for (int i = 0; i < 2; i++) {
@@ -2153,24 +2210,38 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
         int colorId = i == 1 ? b.saveColorId : b.cancelColorId;
         button.setTextColor(Theme.getColor(colorId));
         addThemeTextColorListener(button, colorId);
-        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
+        // M3 text buttons: LabelLarge 14sp, sentence case, 40dp high, pill state layer.
+        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
         button.setOnClickListener(onClickListener);
-        button.setBackgroundResource(R.drawable.bg_btn_header);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+          android.graphics.drawable.GradientDrawable mask = new android.graphics.drawable.GradientDrawable();
+          mask.setColor(0xffffffff);
+          mask.setCornerRadius(Screen.dp(20f));
+          button.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(ColorUtils.alphaColor(M3.STATE_PRESSED, Theme.getColor(colorId))), null, mask));
+        } else {
+          button.setBackgroundResource(R.drawable.bg_btn_header);
+        }
         button.setGravity(Gravity.CENTER);
-        button.setPadding(Screen.dp(16f), 0, Screen.dp(16f), 0);
+        button.setMinWidth(Screen.dp(48f));
+        button.setPadding(Screen.dp(12f), 0, Screen.dp(12f), 0);
 
         CharSequence text;
+        FrameLayoutFix.LayoutParams buttonParams;
         if (i == 0) {
           button.setId(R.id.btn_cancel);
-          button.setText(text = Lang.uppercase(b.cancelStr));
-          button.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(55f), (Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT) | Gravity.BOTTOM));
+          button.setText(text = b.cancelStr);
+          buttonParams = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(40f), (Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT) | Gravity.BOTTOM);
           settings.cancelButton = button;
         } else {
           button.setId(R.id.btn_save);
-          button.setText(text = Lang.uppercase(b.saveStr));
-          button.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(55f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM));
+          button.setText(text = b.saveStr);
+          buttonParams = FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(40f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM);
           settings.doneButton = button;
         }
+        // Labels align with the 16dp start/end of the sheet rows (4dp margin + 12dp button padding).
+        buttonParams.leftMargin = buttonParams.rightMargin = Screen.dp(4f);
+        buttonParams.bottomMargin = Screen.dp(8f);
+        button.setLayoutParams(buttonParams);
         Views.updateMediumTypeface(button, text);
 
         // Don't use Views.setClickable() - it disables focusable states needed for ripple effect
@@ -2179,7 +2250,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       }
     }
 
-    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
     params.bottomMargin = footerView != null ? Screen.dp(56f) + extraBottomInsetWithoutIme : 0;
 
     Views.applyBottomInset(recyclerView, footerView == null ? extraBottomInsetWithoutIme : 0);
@@ -2194,24 +2265,38 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       settingsLayout.addView(footerView);
     }
 
-    if (footerView != null) {
-      params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(1f), Gravity.BOTTOM);
-      params.bottomMargin = Screen.dp(56f) + extraBottomInsetWithoutIme;
-      shadowView = SeparatorView.simpleSeparator(context, params, true);
-      shadowView.setAlignBottom();
-      addThemeInvalidateListener(shadowView);
-      settingsLayout.addView(shadowView);
-    }
+    // M3 sheet: actions share the container, no divider above them (shadowView stays null).
 
     settingsLayout.setBottomInsetTargets(recyclerView, footerView, shadowView, extraBottomInset);
 
-    final int height = settings.adapter.measureHeight(-1);
+    final int height = settings.adapter.measureHeight(-1) + sheetHandleOffset;
     final int desiredHeight = height + (footerView != null ? Screen.dp(56f) : 0) + extraBottomInsetWithoutIme;
     final int popupHeight = Math.min(Screen.currentHeight(), desiredHeight);
 
-    if (desiredHeight > Screen.currentActualHeight() && checkedIndex != -1) {
-      int viewHeight = SettingHolder.measureHeightForType(items.get(checkedIndex).getViewType());
-      ((LinearLayoutManager) recyclerView.getLayoutManager()).scrollToPositionWithOffset(checkedIndex, (Screen.currentActualHeight() - Screen.dp(56f)) / 2 - viewHeight / 2);
+    if (checkedIndex != -1 && desiredHeight > Screen.currentHeight() / 2 + Screen.dp(56f)) {
+      // M3: the sheet opens at its initial height (50%) even when the checked item is further down;
+      // once open, the list scrolls just enough to bring the checked item above the actions
+      // (the sheet grows with it, up to the full height, then the items scroll inside).
+      popupLayout.setShowListener(popup -> {
+        LinearLayoutManager manager = (LinearLayoutManager) recyclerView.getLayoutManager();
+        View checkedView = manager.findViewByPosition(checkedIndex);
+        int bottomLimit = recyclerView.getHeight() - recyclerView.getPaddingBottom() - Screen.dp(8f);
+        int scrollBy;
+        if (checkedView != null) {
+          scrollBy = checkedView.getBottom() - bottomLimit;
+        } else {
+          // Not laid out yet: below the visible rows. Measured heights of the rows up to the checked one.
+          View lastView = manager.findViewByPosition(manager.findLastVisibleItemPosition());
+          int distance = lastView != null ? lastView.getBottom() : recyclerView.getHeight();
+          for (int i = manager.findLastVisibleItemPosition() + 1; i <= checkedIndex && i < items.size(); i++) {
+            distance += SettingHolder.measureHeightForType(items.get(i).getViewType());
+          }
+          scrollBy = distance - bottomLimit;
+        }
+        if (scrollBy > 0) {
+          recyclerView.smoothScrollBy(0, scrollBy);
+        }
+      });
     }
     popupLayout.addThemeListeners(this);
     popupLayout.showSimplePopupView(settingsLayout, Math.min(Screen.currentHeight() / 2 + Screen.dp(56f), popupHeight));

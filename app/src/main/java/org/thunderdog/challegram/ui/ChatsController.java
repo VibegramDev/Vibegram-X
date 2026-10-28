@@ -2361,7 +2361,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     if (!progressVisible) {
       if (spinnerView == null) {
         spinnerView = new ProgressComponentView(context());
-        spinnerView.initLarge(1f);
+        spinnerView.initLoadingIndicator(1f);
         spinnerView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(48f), Screen.dp(48f), Gravity.CENTER));
       }
       if (spinnerView.getParent() == null) {

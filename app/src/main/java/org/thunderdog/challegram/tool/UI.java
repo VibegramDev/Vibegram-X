@@ -29,6 +29,7 @@ import android.os.Looper;
 import android.text.format.DateFormat;
 import android.view.View;
 import android.view.Window;
+import android.view.accessibility.AccessibilityManager;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.InputMethodSubtype;
@@ -868,5 +869,18 @@ public class UI {
       } catch (Throwable ignored) { }
     }
     return inputLanguages.isEmpty() ? null : inputLanguages.toArray(new String[0]);
+  }
+
+  /**
+   * Touch exploration (TalkBack and similar): M3 keeps navigation visible, without hiding on scroll.
+   * Available on API 14+.
+   */
+  public static boolean isScreenReaderActive () {
+    try {
+      AccessibilityManager manager = (AccessibilityManager) getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
+      return manager != null && manager.isEnabled() && manager.isTouchExplorationEnabled();
+    } catch (Throwable t) {
+      return false;
+    }
   }
 }

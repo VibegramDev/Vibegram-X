@@ -1413,7 +1413,7 @@ public class SettingHolder extends RecyclerView.ViewHolder {
       }
       case ListItem.TYPE_PROGRESS: {
         ProgressComponentView componentView = new ProgressComponentView(context);
-        componentView.initLarge(1f);
+        componentView.initLoadingIndicator(1f);
         componentView.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         return new SettingHolder(componentView);
       }

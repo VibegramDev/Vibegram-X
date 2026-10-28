@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: M3 sheets and the birthday page of the «Account» section (not in the cloud language pack). -->
+<resources>
+  <item type="id" name="controller_vgBirthdate" />
+  <string name="vg_BirthdateField">Date of birth</string>
+  <string name="vg_BirthdateHint">DD.MM.YYYY, the year is optional. There\'s a time frame before you can change your birthday to another date.</string>
+  <string name="vg_BirthdateEmpty">Enter the date</string>
+  <string name="vg_BirthdateInvalid">Invalid date. Format: DD.MM.YYYY or DD.MM</string>
+</resources>

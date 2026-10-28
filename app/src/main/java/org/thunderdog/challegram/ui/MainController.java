@@ -139,6 +139,7 @@ import org.thunderdog.challegram.widget.BubbleLayout;
 import org.thunderdog.challegram.widget.FillingSpace;
 import org.thunderdog.challegram.widget.M3MainTitleView;
 import org.thunderdog.challegram.widget.M3SearchBarView;
+import org.thunderdog.challegram.widget.M3Tooltip;
 import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.PopupLayout;
@@ -191,6 +192,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private FrameLayoutFix mainWrap;
+  /** Root of the main screen: hosts the dock section of the tablet left pane above the chat list, below the bar. */
+  private FrameLayoutFix rootContentView;
+  private @Nullable View tabletSectionView;
   private FrameLayoutFix pagerWrap;
   private MainNavigationBar navigationBar;
   /** Tablet: fades the chat list into surface behind the floating bar. */
@@ -218,7 +222,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   protected void onBottomInsetChanged (int extraBottomInset, int extraBottomInsetWithoutIme, boolean isImeInset) {
     super.onBottomInsetChanged(extraBottomInset, extraBottomInsetWithoutIme, isImeInset);
     updateChatListNavigationInset();
-    Views.setPaddingBottom(updateSnackBar, extraBottomInsetWithoutIme);
+    updateSnackBarOffset();
     updateBottomBarMargins();
     checkMargins();
     checkNavigationBarLayout();
@@ -226,7 +230,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private void updateBottomBarMargins () {
     if (bottomBar != null) {
-      int height = Math.round(extraBottomInsetWithoutIme * (1f - (updateSnackBar != null ? updateSnackBar.getVisibilityFactor() : 0)));
+      int height = extraBottomInsetWithoutIme;
       Views.setBottomMargin(bottomBar, height);
       bottomBarSpace.setLayoutHeight(height, true);
     }
@@ -234,6 +238,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   @Override
   protected void onCreateView (Context context, FrameLayoutFix contentView, ViewPager pager) {
+    this.rootContentView = contentView;
     if (BuildConfig.DEBUG) {
       Test.execute();
     }
@@ -253,7 +258,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     navigationBar.setUser(tdlib, tdlib.myUserId());
     navigationBar.setCallback(this::onNavigationItemClick);
     navigationBar.setCollapseListener(factor -> updateHeaderDockButtons());
-    updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), false);
+    navigationBar.setUnreadCount(updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), false));
     navigationCounterListener = new CounterChangeListener() {
       @Override
       public void onChatCounterChanged (@NonNull TdApi.ChatList chatList, TdlibCounter counter, boolean availabilityChanged, int totalCount, int unreadCount, int unreadUnmutedCount) {
@@ -847,7 +852,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return;
     }
     ChatsController c = getCurrentChatsController();
-    boolean collapsed = !isTabletNavigationBar() && !inSearchMode() && !inSelectMode() && c != null && c.isScrolledFromTop();
+    // M3: "Don't hide the navigation bar on scroll when a screen reader is active".
+    boolean collapsed = !isTabletNavigationBar() && !inSearchMode() && !inSelectMode() && c != null && c.isScrolledFromTop() && !UI.isScreenReaderActive();
     navigationBar.setCollapsed(collapsed, animated && isFocused());
   }
 
@@ -897,6 +903,26 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     button.setScaleX(scale);
     button.setScaleY(scale);
     return changed;
+  }
+
+  /**
+   * Dock sections moved into the app bar: plain tooltip with the label on tap and hold, below the icon button
+   * ("If the element is in an app bar, the plain tooltip appears below the element").
+   */
+  private static void bindHeaderDockTooltips (LinearLayout menu) {
+    M3Tooltip.BoundsProvider iconButtonBounds = (anchor, outRect) -> {
+      // 48dp icon button centered in the app bar button.
+      int size = Math.min(anchor.getHeight(), Screen.dp(48f));
+      int top = (anchor.getHeight() - size) / 2;
+      outRect.set(0, top, anchor.getWidth(), top + size);
+    };
+    for (int i = 0; i < menu.getChildCount(); i++) {
+      View button = menu.getChildAt(i);
+      int id = button.getId();
+      if (id == R.id.menu_btn_search || id == R.id.menu_btn_calls || id == R.id.menu_btn_contacts || id == R.id.menu_btn_account) {
+        M3Tooltip.bind(button, M3Tooltip.PLACEMENT_BELOW, iconButtonBounds, View::getContentDescription);
+      }
+    }
   }
 
   private View newAccountHeaderButton (HeaderView header) {
@@ -1189,7 +1215,29 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return foldersBar + MainNavigationBar.getRailMargin() + navigationBar.getRailTotalHeight() + Screen.dp(8f);
   }
 
+  /**
+   * M3: the snackbar never covers navigation. Tablet bar: floats above the bar (and the system bar).
+   * Phone dock (owner's decision): at the bottom next to the dock, aligned with its bottom, narrowed to the
+   * width the dock leaves free (16dp from the screen edge, 8dp from the dock), above the folders bar.
+   */
+  private void updateSnackBarOffset () {
+    if (updateSnackBar == null) {
+      return;
+    }
+    int margin = Screen.dp(SnackBar.MARGIN);
+    if (navigationBar != null && !navigationBar.isBar()) {
+      int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
+      int dockSide = MainNavigationBar.getRailMargin() + MainNavigationBar.getRailWidth() + Screen.dp(8f);
+      updateSnackBar.setHorizontalMargins(margin, dockSide);
+      updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + foldersBar + MainNavigationBar.getRailMargin());
+    } else {
+      updateSnackBar.setHorizontalMargins(margin, margin);
+      updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + Math.max(margin, getChatListNavigationInset()));
+    }
+  }
+
   private void updateChatListNavigationInset () {
+    updateSnackBarOffset();
     int inset = getChatListNavigationInset();
     int count = getPagerItemCount();
     for (int position = 0; position < count; position++) {
@@ -1241,6 +1289,29 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     updateNavigationBarSelection();
   }
 
+  /**
+   * Tablet split: shows the content of a dock section (Calls, Contacts, Settings) in the left pane instead of the
+   * chat list. It stays under the navigation bar and its scrim; the chat list keeps its state while hidden.
+   */
+  public void setTabletSectionView (@Nullable View view) {
+    if (tabletSectionView == view || rootContentView == null) {
+      return;
+    }
+    if (tabletSectionView != null && tabletSectionView.getParent() == rootContentView) {
+      rootContentView.removeView(tabletSectionView);
+    }
+    tabletSectionView = view;
+    if (view != null) {
+      rootContentView.addView(view, rootContentView.indexOfChild(mainWrap) + 1);
+    }
+    mainWrap.setVisibility(view != null ? View.INVISIBLE : View.VISIBLE);
+  }
+
+  /** Bottom space a section list needs to scroll its last item above the floating bar of the left pane. */
+  public int getTabletSectionNavigationInset () {
+    return navigationBar != null && navigationBar.isBar() ? getChatListNavigationInset() : 0;
+  }
+
   /** Highlights the section opened in the right pane of the tablet layout. */
   public void updateNavigationBarSelection () {
     if (navigationBar != null) {
@@ -1271,7 +1342,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
     executeOnUiThreadOptional(() -> {
       if (navigationBar != null) {
-        updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), true);
+        navigationBar.setUnreadCount(updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), true));
       }
     });
   }
@@ -1299,7 +1370,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return;
     }
     boolean isTablet = isTabletNavigationBar();
-    if (isTablet && item == getTabletSection() && item != MainNavigationBar.ITEM_CHATS && navigationController.getStackSize() == 2) {
+    if (isTablet && item == getTabletSection() && item != MainNavigationBar.ITEM_CHATS) {
+      // The section is already in the left pane.
       return;
     }
     switch (item) {
@@ -1335,6 +1407,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (isDestroyed() || navigationController == null) {
       return;
     }
+    // M3 top-level destination: fade-through instead of forward/backward.
+    c.setTopLevelDestination(true);
     if (isTabletNavigationBar()) {
       // Replace whatever is opened in the right pane.
       navigationController.setControllerAnimated(c, true, true);
@@ -1349,7 +1423,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
     if (!Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL && displayTabsAtBottom()) {
       Views.setBottomMargin(getViewPager(), getHeaderHeight());
-      Views.setBottomMargin(pagerWrap, updateSnackBar != null ? Math.round(updateSnackBar.getHeight() * updateSnackBar.getVisibilityFactor()) : 0); // FIXME
+      Views.setBottomMargin(pagerWrap, 0);
     } else {
       Views.setBottomMargin(getViewPager(), 0);
       Views.setBottomMargin(pagerWrap, 0);
@@ -1386,33 +1460,18 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private void onAppUpdateAvailable (boolean isApk, boolean immediate) {
     if (updateSnackBar == null) {
       updateSnackBar = new SnackBar(context);
-      Views.setPaddingBottom(updateSnackBar, extraBottomInsetWithoutIme);
       updateSnackBar.setCallback(new SnackBar.Callback() {
         @Override
         public void onSnackBarTransition (SnackBar v, float factor) {
-          float offsetBySnackBar = v.getMeasuredHeight() * factor;
-          boolean tabsAtBottom = displayTabsAtBottom();
-          if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
-            bottomBarOffsetBySnackBar = -offsetBySnackBar;
-            invalidateBottomBarOffset();
-          } else if (tabsAtBottom) {
-            Views.setBottomMargin(pagerWrap, Math.round(offsetBySnackBar)); // FIXME
-          }
-          if (tabsAtBottom) {
-            updateBottomBarMargins();
-          }
+          // Floating M3 snackbar: navigation and lists stay in place.
         }
 
         @Override
         public void onDestroySnackBar (SnackBar v) {
-          if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
-            bottomBarOffsetBySnackBar = 0;
-            invalidateBottomBarOffset();
-          } else {
-            Views.setBottomMargin(pagerWrap, 0); // FIXME
-          }
           if (updateSnackBar == v) {
-            mainWrap.removeView(updateSnackBar);
+            if (updateSnackBar.getParent() instanceof ViewGroup) {
+              ((ViewGroup) updateSnackBar.getParent()).removeView(updateSnackBar);
+            }
             updateSnackBar.removeThemeListeners(MainController.this);
             updateSnackBar = null;
           }
@@ -1420,7 +1479,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       });
       updateSnackBar.addThemeListeners(this);
       updateSnackBar.setText(Lang.getString(R.string.AppUpdateReady));
-      mainWrap.addView(updateSnackBar);
+      // Above the navigation scrim and bar (z-order), positioned above them by updateSnackBarOffset().
+      ViewGroup snackBarParent = navigationBar != null && navigationBar.getParent() instanceof ViewGroup ? (ViewGroup) navigationBar.getParent() : mainWrap;
+      snackBarParent.addView(updateSnackBar);
+      updateSnackBarOffset();
     }
     updateSnackBar.setAction(Lang.getString(isApk ? R.string.AppUpdateInstall : R.string.AppUpdateRestart), context().appUpdater()::installUpdate, !isApk);
     updateSnackBar.showSnackBar(!immediate && isFocused());
@@ -1747,7 +1809,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (!Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL || getCurrentPagerItem() != controller) {
       return;
     }
-    if (show) {
+    if (show || UI.isScreenReaderActive()) {
+      // M3: navigation stays visible for screen readers.
       showBottomBar();
     } else {
       if (getCurrentPagerItemId() == MAIN_PAGER_ITEM_ID) {
@@ -2218,6 +2281,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       header.addButton(menu, R.id.menu_btn_contacts, R.drawable.baseline_perm_contact_calendar_24, 49f, this, getHeaderIconColorId())
         .setContentDescription(Lang.getString(R.string.Contacts));
       header.addButton(menu, newAccountHeaderButton(header));
+      bindHeaderDockTooltips(menu);
       if (!mainMenus.contains(menu)) {
         mainMenus.add(menu);
       }
@@ -3287,6 +3351,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       folderRail.setListener(new ViewPagerTopView.OnItemClickListener() {
         @Override
         public void onPagerItemClick (int index) {
+          if (isTabletNavigationBar() && getTabletSection() != MainNavigationBar.ITEM_CHATS) {
+            // A dock section is in the left pane: a folder brings the chat list back.
+            if (navigationController.isAnimating() || !navigationController.closeTabletDetail()) {
+              return;
+            }
+          }
           MainController.this.onPagerItemClick(index);
         }
 
@@ -3552,11 +3622,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     };
   }
 
-  private void updateCounter (TdApi.ChatList chatList, Counter target, TdlibCounter counter, boolean animated) {
-    updateCounter(tdlib, chatList, target, counter, animated);
+  private long updateCounter (TdApi.ChatList chatList, Counter target, TdlibCounter counter, boolean animated) {
+    return updateCounter(tdlib, chatList, target, counter, animated);
   }
 
-  public static void updateCounter (Tdlib tdlib, TdApi.ChatList chatList, Counter target, TdlibCounter counter, boolean animated) {
+  /** @return the number shown by the badge (0: hidden) */
+  public static long updateCounter (Tdlib tdlib, TdApi.ChatList chatList, Counter target, TdlibCounter counter, boolean animated) {
     int mutedCount, unmutedCount;
     int badgeFlags = tdlib.settings().getChatFolderBadgeFlags();
     boolean countMessages = BitwiseUtils.hasFlag(badgeFlags, Settings.BADGE_FLAG_MESSAGES);
@@ -3580,8 +3651,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (BitwiseUtils.hasFlag(badgeFlags, Settings.BADGE_FLAG_MUTED)) {
       boolean muted = mutedCount > 0 ? unmutedCount == 0 : target.isMuted();
       target.setCount(mutedCount, muted, animated);
+      return mutedCount;
     } else {
       target.setCount(unmutedCount, false, animated);
+      return unmutedCount;
     }
   }
 

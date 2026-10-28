@@ -720,7 +720,7 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
       ));
 
       ProgressComponentView progressView = new ProgressComponentView(context);
-      progressView.initLarge(1f);
+      progressView.initLoadingIndicator(1f);
       FrameLayoutFix.LayoutParams lp = new FrameLayoutFix.LayoutParams(
         Screen.dp(48f),
         Screen.dp(48f),

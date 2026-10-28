@@ -12,7 +12,6 @@
  */
 package org.thunderdog.challegram.ui;
 
-import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Outline;
@@ -22,12 +21,12 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.view.View;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -38,6 +37,7 @@ import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 
 import java.util.List;
 
@@ -393,7 +393,7 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
   }
 
   /** Segment fill + M3 state layer (pressed 10% of onSurface), clipped to the segment shape. */
-  private static final class SegmentBackground extends RippleDrawable implements FactorAnimator.Target {
+  private static final class SegmentBackground extends M3StateLayerDrawable implements FactorAnimator.Target {
     private static final int ANIMATOR_SHAPE = 0, ANIMATOR_LIFT = 1;
 
     final @Nullable Drawable original;
@@ -408,7 +408,7 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
     }
 
     private SegmentBackground (@Nullable Drawable original, SegmentShape content, SegmentShape mask) {
-      super(ColorStateList.valueOf(rippleColor()), content, mask);
+      super(content, mask, rippleColor());
       this.original = original;
       this.content = content;
       this.mask = mask;
@@ -424,7 +424,7 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
       int color = rippleColor();
       if (color != currentRippleColor) {
         currentRippleColor = color;
-        setColor(ColorStateList.valueOf(color));
+        setColor(color);
       }
       return changed;
     }
@@ -534,6 +534,7 @@ public final class M3SettingsGroupDecoration extends RecyclerView.ItemDecoration
     }
 
     /** Outline for the elevation shadow of a dragged segment. */
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     @Override
     public void getOutline (@NonNull Outline outline) {
       Path path = buildPath();
