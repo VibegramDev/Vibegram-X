@@ -15,15 +15,16 @@
 package org.thunderdog.challegram.navigation;
 
 import android.content.Context;
-import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Outline;
 import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
+import android.os.Build;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -48,7 +49,9 @@ import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.widget.ForegroundCompat;
 import org.thunderdog.challegram.widget.M3FabView;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 
 import me.vkryl.android.AnimatorUtils;
@@ -250,10 +253,54 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
   }
 
   /** FAB menu item: 56dp pill, primaryContainer, 24dp icon, TitleMedium label, Level3. */
-  private static final class MenuItemView extends NoScrollTextView {
+  private static final class MenuItemView extends NoScrollTextView implements ForegroundCompat.Host {
+    private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
+
+    @Nullable
+    @Override
+    public ForegroundCompat foregroundCompat () {
+      return foregroundCompat;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      super.draw(c);
+      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        foregroundCompat.draw(c);
+      }
+    }
+
+    @Override
+    protected boolean verifyDrawable (@NonNull Drawable who) {
+      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+    }
+
+    @Override
+    protected void drawableStateChanged () {
+      super.drawableStateChanged();
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableStateChanged();
+      }
+    }
+
+    @Override
+    public void drawableHotspotChanged (float x, float y) {
+      super.drawableHotspotChanged(x, y);
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableHotspotChanged(x, y);
+      }
+    }
+
+    @Override
+    public void jumpDrawablesToCurrentState () {
+      super.jumpDrawablesToCurrentState();
+      if (foregroundCompat != null) {
+        foregroundCompat.jumpDrawablesToCurrentState();
+      }
+    }
     private final Drawable icon;
     private final GradientDrawable rippleMask;
-    private final RippleDrawable ripple;
+    private final M3StateLayerDrawable ripple;
     private int textColor, rippleColor;
 
     MenuItemView (Context context, @DrawableRes int iconRes) {
@@ -261,30 +308,42 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
       icon = Drawables.get(getResources(), iconRes).mutate();
       int iconSize = Screen.dp(24f);
       icon.setBounds(0, 0, iconSize, iconSize);
-      setCompoundDrawablesRelative(icon, null, null, null);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+        setCompoundDrawablesRelative(icon, null, null, null);
+      } else {
+        setCompoundDrawables(icon, null, null, null);
+      }
       setCompoundDrawablePadding(Screen.dp(ITEM_ICON_LABEL_SPACE));
       setGravity(Gravity.CENTER_VERTICAL);
       setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
       setTypeface(Fonts.getRobotoMedium());
-      setLetterSpacing(.15f / 16f);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        setLetterSpacing(.15f / 16f);
+      }
       setSingleLine(true);
       setEllipsize(TextUtils.TruncateAt.END);
-      setPaddingRelative(Screen.dp(ITEM_LEADING_SPACE), 0, Screen.dp(ITEM_TRAILING_SPACE), 0);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+        setPaddingRelative(Screen.dp(ITEM_LEADING_SPACE), 0, Screen.dp(ITEM_TRAILING_SPACE), 0);
+      } else {
+        setPadding(Screen.dp(ITEM_LEADING_SPACE), 0, Screen.dp(ITEM_TRAILING_SPACE), 0);
+      }
       setWillNotDraw(false);
       rippleMask = new GradientDrawable();
       rippleMask.setColor(0xFFFFFFFF);
       rippleMask.setCornerRadius(Screen.dp(ITEM_HEIGHT) / 2f);
       rippleColor = computeRippleColor();
-      ripple = new RippleDrawable(ColorStateList.valueOf(rippleColor), null, rippleMask);
-      setForeground(ripple);
-      setOutlineProvider(new ViewOutlineProvider() {
-        @Override
-        public void getOutline (View view, Outline outline) {
-          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), view.getHeight() / 2f);
-        }
-      });
-      setClipToOutline(true);
-      setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+      ripple = new M3StateLayerDrawable(null, rippleMask, rippleColor);
+      ForegroundCompat.set(this, ripple);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        setOutlineProvider(new ViewOutlineProvider() {
+          @Override
+          public void getOutline (View view, Outline outline) {
+            outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), view.getHeight() / 2f);
+          }
+        });
+        setClipToOutline(true);
+        setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+      }
       updateColors();
     }
 
@@ -297,12 +356,12 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
       if (color != textColor) {
         textColor = color;
         setTextColor(color);
-        setCompoundDrawableTintList(ColorStateList.valueOf(color));
+        icon.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN));
       }
       int newRippleColor = computeRippleColor();
       if (newRippleColor != rippleColor) {
         rippleColor = newRippleColor;
-        ripple.setColor(ColorStateList.valueOf(newRippleColor));
+        ripple.setColor(newRippleColor);
       }
     }
 

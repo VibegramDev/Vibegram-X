@@ -42,6 +42,7 @@ import org.thunderdog.challegram.data.TGFoundMessage;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.loader.ImageFile;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.telegram.ChatListener;
 import org.thunderdog.challegram.telegram.NotificationSettingsListener;
@@ -392,6 +393,10 @@ public class BetterChatView extends BaseView implements Destroyable, RemoveHelpe
   protected void onDraw (Canvas c) {
     if (removeHelper != null) {
       removeHelper.save(c);
+    }
+    if (NavigationController.isTabletSelectedRow(this, null, 0)) {
+      // Tablet: the call that opened the right pane, highlighted like the opened chat in the chat list.
+      c.drawColor(NavigationController.getTabletSelectionColor());
     }
 
     final int width = getMeasuredWidth();

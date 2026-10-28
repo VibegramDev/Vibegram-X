@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: accessibility strings of the M3 navigation dock (not in the cloud language pack). -->
+<resources>
+  <string name="vg_CloseSearch">Закрыть поиск</string>
+  <string name="vg_TabRole">Вкладка</string>
+  <plurals name="vg_UnreadBadge">
+    <item quantity="one">%d непрочитанный</item>
+    <item quantity="few">%d непрочитанных</item>
+    <item quantity="many">%d непрочитанных</item>
+    <item quantity="other">%d непрочитанного</item>
+  </plurals>
+</resources>

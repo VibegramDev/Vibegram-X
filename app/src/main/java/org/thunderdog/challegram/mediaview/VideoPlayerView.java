@@ -14,7 +14,6 @@
  */
 package org.thunderdog.challegram.mediaview;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.os.Build;
 import android.os.Handler;
@@ -49,12 +48,12 @@ import org.thunderdog.challegram.mediaview.crop.CropEffectFactory;
 import org.thunderdog.challegram.mediaview.crop.CropState;
 import org.thunderdog.challegram.mediaview.crop.CroppedLayout;
 import org.thunderdog.challegram.mediaview.data.MediaItem;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.telegram.CallManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibDataSource;
 import org.thunderdog.challegram.telegram.TdlibFilesManager;
 import org.thunderdog.challegram.telegram.TdlibManager;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
@@ -256,7 +255,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
 
   private final static int LONG_STREAMING_PRELOAD_DURATION = 5 * 1000;
   private CancellableRunnable longStreamingAlertRunnable;
-  private AlertDialog pendingLsAlert;
+  private AlertPopup pendingLsAlert;
 
   private void setLongStreamingAlertHandler (boolean state) {
     if (state) {
@@ -284,7 +283,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   }
 
   private void showLongStreamingAlert () {
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(R.string.Warning));
     b.setMessage(Lang.getString(R.string.LongStreamingPreloadAlert));
     b.setPositiveButton(Lang.getString(R.string.LongStreamingPreloadAlertClose), (dialog, which) -> {

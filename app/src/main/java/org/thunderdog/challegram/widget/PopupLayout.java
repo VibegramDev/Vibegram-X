@@ -472,6 +472,15 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
   }
 
   @Override
+  public boolean dispatchTouchEvent (MotionEvent e) {
+    if (window != null) {
+      // Shown in its own window: the activity does not see these touches.
+      UI.getContext(getContext()).recordTouchEvent(e);
+    }
+    return super.dispatchTouchEvent(e);
+  }
+
+  @Override
   public boolean onTouchEvent (MotionEvent e) {
     if (e.getAction() == MotionEvent.ACTION_DOWN) {
       if (factor == 1f && !disableCancelOnTouchDown) {
@@ -517,6 +526,17 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
 
     animationType = ANIMATION_TYPE_SIMPLE;
     view.setTranslationY(currentHeight = height);
+    addView(boundView = view);
+    ((BaseActivity) getContext()).showPopupWindow(this);
+  }
+
+  /** Centred popup (M3 dialog) that fades in and out together with the scrim. */
+  public void showFadingPopupView (View view) {
+    if (view == null || view.getParent() != null) {
+      throw new IllegalArgumentException();
+    }
+    animationType = ANIMATION_TYPE_FADE;
+    view.setAlpha(0f);
     addView(boundView = view);
     ((BaseActivity) getContext()).showPopupWindow(this);
   }
@@ -661,6 +681,7 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
   private static final int ANIMATION_TYPE_CUSTOM = 1;
   private static final int ANIMATION_TYPE_MORE_SCALE = 2;
   private static final int ANIMATION_TYPE_MORE_REVEAL = 3;
+  private static final int ANIMATION_TYPE_FADE = 4;
 
   private int animationType;
   private boolean revealAnimationLaunched, hideAnimationLaunched;
@@ -672,7 +693,8 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
     if (!revealAnimationLaunched) {
       revealAnimationLaunched = true;
       switch (animationType) {
-        case ANIMATION_TYPE_SIMPLE: {
+        case ANIMATION_TYPE_SIMPLE:
+        case ANIMATION_TYPE_FADE: {
           animateRevealFactor(1f);
           break;
         }
@@ -811,6 +833,10 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
           hideMoreWrap();
           break;
         }
+        case ANIMATION_TYPE_FADE: {
+          animateRevealFactor(0f);
+          break;
+        }
       }
     }
   }
@@ -880,6 +906,13 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
           View view = getContentChild();
           if (view != null) {
             view.setTranslationY(currentHeight * (1f - factor));
+          }
+          break;
+        }
+        case ANIMATION_TYPE_FADE: {
+          View view = getContentChild();
+          if (view != null) {
+            view.setAlpha(factor);
           }
           break;
         }

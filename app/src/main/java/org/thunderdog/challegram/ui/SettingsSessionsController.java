@@ -346,7 +346,7 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
       requestActiveSessions();
     }
 
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
 
     recyclerView.setAdapter(adapter);
     tdlib.listeners().subscribeToSessionUpdates(this);

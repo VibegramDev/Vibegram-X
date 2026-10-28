@@ -574,6 +574,7 @@ public class PrivacyExceptionController extends RecyclerViewController<PrivacyEx
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     adapter.setItems(items, false);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
     restorePersistentScrollPosition();
 

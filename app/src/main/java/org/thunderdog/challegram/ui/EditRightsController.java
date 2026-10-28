@@ -324,7 +324,6 @@ public class EditRightsController extends EditBaseController<EditRightsControlle
             new ListItem(ListItem.TYPE_CHECKBOX_OPTION, RightId.READ_MESSAGES, 0, tdlib.isChannel(args.chatId) ? R.string.InviteBackToChannel : R.string.InviteBackToGroup, false)
           })
           .setSaveStr(R.string.Unban)
-          .setSaveColorId(ColorId.textNegative)
         );
       }
     } else if (viewId == R.id.btn_dismissAdmin) {

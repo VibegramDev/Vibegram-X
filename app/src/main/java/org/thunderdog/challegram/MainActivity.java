@@ -950,7 +950,6 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
       .addHeaderItem(prompt)
       .setRawItems(items)
       .setSaveStr(action)
-      .setNeedSeparators(false)
       .setOnSettingItemClick(multiSelect ? new ViewController.OnSettingItemClick() {
         @Override
         public void onSettingItemClick (View view, int settingsId, ListItem item, TextView doneButton, SettingsAdapter settingsAdapter, PopupLayout window) {

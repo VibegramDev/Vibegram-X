@@ -34,6 +34,7 @@ import org.thunderdog.challegram.data.TGUser;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiverProvider;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibAccentColor;
@@ -58,6 +59,7 @@ import java.util.List;
 
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.Destroyable;
+import tgx.td.ChatId;
 
 public class UserView extends BaseView implements Destroyable, RemoveHelper.RemoveDelegate, TooltipOverlayView.LocationProvider, ComplexReceiverProvider {
   /*private static final int ACCENT_COLOR = 0xff569ace;
@@ -323,6 +325,10 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
   @Override
   protected void onDraw (Canvas c) {
     removeHelper.save(c);
+    if (user != null && user.getUserId() != 0 && NavigationController.isTabletSelectedRow(this, tdlib, ChatId.fromUserId(user.getUserId()))) {
+      // Tablet: the contact whose chat is open in the right pane, highlighted like the opened chat in the chat list.
+      c.drawColor(NavigationController.getTabletSelectionColor());
+    }
     int centerY = height / 2;
     boolean rtl = Lang.rtl();
     int viewWidth = getMeasuredWidth();

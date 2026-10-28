@@ -673,7 +673,7 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
     }
 
     adapter.setItems(items, true);
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
 
     tdlib.wallpaper().getBackgrounds(null, Theme.isDark());
@@ -1077,8 +1077,10 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
 
       if (Settings.instance().useSystemFonts()) {
         showWarning(Lang.getString(R.string.RestartEffect), success -> {
-          Settings.instance().setUseSystemFonts(false);
-          adapter.updateValuedSettingById(R.id.btn_systemFonts);
+          if (success) {
+            Settings.instance().setUseSystemFonts(false);
+            adapter.updateValuedSettingById(R.id.btn_systemFonts);
+          }
         });
       } else {
         showWarning(TextUtils.concat(Lang.getMarkdownString(this, R.string.UseSystemFontsHint), "\n\n", Lang.getString(R.string.RestartEffect)), success -> {
@@ -1788,7 +1790,7 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       .setRawItems(new SettingItem[]{
         new SettingItem(SettingItem.TYPE_SLIDER, R.id.btn_lux, 0, R.string.MaxLux, true).setSliderInfo(maxLuxValues, maxLuxIndex),
         new SettingItem(SettingItem.TYPE_SLIDER, R.id.btn_luxMultiply, 0, R.string.Multiply, true).setSliderInfo(luxMultiplyValues, luxMultiplyIndex)
-      }).setCancelStr(R.string.Reset).setCancelColorId(ColorId.textNegativeAction).setSaveStr(R.string.Done).setDismissListener(new PopupLayout.PopupDismissListener() {
+      }).setCancelStr(R.string.Reset).setSaveStr(R.string.Done).setDismissListener(new PopupLayout.PopupDismissListener() {
         @Override
         public void onPopupDismiss (PopupLayout popup) {
           UI.getContext(getContext()).removeLuxListener(SettingsThemeController.this);

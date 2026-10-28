@@ -590,7 +590,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     if (isDragging) {
       c.drawColor(ColorUtils.alphaColor(.8f, Theme.fillingColor()));
     } else if (isOpenedInTabletLayout()) {
-      c.drawColor(ColorUtils.alphaColor(.15f, Theme.getColor(ColorId.controlActive)));
+      c.drawColor(NavigationController.getTabletSelectionColor());
     }
 
     c.drawText(chat.getTime(), (rtl ? viewWidth - chat.getTimeLeft() - chat.getTimeWidth() : chat.getTimeLeft()), getTitleTop(chatListMode), timePaint);

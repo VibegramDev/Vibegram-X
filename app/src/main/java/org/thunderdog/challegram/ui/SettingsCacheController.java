@@ -272,7 +272,7 @@ public class SettingsCacheController extends RecyclerViewController<SettingsData
     headerSize = items.size();
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, R.id.btn_clearCacheHint, 0, R.string.ClearCacheHint));
     adapter.setItems(items, false);
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
 
     if (fastStats == null) {
@@ -493,7 +493,7 @@ public class SettingsCacheController extends RecyclerViewController<SettingsData
       if (fastStats == null)
         return;
       if (Settings.instance().hasLogsEnabled()) {
-        showSettings(new SettingsWrapBuilder(R.id.btn_logsSize).addHeaderItem(Lang.getString(R.string.AppLogsClear)).setSaveColorId(ColorId.textNegative).setSaveStr(Lang.getString(R.string.ClearX, Strings.buildSize(fastStats.getLogsSize()))).setRawItems(new ListItem[] {new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_tdlib_resetLogSettings, 0, R.string.AppLogsDisable, false)}).setIntDelegate((id, result) -> {
+        showSettings(new SettingsWrapBuilder(R.id.btn_logsSize).addHeaderItem(Lang.getString(R.string.AppLogsClear)).setSaveStr(Lang.getString(R.string.ClearX, Strings.buildSize(fastStats.getLogsSize()))).setRawItems(new ListItem[] {new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_tdlib_resetLogSettings, 0, R.string.AppLogsDisable, false)}).setIntDelegate((id, result) -> {
           boolean reset = result.get(R.id.btn_tdlib_resetLogSettings) == R.id.btn_tdlib_resetLogSettings;
           if (reset) {
             Settings.instance().disableAllLogs();
@@ -670,9 +670,9 @@ public class SettingsCacheController extends RecyclerViewController<SettingsData
 
     showSettings(new SettingsWrapBuilder(id).addHeaderItem(headerItem).setRawItems(array).setIntDelegate((id1, result) -> optimizeStorage(result, entry)).setOnSettingItemClick((view, settingsId, item, doneButton, settingsAdapter, window) -> {
       String size = Strings.buildSize(measureTotal(settingsAdapter.getCheckIntResults(), entry), false);
-      doneButton.setText(Lang.uppercase(Lang.getString(R.string.ClearX, size)));
+      doneButton.setText(Lang.getString(R.string.ClearX, size));
     }).setSaveStr(Lang.getString(R.string.ClearX, Strings.buildSize(selectedSize, false)))
-      .setSaveColorId(ColorId.textNegative).setAllowResize(count >= 5));
+      .setAllowResize(count >= 5));
   }
 
   private void optimizeStorage (SparseIntArray result, TGStorageStats.Entry entry) {

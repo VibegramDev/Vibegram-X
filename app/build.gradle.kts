@@ -998,6 +998,11 @@ dependencies {
   implementation(libs.androidx.palette)
   implementation(libs.androidx.collection)
   implementation(libs.androidx.interpolator)
+  // M3 Expressive loading indicator shapes (RoundedPolygon / Morph); minSdk 21, legacy flavor falls back to the spinner.
+  sinceLollipopImplementation(
+    libs.androidx.graphics.shapes.lollipop,
+    libs.androidx.graphics.shapes.latest
+  )
   // CameraX: https://developer.android.com/jetpack/androidx/releases/camera
   flavorImplementation(
     libs.androidx.camera.camera2.legacy,

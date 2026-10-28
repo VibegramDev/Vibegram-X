@@ -14,7 +14,6 @@
  */
 package org.thunderdog.challegram.telegram;
 
-import android.app.AlertDialog;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -40,8 +39,8 @@ import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Background;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.service.SyncContactsService;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
@@ -741,7 +740,7 @@ public class TdlibContactManager implements CleanupStartupDelegate {
   private static final int FLAG_NOT_FIRST_TIME = 1 << 1;
   private static final int FLAG_NEED_NEVER = 1 << 2;
 
-  private AlertDialog pendingRetryDialog;
+  private AlertPopup pendingRetryDialog;
   private Runnable pendingRetryCallback;
 
   private void clearPendingRetryDialog (DialogInterface dialog) {
@@ -761,7 +760,7 @@ public class TdlibContactManager implements CleanupStartupDelegate {
       return;
     }
 
-    if (showingAlert != null && showingAlert instanceof AlertDialog && ((AlertDialog) showingAlert).isShowing()) {
+    if (showingAlert != null && showingAlert instanceof AlertPopup && ((AlertPopup) showingAlert).isShowing()) {
       return;
     }
 
@@ -784,7 +783,7 @@ public class TdlibContactManager implements CleanupStartupDelegate {
       message = Lang.getMarkdownString(delegate, R.string.SyncHint3, appName);
     }
 
-    AlertDialog.Builder b = new AlertDialog.Builder(context, Theme.dialogTheme());
+    AlertPopup.Builder b = new AlertPopup.Builder(context);
     b.setTitle(Lang.getString(title));
     b.setMessage(message);
     b.setCancelable(false);
@@ -841,7 +840,7 @@ public class TdlibContactManager implements CleanupStartupDelegate {
       b.setCancelable(false);
     }
     if (!context.isFinishing()) {
-      AlertDialog dialog = context.showAlert(b);
+      AlertPopup dialog = context.showAlert(b);
       showingAlert = dialog;
       if (isRetry) {
         pendingRetryDialog = dialog;

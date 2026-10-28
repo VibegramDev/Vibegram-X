@@ -597,11 +597,11 @@ abstract class GenerateThemesTask : DefaultTask() {
         open class ThemeBubbleOverride (@ThemeId id: Int, @ThemeId bubbleThemeId: Int) : ThemeDefault(id) {
           private val bubbleTheme: ThemeDelegate = ThemeSet.getBuiltinTheme(bubbleThemeId)
           
-          @ColorInt override fun getColor (colorId: Int) = when (colorId) {
+          @ColorInt override fun getRawColor (colorId: Int) = when (colorId) {
             ${themeColors.filter { it.startsWith("bubbleOut_") }.joinToString(",\n            ") {
               "ColorId.$it"
-            }} -> bubbleTheme.getColor(colorId)
-            else -> super.getColor(colorId)
+            }} -> bubbleTheme.getRawColor(colorId)
+            else -> super.getRawColor(colorId)
           }
         }
       """.trimIndent())
@@ -719,7 +719,7 @@ abstract class GenerateThemesTask : DefaultTask() {
               writer.append(" {")
               open = true
             }
-            writer.append("\n  @ColorInt override fun getColor (@${if (theme.isTinted) "ColorIdTinted" else "ColorId"} colorId: Int): Int = when (colorId) {\n")
+            writer.append("\n  @ColorInt override fun getRawColor (@${if (theme.isTinted) "ColorIdTinted" else "ColorId"} colorId: Int): Int = when (colorId) {\n")
             first = false
           }
           writer.append(names.joinToString(", ", "    ", " ->\n      ") {
@@ -732,13 +732,13 @@ abstract class GenerateThemesTask : DefaultTask() {
             writer.append("    else -> {\n" +
               "      val fallbackColorId = getFallbackColorId(colorId)\n" +
               "      if (fallbackColorId != ColorId.NONE) {\n" +
-              "        getColor(fallbackColorId)\n" +
+              "        getRawColor(fallbackColorId)\n" +
               "      } else {\n" +
               "        error(colorId)\n" +
               "      }\n" +
               "    }\n")
           } else {
-            writer.append("    else -> super.getColor(colorId)\n")
+            writer.append("    else -> super.getRawColor(colorId)\n")
           }
           writer.append("  }\n")
         }

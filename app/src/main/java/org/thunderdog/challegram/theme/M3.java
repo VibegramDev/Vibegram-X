@@ -27,6 +27,7 @@ import android.view.animation.Interpolator;
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
 import org.thunderdog.challegram.tool.UI;
 
@@ -38,8 +39,10 @@ import me.vkryl.core.ColorUtils;
  * Values follow the official token set (m3.material.io, mirrored in androidx.compose.material3.tokens):
  * color roles, corner shape scale, elevation levels and spring motion schemes.
  *
- * Color roles: for built-in Monet themes on Android 14+ they come straight from the system dynamic color
- * roles (android.R.color.system_*_light/dark), otherwise they are derived from the current theme colors.
+ * Color roles are part of every theme ({@link ThemeDelegate#getRoleColor}, stored in {@link Roles}): for built-in
+ * Monet themes on Android 14+ they come straight from the system dynamic color roles
+ * (android.R.color.system_*_light/dark), otherwise they are derived from the theme's own colors.
+ * The accessors below read the roles of the current theme.
  */
 public final class M3 {
   private M3 () { }
@@ -85,11 +88,10 @@ public final class M3 {
     OUTLINE_VARIANT = 16,
     ERROR = 17,
     ON_ERROR = 18,
-    ROLE_COUNT = 19;
-
-  private static final int[] cache = new int[ROLE_COUNT];
-  private static long cacheKey;
-  private static boolean hasCache;
+    INVERSE_SURFACE = 19,
+    INVERSE_ON_SURFACE = 20,
+    INVERSE_PRIMARY = 21,
+    ROLE_COUNT = 22;
 
   public static @ColorInt int surface () { return get(SURFACE); }
   public static @ColorInt int surfaceContainerLowest () { return get(SURFACE_CONTAINER_LOWEST); }
@@ -108,6 +110,9 @@ public final class M3 {
   public static @ColorInt int onSecondaryContainer () { return get(ON_SECONDARY_CONTAINER); }
   public static @ColorInt int outline () { return get(OUTLINE); }
   public static @ColorInt int outlineVariant () { return get(OUTLINE_VARIANT); }
+  public static @ColorInt int inverseSurface () { return get(INVERSE_SURFACE); }
+  public static @ColorInt int inverseOnSurface () { return get(INVERSE_ON_SURFACE); }
+  public static @ColorInt int inversePrimary () { return get(INVERSE_PRIMARY); }
   public static @ColorInt int error () { return get(ERROR); }
   public static @ColorInt int onError () { return get(ON_ERROR); }
 
@@ -186,43 +191,69 @@ public final class M3 {
     }
   }
 
-  public static synchronized @ColorInt int get (int role) {
-    // Raw preset value: Theme.fillingColor() is itself mapped to surface (Theme.chromeColor).
-    final int filling = ThemeManager.instance().currentTheme().getColor(ColorId.filling);
-    final int accent = Theme.getColor(ColorId.iconActive);
-    final int text = Theme.textAccentColor();
-    final int themeId = ThemeManager.instance().currentThemeId();
-    final boolean dark = Theme.isDark();
-    long key = ((long) filling * 31 + accent) * 31 + text;
-    key = key * 31 + themeId * 2 + (dark ? 1 : 0);
-    if (!hasCache || key != cacheKey) {
-      compute(themeId, dark, filling, accent, text);
-      cacheKey = key;
-      hasCache = true;
+  /** Role of the current theme. */
+  public static @ColorInt int get (int role) {
+    return ThemeManager.instance().currentTheme().getRoleColor(role);
+  }
+
+  /** Role of {@code forcedTheme} (e.g. the media viewer's dark theme), or of the current theme. */
+  public static @ColorInt int get (int role, @Nullable ThemeDelegate forcedTheme) {
+    return forcedTheme != null ? forcedTheme.getRoleColor(role) : get(role);
+  }
+
+  private static volatile int systemRolesVersion;
+
+  /** System color roles may change without a palette change (e.g. contrast level): system roles are re-read. */
+  public static void invalidateSystemRoles () {
+    systemRolesVersion++;
+  }
+
+  /**
+   * Color roles of one theme, stored in the theme itself. Computed once, on the first read, from the theme's raw
+   * colors ({@link ThemeDelegate#getRawColor}, never from the role-mapped ones), so surface derived from filling
+   * cannot feed back into itself. Themes call {@link #invalidate} when their colors change (theme editor); Monet
+   * themes are rebuilt when the system palette changes ({@link ThemeManager#checkMonetPalette}).
+   */
+  public static final class Roles {
+    private final boolean system;
+    private volatile int[] values;
+    private int version;
+
+    /** @param system Monet themes: system dynamic color roles on Android 14+. */
+    public Roles (boolean system) {
+      this.system = system;
     }
-    return cache[role];
+
+    public @ColorInt int get (ThemeDelegate theme, int role) {
+      int[] values = this.values;
+      if (values == null || (system && version != systemRolesVersion)) {
+        version = systemRolesVersion;
+        values = compute(theme, system);
+        this.values = values;
+      }
+      return values[role];
+    }
+
+    public void invalidate () {
+      values = null;
+    }
   }
 
-  public static synchronized void invalidate () {
-    hasCache = false;
-  }
-
-  private static boolean isMonet (int themeId) {
-    return themeId == ThemeId.MONET_WHITE || themeId == ThemeId.MONET_DARK || themeId == ThemeId.MONET_BLACK;
-  }
-
-  private static void compute (int themeId, boolean dark, int filling, int accent, int text) {
-    if (isMonet(themeId) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+  private static int[] compute (ThemeDelegate theme, boolean system) {
+    final int[] cache = new int[ROLE_COUNT];
+    final boolean dark = theme.isDark();
+    if (system && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       try {
-        computeSystem(dark, themeId == ThemeId.MONET_BLACK);
-        return;
+        computeSystem(cache, dark, theme.getId() == ThemeId.MONET_BLACK);
+        return cache;
       } catch (Throwable ignored) { }
     }
-    computeDerived(dark, filling, accent, text);
+    computeDerived(cache, dark, theme);
+    return cache;
   }
 
   @androidx.annotation.RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-  private static void computeSystem (boolean dark, boolean black) {
+  private static void computeSystem (int[] cache, boolean dark, boolean black) {
     Resources r = UI.getContext().getResources();
     if (dark) {
       cache[SURFACE] = c(r, android.R.color.system_surface_dark);
@@ -244,6 +275,10 @@ public final class M3 {
       cache[OUTLINE_VARIANT] = c(r, android.R.color.system_outline_variant_dark);
       cache[ERROR] = c(r, android.R.color.system_error_dark);
       cache[ON_ERROR] = c(r, android.R.color.system_on_error_dark);
+      // No public inverse roles: dark inverseSurface = N90 (= onSurface), inverseOnSurface = N20, inversePrimary = A40.
+      cache[INVERSE_SURFACE] = c(r, android.R.color.system_on_surface_dark);
+      cache[INVERSE_ON_SURFACE] = c(r, android.R.color.system_neutral1_800);
+      cache[INVERSE_PRIMARY] = c(r, android.R.color.system_primary_light);
     } else {
       cache[SURFACE] = c(r, android.R.color.system_surface_light);
       cache[ON_SURFACE] = c(r, android.R.color.system_on_surface_light);
@@ -264,6 +299,10 @@ public final class M3 {
       cache[OUTLINE_VARIANT] = c(r, android.R.color.system_outline_variant_light);
       cache[ERROR] = c(r, android.R.color.system_error_light);
       cache[ON_ERROR] = c(r, android.R.color.system_on_error_light);
+      // Light: inverseSurface = N20, inverseOnSurface = N95, inversePrimary = A80.
+      cache[INVERSE_SURFACE] = c(r, android.R.color.system_neutral1_800);
+      cache[INVERSE_ON_SURFACE] = c(r, android.R.color.system_neutral1_50);
+      cache[INVERSE_PRIMARY] = c(r, android.R.color.system_primary_dark);
     }
     if (black) {
       // AMOLED variant: keep true-black surfaces, containers stay tonal.
@@ -272,15 +311,16 @@ public final class M3 {
     }
   }
 
+  @RequiresApi(Build.VERSION_CODES.M)
   private static int c (Resources r, int id) {
     return r.getColor(id, null) | 0xFF000000;
   }
 
-  private static void computeDerived (boolean dark, int filling, int accent, int text) {
-    int surface = filling | 0xFF000000;
-    int onSurface = text | 0xFF000000;
-    int onSurfaceVariant = Theme.getColor(ColorId.icon) | 0xFF000000;
-    int primary = accent | 0xFF000000;
+  private static void computeDerived (int[] cache, boolean dark, ThemeDelegate theme) {
+    int surface = theme.getRawColor(ColorId.filling) | 0xFF000000;
+    int onSurface = theme.getRawColor(ColorId.text) | 0xFF000000;
+    int onSurfaceVariant = theme.getRawColor(ColorId.icon) | 0xFF000000;
+    int primary = theme.getRawColor(ColorId.iconActive) | 0xFF000000;
     cache[SURFACE] = surface;
     cache[ON_SURFACE] = onSurface;
     cache[ON_SURFACE_VARIANT] = onSurfaceVariant;
@@ -302,8 +342,11 @@ public final class M3 {
     cache[ON_SECONDARY_CONTAINER] = dark ? ColorUtils.fromToArgb(primary, 0xFFFFFFFF, .8f) : ColorUtils.fromToArgb(primary, 0xFF000000, .7f);
     cache[OUTLINE] = ColorUtils.fromToArgb(surface, onSurface, .5f);
     cache[OUTLINE_VARIANT] = ColorUtils.fromToArgb(surface, onSurface, .2f);
-    cache[ERROR] = Theme.getColor(ColorId.textNegative) | 0xFF000000;
+    cache[ERROR] = theme.getRawColor(ColorId.textNegative) | 0xFF000000;
     cache[ON_ERROR] = contrast(cache[ERROR]);
+    cache[INVERSE_SURFACE] = dark ? ColorUtils.fromToArgb(onSurface, surface, .1f) : ColorUtils.fromToArgb(onSurface, surface, .15f);
+    cache[INVERSE_ON_SURFACE] = dark ? ColorUtils.fromToArgb(surface, onSurface, .1f) : ColorUtils.fromToArgb(surface, 0xFFFFFFFF, .5f);
+    cache[INVERSE_PRIMARY] = dark ? ColorUtils.fromToArgb(primary, 0xFF000000, .4f) : ColorUtils.fromToArgb(primary, 0xFFFFFFFF, .45f);
   }
 
   private static int contrast (int color) {
@@ -325,6 +368,70 @@ public final class M3 {
   public static final Spring DEFAULT_EFFECTS = new Spring(SPRING_DEFAULT_EFFECTS_STIFFNESS, SPRING_DEFAULT_EFFECTS_DAMPING);
   /** Expressive "fast effects" spring: color and opacity of small components, no overshoot. */
   public static final Spring FAST_EFFECTS = new Spring(3800f, 1f);
+
+  // Transitions between screens (m3.material.io/styles/motion/transitions). The site notes that M3 transitions still
+  // use the legacy easing and duration system: MDC MaterialSharedAxis / MaterialFadeThrough use motionDurationLong1
+  // (450ms) and the emphasized easing; fades follow FadeThroughProvider (outgoing out by 35%, then incoming in).
+
+  /**
+   * Forward/backward between screens: shared axis X (Android default: screens slide a short distance while
+   * fading). Taps and buttons only; swipe back and predictive back keep following the finger.
+   * Top-level destinations (dock sections) use fade-through.
+   * Slide distance of shared axis X as a fraction of the pane width (user decision: ~10%).
+   */
+  public static final float SHARED_AXIS_DISTANCE = .1f;
+  public static final long TRANSITION_DURATION = 450L;
+  /** FadeThroughProvider.FADE_THROUGH_THRESHOLD. */
+  public static final float FADE_THROUGH_THRESHOLD = .35f;
+
+  /** Alpha of the outgoing screen at transition progress {@code p} ("Fully fade out content before fading new content in"). */
+  public static float fadeThroughOut (float p) {
+    return 1f - Math.max(0f, Math.min(1f, p / FADE_THROUGH_THRESHOLD));
+  }
+
+  /** MaterialFadeThrough DEFAULT_START_SCALE: the incoming screen scales up from 92% over the whole transition. */
+  public static float fadeThroughScale (float p) {
+    return .92f + .08f * Math.max(0f, Math.min(1f, p));
+  }
+
+  /** Alpha of the incoming screen at transition progress {@code p}. */
+  public static float fadeThroughIn (float p) {
+    return Math.max(0f, Math.min(1f, (p - FADE_THROUGH_THRESHOLD) / (1f - FADE_THROUGH_THRESHOLD)));
+  }
+
+  /**
+   * Emphasized easing (MotionTokens.EasingEmphasized): path M0,0 C.05,0 .133333,.06 .166666,.4
+   * C.208333,.82 .25,1 1,1. Evaluated directly (PathInterpolator is API 21).
+   */
+  public static final Interpolator EMPHASIZED = new Interpolator() {
+    private final float[][] segments = {
+      {0f, 0f, .05f, 0f, .133333f, .06f, .166666f, .4f},
+      {.166666f, .4f, .208333f, .82f, .25f, 1f, 1f, 1f}
+    };
+
+    private float bezier (float a, float b, float c, float d, float t) {
+      float u = 1f - t;
+      return u * u * u * a + 3f * u * u * t * b + 3f * u * t * t * c + t * t * t * d;
+    }
+
+    @Override
+    public float getInterpolation (float x) {
+      if (x <= 0f) return 0f;
+      if (x >= 1f) return 1f;
+      float[] s = x < segments[1][0] ? segments[0] : segments[1];
+      // x(t) is monotonic on each segment: bisection.
+      float lo = 0f, hi = 1f, t = .5f;
+      for (int i = 0; i < 24; i++) {
+        t = (lo + hi) / 2f;
+        if (bezier(s[0], s[2], s[4], s[6], t) < x) {
+          lo = t;
+        } else {
+          hi = t;
+        }
+      }
+      return bezier(s[1], s[3], s[5], s[7], t);
+    }
+  };
 
   /**
    * Damped spring (unit mass) expressed as a time interpolator, so it can drive the existing

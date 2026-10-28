@@ -1209,7 +1209,6 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       .addHeaderItem(Lang.getString(R.string.FilterByTopic))
       .setRawItems(items)
       .setSaveStr(Lang.getString(R.string.Done))
-      .setNeedSeparators(false)
       .setSettingProcessor((item, view, isUpdate) -> {
         // Apply the DrawModifier to render topic icons
         view.setDrawModifier(item.getDrawModifier());

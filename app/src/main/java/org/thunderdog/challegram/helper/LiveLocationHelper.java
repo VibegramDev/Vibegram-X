@@ -42,7 +42,6 @@ import org.thunderdog.challegram.telegram.MessageListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibContext;
 import org.thunderdog.challegram.telegram.TdlibManager;
-import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Drawables;
@@ -613,7 +612,6 @@ public class LiveLocationHelper implements LiveLocationManager.Listener, FactorA
     final SettingsWrap[] wrap = new SettingsWrap[1];
 
     b.setSaveStr(R.string.StopAllLocationSharings);
-    b.setSaveColorId(ColorId.textNegative);
     b.addHeaderItem(Lang.plural(R.string.SharingLiveLocationToChats, locationMessages.size()));
     ListItem[] items = new ListItem[locationMessages.size() + 2];
     items[0] = items[items.length - 1] = new ListItem(ListItem.TYPE_PADDING).setHeight(Screen.dp(12f)).setBoolValue(true);
@@ -622,7 +620,6 @@ public class LiveLocationHelper implements LiveLocationManager.Listener, FactorA
       items[i] = new ListItem(ListItem.TYPE_LIVE_LOCATION_TARGET, i + 1).setData(message);
       i++;
     }
-    b.setNeedSeparators(false);
     b.setRawItems(items);
     b.setDrawerProcessor((item, view, timerView, isUpdate) -> {
       TdApi.Message message = (TdApi.Message) item.getData();

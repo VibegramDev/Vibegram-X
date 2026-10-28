@@ -491,13 +491,13 @@ public class SettingsProxyController extends RecyclerViewController<Void> implem
     };
     adapter.setOnLongClickListener(this);
     adapter.setItems(items, false);
-    M3SettingsGroupDecoration groupDecoration = M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
 
     touchHelper = RemoveHelper.attach(recyclerView, new RemoveHelper.ExtendedCallback() {
       @Override
       public void onDragStateChanged (RecyclerView.ViewHolder viewHolder, boolean isDragging) {
-        groupDecoration.setDragged(viewHolder.itemView, isDragging);
+        adapter.setSegmentDragged(viewHolder.itemView, isDragging);
       }
 
       @Override

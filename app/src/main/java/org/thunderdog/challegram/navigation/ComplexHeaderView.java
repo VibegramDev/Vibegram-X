@@ -1386,8 +1386,14 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       return;
     }
 
-    final PopupLayout layout = parent.showOptions(titleOptionsBuilder.getValue(), titleOptionsDelegate, null);
-    patchOptions(layout, emojiStatusHelper.getSticker());
+    ViewController.Options options = titleOptionsBuilder.getValue();
+    TdApi.Sticker sticker = emojiStatusHelper.getSticker();
+    if (sticker != null) {
+      // The emoji status info is added to the returned OptionsLayout.
+      options.setNeedSheet(true);
+    }
+    final PopupLayout layout = parent.showOptions(options, titleOptionsDelegate, null);
+    patchOptions(layout, sticker);
   }
 
   private void patchOptions (PopupLayout layout, TdApi.Sticker sticker) {

@@ -21,6 +21,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -32,6 +33,7 @@ import android.widget.Button;
 
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
@@ -91,7 +93,7 @@ public class M3SearchBarView extends FrameLayoutFix {
     // Ripple above the filled container.
     Drawable ripple = barView.getBackground();
     barView.setBackground(null);
-    barView.setForeground(ripple);
+    ForegroundCompat.set(barView, ripple);
     addView(barView);
 
     themeProvider.addThemeInvalidateListener(barView);
@@ -130,7 +132,51 @@ public class M3SearchBarView extends FrameLayoutFix {
     barView.invalidate();
   }
 
-  private class BarView extends View {
+  private class BarView extends View implements ForegroundCompat.Host {
+    private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
+
+    @Nullable
+    @Override
+    public ForegroundCompat foregroundCompat () {
+      return foregroundCompat;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      super.draw(c);
+      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        foregroundCompat.draw(c);
+      }
+    }
+
+    @Override
+    protected boolean verifyDrawable (@NonNull Drawable who) {
+      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+    }
+
+    @Override
+    protected void drawableStateChanged () {
+      super.drawableStateChanged();
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableStateChanged();
+      }
+    }
+
+    @Override
+    public void drawableHotspotChanged (float x, float y) {
+      super.drawableHotspotChanged(x, y);
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableHotspotChanged(x, y);
+      }
+    }
+
+    @Override
+    public void jumpDrawablesToCurrentState () {
+      super.jumpDrawablesToCurrentState();
+      if (foregroundCompat != null) {
+        foregroundCompat.jumpDrawablesToCurrentState();
+      }
+    }
     private final Drawable icon;
     private final String label;
 

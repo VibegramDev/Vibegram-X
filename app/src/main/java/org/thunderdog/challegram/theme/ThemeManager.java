@@ -14,7 +14,6 @@
  */
 package org.thunderdog.challegram.theme;
 
-import android.app.AlertDialog;
 import android.graphics.Paint;
 
 import androidx.annotation.NonNull;
@@ -28,6 +27,7 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibAccount;
@@ -348,7 +348,7 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
         if (activity == null || activity.getActivityState() != UI.State.RESUMED) {
           Settings.instance().setAutoNightMode(Settings.NIGHT_MODE_NONE);
         } else {
-          AlertDialog.Builder b = new AlertDialog.Builder(activity, Theme.dialogTheme());
+          AlertPopup.Builder b = new AlertPopup.Builder(activity);
           b.setTitle(Lang.getString(R.string.DisableAutoNightMode));
           b.setMessage(Lang.getString(R.string.DisableAutoNightModeDesc));
           b.setPositiveButton(Lang.getOK(), (dialog, which) -> {
@@ -686,7 +686,7 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
    */
   public void checkMonetPalette () {
     // System color roles may change with the palette or the contrast level.
-    M3.invalidate();
+    M3.invalidateSystemRoles();
     if (!MonetPalette.refresh(org.thunderdog.challegram.unsorted.AppContext.get())) {
       return;
     }

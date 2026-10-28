@@ -152,7 +152,7 @@ public class SettingsLogOutController extends RecyclerViewController<Integer> im
 
     adapter.setItems(items, false);
 
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
 
     recyclerView.setAdapter(adapter);
   }

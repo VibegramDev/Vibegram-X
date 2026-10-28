@@ -17,13 +17,10 @@
  */
 package org.thunderdog.challegram.ui;
 
-import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.RippleDrawable;
 import android.view.View;
 
 import androidx.annotation.ColorInt;
@@ -31,9 +28,8 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.thunderdog.challegram.theme.M3;
-import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.SeparatorView;
-import org.thunderdog.challegram.widget.ShadowView;
 
 import me.vkryl.core.ColorUtils;
 
@@ -51,37 +47,14 @@ public final class M3SearchContainerDecoration extends RecyclerView.ItemDecorati
   }
 
   private final ColorProvider colorProvider;
-  private final boolean sheet;
-  private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-  private M3SearchContainerDecoration (ColorProvider colorProvider, boolean sheet) {
+  private M3SearchContainerDecoration (ColorProvider colorProvider) {
     this.colorProvider = colorProvider;
-    this.sheet = sheet;
-  }
-
-  /**
-   * M3 bottom sheet list ({@code ViewController.showSettings}): the container starts at the top of the first
-   * adapter item (it scrolls with the list) and has 28dp top corners; the legacy top shadow row is hidden.
-   */
-  public static M3SearchContainerDecoration attachSheet (RecyclerView recyclerView, ColorProvider colorProvider) {
-    M3SearchContainerDecoration decoration = new M3SearchContainerDecoration(colorProvider, true);
-    recyclerView.setBackground(null);
-    recyclerView.addItemDecoration(decoration);
-    return decoration;
-  }
-
-  /** Top of the sheet container inside the list: top of the first item, or above the view when it is scrolled away. */
-  public static int sheetTop (RecyclerView parent) {
-    RecyclerView.ViewHolder holder = parent.findViewHolderForAdapterPosition(0);
-    if (holder == null) {
-      return -Screen.dp(M3.CORNER_EXTRA_LARGE);
-    }
-    return holder.itemView.getTop() + Math.round(holder.itemView.getTranslationY());
   }
 
   /** The recycler background must not be set by the caller (the decoration draws the container). */
   public static M3SearchContainerDecoration attach (RecyclerView recyclerView, ColorProvider colorProvider) {
-    M3SearchContainerDecoration decoration = new M3SearchContainerDecoration(colorProvider, false);
+    M3SearchContainerDecoration decoration = new M3SearchContainerDecoration(colorProvider);
     recyclerView.setBackground(null);
     recyclerView.addItemDecoration(decoration);
     return decoration;
@@ -90,14 +63,7 @@ public final class M3SearchContainerDecoration extends RecyclerView.ItemDecorati
   @Override
   public void onDraw (@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
     int containerColor = colorProvider.getContainerColor();
-    if (sheet) {
-      float radius = Screen.dp(M3.CORNER_EXTRA_LARGE);
-      int top = sheetTop(parent);
-      paint.setColor(containerColor);
-      c.drawRoundRect(0, top, parent.getWidth(), parent.getHeight() + radius, radius, radius, paint);
-    } else {
-      c.drawColor(containerColor);
-    }
+    c.drawColor(containerColor);
     int stateLayerColor = ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface());
     for (int i = 0; i < parent.getChildCount(); i++) {
       apply(parent.getChildAt(i), containerColor, stateLayerColor);
@@ -105,13 +71,6 @@ public final class M3SearchContainerDecoration extends RecyclerView.ItemDecorati
   }
 
   private void apply (View view, int containerColor, int stateLayerColor) {
-    if (sheet && view instanceof ShadowView) {
-      // Legacy top shadow above the sheet: the M3 sheet has rounded corners and Level1 elevation instead.
-      if (view.getVisibility() != View.INVISIBLE) {
-        view.setVisibility(View.INVISIBLE);
-      }
-      return;
-    }
     if (view instanceof SeparatorView) {
       // Draws its own filling under the divider line.
       SeparatorView separatorView = (SeparatorView) view;
@@ -130,19 +89,13 @@ public final class M3SearchContainerDecoration extends RecyclerView.ItemDecorati
   }
 
   /** Transparent container with the M3 pressed state layer. */
-  private static final class StateLayer extends RippleDrawable {
-    private int stateLayerColor;
-
+  private static final class StateLayer extends M3StateLayerDrawable {
     StateLayer (int stateLayerColor) {
-      super(ColorStateList.valueOf(stateLayerColor), null, new ColorDrawable(Color.WHITE));
-      this.stateLayerColor = stateLayerColor;
+      super(null, new ColorDrawable(Color.WHITE), stateLayerColor);
     }
 
     void setStateLayerColor (int color) {
-      if (this.stateLayerColor != color) {
-        this.stateLayerColor = color;
-        setColor(ColorStateList.valueOf(color));
-      }
+      setColor(color);
     }
   }
 }

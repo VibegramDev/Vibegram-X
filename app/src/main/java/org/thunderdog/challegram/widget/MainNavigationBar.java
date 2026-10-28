@@ -28,8 +28,6 @@ import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
-import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,6 +36,9 @@ import android.view.ViewOutlineProvider;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.view.AccessibilityDelegateCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
@@ -85,9 +86,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   private static final float RAIL_ITEM_SIZE = 56f;
   private static final float RAIL_PADDING = 6f;
-  private static final float BAR_HEIGHT = 64f;
-  /** Center of the icon (and the active indicator) from the top of the tablet bar. */
-  private static final float BAR_ICON_CENTER_Y = 23f;
+  /** Tablet bar: icons only, full corner radius (pill). Also the height of the floating message composer. */
+  private static final float BAR_HEIGHT = 56f;
+  /** Center of the icon (and the active indicator) from the top of the tablet bar: vertically centered. */
+  private static final float BAR_ICON_CENTER_Y = BAR_HEIGHT / 2f;
   private static final float ICON_SIZE = 24f;
   private static final float AVATAR_SIZE = 28f;
   /** Active indicator (and pressed state layer) size. */
@@ -101,6 +103,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private final AvatarView avatarView;
   private final Counter unreadCounter;
   private @Nullable Callback callback;
+  private @Nullable View.OnLongClickListener settingsLongClickListener;
   private @Nullable CollapseListener collapseListener;
   /** Phone: the rail collapses into the scroll to top button while the chat list is scrolled. */
   private final FactorAnimator collapseAnimator;
@@ -112,6 +115,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   /** 0: search icon, 1: search is open, the segment shows a close icon. */
   private float searchOpenFactor;
+  /** Number shown by the badge of the chats item, read by screen readers after the label. */
+  private long unreadCount;
 
   public MainNavigationBar (Context context, ViewController<?> themeProvider) {
     super(context);
@@ -181,6 +186,39 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     // Above the settings item: they swap places when the rail collapses.
     addView(scrollTopView);
     themeProvider.addThemeInvalidateListener(this);
+
+    // Phone rail and tablet bar have no labels (accepted deviation): plain tooltip with the label on tap and hold,
+    // 4dp from the dock edge: before the rail, above the bar.
+    M3Tooltip.BoundsProvider railBounds = (anchor, outRect) -> {
+      if (isBar) {
+        // Horizontal bounds of the item, vertical bounds of the bar container (the visual boundary).
+        outRect.set(0, -anchor.getTop(), anchor.getWidth(), getHeight() - anchor.getTop());
+      } else {
+        // Horizontal bounds of the rail container (the visual boundary), vertical bounds of the item.
+        outRect.set(-anchor.getLeft(), 0, getWidth() - anchor.getLeft(), anchor.getHeight());
+      }
+    };
+    M3Tooltip.PlacementProvider tooltipPlacement = anchor -> isBar ? M3Tooltip.PLACEMENT_ABOVE : M3Tooltip.PLACEMENT_START;
+    M3Tooltip.TextProvider tooltipText = anchor -> anchor == searchView && searchOpenFactor >= .5f ? Lang.getString(R.string.vg_CloseSearch) : anchor instanceof ItemView ? ((ItemView) anchor).label : anchor.getContentDescription();
+    M3Tooltip.bind(searchView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
+    M3Tooltip.bind(scrollTopView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
+    for (ItemView item : items) {
+      M3Tooltip.bind(item, tooltipPlacement, railBounds, tooltipText);
+    }
+    // Settings (avatar), tap and hold: account switcher in both layouts, instead of the tooltip.
+    items[ITEM_SETTINGS].setOnLongClickListener(v -> {
+      M3Tooltip.hideCurrent(true);
+      return settingsLongClickListener != null && settingsLongClickListener.onLongClick(v);
+    });
+    // Screen readers: the sections are tabs of a single-selection collection (as MDC NavigationBarMenuView).
+    ViewCompat.setAccessibilityDelegate(this, new AccessibilityDelegateCompat() {
+      @Override
+      public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
+        super.onInitializeAccessibilityNodeInfo(host, info);
+        int rows = isBar ? 1 : items.length, columns = isBar ? items.length : 1;
+        info.setCollectionInfo(AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(rows, columns, false, AccessibilityNodeInfoCompat.CollectionInfoCompat.SELECTION_MODE_SINGLE));
+      }
+    });
     // Container height: spatial spring; contents fade with derived factors.
     collapseAnimator = new FactorAnimator(0, (id, factor, fraction, callee) -> setCollapseFactor(factor), M3.DEFAULT_SPATIAL, M3.DEFAULT_SPATIAL.duration, 0f);
 
@@ -203,6 +241,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     this.callback = callback;
   }
 
+  public void setSettingsLongClickListener (@Nullable View.OnLongClickListener listener) {
+    this.settingsLongClickListener = listener;
+  }
+
   public void setCollapseListener (@Nullable CollapseListener listener) {
     this.collapseListener = listener;
   }
@@ -220,7 +262,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     }
     this.isCollapsed = collapsed;
     float to = collapsed ? 1f : 0f;
-    if (animated && isLaidOut() && getVisibility() == View.VISIBLE) {
+    if (animated && ViewCompat.isLaidOut(this) && getVisibility() == View.VISIBLE) {
       collapseAnimator.animateTo(to);
     } else {
       collapseAnimator.forceFactor(to);
@@ -294,6 +336,18 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return unreadCounter;
   }
 
+  /**
+   * Badge for screen readers: M3 "Badges with numbers should announce the count", after the label
+   * ("Chats, 5 unread"). The real number, not the shortened one drawn by the badge.
+   */
+  public void setUnreadCount (long count) {
+    count = Math.max(0, count);
+    if (this.unreadCount != count) {
+      this.unreadCount = count;
+      items[ITEM_CHATS].updateDescription();
+    }
+  }
+
   public void setUser (Tdlib tdlib, long userId) {
     avatarView.setUser(tdlib, userId, false);
   }
@@ -301,7 +355,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   public void setSelectedItem (int item) {
     if (this.selectedItem != item) {
       this.selectedItem = item;
-      boolean animated = isLaidOut() && getVisibility() == View.VISIBLE;
+      boolean animated = ViewCompat.isLaidOut(this) && getVisibility() == View.VISIBLE;
       for (ItemView view : items) {
         view.setItemSelected(view.id == item, animated);
       }
@@ -329,7 +383,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       ripple = Theme.transparentRoundSelector(Screen.dp(INDICATOR_HEIGHT / 2f));
     }
     view.setBackground(null);
-    view.setForeground(ripple);
+    ForegroundCompat.set(view, ripple);
   }
 
 
@@ -349,10 +403,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return Screen.dp(12f);
   }
 
-  /**
-   * Corner radius concentric with the active indicator: indicator radius (16dp) + its distance to the top edge
-   * (icon center 23dp - 16dp = 7dp) = 23dp.
-   */
+  /** Full corner radius: half of the bar height (pill), concentric with the vertically centered indicator. */
   public static float getBarRadius () {
     return Screen.dp(BAR_ICON_CENTER_Y);
   }
@@ -383,8 +434,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   public void setSearchOpenFactor (float factor) {
     factor = MathUtils.clamp(factor);
     if (this.searchOpenFactor != factor) {
+      boolean wasOpen = this.searchOpenFactor >= .5f;
       this.searchOpenFactor = factor;
       searchView.invalidate();
+      if (wasOpen != factor >= .5f) {
+        searchView.setContentDescription(Lang.getString(factor >= .5f ? R.string.vg_CloseSearch : R.string.Search));
+      }
     }
   }
 
@@ -412,7 +467,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
       params.leftMargin = params.rightMargin = getBarMargin();
       params.bottomMargin = getBarMargin() + bottomInset;
-      // Keeps the outer labels away from the rounded ends.
+      // Keeps the outer indicators away from the rounded ends.
       setPadding(Screen.dp(8f), 0, Screen.dp(8f), 0);
     } else {
       params = FrameLayoutFix.newParams(getRailWidth(), getRailHeight(), Gravity.BOTTOM | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT));
@@ -426,6 +481,15 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
     scrollTopParams.topMargin = itemSize * items.length;
     scrollTopView.setLayoutParams(scrollTopParams);
+    // Tooltips on every section item (no labels in both modes); search and scroll to top exist in the rail only.
+    searchView.setLongClickable(!isBar);
+    scrollTopView.setLongClickable(!isBar);
+    for (ItemView item : items) {
+      item.setLongClickable(true);
+    }
+    if (!isBar) {
+      M3Tooltip.hideCurrent(false);
+    }
     if (isBar && isCollapsed) {
       // Tablet bar never collapses.
       isCollapsed = false;
@@ -555,7 +619,51 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
    * Icon-only item of the rail without a section: search (its icon turns into a close icon with the
    * active indicator while search is open) and scroll to top.
    */
-  private class SimpleItemView extends View {
+  private class SimpleItemView extends View implements ForegroundCompat.Host {
+    private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
+
+    @Nullable
+    @Override
+    public ForegroundCompat foregroundCompat () {
+      return foregroundCompat;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      super.draw(c);
+      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        foregroundCompat.draw(c);
+      }
+    }
+
+    @Override
+    protected boolean verifyDrawable (@NonNull Drawable who) {
+      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+    }
+
+    @Override
+    protected void drawableStateChanged () {
+      super.drawableStateChanged();
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableStateChanged();
+      }
+    }
+
+    @Override
+    public void drawableHotspotChanged (float x, float y) {
+      super.drawableHotspotChanged(x, y);
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableHotspotChanged(x, y);
+      }
+    }
+
+    @Override
+    public void jumpDrawablesToCurrentState () {
+      super.jumpDrawablesToCurrentState();
+      if (foregroundCompat != null) {
+        foregroundCompat.jumpDrawablesToCurrentState();
+      }
+    }
     private final Drawable icon;
     private final @Nullable Drawable openIcon;
 
@@ -614,6 +722,25 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       setWillNotDraw(false);
       setContentDescription(label);
       setSelected(id == selectedItem);
+      ViewCompat.setAccessibilityDelegate(this, new AccessibilityDelegateCompat() {
+        @Override
+        public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
+          super.onInitializeAccessibilityNodeInfo(host, info);
+          // Tab, "N of M", selected (MDC NavigationBarItemView).
+          info.setRoleDescription(getResources().getString(R.string.vg_TabRole));
+          int index = ItemView.this.id - ITEM_CHATS;
+          info.setCollectionItemInfo(AccessibilityNodeInfoCompat.CollectionItemInfoCompat.obtain(isBar ? 0 : index, 1, isBar ? index : 0, 1, false, isSelected()));
+        }
+      });
+    }
+
+    void updateDescription () {
+      if (id == ITEM_CHATS && unreadCount > 0) {
+        int count = (int) Math.min(Integer.MAX_VALUE, unreadCount);
+        setContentDescription(label + ", " + getResources().getQuantityString(R.plurals.vg_UnreadBadge, count, count));
+      } else {
+        setContentDescription(label);
+      }
     }
 
     /** The ripple mask depends on the layout mode. */
@@ -673,16 +800,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       }
       if (selectedIcon != null && selected > 0f) {
         Drawables.draw(c, selectedIcon, cx - selectedIcon.getMinimumWidth() / 2f, cy - selectedIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(selected, M3.onSecondaryContainer())));
-      }
-      if (isBar) {
-        // Labels: selected = bold secondary, others = medium onSurfaceVariant.
-        float textSize = 12f;
-        int color = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.secondary(), selected);
-        TextPaint paint = selected >= .5f ? Paints.getBoldTextPaint(textSize, color) : Paints.getMediumTextPaint(textSize, color, false);
-        float maxWidth = getWidth() - Screen.dp(8f);
-        CharSequence text = TextUtils.ellipsize(label, paint, maxWidth, TextUtils.TruncateAt.END);
-        float textWidth = paint.measureText(text, 0, text.length());
-        c.drawText(text, 0, text.length(), cx - textWidth / 2f, Screen.dp(56f), paint);
       }
     }
 

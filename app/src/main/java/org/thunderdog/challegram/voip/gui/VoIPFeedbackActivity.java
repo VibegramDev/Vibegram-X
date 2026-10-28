@@ -86,7 +86,7 @@ public class VoIPFeedbackActivity extends Activity {
     params.topMargin = Screen.dp(16f);
     ll.addView(commentBox, params);
 
-    AlertDialog alert = new AlertDialog.Builder(this, Theme.dialogTheme())
+    AlertDialog alert = new AlertDialog.Builder(this, Theme.pickerDialogTheme())
       .setTitle(Lang.getString(R.string.AppName))
       .setView(ll)
       .setPositiveButton(Lang.getOK(), (dialog, which) -> {

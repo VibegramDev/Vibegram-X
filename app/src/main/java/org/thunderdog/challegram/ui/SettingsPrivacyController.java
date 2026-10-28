@@ -256,7 +256,7 @@ public class SettingsPrivacyController extends RecyclerViewController<SettingsPr
 
 
     adapter.setItems(items, false);
-    M3SettingsGroupDecoration.attach(recyclerView, adapter);
+    adapter.setSegmented();
     recyclerView.setAdapter(adapter);
 
     Log.ensureReturnType(TdApi.GetBlockedMessageSenders.class, TdApi.MessageSenders.class);
@@ -391,7 +391,7 @@ public class SettingsPrivacyController extends RecyclerViewController<SettingsPr
       showSettings(new SettingsWrapBuilder(R.id.btn_clearPaymentAndShipping).setSaveStr(R.string.Clear).setRawItems(new ListItem[] {
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_clearShipping, 0, R.string.PrivacyClearShipping, R.id.btn_clearShipping, true),
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_clearPayment, 0, R.string.PrivacyClearPayment, R.id.btn_clearPayment, true)
-      }).setSaveColorId(ColorId.textNegative).addHeaderItem(Lang.getString(R.string.PrivacyPaymentsClearAlert)).setIntDelegate((settingsId, result) -> {
+      }).addHeaderItem(Lang.getString(R.string.PrivacyPaymentsClearAlert)).setIntDelegate((settingsId, result) -> {
         boolean clearShipping = result.get(R.id.btn_clearShipping) == R.id.btn_clearShipping;
         boolean clearPayment = result.get(R.id.btn_clearPayment) == R.id.btn_clearPayment;
         if (!clearPayment || !clearShipping) {

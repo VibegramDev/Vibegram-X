@@ -124,6 +124,30 @@ public class NavigationLayout extends FrameLayoutFix implements Destroyable, Roo
 
   /* optimization end */
 
+  /* M3 fade-through backdrop */
+
+  private boolean fadeThroughBackdrop;
+
+  /**
+   * While both screens are faded out in the middle of an M3 fade-through or shared axis X transition, nothing below
+   * this layout covers the navigation bar area, so the window background (black) flashed under the gesture handle.
+   * Fill it with the page color for the duration of the transition.
+   */
+  public void setFadeThroughBackdrop (boolean enabled) {
+    if (this.fadeThroughBackdrop != enabled) {
+      this.fadeThroughBackdrop = enabled;
+      invalidate();
+    }
+  }
+
+  @Override
+  protected void dispatchDraw (android.graphics.Canvas canvas) {
+    if (fadeThroughBackdrop) {
+      canvas.drawColor(org.thunderdog.challegram.theme.Theme.fillingColor());
+    }
+    super.dispatchDraw(canvas);
+  }
+
   public void setController (NavigationController controller) {
     // NavigationController controller1 = controller;
   }

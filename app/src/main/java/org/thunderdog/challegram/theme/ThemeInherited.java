@@ -38,8 +38,15 @@ public abstract class ThemeInherited implements ThemeDelegate {
   }
 
   @Override
-  public int getColor (int colorId) {
-    return parentTheme.getColor(colorId);
+  public int getRawColor (int colorId) {
+    return parentTheme.getRawColor(colorId);
+  }
+
+  private final M3.Roles roles = new M3.Roles(false);
+
+  @Override
+  public final int getRoleColor (int role) {
+    return roles.get(this, role);
   }
 
   @Override

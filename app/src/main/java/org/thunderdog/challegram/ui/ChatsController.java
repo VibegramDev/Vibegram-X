@@ -1712,7 +1712,6 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
         .setRawItems(new ListItem[]{
           new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_clearChatHistory, 0, Lang.pluralBold(R.string.RevokeForX, revokeCount), R.id.btn_clearChatHistory, false)
         })
-        .setSaveColorId(ColorId.textNegative)
         .setSaveStr(clearHistory ? R.string.ClearHistoryBtn : R.string.Delete)
         .setIntDelegate((id, result) -> {
           boolean needRevoke = result.get(R.id.btn_clearChatHistory) == R.id.btn_clearChatHistory;
@@ -2190,6 +2189,20 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     tdlib.ui().openChat(this, chat, params);
   }
 
+  /** Tablet: a tap on the chat that is already open in the right pane scrolls it to the latest message. */
+  private boolean scrollOpenedTabletChat (TdApi.Chat chat) {
+    NavigationController navigation = context.navigation();
+    ViewController<?> current = navigation != null && navigation.isTabletSplit() ? navigation.getCurrentStackItem() : null;
+    if (current instanceof MessagesController && current.tdlib() == tdlib) {
+      MessagesController c = (MessagesController) current;
+      if (!c.inPreviewMode() && c.getMessageThread() == null && !c.areScheduledOnly() && c.compareChat(chat.id)) {
+        c.getManager().scrollToStart(true);
+        return true;
+      }
+    }
+    return false;
+  }
+
   private void onClick (final TdApi.Chat chat) {
     if (Test.NEED_CLICK) {
       if (Test.onChatClick(tdlib, chat)) {
@@ -2197,7 +2210,9 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
       }
     }
     if (pickerDelegate == null) {
-      openChat(chat);
+      if (!scrollOpenedTabletChat(chat)) {
+        openChat(chat);
+      }
       return;
     }
 
@@ -2361,7 +2376,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     if (!progressVisible) {
       if (spinnerView == null) {
         spinnerView = new ProgressComponentView(context());
-        spinnerView.initLarge(1f);
+        spinnerView.initLoadingIndicator(1f);
         spinnerView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(48f), Screen.dp(48f), Gravity.CENTER));
       }
       if (spinnerView.getParent() == null) {

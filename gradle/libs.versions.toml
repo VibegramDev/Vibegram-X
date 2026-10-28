@@ -51,6 +51,7 @@ androidx-uiautomator = "2.4.0"
 okhttp-latest = "5.5.0"
 
 androidx-core-latest = "1.19.1"
+androidx-graphics-shapes-latest = "1.1.0"
 androidx-activity-latest = "1.13.0"
 androidx-work-latest = "2.12.0"
 androidx-webkit-latest = "1.14.0"
@@ -94,6 +95,7 @@ google-play-services-basement-marshmallow = "18.11.0"
 # lollipop
 
 androidx-core-lollipop = "1.17.0"
+androidx-graphics-shapes-lollipop = "1.0.1" # 1.1.0+ requires minSdk 23
 androidx-activity-lollipop = "1.11.0" # 1.12.2+ requires minSdk 23
 androidx-work-lollipop = "2.10.5" # 2.11.0+ requires minSdk 23
 androidx-browser-lollipop = "1.9.0"
@@ -160,6 +162,8 @@ androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "a
 androidx-interpolator = { module = "androidx.interpolator:interpolator", version.ref = "androidx-interpolator" }
 androidx-collection = { module = "androidx.collection:collection", version.ref = "androidx-collection" }
 androidx-palette = { module = "androidx.palette:palette", version.ref = "androidx-palette" }
+androidx-graphics-shapes-lollipop = { module = "androidx.graphics:graphics-shapes", version.ref = "androidx-graphics-shapes-lollipop" }
+androidx-graphics-shapes-latest = { module = "androidx.graphics:graphics-shapes", version.ref = "androidx-graphics-shapes-latest" }
 
 androidx-core-ktx-legacy = { module = "androidx.core:core-ktx", version.ref = "androidx-core-legacy" }
 androidx-core-ktx-lollipop = { module = "androidx.core:core-ktx", version.ref = "androidx-core-lollipop" }

@@ -511,7 +511,8 @@ public class ViewPagerHeaderViewCompact extends FrameLayoutFix implements PagerH
 
   /**
    * M3 primary tabs: "The container is defined by a divider on the bottom edge" (m3.material.io/components/tabs).
-   * 1dp outlineVariant, drawn under the active indicator. Opt-in (main screen only), Monet themes only.
+   * 1dp outlineVariant, drawn under the active indicator. Only for tabs below the search bar (main screen):
+   * tabs at the bottom are a navigation bar, which has no divider.
    */
   public void setM3Divider (boolean enabled) {
     if (this.m3Divider != enabled) {
