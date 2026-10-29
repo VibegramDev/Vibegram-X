@@ -220,6 +220,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
           v.setData(Settings.instance().getNavigationStyle() == Settings.NAVIGATION_STYLE_DOCK ? R.string.NavigationStyleDock : R.string.NavigationStyleRail);
         } else if (itemId == R.id.btn_compactChats) {
           v.getToggler().setRadioEnabled(Settings.instance().useCompactChats(), isUpdate);
+        } else if (itemId == R.id.btn_centerTitles) {
+          v.getToggler().setRadioEnabled(Settings.instance().needCenterTitles(), isUpdate);
         } else if (itemId == R.id.btn_chatListStyle) {
           switch (Settings.instance().getChatListStyle()) {
             case Settings.CHAT_MODE_3LINE_BIG:
@@ -400,6 +402,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_chatListStyle, 0, R.string.ChatListStyle));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_compactChats, 0, R.string.CompactChats));
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_centerTitles, 0, R.string.CenterTitles));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_navigationStyle, 0, R.string.NavigationStyle));
 
@@ -1212,6 +1216,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       }).setAllowResize(false));
     } else if (viewId == R.id.btn_compactChats) {
       Settings.instance().setUseCompactChats(adapter.toggleView(v));
+    } else if (viewId == R.id.btn_centerTitles) {
+      Settings.instance().setNeedCenterTitles(adapter.toggleView(v));
     } else if (viewId == R.id.btn_instantViewMode) {
       showInstantViewOptions();
     } else if (viewId == R.id.btn_chatSwipes) {

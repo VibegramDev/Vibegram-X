@@ -30,6 +30,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
@@ -560,6 +561,49 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     return (float) currentHeight / (float) startY;
   }
 
+  private boolean allowCenterContent;
+
+  /** Chat header: the avatar with the name can be centered in the app bar (Settings: centered titles). */
+  public void setAllowCenterContent (boolean allow) {
+    if (this.allowCenterContent != allow) {
+      this.allowCenterContent = allow;
+      invalidate();
+    }
+  }
+
+  /**
+   * Horizontal shift that centers the avatar and the texts in the whole view (as on iOS), limited so the content
+   * never goes under the actions at the end. Only in the regular (collapsed, non-expanded) state.
+   */
+  private float getCenterShift (float avatarExpandFactor) {
+    if (!allowCenterContent || !Settings.instance().needCenterTitles() || calculateRealScaleFactor() != 0f || avatarExpandFactor != 0f || Lang.rtl()) {
+      return 0f;
+    }
+    float textWidth = 0f;
+    if (trimmedTitle != null) {
+      textWidth = trimmedTitle.getWidth() + additionalTextEndPadding
+        + ((flags & FLAG_SHOW_LOCK) != 0 ? Screen.dp(16f) : 0)
+        + ((flags & FLAG_SHOW_VERIFY) != 0 ? Screen.dp(24f) : 0)
+        + ((flags & FLAG_SHOW_MUTE) != 0 && (flags & FLAG_IGNORE_MUTE) == 0 ? Screen.dp(24f) : 0)
+        + (emojiStatusHelper.needDrawEmojiStatus() ? Screen.dp(6f) : 0);
+    }
+    if (trimmedSubtitle != null) {
+      textWidth = Math.max(textWidth, trimmedSubtitle.getWidth());
+    }
+    if (textWidth == 0f) {
+      return 0f;
+    }
+    float avatarWidth = Screen.dp(4f) + Screen.dp(getBaseAvatarRadiusDp()) * 2 + Screen.dp(9f);
+    float contentWidth = avatarWidth + textWidth;
+    float contentLeft = getMeasuredWidth() / 2f - contentWidth / 2f;
+    float maxShift = getMeasuredWidth() - getInnerRightMargin() - innerLeftMargin - contentWidth;
+    return MathUtils.clamp(contentLeft - innerLeftMargin, 0f, Math.max(0f, maxShift));
+  }
+
+  protected final float getDrawCenterShift () {
+    return getCenterShift(getAvatarExpandFactor());
+  }
+
   private void layoutReceiver () {
     float baseRadius = Screen.dp(getBaseAvatarRadiusDp());
     float baseCenterX = innerLeftMargin + Screen.dp(4f) + baseRadius;
@@ -886,6 +930,10 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     final int saveCount = Views.save(c);
     try {
       c.clipRect(0, 0, getMeasuredWidth(), calculateHeaderHeight());
+      final float centerShift = getCenterShift(avatarExpandFactor);
+      if (centerShift != 0f) {
+        c.translate(centerShift, 0);
+      }
 
       final boolean showLock = (flags & FLAG_SHOW_LOCK) != 0;
       final boolean showMute = (flags & FLAG_SHOW_MUTE) != 0 && (flags & FLAG_IGNORE_MUTE) == 0;
@@ -963,7 +1011,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         trimmedTitleClickRect.top *= textScaleFactor;
         trimmedTitleClickRect.right *= textScaleFactor;
         trimmedTitleClickRect.bottom *= textScaleFactor;
-        trimmedTitleClickRect.offset(baseTextLeft, baseTitleTop);
+        trimmedTitleClickRect.offset(baseTextLeft + centerShift, baseTitleTop);
         trimmedTitleClickRect.inset(-Screen.dp(8), -Screen.dp(8));
 
         float baseIconLeft = trimmedTitle.getWidth()

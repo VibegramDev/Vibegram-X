@@ -3906,16 +3906,32 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
     }
 
+    // Muted: the same M3 badge pill, low emphasis: faint onSurfaceVariant tint with a dashed outline.
+    private static final float MUTED_FILL_ALPHA = .12f, MUTED_OUTLINE_ALPHA = .55f;
+
     @ColorInt
     @Override
     public int backgroundColor (boolean isPressed) {
-      return counter != null ? ColorUtils.alphaColor(1f - counter.getMuteFactor(), M3.error()) : M3.error();
+      if (counter == null) {
+        return M3.error();
+      }
+      float mute = counter.getMuteFactor();
+      return ColorUtils.fromToArgb(M3.error(), ColorUtils.alphaColor(MUTED_FILL_ALPHA, M3.onSurfaceVariant()), mute);
     }
 
     @ColorInt
     @Override
     public int outlineColor (boolean isPressed) {
-      return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.onSurfaceVariant(), counter.getMuteFactor()) : Color.TRANSPARENT;
+      if (counter == null) {
+        return Color.TRANSPARENT;
+      }
+      float mute = counter.getMuteFactor();
+      return ColorUtils.fromToArgb(M3.error(), ColorUtils.alphaColor(MUTED_OUTLINE_ALPHA, M3.onSurfaceVariant()), mute);
+    }
+
+    @Override
+    public boolean outlineDashed () {
+      return counter != null && counter.getMuteFactor() > .5f;
     }
   }
 

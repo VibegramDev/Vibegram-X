@@ -73,6 +73,7 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
     setUseDefaultClickListener(true);
     setBackgroundResource(ThemeDeprecated.headerSelector());
     setInnerMargins(Screen.dp(56f), Screen.dp(49f));
+    setAllowCenterContent(true);
     topicIconReceiver = new ComplexReceiver(this);
   }
 
@@ -357,6 +358,16 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
 
     // Draw topic custom emoji icon on top of avatar if loaded
     if (topicCustomEmojiId != 0 && topicCustomEmoji != null && !topicCustomEmoji.isNotFound()) {
+      final float centerShift = getDrawCenterShift();
+      c.save();
+      c.translate(centerShift, 0);
+      drawTopicIcon(c);
+      c.restore();
+    }
+  }
+
+  private void drawTopicIcon (@NonNull Canvas c) {
+    {
       AvatarReceiver avatarReceiver = getAvatarReceiver();
       int left = avatarReceiver.getLeft();
       int top = avatarReceiver.getTop();

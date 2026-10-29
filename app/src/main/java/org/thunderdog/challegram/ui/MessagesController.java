@@ -379,6 +379,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private SendButton sendButton;
   private HapticMenuHelper sendMenu;
   private CameraAccessImageView mediaButton;
+  /** Attach button inside the field, at its bottom-end corner, while the send button replaces the attach buttons. */
+  private ImageView inlineAttachButton;
+  private static final float INLINE_ATTACH_WIDTH = 40f;
   private InvisibleImageView cameraButton, scheduleButton;
   private InvisibleImageView commandButton;
   private @Nullable SilentButton silentButton;
@@ -1308,6 +1311,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
     attachButtons.addView(recordButton);
     attachButtons.updatePivot();
 
+    params = new RelativeLayout.LayoutParams(Screen.dp(INLINE_ATTACH_WIDTH), Screen.dp(49f));
+    params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+    params.addRule(Lang.rtl() ? RelativeLayout.ALIGN_PARENT_LEFT : RelativeLayout.ALIGN_PARENT_RIGHT);
+    if (Lang.rtl()) {
+      params.leftMargin = Screen.dp(55f);
+    } else {
+      params.rightMargin = Screen.dp(55f);
+    }
+    inlineAttachButton = new ImageView(context);
+    inlineAttachButton.setId(R.id.msg_attachInline);
+    inlineAttachButton.setScaleType(ImageView.ScaleType.CENTER);
+    inlineAttachButton.setImageResource(R.drawable.deproko_baseline_attach_26);
+    inlineAttachButton.setColorFilter(Theme.iconColor());
+    addThemeFilterListener(inlineAttachButton, ColorId.icon);
+    inlineAttachButton.setOnClickListener(this);
+    inlineAttachButton.setContentDescription(Lang.getString(R.string.Attach));
+    inlineAttachButton.setVisibility(View.GONE);
+    inlineAttachButton.setLayoutParams(params);
+
     params = new RelativeLayout.LayoutParams(Screen.dp(55f), Screen.dp(49f));
     params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
     if (Lang.rtl()) {
@@ -1553,6 +1575,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (previewMode == PREVIEW_MODE_NONE) {
       contentView.addView(emojiButton);
       contentView.addView(attachButtons);
+      contentView.addView(inlineAttachButton);
       contentView.addView(sendButton);
       contentView.addView(messageSenderButton);
 
@@ -2171,7 +2194,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       processChatAction();
     } else if (viewId == R.id.msg_emoji) {
       toggleEmojiKeyboard();
-    } else if (viewId == R.id.msg_attach) {
+    } else if (viewId == R.id.msg_attach || viewId == R.id.msg_attachInline) {
       hideBottomHint();
       openMediaView(false, false);
     } else if (viewId == R.id.msg_send) {
@@ -7914,6 +7937,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     setComposerButtonMargin(emojiButton, margin, Lang.rtl());
     setComposerButtonMargin(attachButtons, margin, !Lang.rtl());
     setComposerButtonMargin(sendButton, margin, !Lang.rtl());
+    setComposerButtonMargin(inlineAttachButton, margin + Screen.dp(55f), !Lang.rtl());
     RelativeLayout.LayoutParams senderParams = (RelativeLayout.LayoutParams) messageSenderButton.getLayoutParams();
     senderParams.leftMargin = senderParams.rightMargin = margin;
     messageSenderButton.setLayoutParams(senderParams);
@@ -7957,6 +7981,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     sendButton.setTranslationY(y);
     emojiButton.setTranslationY(y);
     attachButtons.setTranslationY(y);
+    if (inlineAttachButton != null) {
+      inlineAttachButton.setTranslationY(y);
+    }
     messageSenderButton.setTranslationY(y);
 
     if (prevButtonsY != y) {
@@ -10020,6 +10047,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       attachButtons.setAlpha(1f - factor);
       attachButtons.setScaleX(scale2);
       attachButtons.setScaleY(scale2);
+      updateInlineAttachButton();
       messageSenderButton.setSendFactor(sendFactor);
 
       if (tooltipInfo != null && tooltipInfo.isVisible()) {
@@ -10047,6 +10075,32 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       sendShown.setValue(isVisible, animated && isFocused());
       showMessageMenuTutorial();
+      updateInlineAttachButton();
+    }
+  }
+
+  private boolean needInlineAttachButton () {
+    return sendShown.getValue() && inputView != null && previewMode == PREVIEW_MODE_NONE && !isEditingMessage() && !sendButton.inInlineMode() && !isInputLess() && canWriteMessages();
+  }
+
+  /** Shows the inline attach button with the send button and makes room for it at the end of the text field. */
+  private void updateInlineAttachButton () {
+    if (inlineAttachButton == null || inputView == null) {
+      return;
+    }
+    boolean needButton = needInlineAttachButton();
+    float factor = needButton ? sendFactor : 0f;
+    inlineAttachButton.setAlpha(factor);
+    inlineAttachButton.setScaleX(.5f + .5f * factor);
+    inlineAttachButton.setScaleY(.5f + .5f * factor);
+    inlineAttachButton.setVisibility(factor > 0f ? View.VISIBLE : View.GONE);
+    int endPadding = Screen.dp(55f) + (needButton ? Screen.dp(INLINE_ATTACH_WIDTH) : 0);
+    if (Lang.rtl()) {
+      if (inputView.getPaddingLeft() != endPadding) {
+        inputView.setPadding(endPadding, inputView.getPaddingTop(), inputView.getPaddingRight(), inputView.getPaddingBottom());
+      }
+    } else if (inputView.getPaddingRight() != endPadding) {
+      inputView.setPadding(inputView.getPaddingLeft(), inputView.getPaddingTop(), endPadding, inputView.getPaddingBottom());
     }
   }
 
