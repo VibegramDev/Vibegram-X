@@ -164,6 +164,12 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
 
   @Override
   public void onDraw (Canvas c) {
+    // M3 back button: the arrow in a tonal circle (as in Android settings). Fades in from the menu icon.
+    float containerFactor = MathUtils.clamp(factor);
+    if (containerFactor > 0f) {
+      float cx = getPaddingLeft() + getMeasuredWidth() / 2f, cy = getMeasuredHeight() / 2f;
+      c.drawCircle(cx, cy, Screen.dp(20f), Paints.fillingPaint(ColorUtils.alphaColor(.12f * containerFactor, paint.getColor())));
+    }
     super.onDraw(c);
 
     boolean reverseAngle = Lang.rtl() != this.reverseAngle;

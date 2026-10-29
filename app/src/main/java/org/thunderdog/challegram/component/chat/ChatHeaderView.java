@@ -358,11 +358,7 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
 
     // Draw topic custom emoji icon on top of avatar if loaded
     if (topicCustomEmojiId != 0 && topicCustomEmoji != null && !topicCustomEmoji.isNotFound()) {
-      final float centerShift = getDrawCenterShift();
-      c.save();
-      c.translate(centerShift, 0);
       drawTopicIcon(c);
-      c.restore();
     }
   }
 

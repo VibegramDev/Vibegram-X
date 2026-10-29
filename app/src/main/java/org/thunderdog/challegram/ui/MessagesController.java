@@ -3762,11 +3762,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (id == R.id.menu_chat) {
       HeaderButton btn = header.addButton(menu, R.id.menu_btn_viewScheduled, R.drawable.baseline_date_range_24, getHeaderIconColorId(), this, Screen.dp(52f));
       btn.setVisibility(tdlib.chatHasScheduled(getChatId()) ? View.VISIBLE : View.GONE);
-      header.addMoreButton(menu, this);
+      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
     } else if (id == R.id.menu_secretChat) {
       StopwatchHeaderButton headerButton = header.addStopwatchButton(menu, this);
       headerButton.forceValue(tdlib.ui().getTTLShort(getChatId()), isSecretChat() && tdlib.canChangeMessageAutoDeleteTime(chat.id));
-      header.addMoreButton(menu, this);
+      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
     } else if (id == R.id.menu_messageActions) {
       int iconColorId = getSelectHeaderIconColorId();
       HeaderButton selectInBetweenBtn = header.addButton(menu, R.id.menu_btn_selectInBetween, R.drawable.baseline_toc_24, iconColorId, this, Screen.dp(49f));
@@ -3810,6 +3810,17 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (value) totalButtonsCount++;
 
       reportButton.setVisibility(canReportSelectedMessages(totalButtonsCount) ? View.VISIBLE : View.GONE);
+    }
+  }
+
+  /**
+   * Centered titles (iOS-like header): the chat avatar is drawn by the header in place of the "more" icon, the button
+   * stays (transparent) and opens the same menu.
+   */
+  private void checkAvatarAsMoreButton (HeaderButton moreButton) {
+    if (moreButton != null && Settings.instance().needCenterTitles() && !Lang.rtl() && !inPreviewMode) {
+      moreButton.setImageResource(0);
+      moreButton.setContentDescription(Lang.getString(R.string.MoreChatOptions));
     }
   }
 
