@@ -4361,6 +4361,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void onBlur () {
+    finishTextSelection();
     saveDraft();
 
     super.onBlur();
@@ -5956,18 +5957,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
           context().tooltipManager().builder(itemView).show(tdlib, R.string.ChannelNoCopy).hideDelayed();
           return false;
         }
-        TdApi.Message message = null;
-        if (selectedMessage instanceof TGMessageMedia) {
-          long messageId = ((TGMessageMedia) selectedMessage).getCaptionMessageId();
-          message = selectedMessage.getMessage(messageId);
-        }
-        if (message == null) {
-          message = selectedMessage.getNewestMessage();
-        }
-        TdApi.FormattedText text = Td.textOrCaption(message.content);
-        if (text != null && !StringUtils.isEmpty(text.text)) {
-          showMessageTextSelection(selectedMessage, message, text);
-        }
+        startTextSelection(selectedMessage);
         return true;
       } else if (id == R.id.btn_copyTranslation || id == R.id.btn_messageCopy) {
         if (!selectedMessage.canBeSaved()) {
@@ -10098,7 +10088,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
-  // Text selection
+  // Text selection (in the bubble, as in the official app)
 
   /** Entities Telegram keeps in reply quotes; the rest are dropped from the quote. */
   private static boolean isQuoteEntity (TdApi.TextEntityType type) {
@@ -10114,60 +10104,122 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return false;
   }
 
-  /**
-   * Message text in a bottom sheet with the system text selection: part of the text can be copied (with formatting
-   * and custom emoji) or quoted in a reply, as in the official app. Built from TGX parts: {@link OptionsLayout} sheet,
-   * {@link CustomEmojiTextView} (custom emoji, honors the emoji animation setting), {@link #showReply}.
-   */
-  private void showMessageTextSelection (TGMessage msg, TdApi.Message message, TdApi.FormattedText text) {
-    final boolean canQuote = msg.canReplyTo() && canWriteMessages() && !isEditingMessage();
-    final PopupLayout popupLayout = new PopupLayout(context);
-    popupLayout.setTag(this);
-    popupLayout.init(true);
-    popupLayout.setNeedFullScreen(true);
+  private @Nullable TGMessage textSelectionMessage;
+  private @Nullable android.view.ActionMode textSelectionActionMode;
+  private @Nullable View textSelectionView;
 
-    OptionsLayout sheet = new OptionsLayout(context, this, null);
-    sheet.setInfo(this, tdlib, Lang.getString(R.string.SelectText), true, 1);
-
-    final CustomEmojiTextView textView = new CustomEmojiTextView(context, tdlib);
-    textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-    textView.setTextColor(Theme.textAccentColor());
-    addThemeTextAccentColorListener(textView);
-    textView.setLineSpacing(Screen.dp(2f), 1f);
-    textView.setPadding(Screen.dp(16f), Screen.dp(8f), Screen.dp(16f), Screen.dp(16f));
-    int options = TD.TextEntityOption.ALLOW_INTERNAL;
-    if (Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI)) {
-      options |= TD.TextEntityOption.DISABLE_ANIMATIONS;
+  /** Selects the whole text of the message in its bubble: handles, floating toolbar (Copy, Quote, Select all). */
+  public void startTextSelection (TGMessage msg) {
+    finishTextSelection();
+    if (!msg.startTextSelection()) {
+      return;
     }
-    textView.setText(TD.toCharSequence(text, options, true));
-    textView.setTextIsSelectable(true);
-    final boolean offsetsMatch = textView.getText().length() == text.text.length();
-    textView.setCustomSelectionActionModeCallback(new android.view.ActionMode.Callback() {
+    textSelectionMessage = msg;
+    View view = msg.findCurrentView();
+    if (view instanceof MessageView) {
+      onTextSelectionChanged(msg, (MessageView) view, false);
+    }
+  }
+
+  public boolean hasTextSelection () {
+    return textSelectionMessage != null;
+  }
+
+  public void finishTextSelection () {
+    TGMessage msg = textSelectionMessage;
+    textSelectionMessage = null;
+    textSelectionView = null;
+    android.view.ActionMode mode = textSelectionActionMode;
+    textSelectionActionMode = null;
+    if (mode != null) {
+      mode.finish();
+    }
+    if (msg != null) {
+      msg.clearTextSelection();
+    }
+  }
+
+  /** Taps on other messages finish the selection. */
+  public boolean checkTextSelectionTouch (TGMessage msg) {
+    if (textSelectionMessage != null && textSelectionMessage != msg) {
+      finishTextSelection();
+      return true;
+    }
+    return false;
+  }
+
+  /** @param isDragging a handle is being dragged: the toolbar hides until it is released */
+  public void onTextSelectionChanged (TGMessage msg, MessageView view, boolean isDragging) {
+    if (msg != textSelectionMessage) {
+      return;
+    }
+    if (isDragging) {
+      if (textSelectionActionMode != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        textSelectionActionMode.hide(60_000L);
+      }
+      return;
+    }
+    if (textSelectionActionMode != null && textSelectionView == view) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        textSelectionActionMode.invalidateContentRect();
+        textSelectionActionMode.hide(0);
+      }
+      textSelectionActionMode.invalidate();
+      return;
+    }
+    if (textSelectionActionMode != null) {
+      android.view.ActionMode oldMode = textSelectionActionMode;
+      textSelectionActionMode = null;
+      oldMode.finish();
+    }
+    textSelectionView = view;
+    android.view.ActionMode.Callback2 callback = new android.view.ActionMode.Callback2() {
       @Override
       public boolean onCreateActionMode (android.view.ActionMode mode, android.view.Menu menu) {
-        if (canQuote && offsetsMatch) {
-          menu.add(android.view.Menu.NONE, R.id.btn_quoteSelection, 0, Lang.getString(R.string.QuoteSelection));
-        }
+        menu.add(android.view.Menu.NONE, android.R.id.copy, 0, android.R.string.copy);
+        menu.add(android.view.Menu.NONE, R.id.btn_quoteSelection, 1, Lang.getString(R.string.QuoteSelection));
+        menu.add(android.view.Menu.NONE, android.R.id.selectAll, 2, android.R.string.selectAll);
         return true;
       }
 
       @Override
       public boolean onPrepareActionMode (android.view.ActionMode mode, android.view.Menu menu) {
-        return false;
+        TGMessage msg = textSelectionMessage;
+        android.view.MenuItem quote = menu.findItem(R.id.btn_quoteSelection);
+        if (quote != null) {
+          quote.setVisible(msg != null && !msg.isSelectionInTranslation() && msg.canReplyTo() && canWriteMessages() && !isEditingMessage());
+        }
+        android.view.MenuItem selectAll = menu.findItem(android.R.id.selectAll);
+        if (selectAll != null && msg != null) {
+          TdApi.FormattedText text = msg.getSelectionSourceText();
+          selectAll.setVisible(text != null && (msg.getTextSelectionStart() > 0 || msg.getTextSelectionEnd() < text.text.length()));
+        }
+        return true;
       }
 
       @Override
       public boolean onActionItemClicked (android.view.ActionMode mode, android.view.MenuItem item) {
-        int start = Math.min(textView.getSelectionStart(), textView.getSelectionEnd());
-        int end = Math.max(textView.getSelectionStart(), textView.getSelectionEnd());
-        if (!offsetsMatch || start < 0 || end <= start) {
+        TGMessage msg = textSelectionMessage;
+        if (msg == null) {
+          return false;
+        }
+        TdApi.FormattedText text = msg.getSelectionSourceText();
+        int start = msg.getTextSelectionStart(), end = msg.getTextSelectionEnd();
+        if (text == null || start < 0 || end <= start || end > text.text.length()) {
           return false;
         }
         int itemId = item.getItemId();
         if (itemId == android.R.id.copy) {
-          // Copy from the original entities: formatting and custom emoji go to the clipboard as HTML.
+          // Formatting and custom emoji go to the clipboard as HTML.
           UI.copyText(TD.toCopyText(Td.substring(text, start, end)), R.string.CopiedText);
-          mode.finish();
+          finishTextSelection();
+          return true;
+        }
+        if (itemId == android.R.id.selectAll) {
+          msg.selectAllText();
+          if (textSelectionView instanceof MessageView) {
+            onTextSelectionChanged(msg, (MessageView) textSelectionView, false);
+          }
           return true;
         }
         if (itemId == R.id.btn_quoteSelection) {
@@ -10182,8 +10234,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
             quote.entities = entities.toArray(new TdApi.TextEntity[0]);
           }
           final TdApi.InputTextQuote inputQuote = new TdApi.InputTextQuote(quote, start);
-          mode.finish();
-          popupLayout.hideWindow(true);
+          final TdApi.Message message = msg.getNewestMessage();
+          finishTextSelection();
           msg.getMessageProperties(message.id, properties -> runOnUiThreadOptional(() -> {
             if (properties != null) {
               showReply(new MessageWithProperties(message, properties), inputQuote, 0, "", true, true);
@@ -10198,21 +10250,30 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
 
       @Override
-      public void onDestroyActionMode (android.view.ActionMode mode) { }
-    });
+      public void onDestroyActionMode (android.view.ActionMode mode) {
+        if (textSelectionActionMode == mode) {
+          // Dismissed by the system (Back): finish the selection.
+          textSelectionActionMode = null;
+          finishTextSelection();
+        }
+      }
 
-    android.widget.ScrollView scrollView = new android.widget.ScrollView(context);
-    scrollView.addView(textView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    textView.measure(
-      View.MeasureSpec.makeMeasureSpec(Math.min(Screen.currentWidth(), Screen.dp(640f)), View.MeasureSpec.EXACTLY),
-      View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-    );
-    int scrollHeight = Math.min(textView.getMeasuredHeight(), (int) (Screen.currentHeight() * .6f));
-    scrollView.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scrollHeight));
-    sheet.addView(scrollView);
-
-    popupLayout.setDismissListener(popup -> textView.performDestroy());
-    popupLayout.showSimplePopupView(sheet, sheet.getEstimatedHeight() + extraBottomInsetWithoutIme);
+      @Override
+      public void onGetContentRect (android.view.ActionMode mode, View view, android.graphics.Rect outRect) {
+        TGMessage msg = textSelectionMessage;
+        android.graphics.RectF rect = Paints.getRectF();
+        if (msg != null && msg.getTextSelectionBounds(rect)) {
+          outRect.set((int) rect.left, (int) rect.top, (int) rect.right, (int) rect.bottom);
+        } else {
+          super.onGetContentRect(mode, view, outRect);
+        }
+      }
+    };
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      textSelectionActionMode = view.startActionMode(callback, android.view.ActionMode.TYPE_FLOATING);
+    } else {
+      textSelectionActionMode = view.startActionMode(callback);
+    }
   }
 
   private boolean needInlineAttachButton () {

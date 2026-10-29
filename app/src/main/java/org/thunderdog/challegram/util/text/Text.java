@@ -85,6 +85,7 @@ import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.animator.ListAnimator;
 import me.vkryl.android.util.SingleViewProvider;
 import me.vkryl.android.util.ViewProvider;
+import me.vkryl.core.MathUtils;
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.StringUtils;
@@ -2546,6 +2547,9 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     }
 
     lastStartY = startY;
+    if (hasSelection()) {
+      drawSelection(c, startX, endX, endXBottomPadding, startY);
+    }
 
     if (lastStartX != startX || lastEndX != endX || lastEndXBottomPadding != endXBottomPadding) {
       this.backgrounds = null;
@@ -3478,6 +3482,223 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
   }
 
   private final ArrayList<QuoteBackground> quotes = new ArrayList<>();
+
+  // Text selection (char offsets in the original text)
+
+  private int selectionStart = -1, selectionEnd = -1;
+  private int selectionColor;
+
+  public void setSelection (int start, int end, int color) {
+    start = MathUtils.clamp(start, 0, originalText.length());
+    end = MathUtils.clamp(end, 0, originalText.length());
+    this.selectionStart = Math.min(start, end);
+    this.selectionEnd = Math.max(start, end);
+    this.selectionColor = color;
+    if (viewProvider != null) {
+      viewProvider.invalidate();
+    }
+  }
+
+  public void clearSelection () {
+    if (selectionStart != -1) {
+      selectionStart = selectionEnd = -1;
+      if (viewProvider != null) {
+        viewProvider.invalidate();
+      }
+    }
+  }
+
+  public boolean hasSelection () {
+    return selectionStart >= 0 && selectionEnd > selectionStart;
+  }
+
+  public int getSelectionStart () {
+    return selectionStart;
+  }
+
+  public int getSelectionEnd () {
+    return selectionEnd;
+  }
+
+  /** Part of the original text (not an ellipsis or a suffix), visible. */
+  private boolean isSelectablePart (TextPart part) {
+    return !part.isCollapsed() && part.getLine() == originalText;
+  }
+
+  /** X of a char offset inside a part, relative to the part start. Emoji and media are atomic. */
+  private float getPartOffsetX (TextPart part, int offset) {
+    final int start = part.getStart(), end = part.getEnd();
+    if (offset <= start) {
+      return part.isRtl() ? part.getWidth() : 0;
+    }
+    if (offset >= end) {
+      return part.isRtl() ? 0 : part.getWidth();
+    }
+    float x;
+    if (part.isStaticElement() || part.isRecognizedEmoji() || part.isCustomEmoji()) {
+      x = offset - start < (end - start) / 2f ? 0 : part.getWidth();
+    } else {
+      x = Math.min(part.getWidth(), getTextPaint(part.getEntity()).measureText(part.getLine(), start, offset));
+    }
+    return part.isRtl() ? part.getWidth() - x : x;
+  }
+
+  /** Char offset nearest to x inside a part (x relative to the part start). */
+  private int getPartOffsetAt (TextPart part, float x) {
+    final int start = part.getStart(), end = part.getEnd();
+    if (part.isRtl()) {
+      x = part.getWidth() - x;
+    }
+    if (x <= 0) {
+      return start;
+    }
+    if (x >= part.getWidth()) {
+      return end;
+    }
+    if (part.isStaticElement() || part.isRecognizedEmoji() || part.isCustomEmoji()) {
+      return x < part.getWidth() / 2f ? start : end;
+    }
+    TextPaint paint = getTextPaint(part.getEntity());
+    String line = part.getLine();
+    int offset = start;
+    float prevX = 0;
+    while (offset < end) {
+      int next = offset + Character.charCount(line.codePointAt(offset));
+      float nextX = paint.measureText(line, start, Math.min(next, end));
+      if (x < (prevX + nextX) / 2f) {
+        return offset;
+      }
+      prevX = nextX;
+      offset = next;
+    }
+    return end;
+  }
+
+  /** Char offset at the given point of the last drawn position of the text (the same coordinates as touches). */
+  public int getOffsetAt (int touchX, int touchY) {
+    final int startX = lastStartX, endX = lastEndX, endXBottomPadding = lastEndXBottomPadding;
+    final int y = touchY - lastStartY;
+    int targetLine = -1;
+    int firstLineY = Integer.MAX_VALUE, lastLineIndex = -1;
+    for (TextPart part : parts) {
+      if (!isSelectablePart(part)) {
+        continue;
+      }
+      int top = part.getY(), bottom = top + getLineHeight(part.getLineIndex());
+      firstLineY = Math.min(firstLineY, top);
+      lastLineIndex = Math.max(lastLineIndex, part.getLineIndex());
+      if (y >= top && y < bottom) {
+        targetLine = part.getLineIndex();
+        break;
+      }
+    }
+    if (targetLine == -1) {
+      if (lastLineIndex == -1 || y < firstLineY) {
+        return 0;
+      }
+      return originalText.length();
+    }
+    TextPart first = null, last = null;
+    for (TextPart part : parts) {
+      if (!isSelectablePart(part) || part.getLineIndex() != targetLine) {
+        continue;
+      }
+      int px = part.makeX(startX, endX, endXBottomPadding);
+      if (touchX >= px && touchX < px + part.getWidth()) {
+        return getPartOffsetAt(part, touchX - px);
+      }
+      if (first == null || px < first.makeX(startX, endX, endXBottomPadding)) {
+        first = part;
+      }
+      if (last == null || px > last.makeX(startX, endX, endXBottomPadding)) {
+        last = part;
+      }
+    }
+    if (first == null) {
+      return 0;
+    }
+    if (touchX < first.makeX(startX, endX, endXBottomPadding)) {
+      return first.isRtl() ? first.getEnd() : first.getStart();
+    }
+    return last.isRtl() ? last.getStart() : last.getEnd();
+  }
+
+  /**
+   * Position of a char offset at the last drawn position: out[0] = x, out[1] = line top, out[2] = line bottom.
+   * @param isEnd for the end of a selection: offsets at a line break belong to the previous line
+   */
+  public boolean getOffsetPosition (int offset, boolean isEnd, float[] out) {
+    TextPart found = null, fallback = null;
+    for (TextPart part : parts) {
+      if (!isSelectablePart(part)) {
+        continue;
+      }
+      boolean inside = isEnd ? (offset > part.getStart() && offset <= part.getEnd()) : (offset >= part.getStart() && offset < part.getEnd());
+      if (inside) {
+        found = part;
+        break;
+      }
+      // Offset between parts (whitespace, line breaks): the end sticks to the previous part, the start to the next one.
+      if (isEnd ? (part.getEnd() <= offset && (fallback == null || part.getEnd() > fallback.getEnd())) :
+        (part.getStart() >= offset && (fallback == null || part.getStart() < fallback.getStart()))) {
+        fallback = part;
+      }
+    }
+    if (found == null) {
+      found = fallback;
+    }
+    if (found == null) {
+      return false;
+    }
+    if (isEnd ? offset > found.getEnd() : offset < found.getStart()) {
+      offset = isEnd ? found.getEnd() : found.getStart();
+    }
+    int px = found.makeX(lastStartX, lastEndX, lastEndXBottomPadding);
+    out[0] = px + getPartOffsetX(found, offset);
+    out[1] = lastStartY + found.getY();
+    out[2] = out[1] + getLineHeight(found.getLineIndex());
+    return true;
+  }
+
+  /** Bounds of the selection at the last drawn position. */
+  public boolean getSelectionBounds (RectF out) {
+    if (!hasSelection()) {
+      return false;
+    }
+    boolean found = false;
+    for (TextPart part : parts) {
+      if (!isSelectablePart(part) || part.getEnd() <= selectionStart || part.getStart() >= selectionEnd) {
+        continue;
+      }
+      int px = part.makeX(lastStartX, lastEndX, lastEndXBottomPadding);
+      float x0 = px + getPartOffsetX(part, Math.max(part.getStart(), selectionStart));
+      float x1 = px + getPartOffsetX(part, Math.min(part.getEnd(), selectionEnd));
+      float top = lastStartY + part.getY(), bottom = top + getLineHeight(part.getLineIndex());
+      if (!found) {
+        out.set(Math.min(x0, x1), top, Math.max(x0, x1), bottom);
+        found = true;
+      } else {
+        out.union(Math.min(x0, x1), top, Math.max(x0, x1), bottom);
+      }
+    }
+    return found;
+  }
+
+  private void drawSelection (Canvas c, int startX, int endX, int endXBottomPadding, int startY) {
+    final Paint paint = Paints.fillingPaint(selectionColor);
+    final RectF rect = Paints.getRectF();
+    for (TextPart part : parts) {
+      if (!isSelectablePart(part) || part.getEnd() <= selectionStart || part.getStart() >= selectionEnd) {
+        continue;
+      }
+      int px = part.makeX(startX, endX, endXBottomPadding);
+      float x0 = px + getPartOffsetX(part, Math.max(part.getStart(), selectionStart));
+      float x1 = px + getPartOffsetX(part, Math.min(part.getEnd(), selectionEnd));
+      float top = startY + part.getY();
+      rect.set(Math.min(x0, x1), top, Math.max(x0, x1), top + getLineHeight(part.getLineIndex()));
+      c.drawRect(rect, paint);
+    }
+  }
 
   // Expandable (collapsed) quotes
 

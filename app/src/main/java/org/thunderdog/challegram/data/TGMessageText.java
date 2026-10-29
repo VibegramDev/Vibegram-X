@@ -23,6 +23,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.tool.Paints;
+import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.component.chat.MessageView;
 import org.thunderdog.challegram.component.chat.MessagesManager;
 import org.thunderdog.challegram.config.Config;
@@ -45,6 +48,8 @@ import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.util.text.TextWrapper;
 
+import me.vkryl.core.ColorUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.ListAnimator;
@@ -555,6 +560,7 @@ public class TGMessageText extends TGMessage {
       int linkPreviewX = Lang.rtl() ? startX + maxWidth - linkPreview.getWidth() : startX;
       linkPreview.draw(view, c, linkPreviewX, linkPreviewY, preview, receiver, alpha, textMediaReceiver);
     }
+    drawSelectionHandles(c);
   }
 
   @Override
@@ -695,6 +701,272 @@ public class TGMessageText extends TGMessage {
   }
 
   private TdApi.FormattedText translatedText;
+
+  // Text selection
+
+  private @Nullable Text selectionText;
+  private static final int HANDLE_NONE = 0, HANDLE_START = 1, HANDLE_END = 2;
+  private int draggingHandle = HANDLE_NONE;
+  private float selectionTouchX, selectionTouchY, handleTouchOffsetY;
+  private boolean selectionTouchMoved;
+  private final float[] handlePosition = new float[3];
+  private @Nullable Runnable selectWordRunnable;
+
+  private static float getHandleRadius () {
+    return Screen.dp(10f);
+  }
+
+  private static int getSelectionColor () {
+    return ColorUtils.alphaColor(.3f, M3.primary());
+  }
+
+  @Override
+  public boolean startTextSelection () {
+    TextWrapper wrapper = effectiveWrapper;
+    Text current = wrapper != null ? wrapper.getCurrent() : null;
+    if (current == null || current.isEmpty()) {
+      return false;
+    }
+    clearTextSelection();
+    selectionText = current;
+    current.setSelection(0, current.getText().length(), getSelectionColor());
+    invalidate();
+    return true;
+  }
+
+  @Override
+  public boolean supportsTextSelection () {
+    TextWrapper wrapper = effectiveWrapper;
+    return wrapper != null && wrapper.getCurrent() != null;
+  }
+
+  @Override
+  public boolean hasTextSelection () {
+    return selectionText != null && selectionText.hasSelection();
+  }
+
+  @Override
+  public void clearTextSelection () {
+    cancelSelectWord();
+    draggingHandle = HANDLE_NONE;
+    if (selectionText != null) {
+      selectionText.clearSelection();
+      selectionText = null;
+      invalidate();
+    }
+  }
+
+  @Override
+  public void selectAllText () {
+    if (selectionText != null) {
+      selectionText.setSelection(0, selectionText.getText().length(), getSelectionColor());
+      invalidate();
+    }
+  }
+
+  @Nullable
+  @Override
+  public TdApi.FormattedText getSelectionSourceText () {
+    return translatedText != null ? translatedText : text;
+  }
+
+  @Override
+  public boolean isSelectionInTranslation () {
+    return translatedText != null;
+  }
+
+  @Override
+  public int getTextSelectionStart () {
+    return selectionText != null ? selectionText.getSelectionStart() : -1;
+  }
+
+  @Override
+  public int getTextSelectionEnd () {
+    return selectionText != null ? selectionText.getSelectionEnd() : -1;
+  }
+
+  @Override
+  public boolean getTextSelectionBounds (android.graphics.RectF out) {
+    return selectionText != null && selectionText.getSelectionBounds(out);
+  }
+
+  /** Handle position: x, line top, line bottom of the selection start or end. */
+  private boolean getHandlePosition (int handle, float[] out) {
+    Text text = selectionText;
+    if (text == null || !text.hasSelection()) {
+      return false;
+    }
+    return handle == HANDLE_START ? text.getOffsetPosition(text.getSelectionStart(), false, out) : text.getOffsetPosition(text.getSelectionEnd(), true, out);
+  }
+
+  /** Teardrop handles (as in the official app and the system): the tip points at the selection edge. */
+  private void drawSelectionHandles (Canvas c) {
+    if (!hasTextSelection()) {
+      return;
+    }
+    final float radius = getHandleRadius();
+    final android.graphics.Paint paint = Paints.fillingPaint(M3.primary());
+    for (int handle = HANDLE_START; handle <= HANDLE_END; handle++) {
+      if (!getHandlePosition(handle, handlePosition)) {
+        continue;
+      }
+      float x = handlePosition[0], bottom = handlePosition[2];
+      float cx = handle == HANDLE_START ? x - radius : x + radius;
+      c.drawCircle(cx, bottom + radius, radius, paint);
+      if (handle == HANDLE_START) {
+        c.drawRect(x - radius, bottom, x, bottom + radius, paint);
+      } else {
+        c.drawRect(x, bottom, x + radius, bottom + radius, paint);
+      }
+    }
+  }
+
+  private int findHandle (float x, float y) {
+    final float radius = getHandleRadius();
+    final float touchRadius = Screen.dp(26f);
+    int best = HANDLE_NONE;
+    float bestDistance = Float.MAX_VALUE;
+    for (int handle = HANDLE_START; handle <= HANDLE_END; handle++) {
+      if (!getHandlePosition(handle, handlePosition)) {
+        continue;
+      }
+      float cx = handle == HANDLE_START ? handlePosition[0] - radius : handlePosition[0] + radius;
+      float cy = handlePosition[2] + radius;
+      float distance = (float) Math.hypot(x - cx, y - cy);
+      if (distance <= touchRadius && distance < bestDistance) {
+        best = handle;
+        bestDistance = distance;
+        // Map the finger back to the text line while dragging.
+        handleTouchOffsetY = y - (handlePosition[1] + handlePosition[2]) / 2f;
+      }
+    }
+    return best;
+  }
+
+  private void cancelSelectWord () {
+    if (selectWordRunnable != null) {
+      UI.removePendingRunnable(selectWordRunnable);
+      selectWordRunnable = null;
+    }
+  }
+
+  private void selectWordAt (MessageView view, float x, float y) {
+    Text text = selectionText;
+    if (text == null) {
+      return;
+    }
+    String string = text.getText();
+    int offset = text.getOffsetAt((int) x, (int) y);
+    if (string.isEmpty()) {
+      return;
+    }
+    offset = MathUtils.clamp(offset, 0, string.length() - 1);
+    java.text.BreakIterator iterator = java.text.BreakIterator.getWordInstance();
+    iterator.setText(string);
+    int end = iterator.following(offset);
+    int start = iterator.previous();
+    if (end == java.text.BreakIterator.DONE) {
+      end = string.length();
+    }
+    if (start == java.text.BreakIterator.DONE) {
+      start = 0;
+    }
+    if (end <= start || string.substring(start, end).trim().isEmpty()) {
+      start = offset;
+      end = Math.min(string.length(), offset + 1);
+    }
+    text.setSelection(start, end, getSelectionColor());
+    UI.hapticVibrate(view, true);
+    invalidate();
+    messagesController().onTextSelectionChanged(this, view, false);
+  }
+
+  @Override
+  public boolean onTextSelectionTouchEvent (MessageView view, MotionEvent e) {
+    final Text text = selectionText;
+    if (text == null || !text.hasSelection()) {
+      return false;
+    }
+    final float x = e.getX(), y = e.getY();
+    switch (e.getAction()) {
+      case MotionEvent.ACTION_DOWN: {
+        selectionTouchX = x;
+        selectionTouchY = y;
+        selectionTouchMoved = false;
+        draggingHandle = findHandle(x, y);
+        if (draggingHandle != HANDLE_NONE) {
+          if (view.getParent() != null) {
+            view.getParent().requestDisallowInterceptTouchEvent(true);
+          }
+          messagesController().onTextSelectionChanged(this, view, true);
+        } else {
+          cancelSelectWord();
+          selectWordRunnable = () -> {
+            selectWordRunnable = null;
+            selectionTouchMoved = true;
+            selectWordAt(view, selectionTouchX, selectionTouchY);
+          };
+          UI.post(selectWordRunnable, android.view.ViewConfiguration.getLongPressTimeout());
+        }
+        return true;
+      }
+      case MotionEvent.ACTION_MOVE: {
+        if (draggingHandle != HANDLE_NONE) {
+          int offset = text.getOffsetAt((int) x, (int) (y - handleTouchOffsetY));
+          int start = text.getSelectionStart(), end = text.getSelectionEnd();
+          if (draggingHandle == HANDLE_START) {
+            if (offset >= end) {
+              // Handles crossed: keep at least one char, continue with the other handle.
+              start = end;
+              end = Math.max(offset, start + 1);
+              draggingHandle = HANDLE_END;
+            } else {
+              start = offset;
+            }
+          } else {
+            if (offset <= start) {
+              end = start;
+              start = Math.min(offset, end - 1);
+              draggingHandle = HANDLE_START;
+            } else {
+              end = offset;
+            }
+          }
+          if (start != text.getSelectionStart() || end != text.getSelectionEnd()) {
+            text.setSelection(start, end, getSelectionColor());
+            invalidate();
+          }
+          return true;
+        }
+        if (Math.max(Math.abs(x - selectionTouchX), Math.abs(y - selectionTouchY)) > Screen.getTouchSlop()) {
+          selectionTouchMoved = true;
+          cancelSelectWord();
+          return false;
+        }
+        return true;
+      }
+      case MotionEvent.ACTION_CANCEL: {
+        cancelSelectWord();
+        if (draggingHandle != HANDLE_NONE) {
+          draggingHandle = HANDLE_NONE;
+          messagesController().onTextSelectionChanged(this, view, false);
+        }
+        return true;
+      }
+      case MotionEvent.ACTION_UP: {
+        cancelSelectWord();
+        if (draggingHandle != HANDLE_NONE) {
+          draggingHandle = HANDLE_NONE;
+          messagesController().onTextSelectionChanged(this, view, false);
+        } else if (!selectionTouchMoved) {
+          // Tap: finish the selection, as in the official app.
+          messagesController().finishTextSelection();
+        }
+        return true;
+      }
+    }
+    return false;
+  }
 
   @Nullable
   @Override
