@@ -223,6 +223,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   public static int getViewHeight (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return Screen.dp(60f);
       case Settings.CHAT_MODE_3LINE_BIG:
         return Screen.dp(82f);
       case Settings.CHAT_MODE_3LINE:
@@ -235,6 +237,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   public static float getAvatarSizeDp (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return 44f;
       case Settings.CHAT_MODE_3LINE_BIG:
         return 60f;
       case Settings.CHAT_MODE_3LINE:
@@ -251,6 +255,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   private static int getAvatarTop (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return Screen.dp(8f);
       case Settings.CHAT_MODE_3LINE_BIG:
         return Screen.dp(11f);
       case Settings.CHAT_MODE_3LINE:
@@ -266,6 +272,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   private static int getCounterOffset (int chatsListMode) {
     switch (chatsListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return Screen.dp(31f);
       case Settings.CHAT_MODE_3LINE:
         return Screen.dp(42f);
       case Settings.CHAT_MODE_3LINE_BIG:
@@ -282,6 +290,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   public static int getTextTop (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return Screen.dp(32.5f);
       case Settings.CHAT_MODE_3LINE:
         return Screen.dp(32f);
       case Settings.CHAT_MODE_3LINE_BIG:
@@ -298,6 +308,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   public static int getTitleTop (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return getTextOffset() + Screen.dp(10f);
       case Settings.CHAT_MODE_3LINE:
       case Settings.CHAT_MODE_3LINE_BIG:
         return getTextOffset() + Screen.dp(14f);
@@ -309,6 +321,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   private static int getClockTop (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return Screen.dp(11f);
       case Settings.CHAT_MODE_3LINE:
       case Settings.CHAT_MODE_3LINE_BIG:
         return Screen.dp(15f);
@@ -320,6 +334,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   private static int getMuteTop (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return Screen.dp(5f);
       case Settings.CHAT_MODE_3LINE:
       case Settings.CHAT_MODE_3LINE_BIG:
         return Screen.dp(9f);
@@ -331,6 +347,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   public static int getTitleTop2 (int chatListMode) {
     switch (chatListMode) {
+      case Settings.CHAT_MODE_2LINE_COMPACT:
+        return Screen.dp(6f);
       case Settings.CHAT_MODE_3LINE:
       case Settings.CHAT_MODE_3LINE_BIG:
         return Screen.dp(10f);
@@ -699,7 +717,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
       }
       Text text = chat.getText();
       if (text != null) {
-        if (chatListMode != Settings.CHAT_MODE_2LINE) {
+        if (!Settings.isTwoLineChatListMode(chatListMode)) {
           if (prefix != null) {
             textTop += prefix.getNextLineHeight();
           } else if (text.getLineCount() == 1) {
@@ -734,7 +752,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
       Text text = status.drawingText();
       if (text != null) {
         float top = getTextTop(chatListMode) - Screen.dp(14f) * textAlpha;
-        if (chatListMode != Settings.CHAT_MODE_2LINE && text.getLineCount() == 1) {
+        if (!Settings.isTwoLineChatListMode(chatListMode) && text.getLineCount() == 1) {
           top += getSingleLineOffset(chatListMode);
         }
         DrawAlgorithms.drawStatus(c, state, rtl ? viewWidth - getLeftPadding(chatListMode) : getLeftPadding(chatListMode), top + text.getLineHeight() / 2f, ColorUtils.alphaColor(statusVisibility, text.getTextColor()), this, statusVisibility == 1f ? ColorId.textLight : ColorId.NONE);

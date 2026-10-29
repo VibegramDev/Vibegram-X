@@ -440,6 +440,9 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   private final HashMap<String, TdApi.ForumTopicInfo> forumTopicInfos = new HashMap<>();
   private final HashMap<Long, Integer> forumUnreadTopicCounts = new HashMap<>();
   private final HashMap<Long, List<TdApi.ForumTopic>> forumTopicsCache = new HashMap<>();
+  private final HashMap<String, TdApi.ChatNotificationSettings> forumTopicNotificationSettings = new HashMap<>();
+  /** Elapsed realtime of the last GetForumTopic made for a notification, by topic key. */
+  private final HashMap<String, Long> forumTopicNotificationSettingsFetchTime = new HashMap<>();
   private final HashMap<String, TdlibChatList> chatLists = new HashMap<>();
   private final StickerSet
     animatedTgxEmoji = new StickerSet(AnimatedEmojiListener.TYPE_TGX, "AnimatedTgxEmojies", false),
@@ -2708,16 +2711,99 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     return null;
   }
 
-  /**
-   * Check if a forum topic is muted.
-   * Returns true if the topic has notification settings with muteFor > 0.
-   */
-  public boolean isForumTopicMuted (long chatId, long topicId) {
-    TdApi.ForumTopic topic = forumTopic(chatId, topicId);
-    if (topic != null && topic.notificationSettings != null) {
-      return topic.notificationSettings.muteFor > 0;
+  private static String forumTopicKey (long chatId, long topicId) {
+    return chatId + "_" + topicId;
+  }
+
+  private void putForumTopicNotificationSettings (long chatId, long topicId, @Nullable TdApi.ChatNotificationSettings settings) {
+    if (settings == null) {
+      return;
     }
-    return false;
+    synchronized (dataLock) {
+      forumTopicNotificationSettings.put(forumTopicKey(chatId, topicId), settings);
+    }
+  }
+
+  private void putForumTopicNotificationSettings (long chatId, @Nullable TdApi.ForumTopic[] topics) {
+    if (topics == null) {
+      return;
+    }
+    synchronized (dataLock) {
+      for (TdApi.ForumTopic topic : topics) {
+        String key = forumTopicKey(chatId, topic.info.forumTopicId);
+        if (topic.notificationSettings != null) {
+          forumTopicNotificationSettings.put(key, topic.notificationSettings);
+        }
+        forumTopicInfos.put(key, topic.info);
+      }
+    }
+  }
+
+  private void putForumTopicInfo (@Nullable TdApi.ForumTopicInfo info) {
+    if (info == null) {
+      return;
+    }
+    synchronized (dataLock) {
+      forumTopicInfos.put(forumTopicKey(info.chatId, info.forumTopicId), info);
+    }
+  }
+
+  /** How long the topic settings fetched for a notification are trusted before asking TDLib again. */
+  private static final long FORUM_TOPIC_SETTINGS_TTL_MS = 60_000L;
+
+  /**
+   * True, if notifications for the topic are explicitly muted by the topic's own settings.
+   * Topics that use the default (chat) setting are not muted here: chat-level mute is applied by TDLib.
+   */
+  public static boolean isForumTopicMuted (@Nullable TdApi.ChatNotificationSettings settings) {
+    return settings != null && !settings.useDefaultMuteFor && settings.muteFor > 0;
+  }
+
+  public boolean isForumTopicMuted (long chatId, long topicId) {
+    return isForumTopicMuted(chatId, topicId, false);
+  }
+
+  /**
+   * Checks whether a forum topic is muted.
+   *
+   * @param allowFetch Load the topic from TDLib when its settings are not cached yet.
+   *                   Blocks the current thread for a short time, so must not be used on the UI or TDLib thread.
+   */
+  public boolean isForumTopicMuted (long chatId, long topicId, boolean allowFetch) {
+    final String key = forumTopicKey(chatId, topicId);
+    TdApi.ChatNotificationSettings settings;
+    Long fetchTime;
+    synchronized (dataLock) {
+      settings = forumTopicNotificationSettings.get(key);
+      fetchTime = forumTopicNotificationSettingsFetchTime.get(key);
+    }
+    if (settings == null) {
+      TdApi.ForumTopic topic = forumTopic(chatId, topicId);
+      if (topic != null) {
+        settings = topic.notificationSettings;
+      }
+    }
+    // Cached settings may be stale (topic muted on another device while TDLib didn't know the topic),
+    // so notifications ask TDLib for the topic again, at most once a minute per topic.
+    long now = SystemClock.elapsedRealtime();
+    boolean needFetch = allowFetch && !inTdlibThread() && (fetchTime == null || now - fetchTime >= FORUM_TOPIC_SETTINGS_TTL_MS);
+    if (needFetch) {
+      // Right after a start or a push wake-up TDLib may need a few seconds (topic not cached, network).
+      TdApi.Object result = clientExecute(new TdApi.GetForumTopic(chatId, (int) topicId), 10_000L);
+      if (result instanceof TdApi.ForumTopic) {
+        TdApi.ForumTopic topic = (TdApi.ForumTopic) result;
+        settings = topic.notificationSettings;
+        putForumTopicNotificationSettings(chatId, topicId, settings);
+        putForumTopicInfo(topic.info);
+        synchronized (dataLock) {
+          forumTopicNotificationSettingsFetchTime.put(key, now);
+        }
+      }
+      if (!(result instanceof TdApi.ForumTopic)) {
+        TDLib.Tag.notifications("GetForumTopic failed for chatId=%d topicId=%d: %s", chatId, topicId, result != null ? TD.toErrorString(result) : "timeout");
+      }
+    }
+    return isForumTopicMuted(settings);
   }
 
   public @Nullable TdApi.Chat chat (long chatId) {
@@ -3460,6 +3546,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
           forumUnreadTopicCounts.put(chatId, unreadCount);
           forumTopicsCache.put(chatId, new java.util.ArrayList<>(java.util.Arrays.asList(topics.topics)));
         }
+        putForumTopicNotificationSettings(chatId, topics.topics);
         listeners().updateForumUnreadTopicCount(chatId, unreadCount);
       }
       if (callback != null) {
@@ -3529,6 +3616,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     synchronized (dataLock) {
       forumTopicsCache.put(chatId, new java.util.ArrayList<>(topics));
     }
+    putForumTopicNotificationSettings(chatId, topics.toArray(new TdApi.ForumTopic[0]));
   }
 
   public @Nullable TdApi.BlockList chatBlockList (TdApi.Chat chat) {
@@ -8606,12 +8694,14 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
 
   @TdlibThread
   private void updateForumTopicInfo (TdApi.UpdateForumTopicInfo update) {
+    putForumTopicInfo(update.info);
     topics.updateForumTopicInfo(update);
     listeners.updateForumTopicInfo(update);
   }
 
   @TdlibThread
   private void updateForumTopic (TdApi.UpdateForumTopic update) {
+    putForumTopicNotificationSettings(update.chatId, update.forumTopicId, update.notificationSettings);
     topics.updateForumTopic(update);
     listeners.updateForumTopic(update);
   }

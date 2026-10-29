@@ -46,6 +46,7 @@ import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.DrawModifier;
 import org.thunderdog.challegram.util.EmojiStatusHelper;
 import org.thunderdog.challegram.util.text.Text;
@@ -80,6 +81,36 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
   private int offsetLeft;
 
   public static final float DEFAULT_HEIGHT = 72f;
+  public static final float COMPACT_HEIGHT = 56f;
+  private static final float COMPACT_AVATAR_RADIUS = 20f;
+
+  /** Row height used by contact lists, honoring the "Compact chats" setting. */
+  public static int getListItemHeight () {
+    return Screen.dp(Settings.instance().useCompactChats() ? COMPACT_HEIGHT : DEFAULT_HEIGHT);
+  }
+
+  private boolean isCompact;
+
+  /**
+   * Smaller avatar and row height, used by contact lists when "Compact chats" is enabled.
+   */
+  public void setCompact (boolean isCompact) {
+    if (this.isCompact != isCompact) {
+      this.isCompact = isCompact;
+      this.height = Screen.dp(isCompact ? COMPACT_HEIGHT : DEFAULT_HEIGHT);
+      layoutReceiver();
+      requestLayout();
+      invalidate();
+    }
+  }
+
+  private int avatarRadius () {
+    return isCompact ? Screen.dp(COMPACT_AVATAR_RADIUS) : avatarRadius;
+  }
+
+  private int textLeftMargin () {
+    return isCompact ? avatarRadius() * 2 + Screen.dp(11f) : textLeftMargin;
+  }
 
   private final RemoveHelper removeHelper;
 
@@ -118,9 +149,9 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
     int centerY = height / 2;
     if (Lang.rtl()) {
       int viewWidth = getMeasuredWidth();
-      avatarReceiver.setBounds(viewWidth - offsetLeft - avatarRadius - avatarRadius, centerY - avatarRadius, viewWidth - offsetLeft, centerY + avatarRadius);
+      avatarReceiver.setBounds(viewWidth - offsetLeft - avatarRadius() - avatarRadius(), centerY - avatarRadius(), viewWidth - offsetLeft, centerY + avatarRadius());
     } else {
-      avatarReceiver.setBounds(offsetLeft, centerY - avatarRadius, offsetLeft + avatarRadius * 2, centerY + avatarRadius);
+      avatarReceiver.setBounds(offsetLeft, centerY - avatarRadius(), offsetLeft + avatarRadius() * 2, centerY + avatarRadius());
     }
   }
 
@@ -128,7 +159,7 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
     if (this.offsetLeft != offset) {
       this.offsetLeft = offset;
       int centerY = height / 2;
-      avatarReceiver.setBounds(offsetLeft, centerY - avatarRadius, offsetLeft + avatarRadius * 2, centerY + avatarRadius);
+      avatarReceiver.setBounds(offsetLeft, centerY - avatarRadius(), offsetLeft + avatarRadius() * 2, centerY + avatarRadius());
     }
   }
 
@@ -178,7 +209,7 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
       status = null;
       statusWidth = 0;
     }
-    float availWidth = getMeasuredWidth() - textLeftMargin - offsetLeft - paddingRight - (unregisteredContact != null ? Screen.dp(32f) : 0);
+    float availWidth = getMeasuredWidth() - textLeftMargin() - offsetLeft - paddingRight - (unregisteredContact != null ? Screen.dp(32f) : 0);
     if (drawModifiers != null) {
       int maxWidth = 0;
       for (DrawModifier modifier : drawModifiers) {
@@ -215,7 +246,7 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
     } else {
       name = null;
     }
-    float availWidth = getMeasuredWidth() - textLeftMargin - offsetLeft - paddingRight - (unregisteredContact != null ? Screen.dp(32f) : 0);
+    float availWidth = getMeasuredWidth() - textLeftMargin() - offsetLeft - paddingRight - (unregisteredContact != null ? Screen.dp(32f) : 0);
     if (drawModifiers != null) {
       int maxWidth = 0;
       for (DrawModifier modifier : drawModifiers) {
@@ -333,12 +364,12 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
     boolean rtl = Lang.rtl();
     int viewWidth = getMeasuredWidth();
     if (trimmedName != null) {
-      trimmedName.draw(c, offsetLeft + textLeftMargin, (int) ((height - Screen.dp(DEFAULT_HEIGHT)) / 2f + Screen.dp(17f)));
+      trimmedName.draw(c, offsetLeft + textLeftMargin(), (int) ((height - Screen.dp(DEFAULT_HEIGHT)) / 2f + Screen.dp(17f)));
     }
-    emojiStatusHelper.draw(c, offsetLeft + textLeftMargin + (trimmedName != null ? trimmedName.getWidth() : 0) + Screen.dp(6f), (int) ((height - Screen.dp(DEFAULT_HEIGHT)) / 2f + Screen.dp(17f)));
+    emojiStatusHelper.draw(c, offsetLeft + textLeftMargin() + (trimmedName != null ? trimmedName.getWidth() : 0) + Screen.dp(6f), (int) ((height - Screen.dp(DEFAULT_HEIGHT)) / 2f + Screen.dp(17f)));
     if (trimmedStatus != null) {
       statusPaint.setColor(Theme.getColor(user != null && user.isOnline() ? ColorId.textNeutral : ColorId.textLight));
-      c.drawText(trimmedStatus, rtl ? viewWidth - offsetLeft - textLeftMargin - trimmedStatusWidth : offsetLeft + textLeftMargin,
+      c.drawText(trimmedStatus, rtl ? viewWidth - offsetLeft - textLeftMargin() - trimmedStatusWidth : offsetLeft + textLeftMargin(),
         statusTop + (height - Screen.dp(DEFAULT_HEIGHT)) / 2f, statusPaint);
     }
     if (user != null || unregisteredContact != null) {
@@ -380,17 +411,17 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
     if (user != null && user.needSeparator()) {
       int top = getMeasuredHeight() - Math.max(1, Screen.dp(.5f));
       int bottom = getMeasuredHeight();
-      if (offsetLeft + textLeftMargin > 0) {
+      if (offsetLeft + textLeftMargin() > 0) {
         if (rtl) {
-          c.drawRect(viewWidth - offsetLeft - textLeftMargin, top, viewWidth, bottom, Paints.fillingPaint(Theme.fillingColor()));
+          c.drawRect(viewWidth - offsetLeft - textLeftMargin(), top, viewWidth, bottom, Paints.fillingPaint(Theme.fillingColor()));
         } else {
-          c.drawRect(0, top, offsetLeft + textLeftMargin, bottom, Paints.fillingPaint(Theme.fillingColor()));
+          c.drawRect(0, top, offsetLeft + textLeftMargin(), bottom, Paints.fillingPaint(Theme.fillingColor()));
         }
       }
       if (rtl) {
-        c.drawRect(0,  top, viewWidth - offsetLeft - textLeftMargin, bottom, Paints.fillingPaint(Theme.separatorColor()));
+        c.drawRect(0,  top, viewWidth - offsetLeft - textLeftMargin(), bottom, Paints.fillingPaint(Theme.separatorColor()));
       } else {
-        c.drawRect(offsetLeft + textLeftMargin, top, getMeasuredWidth(), bottom, Paints.fillingPaint(Theme.separatorColor()));
+        c.drawRect(offsetLeft + textLeftMargin(), top, getMeasuredWidth(), bottom, Paints.fillingPaint(Theme.separatorColor()));
       }
     }
 

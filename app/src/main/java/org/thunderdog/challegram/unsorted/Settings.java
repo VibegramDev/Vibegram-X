@@ -238,6 +238,9 @@ public class Settings {
   private static final String KEY_TUTORIAL_PSA = "settings_tutorial_psa";
   private static final String KEY_CHAT_FONT_SIZE = "settings_font_size";
   private static final String KEY_CHAT_LIST_MODE = "settings_chat_list_mode";
+  private static final String KEY_COMPACT_CHATS = "settings_compact_chats";
+  private static final String KEY_CENTER_TITLES = "settings_center_titles";
+  private static final String KEY_NAVIGATION_STYLE = "settings_navigation_style";
   private static final String KEY_CHAT_TRANSLATE_MODE = "settings_chat_translate_mode";
   private static final String KEY_CHAT_DO_NOT_TRANSLATE_MODE = "settings_chat_do_not_translate_mode";
   private static final String KEY_CHAT_DO_NOT_TRANSLATE_LIST = "settings_chat_do_not_translate_list";
@@ -1263,6 +1266,12 @@ public class Settings {
   public static final int CHAT_MODE_2LINE = 1;
   public static final int CHAT_MODE_3LINE = 2;
   public static final int CHAT_MODE_3LINE_BIG = 3;
+  /** Two lines with a smaller avatar and row height. Never stored: derived from {@link #useCompactChats()}. */
+  public static final int CHAT_MODE_2LINE_COMPACT = 4;
+
+  public static boolean isTwoLineChatListMode (int chatListMode) {
+    return chatListMode == CHAT_MODE_2LINE || chatListMode == CHAT_MODE_2LINE_COMPACT;
+  }
 
   public interface ChatListModeChangeListener {
     void onChatListModeChanged (int newChatListMode);
@@ -1271,12 +1280,103 @@ public class Settings {
   private Integer _chatListMode;
   private ReferenceList<ChatListModeChangeListener> chatListModeListeners;
 
+  /**
+   * Effective chat list mode, used for layout. Returns {@link #CHAT_MODE_2LINE_COMPACT} when compact chats are enabled.
+   */
   public int getChatListMode () {
+    return useCompactChats() ? CHAT_MODE_2LINE_COMPACT : getChatListStyle();
+  }
+
+  /**
+   * Chat list style selected by the user, ignoring compact chats.
+   */
+  public int getChatListStyle () {
     if (_chatListMode == null) {
       int defaultMode = CHAT_MODE_3LINE; // TODO determine based on display settings
       _chatListMode = pmc.getInt(KEY_CHAT_LIST_MODE, defaultMode);
     }
     return _chatListMode;
+  }
+
+  private Boolean _compactChats;
+
+  public boolean useCompactChats () {
+    if (_compactChats == null) {
+      _compactChats = pmc.getBoolean(KEY_COMPACT_CHATS, false);
+    }
+    return _compactChats;
+  }
+
+  public void setUseCompactChats (boolean compact) {
+    if (useCompactChats() != compact) {
+      pmc.putBoolean(KEY_COMPACT_CHATS, _compactChats = compact);
+      notifyChatListModeChanged();
+    }
+  }
+
+  // App bar titles centered, as on iOS (chat list title, chat header)
+
+  private Boolean _centerTitles;
+
+  public boolean needCenterTitles () {
+    if (_centerTitles == null) {
+      _centerTitles = pmc.getBoolean(KEY_CENTER_TITLES, false);
+    }
+    return _centerTitles;
+  }
+
+  public void setNeedCenterTitles (boolean center) {
+    if (needCenterTitles() != center) {
+      pmc.putBoolean(KEY_CENTER_TITLES, _centerTitles = center);
+    }
+  }
+
+  // Main screen navigation style (phone)
+
+  /** Floating vertical rail at the bottom-end corner, folder tabs in the bottom bar. Default. */
+  public static final int NAVIGATION_STYLE_RAIL = 0;
+  /** Floating toolbar at the bottom with a search FAB next to it, folders as chips above it. */
+  public static final int NAVIGATION_STYLE_DOCK = 1;
+
+  public interface NavigationStyleListener {
+    void onNavigationStyleChanged (int newStyle);
+  }
+
+  private Integer _navigationStyle;
+  private final ReferenceList<NavigationStyleListener> navigationStyleListeners = new ReferenceList<>();
+
+  public int getNavigationStyle () {
+    if (_navigationStyle == null) {
+      int style = pmc.getInt(KEY_NAVIGATION_STYLE, NAVIGATION_STYLE_RAIL);
+      _navigationStyle = style == NAVIGATION_STYLE_DOCK ? NAVIGATION_STYLE_DOCK : NAVIGATION_STYLE_RAIL;
+    }
+    return _navigationStyle;
+  }
+
+  public void setNavigationStyle (int style) {
+    if (getNavigationStyle() != style) {
+      pmc.putInt(KEY_NAVIGATION_STYLE, _navigationStyle = style);
+      for (NavigationStyleListener listener : navigationStyleListeners) {
+        listener.onNavigationStyleChanged(style);
+      }
+    }
+  }
+
+  public void addNavigationStyleListener (NavigationStyleListener listener) {
+    navigationStyleListeners.add(listener);
+  }
+
+  public void removeNavigationStyleListener (NavigationStyleListener listener) {
+    navigationStyleListeners.remove(listener);
+  }
+
+  private void notifyChatListModeChanged () {
+    if (chatListModeListeners != null) {
+      final int mode = getChatListMode();
+      for (ChatListModeChangeListener listener : chatListModeListeners) {
+        listener.onChatListModeChanged(mode);
+      }
+    }
   }
 
   public void addChatListModeListener (ChatListModeChangeListener listener) {
@@ -1292,13 +1392,9 @@ public class Settings {
   }
 
   public void setChatListMode (int mode) {
-    if (getChatListMode() != mode) {
+    if (getChatListStyle() != mode) {
       pmc.putInt(KEY_CHAT_LIST_MODE, _chatListMode = mode);
-      if (chatListModeListeners != null) {
-        for (ChatListModeChangeListener listener : chatListModeListeners) {
-          listener.onChatListModeChanged(mode);
-        }
-      }
+      notifyChatListModeChanged();
     }
   }
 

@@ -24,6 +24,11 @@ import me.vkryl.core.BitwiseUtils;
 public interface TextColorSet {
   @ColorInt
   int defaultTextColor ();
+  /** Counters: draw the outline dashed (used by low-emphasis badges, e.g. muted folder counters). */
+  default boolean outlineDashed () {
+    return false;
+  }
+
   @ColorInt
   default int iconColor () {
     return defaultTextColor();

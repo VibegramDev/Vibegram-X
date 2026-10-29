@@ -2997,6 +2997,62 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   private float mInitialTouchX;
   private float mInitialTouchY;
 
+  // Text selection (in the bubble)
+
+  /** Starts selecting the text of the message (all of it), see {@link MessagesController#startTextSelection}. */
+  public boolean startTextSelection () {
+    return false;
+  }
+
+  public boolean hasTextSelection () {
+    return false;
+  }
+
+  public boolean supportsTextSelection () {
+    return false;
+  }
+
+  /** Long press on the text: selects the word under the finger, further moves of the same touch extend it. */
+  public boolean startTextSelectionAt (MessageView view, float x, float y) {
+    return false;
+  }
+
+  public boolean isSelectableTextAt (float x, float y) {
+    return false;
+  }
+
+  public void clearTextSelection () { }
+
+  public void selectAllText () { }
+
+  /** Formatted text the selection offsets refer to (translation, if shown). */
+  @Nullable
+  public TdApi.FormattedText getSelectionSourceText () {
+    return null;
+  }
+
+  public boolean isSelectionInTranslation () {
+    return false;
+  }
+
+  public int getTextSelectionStart () {
+    return -1;
+  }
+
+  public int getTextSelectionEnd () {
+    return -1;
+  }
+
+  /** Selection bounds in the coordinates of the message view, for the floating toolbar. */
+  public boolean getTextSelectionBounds (android.graphics.RectF out) {
+    return false;
+  }
+
+  /** All touches on the message while its text is selected: handles, long press on a word, tap to finish. */
+  public boolean onTextSelectionTouchEvent (MessageView view, MotionEvent e) {
+    return false;
+  }
+
   public boolean onTouchEvent (MessageView view, MotionEvent e) {
     /*if ((flags & FLAG_HEADER_ENABLED) == 0 && (msg.forwardInfo == null || forwardInfo == null) && replyData == null && (inlineKeyboard == null || inlineKeyboard.isEmpty())) {
       return false;

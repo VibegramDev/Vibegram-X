@@ -76,6 +76,7 @@ import com.google.android.gms.location.LocationSettingsStatusCodes;
 
 import org.drinkless.tdlib.Client;
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.widget.CustomEmojiTextView;
 import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.Log;
@@ -379,6 +380,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private SendButton sendButton;
   private HapticMenuHelper sendMenu;
   private CameraAccessImageView mediaButton;
+  /** Attach button inside the field, at its bottom-end corner, while the send button replaces the attach buttons. */
+  private ImageView inlineAttachButton;
+  private static final float INLINE_ATTACH_WIDTH = 40f;
   private InvisibleImageView cameraButton, scheduleButton;
   private InvisibleImageView commandButton;
   private @Nullable SilentButton silentButton;
@@ -1308,6 +1312,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
     attachButtons.addView(recordButton);
     attachButtons.updatePivot();
 
+    params = new RelativeLayout.LayoutParams(Screen.dp(INLINE_ATTACH_WIDTH), Screen.dp(49f));
+    params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+    params.addRule(Lang.rtl() ? RelativeLayout.ALIGN_PARENT_LEFT : RelativeLayout.ALIGN_PARENT_RIGHT);
+    if (Lang.rtl()) {
+      params.leftMargin = Screen.dp(55f);
+    } else {
+      params.rightMargin = Screen.dp(55f);
+    }
+    inlineAttachButton = new ImageView(context);
+    inlineAttachButton.setId(R.id.msg_attachInline);
+    inlineAttachButton.setScaleType(ImageView.ScaleType.CENTER);
+    inlineAttachButton.setImageResource(R.drawable.deproko_baseline_attach_26);
+    inlineAttachButton.setColorFilter(Theme.iconColor());
+    addThemeFilterListener(inlineAttachButton, ColorId.icon);
+    inlineAttachButton.setOnClickListener(this);
+    inlineAttachButton.setContentDescription(Lang.getString(R.string.Attach));
+    inlineAttachButton.setVisibility(View.GONE);
+    inlineAttachButton.setLayoutParams(params);
+
     params = new RelativeLayout.LayoutParams(Screen.dp(55f), Screen.dp(49f));
     params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
     if (Lang.rtl()) {
@@ -1553,6 +1576,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (previewMode == PREVIEW_MODE_NONE) {
       contentView.addView(emojiButton);
       contentView.addView(attachButtons);
+      contentView.addView(inlineAttachButton);
       contentView.addView(sendButton);
       contentView.addView(messageSenderButton);
 
@@ -2171,7 +2195,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       processChatAction();
     } else if (viewId == R.id.msg_emoji) {
       toggleEmojiKeyboard();
-    } else if (viewId == R.id.msg_attach) {
+    } else if (viewId == R.id.msg_attach || viewId == R.id.msg_attachInline) {
       hideBottomHint();
       openMediaView(false, false);
     } else if (viewId == R.id.msg_send) {
@@ -3660,7 +3684,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
     if (getChatId() != 0) {
       if (isSelfChat()) {
-        return R.id.menu_search;
+        // Centered titles: the avatar takes the end button, Search is in the "more" menu.
+        return Settings.instance().needCenterTitles() && !Lang.rtl() ? R.id.menu_more : R.id.menu_search;
       }
       if (isSecretChat()) {
         return R.id.menu_secretChat;
@@ -3726,7 +3751,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_more) {
-      header.addMoreButton(menu, this);
+      HeaderButton moreButton = header.addMoreButton(menu, this);
+      if (previewMode == PREVIEW_MODE_NONE && getChatId() != 0) {
+        checkAvatarAsMoreButton(moreButton);
+      }
     } else if (id == R.id.menu_gallery) {
       header.addButton(menu, R.id.menu_btn_gallery, R.drawable.baseline_image_24, getHeaderIconColorId(), this, Screen.dp(52f));
     } else if (id == R.id.menu_share) {
@@ -3738,11 +3766,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (id == R.id.menu_chat) {
       HeaderButton btn = header.addButton(menu, R.id.menu_btn_viewScheduled, R.drawable.baseline_date_range_24, getHeaderIconColorId(), this, Screen.dp(52f));
       btn.setVisibility(tdlib.chatHasScheduled(getChatId()) ? View.VISIBLE : View.GONE);
-      header.addMoreButton(menu, this);
+      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
     } else if (id == R.id.menu_secretChat) {
       StopwatchHeaderButton headerButton = header.addStopwatchButton(menu, this);
       headerButton.forceValue(tdlib.ui().getTTLShort(getChatId()), isSecretChat() && tdlib.canChangeMessageAutoDeleteTime(chat.id));
-      header.addMoreButton(menu, this);
+      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
     } else if (id == R.id.menu_messageActions) {
       int iconColorId = getSelectHeaderIconColorId();
       HeaderButton selectInBetweenBtn = header.addButton(menu, R.id.menu_btn_selectInBetween, R.drawable.baseline_toc_24, iconColorId, this, Screen.dp(49f));
@@ -3786,6 +3814,17 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (value) totalButtonsCount++;
 
       reportButton.setVisibility(canReportSelectedMessages(totalButtonsCount) ? View.VISIBLE : View.GONE);
+    }
+  }
+
+  /**
+   * Centered titles (iOS-like header): the chat avatar is drawn by the header in place of the "more" icon, the button
+   * stays (transparent) and opens the same menu.
+   */
+  private void checkAvatarAsMoreButton (HeaderButton moreButton) {
+    if (moreButton != null && Settings.instance().needCenterTitles() && !Lang.rtl() && !inPreviewMode) {
+      moreButton.setImageResource(0);
+      moreButton.setContentDescription(Lang.getString(R.string.MoreChatOptions));
     }
   }
 
@@ -4337,6 +4376,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void onBlur () {
+    finishTextSelection();
     saveDraft();
 
     super.onBlur();
@@ -5926,6 +5966,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
         return true;
       } else if (id == R.id.btn_messageReplyWithDice) {
         sendDice(itemView, ((TdApi.MessageDice) selectedMessage.getMessage().content).emoji);
+        return true;
+      } else if (id == R.id.btn_messageSelectText) {
+        if (!selectedMessage.canBeSaved()) {
+          context().tooltipManager().builder(itemView).show(tdlib, R.string.ChannelNoCopy).hideDelayed();
+          return false;
+        }
+        startTextSelection(selectedMessage);
         return true;
       } else if (id == R.id.btn_copyTranslation || id == R.id.btn_messageCopy) {
         if (!selectedMessage.canBeSaved()) {
@@ -7914,6 +7961,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     setComposerButtonMargin(emojiButton, margin, Lang.rtl());
     setComposerButtonMargin(attachButtons, margin, !Lang.rtl());
     setComposerButtonMargin(sendButton, margin, !Lang.rtl());
+    setComposerButtonMargin(inlineAttachButton, margin + Screen.dp(55f), !Lang.rtl());
     RelativeLayout.LayoutParams senderParams = (RelativeLayout.LayoutParams) messageSenderButton.getLayoutParams();
     senderParams.leftMargin = senderParams.rightMargin = margin;
     messageSenderButton.setLayoutParams(senderParams);
@@ -7957,6 +8005,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     sendButton.setTranslationY(y);
     emojiButton.setTranslationY(y);
     attachButtons.setTranslationY(y);
+    if (inlineAttachButton != null) {
+      inlineAttachButton.setTranslationY(y);
+    }
     messageSenderButton.setTranslationY(y);
 
     if (prevButtonsY != y) {
@@ -10020,6 +10071,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       attachButtons.setAlpha(1f - factor);
       attachButtons.setScaleX(scale2);
       attachButtons.setScaleY(scale2);
+      updateInlineAttachButton();
       messageSenderButton.setSendFactor(sendFactor);
 
       if (tooltipInfo != null && tooltipInfo.isVisible()) {
@@ -10047,6 +10099,233 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       sendShown.setValue(isVisible, animated && isFocused());
       showMessageMenuTutorial();
+      updateInlineAttachButton();
+    }
+  }
+
+  // Text selection (in the bubble, as in the official app)
+
+  /** Entities Telegram keeps in reply quotes; the rest are dropped from the quote. */
+  private static boolean isQuoteEntity (TdApi.TextEntityType type) {
+    switch (type.getConstructor()) {
+      case TdApi.TextEntityTypeBold.CONSTRUCTOR:
+      case TdApi.TextEntityTypeItalic.CONSTRUCTOR:
+      case TdApi.TextEntityTypeUnderline.CONSTRUCTOR:
+      case TdApi.TextEntityTypeStrikethrough.CONSTRUCTOR:
+      case TdApi.TextEntityTypeSpoiler.CONSTRUCTOR:
+      case TdApi.TextEntityTypeCustomEmoji.CONSTRUCTOR:
+        return true;
+    }
+    return false;
+  }
+
+  private @Nullable TGMessage textSelectionMessage;
+  private @Nullable android.view.ActionMode textSelectionActionMode;
+  private @Nullable View textSelectionView;
+
+  /** Selects the whole text of the message in its bubble: handles, floating toolbar (Copy, Quote, Select all). */
+  public void startTextSelection (TGMessage msg) {
+    finishTextSelection();
+    if (!msg.startTextSelection()) {
+      return;
+    }
+    textSelectionMessage = msg;
+    View view = msg.findCurrentView();
+    if (view instanceof MessageView) {
+      onTextSelectionChanged(msg, (MessageView) view, false);
+    }
+  }
+
+  public boolean hasTextSelection () {
+    return textSelectionMessage != null;
+  }
+
+  /** Long press on the text of a message: word selection that follows the finger (toolbar after release). */
+  public boolean startTextSelectionAt (TGMessage msg, MessageView view, float x, float y) {
+    if (!msg.canBeSaved() || isEditingMessage() || inSelectMode() || inPreviewMode || !msg.isSelectableTextAt(x, y)) {
+      return false;
+    }
+    finishTextSelection();
+    if (!msg.startTextSelectionAt(view, x, y)) {
+      return false;
+    }
+    textSelectionMessage = msg;
+    return true;
+  }
+
+  public void finishTextSelection () {
+    TGMessage msg = textSelectionMessage;
+    textSelectionMessage = null;
+    textSelectionView = null;
+    android.view.ActionMode mode = textSelectionActionMode;
+    textSelectionActionMode = null;
+    if (mode != null) {
+      mode.finish();
+    }
+    if (msg != null) {
+      msg.clearTextSelection();
+    }
+  }
+
+  /** Taps on other messages finish the selection. */
+  public boolean checkTextSelectionTouch (TGMessage msg) {
+    if (textSelectionMessage != null && textSelectionMessage != msg) {
+      finishTextSelection();
+      return true;
+    }
+    return false;
+  }
+
+  /** @param isDragging a handle is being dragged: the toolbar hides until it is released */
+  public void onTextSelectionChanged (TGMessage msg, MessageView view, boolean isDragging) {
+    if (msg != textSelectionMessage) {
+      return;
+    }
+    if (isDragging) {
+      if (textSelectionActionMode != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        textSelectionActionMode.hide(60_000L);
+      }
+      return;
+    }
+    if (textSelectionActionMode != null && textSelectionView == view) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        textSelectionActionMode.invalidateContentRect();
+        textSelectionActionMode.hide(0);
+      }
+      textSelectionActionMode.invalidate();
+      return;
+    }
+    if (textSelectionActionMode != null) {
+      android.view.ActionMode oldMode = textSelectionActionMode;
+      textSelectionActionMode = null;
+      oldMode.finish();
+    }
+    textSelectionView = view;
+    android.view.ActionMode.Callback2 callback = new android.view.ActionMode.Callback2() {
+      @Override
+      public boolean onCreateActionMode (android.view.ActionMode mode, android.view.Menu menu) {
+        menu.add(android.view.Menu.NONE, android.R.id.copy, 0, android.R.string.copy);
+        menu.add(android.view.Menu.NONE, R.id.btn_quoteSelection, 1, Lang.getString(R.string.QuoteSelection));
+        menu.add(android.view.Menu.NONE, android.R.id.selectAll, 2, android.R.string.selectAll);
+        return true;
+      }
+
+      @Override
+      public boolean onPrepareActionMode (android.view.ActionMode mode, android.view.Menu menu) {
+        TGMessage msg = textSelectionMessage;
+        android.view.MenuItem quote = menu.findItem(R.id.btn_quoteSelection);
+        if (quote != null) {
+          quote.setVisible(msg != null && !msg.isSelectionInTranslation() && msg.canReplyTo() && canWriteMessages() && !isEditingMessage());
+        }
+        android.view.MenuItem selectAll = menu.findItem(android.R.id.selectAll);
+        if (selectAll != null && msg != null) {
+          TdApi.FormattedText text = msg.getSelectionSourceText();
+          selectAll.setVisible(text != null && (msg.getTextSelectionStart() > 0 || msg.getTextSelectionEnd() < text.text.length()));
+        }
+        return true;
+      }
+
+      @Override
+      public boolean onActionItemClicked (android.view.ActionMode mode, android.view.MenuItem item) {
+        TGMessage msg = textSelectionMessage;
+        if (msg == null) {
+          return false;
+        }
+        TdApi.FormattedText text = msg.getSelectionSourceText();
+        int start = msg.getTextSelectionStart(), end = msg.getTextSelectionEnd();
+        if (text == null || start < 0 || end <= start || end > text.text.length()) {
+          return false;
+        }
+        int itemId = item.getItemId();
+        if (itemId == android.R.id.copy) {
+          // Formatting and custom emoji go to the clipboard as HTML.
+          UI.copyText(TD.toCopyText(Td.substring(text, start, end)), R.string.CopiedText);
+          finishTextSelection();
+          return true;
+        }
+        if (itemId == android.R.id.selectAll) {
+          msg.selectAllText();
+          if (textSelectionView instanceof MessageView) {
+            onTextSelectionChanged(msg, (MessageView) textSelectionView, false);
+          }
+          return true;
+        }
+        if (itemId == R.id.btn_quoteSelection) {
+          TdApi.FormattedText quote = Td.substring(text, start, end);
+          if (quote.entities != null && quote.entities.length > 0) {
+            List<TdApi.TextEntity> entities = new ArrayList<>(quote.entities.length);
+            for (TdApi.TextEntity entity : quote.entities) {
+              if (isQuoteEntity(entity.type)) {
+                entities.add(entity);
+              }
+            }
+            quote.entities = entities.toArray(new TdApi.TextEntity[0]);
+          }
+          final TdApi.InputTextQuote inputQuote = new TdApi.InputTextQuote(quote, start);
+          final TdApi.Message message = msg.getNewestMessage();
+          finishTextSelection();
+          msg.getMessageProperties(message.id, properties -> runOnUiThreadOptional(() -> {
+            if (properties != null) {
+              showReply(new MessageWithProperties(message, properties), inputQuote, 0, "", true, true);
+              if (inputView != null && inputView.isEmpty()) {
+                Keyboard.show(inputView);
+              }
+            }
+          }));
+          return true;
+        }
+        return false;
+      }
+
+      @Override
+      public void onDestroyActionMode (android.view.ActionMode mode) {
+        if (textSelectionActionMode == mode) {
+          // Dismissed by the system (Back): finish the selection.
+          textSelectionActionMode = null;
+          finishTextSelection();
+        }
+      }
+
+      @Override
+      public void onGetContentRect (android.view.ActionMode mode, View view, android.graphics.Rect outRect) {
+        TGMessage msg = textSelectionMessage;
+        android.graphics.RectF rect = Paints.getRectF();
+        if (msg != null && msg.getTextSelectionBounds(rect)) {
+          outRect.set((int) rect.left, (int) rect.top, (int) rect.right, (int) rect.bottom);
+        } else {
+          super.onGetContentRect(mode, view, outRect);
+        }
+      }
+    };
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      textSelectionActionMode = view.startActionMode(callback, android.view.ActionMode.TYPE_FLOATING);
+    } else {
+      textSelectionActionMode = view.startActionMode(callback);
+    }
+  }
+
+  private boolean needInlineAttachButton () {
+    return sendShown.getValue() && inputView != null && previewMode == PREVIEW_MODE_NONE && !isEditingMessage() && !sendButton.inInlineMode() && !isInputLess() && canWriteMessages();
+  }
+
+  /** Shows the inline attach button with the send button and makes room for it at the end of the text field. */
+  private void updateInlineAttachButton () {
+    if (inlineAttachButton == null || inputView == null) {
+      return;
+    }
+    boolean needButton = needInlineAttachButton();
+    float factor = needButton ? sendFactor : 0f;
+    inlineAttachButton.setAlpha(factor);
+    inlineAttachButton.setScaleX(.5f + .5f * factor);
+    inlineAttachButton.setScaleY(.5f + .5f * factor);
+    inlineAttachButton.setVisibility(factor > 0f ? View.VISIBLE : View.GONE);
+    int endPadding = Screen.dp(55f) + (needButton ? Screen.dp(INLINE_ATTACH_WIDTH) : 0);
+    if (Lang.rtl()) {
+      if (inputView.getPaddingLeft() != endPadding) {
+        inputView.setPadding(endPadding, inputView.getPaddingTop(), inputView.getPaddingRight(), inputView.getPaddingBottom());
+      }
+    } else if (inputView.getPaddingRight() != endPadding) {
+      inputView.setPadding(inputView.getPaddingLeft(), inputView.getPaddingTop(), endPadding, inputView.getPaddingBottom());
     }
   }
 
@@ -10361,7 +10640,24 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   public void sendMusic (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, TdApi.MessageSendOptions initialSendOptions) {
-    sendMusic(view, musicFiles, needGroupMedia, allowReply, null, initialSendOptions);
+    sendMusic(view, musicFiles, needGroupMedia, allowReply, takeComposerTextAsCaption(true), initialSendOptions);
+  }
+
+  /**
+   * Text typed in the composer becomes the caption of the media sent from the attach menu, as in the official app
+   * (instead of staying in the composer and being sent as a separate message).
+   */
+  @Nullable
+  private TdApi.FormattedText takeComposerTextAsCaption (boolean applyMarkdown) {
+    if (inputView == null || isEditingMessage() || inputView.isEmpty() || previewMode != PREVIEW_MODE_NONE) {
+      return null;
+    }
+    TdApi.FormattedText text = inputView.getOutputText(applyMarkdown);
+    if (Td.isEmpty(text)) {
+      return null;
+    }
+    inputView.setInput("", false, true);
+    return text;
   }
 
   public void sendMusic (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
@@ -10588,7 +10884,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, TdApi.MessageSendOptions initialSendOptions) {
-    sendFiles(view, paths, needGroupMedia, allowReply, null, initialSendOptions);
+    sendFiles(view, paths, needGroupMedia, allowReply, paths != null && !paths.isEmpty() ? takeComposerTextAsCaption(true) : null, initialSendOptions);
   }
 
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
@@ -10698,6 +10994,20 @@ public class MessagesController extends ViewController<MessagesController.Argume
   public boolean sendPhotosAndVideosCompressed (final ImageGalleryFile[] files, final boolean needGroupMedia, final TdApi.MessageSendOptions modifiedSendOptions, boolean disableMarkdown, boolean asFiles, boolean showCaptionAboveMedia, boolean hasSpoiler) {
     if (files == null || files.length == 0) {
       return false;
+    }
+    boolean hasCaption = false;
+    for (ImageGalleryFile file : files) {
+      if (!Td.isEmpty(file.getCaption(false, false))) {
+        hasCaption = true;
+        break;
+      }
+    }
+    if (!hasCaption) {
+      // Markdown of the composer text is parsed with the caption (ImageGalleryFile#getCaption).
+      TdApi.FormattedText composerText = takeComposerTextAsCaption(false);
+      if (composerText != null) {
+        files[needGroupMedia ? files.length - 1 : 0].setCaption(composerText);
+      }
     }
 
     // TODO check RightId.SEND_PHOTOS / RightId.SEND_VIDEOS

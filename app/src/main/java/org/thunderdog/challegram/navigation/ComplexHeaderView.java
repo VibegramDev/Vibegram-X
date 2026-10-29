@@ -30,6 +30,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
@@ -560,9 +561,39 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     return (float) currentHeight / (float) startY;
   }
 
+  private boolean allowCenterContent;
+
+  /** Chat header: the avatar with the name can be centered in the app bar (Settings: centered titles). */
+  public void setAllowCenterContent (boolean allow) {
+    if (this.allowCenterContent != allow) {
+      this.allowCenterContent = allow;
+      invalidate();
+    }
+  }
+
+  /** Width of the end button (the "more" button) whose place the avatar takes in the iOS-like layout. */
+  public static final float CENTERED_AVATAR_AREA = 49f;
+
+  /**
+   * iOS-like chat header (Settings: centered titles): the title and the subtitle are centered in the header, each line
+   * on its own, the avatar is at the end in place of the "more" button (which still opens the menu).
+   * Only in the regular (collapsed, non-expanded) state.
+   */
+  protected final boolean isCenteredLayout () {
+    return allowCenterContent && !Lang.rtl() && Settings.instance().needCenterTitles() && calculateRealScaleFactor() == 0f && getAvatarExpandFactor() == 0f;
+  }
+
+  /** Left of a centered line of the given width, kept clear of the back button and the end buttons. */
+  private float getCenteredLeft (float width) {
+    float minLeft = innerLeftMargin + Screen.dp(4f);
+    float maxRight = getMeasuredWidth() - getInnerRightMargin() - Screen.dp(4f);
+    float left = getMeasuredWidth() / 2f - width / 2f;
+    return Math.max(minLeft, Math.min(left, maxRight - width));
+  }
+
   private void layoutReceiver () {
     float baseRadius = Screen.dp(getBaseAvatarRadiusDp());
-    float baseCenterX = innerLeftMargin + Screen.dp(4f) + baseRadius;
+    float baseCenterX = isCenteredLayout() ? getMeasuredWidth() - Screen.dp(CENTERED_AVATAR_AREA) / 2f : innerLeftMargin + Screen.dp(4f) + baseRadius;
     float baseCenterY = currentHeaderOffset + HeaderView.getSize(false) / 2;
 
     float scaleFactor = calculateRealScaleFactor();
@@ -639,6 +670,9 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   }
 
   private int getBaseTextMaxWidth () {
+    if (isCenteredLayout()) {
+      return Math.max(0, getMeasuredWidth() - (innerLeftMargin + getInnerRightMargin()) - Screen.dp(8f));
+    }
     return Math.max(0, getMeasuredWidth() - (innerLeftMargin + getInnerRightMargin()) - Screen.dp(4f) - Screen.dp(getBaseAvatarRadiusDp()) * 2 - Screen.dp(9f));
   }
 
@@ -886,6 +920,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     final int saveCount = Views.save(c);
     try {
       c.clipRect(0, 0, getMeasuredWidth(), calculateHeaderHeight());
+      final boolean centered = isCenteredLayout();
 
       final boolean showLock = (flags & FLAG_SHOW_LOCK) != 0;
       final boolean showMute = (flags & FLAG_SHOW_MUTE) != 0 && (flags & FLAG_IGNORE_MUTE) == 0;
@@ -935,9 +970,25 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         baseSubtitleTop += ((calculateHeaderHeight() - Screen.dp(28f)) - baseSubtitleTop) * avatarExpandFactor;
       }
 
+      float titleTextLeft = baseTextLeft, subtitleTextLeft = baseTextLeft;
+      if (centered) {
+        if (trimmedTitle != null) {
+          // additionalTextEndPadding already includes the emoji status and the scam/fake mark.
+          float titleWidth = trimmedTitle.getWidth() + additionalTextEndPadding
+            + (showLock ? Screen.dp(16f) : 0)
+            + (showVerify ? Screen.dp(24f) : 0)
+            + (showMute ? Screen.dp(24f) : 0)
+            + (emojiStatusHelper.needDrawEmojiStatus() ? Screen.dp(6f) : 0);
+          titleTextLeft = getCenteredLeft(titleWidth);
+        }
+        if (trimmedSubtitle != null) {
+          subtitleTextLeft = getCenteredLeft(trimmedSubtitle.getWidth() + getSubtitleLoadingShift());
+        }
+      }
+
       if (trimmedTitle != null) {
         c.save();
-        c.translate(baseTextLeft, baseTitleTop);
+        c.translate(titleTextLeft, baseTitleTop);
         c.scale(textScaleFactor, textScaleFactor);
 
         // c.drawRect(0, 0, calculateTextMaxWidth(true), trimmedTitle.getHeight(), Paints.fillingPaint(0xffff0000));
@@ -963,7 +1014,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         trimmedTitleClickRect.top *= textScaleFactor;
         trimmedTitleClickRect.right *= textScaleFactor;
         trimmedTitleClickRect.bottom *= textScaleFactor;
-        trimmedTitleClickRect.offset(baseTextLeft, baseTitleTop);
+        trimmedTitleClickRect.offset(titleTextLeft, baseTitleTop);
         trimmedTitleClickRect.inset(-Screen.dp(8), -Screen.dp(8));
 
         float baseIconLeft = trimmedTitle.getWidth()
@@ -999,7 +1050,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         }
 
         c.restore();
-        int statusDrawLeft = (int) (baseTextLeft + (trimmedTitle.getWidth() + Screen.dp(6)) * textScaleFactor) + (showLock ? Screen.dp(16f) : 0);
+        int statusDrawLeft = (int) (titleTextLeft + (trimmedTitle.getWidth() + Screen.dp(6)) * textScaleFactor) + (showLock ? Screen.dp(16f) : 0);
         int statusDrawTop = (int) baseTitleTop;
         if (trimmedTitleExpanded != null && avatarExpandFactor > 0f) {
           if (avatarExpandFactor < 1f) {
@@ -1022,9 +1073,9 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       }
 
       if (trimmedSubtitle != null) {
-        final int subtitleLeft = (int) baseTextLeft + (avatarExpandFactor < 1f ? getSubtitleLoadingShift() : 0);
+        final int subtitleLeft = (int) subtitleTextLeft + (avatarExpandFactor < 1f ? getSubtitleLoadingShift() : 0);
         if (subtitleLoading && subtitleProgress != null && avatarExpandFactor < 1f) {
-          final float cx = baseTextLeft + Screen.dp(6.5f);
+          final float cx = subtitleTextLeft + Screen.dp(6.5f);
           final float cy = baseSubtitleTop + dy + trimmedSubtitle.getLineHeight() / 2f;
           subtitleProgress.setBounds((int) cx - Screen.dp(6f), (int) cy - Screen.dp(6f), (int) cx + Screen.dp(6f), (int) cy + Screen.dp(6f));
           subtitleProgress.forceColor(subtitleColor);
@@ -1066,8 +1117,9 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
             statusTextColor = ColorUtils.fromToArgb(this instanceof ChatHeaderView ? Theme.headerTextColor() : ColorUtils.color(0xff, (subtitleColor & 0x00ffffff)), Theme.chatListActionColor(), darkness);
             knownColorId = ColorId.chatListAction;
           }
-          DrawAlgorithms.drawStatus(c, state, baseTextLeft, top + text.getLineHeight() / 2f, ColorUtils.alphaColor(statusVisibility, statusTextColor), this, statusVisibility == 1f ? knownColorId : 0);
-          text.draw(c, (int) baseTextLeft, (int) top, null, statusVisibility);
+          float statusLeft = centered ? getCenteredLeft(text.getWidth()) : baseTextLeft;
+          DrawAlgorithms.drawStatus(c, state, statusLeft, top + text.getLineHeight() / 2f, ColorUtils.alphaColor(statusVisibility, statusTextColor), this, statusVisibility == 1f ? knownColorId : 0);
+          text.draw(c, (int) statusLeft, (int) top, null, statusVisibility);
         }
       }
     } finally {

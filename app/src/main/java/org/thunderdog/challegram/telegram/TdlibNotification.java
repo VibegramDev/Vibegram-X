@@ -178,7 +178,7 @@ public class TdlibNotification implements Comparable<TdlibNotification> {
     if (topicId == 0) {
       return false;
     }
-    return tdlib.isForumTopicMuted(message.chatId, topicId);
+    return tdlib.isForumTopicMuted(message.chatId, topicId, true);
   }
 
   public boolean canMergeWith (@Nullable TdlibNotification n) {

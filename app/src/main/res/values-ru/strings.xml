@@ -7,4 +7,12 @@
   <string name="TabletFoldersSide">Планшет: папки сбоку</string>
   <string name="TabletFoldersBelowSearch">Планшет: папки под поиском</string>
   <string name="CategoryMainShort">Все</string>
+  <string name="CompactChats">Компактные чаты</string>
+  <string name="CenterTitles">Заголовки по центру</string>
+  <string name="Attach">Прикрепить</string>
+  <string name="SelectText">Выделить текст</string>
+  <string name="QuoteSelection">Цитировать</string>
+  <string name="NavigationStyle">Навигация</string>
+  <string name="NavigationStyleRail">Боковая панель</string>
+  <string name="NavigationStyleDock">Нижний док</string>
 </resources>

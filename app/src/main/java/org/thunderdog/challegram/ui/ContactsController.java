@@ -60,6 +60,7 @@ import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Keyboard;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
@@ -1212,7 +1213,7 @@ public class ContactsController extends TelegramViewController<ContactsControlle
 
     @Override
     public int getItemHeight () {
-      return Screen.dp(UserView.DEFAULT_HEIGHT);
+      return UserView.getListItemHeight();
     }
 
     @Override
@@ -1220,6 +1221,7 @@ public class ContactsController extends TelegramViewController<ContactsControlle
       UserView userView;
       userView = new UserView(context, controller.tdlib);
       userView.setOffsetLeft(Screen.dp(72f));
+      userView.setCompact(Settings.instance().useCompactChats());
 
       userView.setOnClickListener(this);
       RippleSupport.setSimpleWhiteBackground(userView, controller);
