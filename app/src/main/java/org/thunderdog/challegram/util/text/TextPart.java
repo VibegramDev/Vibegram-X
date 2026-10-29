@@ -81,6 +81,17 @@ public class TextPart {
     this.paragraphIndex = paragraphIndex;
   }
 
+  private boolean isCollapsed;
+
+  /** Part of a collapsed quote below its visible lines: not drawn and not touchable. */
+  public void setCollapsed (boolean isCollapsed) {
+    this.isCollapsed = isCollapsed;
+  }
+
+  public boolean isCollapsed () {
+    return isCollapsed;
+  }
+
   public void setXY (int x, int y) {
     this.x = x;
     this.y = y;

@@ -141,6 +141,11 @@ public abstract class TextEntity {
   public abstract  TdApi.TextEntity getQuote ();
   public abstract int getQuoteId ();
 
+  /** True for parts of a quote that can be collapsed (TdApi.TextEntityTypeExpandableBlockQuote). */
+  public boolean isExpandableQuote () {
+    return false;
+  }
+
   // TODO: TextEntityCustom & TextEntityMessage to make things simpler
   public abstract TextEntity setOnClickListener (ClickableSpan onClickListener);
   public abstract ClickableSpan getOnClickListener ();

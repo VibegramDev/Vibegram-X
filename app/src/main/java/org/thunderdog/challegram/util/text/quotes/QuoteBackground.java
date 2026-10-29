@@ -44,7 +44,7 @@ public class QuoteBackground {
   public static final int QUOTE_VERTICAL_PADDING = 2;
   public static final int QUOTE_VERTICAL_MARGIN = 8;
 
-  private static Drawable quoteDrawable;
+  private static Drawable quoteDrawable, expandDrawable;
   private static final RectF tmpRect = new RectF();
 
   private int topAddition;
@@ -54,6 +54,8 @@ public class QuoteBackground {
   public final TextEntity entity;
   public int partStart;
   public int partEnd;
+  /** Collapsible quote (expandable block quote with more lines than shown collapsed). */
+  public boolean isExpandable, isCollapsed;
 
   public final RectF bounds = new RectF();
   private final RippleDrawable ripple;
@@ -92,7 +94,7 @@ public class QuoteBackground {
     this.topAddition = TextPart.getAdditionalLinesBefore(parent.getTextPart(partStart)) * lineHeight;
 
     final int count = TextPart.getAdditionalLinesAfter(parent.getTextPart(partEnd - 1));
-    this.bottomAddition = (count == 1 ? 0 : count) * lineHeight;
+    this.bottomAddition = isCollapsed ? 0 : (count == 1 ? 0 : count) * lineHeight;
   }
 
   public void draw (Canvas c, int startX, int endX, int endXBottomPadding, int startY) {
@@ -132,7 +134,21 @@ public class QuoteBackground {
     ripple.setMainColorId(lineColorId, 0.25f);
     ripple.draw(c);
 
-    Drawables.draw(c, quoteDrawable, bounds.right - Screen.dp(19), bounds.top + Screen.dp(3.5f), PorterDuffPaint.get(lineColorId));
+    if (isExpandable) {
+      // Collapsible quote: arrow at the bottom-end corner instead of the quote mark, as in the official app.
+      if (expandDrawable == null) {
+        expandDrawable = Drawables.get(R.drawable.baseline_keyboard_arrow_down_20);
+      }
+      c.save();
+      float cx = bounds.right - Screen.dp(13f), cy = bounds.bottom - Screen.dp(12f);
+      if (!isCollapsed) {
+        c.rotate(180f, cx, cy);
+      }
+      Drawables.draw(c, expandDrawable, cx - expandDrawable.getMinimumWidth() / 2f, cy - expandDrawable.getMinimumHeight() / 2f, PorterDuffPaint.get(lineColorId));
+      c.restore();
+    } else {
+      Drawables.draw(c, quoteDrawable, bounds.right - Screen.dp(19), bounds.top + Screen.dp(3.5f), PorterDuffPaint.get(lineColorId));
+    }
 
     tmpRect.set(bounds);
     tmpRect.right = bounds.left + Screen.dp(3);

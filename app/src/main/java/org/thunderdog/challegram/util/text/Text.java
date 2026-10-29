@@ -1048,6 +1048,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     bidiPartsReorder();
     bidiClear();
     buildQuotes();
+    collapseQuotes();
 
     if (BuildConfig.DEBUG) {
       int partCount = parts.size();
@@ -2351,6 +2352,9 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
   }
 
   private int drawPart (final int partIndex, Canvas c, int startX, int endX, int endXBottomPadding, int y, float alpha, @Nullable TextColorSet defaultTheme, @Nullable ComplexReceiver receiver) {
+    if (parts.get(partIndex).isCollapsed()) {
+      return 1;
+    }
     TextPart part = parts.get(partIndex);
 
     final int firstPartX = part.getX();
@@ -2773,6 +2777,10 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     // int lineHeight = getLineHeight();
     int touchBound = getEntityTouchPadding();
     for (TextPart part : parts) {
+      if (part.isCollapsed()) {
+        i++;
+        continue;
+      }
       int searchX;
 
       if (useCenter) {
@@ -3033,7 +3041,12 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       case MotionEvent.ACTION_UP: {
         clearTouch();
         if (pressedQuote != null) {
+          final QuoteBackground quote = pressedQuote;
           cancelTouch();
+          if (quote.isExpandable && quoteExpander != null && quote.entity != null) {
+            quoteExpander.onQuoteToggle(this, quote.entity.getQuoteId());
+            ViewUtils.onClick(view);
+          }
           return true;
         } else if (pressHighlight != null) {
           TextPart part = parts.get(pressHighlight.causePartIndex);
@@ -3465,6 +3478,87 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
   }
 
   private final ArrayList<QuoteBackground> quotes = new ArrayList<>();
+
+  // Expandable (collapsed) quotes
+
+  /** Lines of an expandable quote shown while it is collapsed. */
+  public static final int COLLAPSED_QUOTE_MAX_LINES = 3;
+
+  /** Keeps the expanded state of expandable quotes of a text across layouts. */
+  public interface QuoteExpander {
+    boolean isQuoteExpanded (int quoteId);
+    void onQuoteToggle (Text text, int quoteId);
+  }
+
+  private @Nullable QuoteExpander quoteExpander;
+
+  /** Expandable quotes are collapsed only when there is an expander that can expand them. */
+  public void setQuoteExpander (@Nullable QuoteExpander quoteExpander) {
+    if (this.quoteExpander != quoteExpander) {
+      this.quoteExpander = quoteExpander;
+      if (hasExpandableQuotes()) {
+        set(maxWidth, originalText, entities);
+      }
+    }
+  }
+
+  private boolean hasExpandableQuotes () {
+    for (QuoteBackground quote : quotes) {
+      if (quote.isExpandable) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Hides the lines of collapsed expandable quotes below {@link #COLLAPSED_QUOTE_MAX_LINES} and moves the following
+   * parts up. Parts keep their positions inside the text, so expanding is just another layout pass.
+   */
+  private void collapseQuotes () {
+    for (QuoteBackground quote : quotes) {
+      if (quote.entity == null || !quote.entity.isExpandableQuote() || quote.partEnd <= quote.partStart) {
+        continue;
+      }
+      final int firstLine = parts.get(quote.partStart).getLineIndex();
+      final int lastLine = parts.get(quote.partEnd - 1).getLineIndex();
+      if (lastLine - firstLine + 1 <= COLLAPSED_QUOTE_MAX_LINES) {
+        continue;
+      }
+      quote.isExpandable = true;
+      final int quoteId = quote.entity.getQuoteId();
+      if (quoteExpander == null || quoteExpander.isQuoteExpanded(quoteId)) {
+        quote.isCollapsed = false;
+        continue;
+      }
+      quote.isCollapsed = true;
+      int firstHiddenIndex = -1;
+      for (int i = quote.partStart; i < quote.partEnd; i++) {
+        TextPart part = parts.get(i);
+        if (part.getLineIndex() - firstLine >= COLLAPSED_QUOTE_MAX_LINES) {
+          if (firstHiddenIndex == -1) {
+            firstHiddenIndex = i;
+          }
+          part.setCollapsed(true);
+        }
+      }
+      if (firstHiddenIndex == -1) {
+        continue;
+      }
+      final TextPart lastPart = parts.get(quote.partEnd - 1);
+      final int hiddenTop = parts.get(firstHiddenIndex).getY();
+      final int hiddenBottom = lastPart.getY() + getLineHeight(lastPart.getLineIndex());
+      final int removedHeight = Math.max(0, hiddenBottom - hiddenTop);
+      final int fullPartEnd = quote.partEnd;
+      quote.partEnd = firstHiddenIndex;
+      for (int i = fullPartEnd; i < parts.size(); i++) {
+        TextPart part = parts.get(i);
+        part.setXY(part.getX(), part.getY() - removedHeight);
+      }
+      currentY -= removedHeight;
+      quote.calcHeightAddition();
+    }
+  }
 
   private void addQuote(QuoteBackground quoteBackground) {
     quoteBackground.calcHeightAddition();

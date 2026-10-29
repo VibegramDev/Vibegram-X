@@ -286,6 +286,8 @@ public class TGMessageText extends TGMessage {
           .setClickCallback(clickCallback());
       }
       wrapper.addTextFlags(Text.FLAG_BIG_EMOJI);
+      // Expandable quotes start collapsed; a tap on the quote expands or collapses it.
+      wrapper.setQuoteToggleListener(this::rebuildAndUpdateContent);
       if (useBubbles()) {
         wrapper.addTextFlags(Text.FLAG_ADJUST_TO_CURRENT_WIDTH);
       }

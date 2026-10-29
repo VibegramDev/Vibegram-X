@@ -36,7 +36,7 @@ import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.lambda.Destroyable;
 
-public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.TextMediaListener {
+public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.TextMediaListener, Text.QuoteExpander {
   private static final int PORTRAIT_INDEX = 0;
   private static final int LANDSCAPE_INDEX = 1;
 
@@ -266,6 +266,7 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
         }
       }
       text.setViewProvider(viewProvider);
+      text.setQuoteExpander(quoteToggleListener != null ? this : null);
       sizes[index] = maxWidth;
       textSizes[index] = textSizePx;
       if (index == (isPortrait ? PORTRAIT_INDEX : LANDSCAPE_INDEX) &&
@@ -332,6 +333,45 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
 
   private MultipleViewProvider currentViews;
   private ViewProvider viewProvider;
+
+  // Expandable quotes
+
+  private @Nullable Runnable quoteToggleListener;
+  private @Nullable java.util.Set<Integer> expandedQuotes;
+
+  /** Enables collapsing of expandable quotes; the listener is called after a quote is expanded or collapsed. */
+  public TextWrapper setQuoteToggleListener (@Nullable Runnable listener) {
+    this.quoteToggleListener = listener;
+    for (Text text : texts) {
+      if (text != null) {
+        text.setQuoteExpander(listener != null ? this : null);
+      }
+    }
+    return this;
+  }
+
+  @Override
+  public boolean isQuoteExpanded (int quoteId) {
+    return expandedQuotes != null && expandedQuotes.contains(quoteId);
+  }
+
+  @Override
+  public void onQuoteToggle (Text text, int quoteId) {
+    if (expandedQuotes == null) {
+      expandedQuotes = new java.util.HashSet<>();
+    }
+    if (!expandedQuotes.remove(quoteId)) {
+      expandedQuotes.add(quoteId);
+    }
+    for (Text t : texts) {
+      if (t != null) {
+        t.changeMaxWidth(t.getMaxWidth(), true);
+      }
+    }
+    if (quoteToggleListener != null) {
+      quoteToggleListener.run();
+    }
+  }
 
   public TextWrapper setViewProvider (ViewProvider viewProvider) {
     this.viewProvider = viewProvider;
