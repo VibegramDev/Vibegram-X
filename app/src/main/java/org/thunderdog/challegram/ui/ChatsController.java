@@ -492,9 +492,21 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     if (first == RecyclerView.NO_POSITION) {
       return false;
     }
-    int rest = hideArchive && archiveCollapsed && adapter.hasArchive() ? 1 : 0;
-    if (first != rest) {
-      return first > rest;
+    int topPosition = 0;
+    if (hideArchive && adapter.hasArchive()) {
+      // Hidden archive: the list is at the top when the first chat after the archive is at the top,
+      // no matter whether the archive is collapsed or just scrolled out of view (it is "uncollapsed"
+      // after any scroll that ends at the top, so it can be pulled down).
+      int archivePosition = adapter.getArchiveItemPosition();
+      if (archivePosition != -1) {
+        if (first <= archivePosition) {
+          return false;
+        }
+        topPosition = archivePosition + 1;
+      }
+    }
+    if (first != topPosition) {
+      return first > topPosition;
     }
     View view = manager.findViewByPosition(first);
     return view != null && view.getTop() < chatsView.getPaddingTop();
