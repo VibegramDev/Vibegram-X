@@ -119,18 +119,19 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private final View dockBackground;
   private int selectedItem = ITEM_CHATS;
 
-  /** M3 Expressive floating toolbar height. */
-  private static final float DOCK_HEIGHT = 64f;
-  /** Search FAB: as tall as the toolbar, the main action of the screen. */
-  private static final float DOCK_FAB_SIZE = 64f;
-  private static final float DOCK_FAB_RADIUS = M3.CORNER_LARGE_INCREASED;
-  /** Space between the toolbar and the search FAB. */
-  private static final float DOCK_FAB_GAP = 8f;
+  /** Floating toolbar: compact pill centered at the bottom, only as wide as its items. */
+  private static final float DOCK_HEIGHT = 60f;
+  private static final float DOCK_ITEM_WIDTH = 72f;
+  private static final float DOCK_PADDING = 6f;
+  /** Search FAB: outside the toolbar, above its bottom-end corner, the main action of the screen. */
+  private static final float DOCK_FAB_SIZE = 56f;
+  private static final float DOCK_FAB_RADIUS = M3.CORNER_LARGE;
+  /** Space between the toolbar and the search FAB row. */
+  private static final float DOCK_FAB_GAP = 12f;
   /** Small FAB (scroll to top) above the search FAB. */
   private static final float DOCK_SMALL_FAB_SIZE = 40f;
   private static final float DOCK_SMALL_FAB_RADIUS = M3.CORNER_MEDIUM;
   private static final float DOCK_SMALL_FAB_GAP = 12f;
-  private static final float DOCK_PADDING = 8f;
 
   /** 0: search icon, 1: search is open, the segment shows a close icon. */
   private float searchOpenFactor;
@@ -459,23 +460,28 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return isDock;
   }
 
-  /** Dock: full height of the dock area (small FAB, gap, toolbar), without the margin. */
+  /** Dock: full height of the dock area (small FAB, search FAB, toolbar and the gaps), without the margin. */
   public static int getDockAreaHeight () {
-    return Screen.dp(DOCK_SMALL_FAB_SIZE + DOCK_SMALL_FAB_GAP + DOCK_HEIGHT);
+    return Screen.dp(DOCK_HEIGHT + DOCK_FAB_GAP + DOCK_FAB_SIZE + DOCK_SMALL_FAB_GAP + DOCK_SMALL_FAB_SIZE);
+  }
+
+  /** Dock: height taken by the toolbar and the row of the search FAB (the folder chips row). */
+  public static int getDockContentHeight () {
+    return Screen.dp(DOCK_HEIGHT + DOCK_FAB_GAP + DOCK_FAB_SIZE);
   }
 
   public static int getDockHeight () {
     return Screen.dp(DOCK_HEIGHT);
   }
 
-  /** Dock: width of the column with the search FAB and the small FAB, including the gap to the toolbar. */
+  /** Dock: width of the column with the search FAB, including the gap to the folder chips. */
   public static int getDockFabColumnWidth () {
     return Screen.dp(DOCK_FAB_SIZE + DOCK_FAB_GAP);
   }
 
-  /** Dock: distance from the bottom of the dock area to the center of the small FAB. */
-  public static int getDockSmallFabCenterY () {
-    return Screen.dp(DOCK_HEIGHT + DOCK_SMALL_FAB_GAP + DOCK_SMALL_FAB_SIZE / 2f);
+  /** Dock: distance from the bottom of the dock area to the center of the search FAB (and the folder chips row). */
+  public static int getDockFabRowCenterY () {
+    return Screen.dp(DOCK_HEIGHT + DOCK_FAB_GAP + DOCK_FAB_SIZE / 2f);
   }
 
   public static int getBarHeight () {
@@ -579,10 +585,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     }
     setLayoutParams(params);
     if (isDock) {
-      // Search FAB at the bottom-end corner, the small scroll to top FAB centered above it.
+      // Search FAB above the toolbar at the end edge, the small scroll to top FAB centered above it.
       int endGravity = Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT;
       int fabSize = Screen.dp(DOCK_FAB_SIZE);
-      searchView.setLayoutParams(FrameLayoutFix.newParams(fabSize, fabSize, Gravity.BOTTOM | endGravity));
+      FrameLayoutFix.LayoutParams searchParams = FrameLayoutFix.newParams(fabSize, fabSize, Gravity.BOTTOM | endGravity);
+      searchParams.bottomMargin = Screen.dp(DOCK_HEIGHT + DOCK_FAB_GAP);
+      searchView.setLayoutParams(searchParams);
       int smallFabSize = Screen.dp(DOCK_SMALL_FAB_SIZE);
       FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(smallFabSize, smallFabSize, Gravity.TOP | endGravity);
       scrollTopParams.leftMargin = scrollTopParams.rightMargin = (fabSize - smallFabSize) / 2;
@@ -664,16 +672,16 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
     if (isDock) {
-      // Toolbar takes the width left by the FAB column, items are spread evenly inside its padding.
+      // Toolbar: a pill centered horizontally, as wide as its items (narrower screens: as wide as possible).
       int width = MeasureSpec.getSize(widthMeasureSpec);
-      int toolbarWidth = Math.max(0, width - getDockFabColumnWidth());
-      int toolbarLeft = Lang.rtl() ? width - toolbarWidth : 0;
+      int padding = Screen.dp(DOCK_PADDING);
+      int toolbarWidth = Math.min(width, Screen.dp(DOCK_ITEM_WIDTH) * items.length + padding * 2);
+      int toolbarLeft = (width - toolbarWidth) / 2;
       FrameLayoutFix.LayoutParams backgroundParams = (FrameLayoutFix.LayoutParams) dockBackground.getLayoutParams();
       if (backgroundParams.width != toolbarWidth || backgroundParams.leftMargin != toolbarLeft) {
         backgroundParams.width = toolbarWidth;
         backgroundParams.leftMargin = toolbarLeft;
       }
-      int padding = Screen.dp(DOCK_PADDING);
       int contentWidth = toolbarWidth - padding * 2;
       int itemWidth = contentWidth / items.length;
       for (int i = 0; i < items.length; i++) {
@@ -798,6 +806,11 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       boolean bar = followLayoutMode && (isBar || isDock);
       float width = Math.min(bounds.width() - Screen.dp(8f), Screen.dp(bar ? BAR_INDICATOR_WIDTH : RAIL_INDICATOR_WIDTH));
       float height = Screen.dp(INDICATOR_HEIGHT);
+      if (followLayoutMode && isDock) {
+        // Same shape as the dock indicator: fills the item inside the toolbar padding.
+        width = bounds.width();
+        height = bounds.height() - Screen.dp(DOCK_PADDING) * 2;
+      }
       float cx = bounds.exactCenterX();
       float cy = followLayoutMode ? bounds.top + getIconCenterY() : bounds.exactCenterY();
       rect.set(cx - width / 2f, cy - height / 2f, cx + width / 2f, cy + height / 2f);
@@ -1015,8 +1028,13 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       float widthFactor = Math.max(0f, selectFactor);
       if (widthFactor > 0f) {
         RectF rect = Paints.getRectF();
-        int indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
+        float indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
         float indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isBar || isDock ? BAR_INDICATOR_WIDTH : RAIL_INDICATOR_WIDTH)) * widthFactor;
+        if (isDock) {
+          // Dock: the indicator fills the item inside the toolbar padding (a pill concentric with the toolbar).
+          indicatorHeight = getHeight() - Screen.dp(DOCK_PADDING) * 2;
+          indicatorWidth = getWidth() * widthFactor;
+        }
         rect.set(cx - indicatorWidth / 2f, cy - indicatorHeight / 2f, cx + indicatorWidth / 2f, cy + indicatorHeight / 2f);
         c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(selected, M3.secondaryContainer())));
       }

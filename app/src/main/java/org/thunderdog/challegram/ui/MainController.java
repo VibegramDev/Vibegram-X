@@ -237,9 +237,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) bottomBar.getLayoutParams();
       int bottomMargin, leftMargin, rightMargin, barHeight;
       if (isDockStyle()) {
-        // Folder chips: in the row of the small FAB, to the start of the FAB column, centered with the small FAB.
+        // Folder chips: in the row of the search FAB above the toolbar, to the start of the FAB, centered with it.
         barHeight = getHeaderHeight();
-        bottomMargin = height + MainNavigationBar.getRailMargin() + MainNavigationBar.getDockSmallFabCenterY() - barHeight / 2;
+        bottomMargin = height + MainNavigationBar.getRailMargin() + MainNavigationBar.getDockFabRowCenterY() - barHeight / 2;
         int fabColumn = MainNavigationBar.getRailMargin() + MainNavigationBar.getDockFabColumnWidth();
         leftMargin = Lang.rtl() ? fabColumn : 0;
         rightMargin = Lang.rtl() ? 0 : fabColumn;
@@ -266,7 +266,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private int getFolderMenuBottomMargin () {
     if (isDockStyle()) {
       // Dock style: above the chips row.
-      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockSmallFabCenterY() + getHeaderHeight() / 2;
+      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockFabRowCenterY() + getHeaderHeight() / 2;
     }
     return getHeaderHeight();
   }
@@ -1359,8 +1359,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return MainNavigationBar.getBarTotalHeight() + Screen.dp(8f);
     }
     if (navigationBar.isDock()) {
-      // Dock style: toolbar and FABs at the bottom, the folder chips are in the row of the small FAB above them.
-      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockAreaHeight() + Screen.dp(8f);
+      // Dock style: toolbar at the bottom, the folder chips and the search FAB in the row above it.
+      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockContentHeight() + Screen.dp(8f);
     }
     // Phone: floating dock at the bottom-end corner, above the folders bar if there is one.
     int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
