@@ -926,6 +926,12 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
         strings.append(R.string.Copy);
       }
       icons.append(R.drawable.baseline_content_copy_24);
+      if (!msg.isTranslated()) {
+        // Select a part of the text: copy it or quote it in a reply.
+        ids.append(R.id.btn_messageSelectText);
+        strings.append(R.string.SelectText);
+        icons.append(R.drawable.baseline_format_text_24);
+      }
     }
 
     if (!isMore && msg.isTranslated()) {

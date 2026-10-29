@@ -76,6 +76,7 @@ import com.google.android.gms.location.LocationSettingsStatusCodes;
 
 import org.drinkless.tdlib.Client;
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.widget.CustomEmojiTextView;
 import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.Log;
@@ -5950,6 +5951,24 @@ public class MessagesController extends ViewController<MessagesController.Argume
       } else if (id == R.id.btn_messageReplyWithDice) {
         sendDice(itemView, ((TdApi.MessageDice) selectedMessage.getMessage().content).emoji);
         return true;
+      } else if (id == R.id.btn_messageSelectText) {
+        if (!selectedMessage.canBeSaved()) {
+          context().tooltipManager().builder(itemView).show(tdlib, R.string.ChannelNoCopy).hideDelayed();
+          return false;
+        }
+        TdApi.Message message = null;
+        if (selectedMessage instanceof TGMessageMedia) {
+          long messageId = ((TGMessageMedia) selectedMessage).getCaptionMessageId();
+          message = selectedMessage.getMessage(messageId);
+        }
+        if (message == null) {
+          message = selectedMessage.getNewestMessage();
+        }
+        TdApi.FormattedText text = Td.textOrCaption(message.content);
+        if (text != null && !StringUtils.isEmpty(text.text)) {
+          showMessageTextSelection(selectedMessage, message, text);
+        }
+        return true;
       } else if (id == R.id.btn_copyTranslation || id == R.id.btn_messageCopy) {
         if (!selectedMessage.canBeSaved()) {
           context().tooltipManager().builder(itemView).show(tdlib, R.string.ChannelNoCopy).hideDelayed();
@@ -10077,6 +10096,123 @@ public class MessagesController extends ViewController<MessagesController.Argume
       showMessageMenuTutorial();
       updateInlineAttachButton();
     }
+  }
+
+  // Text selection
+
+  /** Entities Telegram keeps in reply quotes; the rest are dropped from the quote. */
+  private static boolean isQuoteEntity (TdApi.TextEntityType type) {
+    switch (type.getConstructor()) {
+      case TdApi.TextEntityTypeBold.CONSTRUCTOR:
+      case TdApi.TextEntityTypeItalic.CONSTRUCTOR:
+      case TdApi.TextEntityTypeUnderline.CONSTRUCTOR:
+      case TdApi.TextEntityTypeStrikethrough.CONSTRUCTOR:
+      case TdApi.TextEntityTypeSpoiler.CONSTRUCTOR:
+      case TdApi.TextEntityTypeCustomEmoji.CONSTRUCTOR:
+        return true;
+    }
+    return false;
+  }
+
+  /**
+   * Message text in a bottom sheet with the system text selection: part of the text can be copied (with formatting
+   * and custom emoji) or quoted in a reply, as in the official app. Built from TGX parts: {@link OptionsLayout} sheet,
+   * {@link CustomEmojiTextView} (custom emoji, honors the emoji animation setting), {@link #showReply}.
+   */
+  private void showMessageTextSelection (TGMessage msg, TdApi.Message message, TdApi.FormattedText text) {
+    final boolean canQuote = msg.canReplyTo() && canWriteMessages() && !isEditingMessage();
+    final PopupLayout popupLayout = new PopupLayout(context);
+    popupLayout.setTag(this);
+    popupLayout.init(true);
+    popupLayout.setNeedFullScreen(true);
+
+    OptionsLayout sheet = new OptionsLayout(context, this, null);
+    sheet.setInfo(this, tdlib, Lang.getString(R.string.SelectText), true, 1);
+
+    final CustomEmojiTextView textView = new CustomEmojiTextView(context, tdlib);
+    textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
+    textView.setTextColor(Theme.textAccentColor());
+    addThemeTextAccentColorListener(textView);
+    textView.setLineSpacing(Screen.dp(2f), 1f);
+    textView.setPadding(Screen.dp(16f), Screen.dp(8f), Screen.dp(16f), Screen.dp(16f));
+    int options = TD.TextEntityOption.ALLOW_INTERNAL;
+    if (Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI)) {
+      options |= TD.TextEntityOption.DISABLE_ANIMATIONS;
+    }
+    textView.setText(TD.toCharSequence(text, options, true));
+    textView.setTextIsSelectable(true);
+    final boolean offsetsMatch = textView.getText().length() == text.text.length();
+    textView.setCustomSelectionActionModeCallback(new android.view.ActionMode.Callback() {
+      @Override
+      public boolean onCreateActionMode (android.view.ActionMode mode, android.view.Menu menu) {
+        if (canQuote && offsetsMatch) {
+          menu.add(android.view.Menu.NONE, R.id.btn_quoteSelection, 0, Lang.getString(R.string.QuoteSelection));
+        }
+        return true;
+      }
+
+      @Override
+      public boolean onPrepareActionMode (android.view.ActionMode mode, android.view.Menu menu) {
+        return false;
+      }
+
+      @Override
+      public boolean onActionItemClicked (android.view.ActionMode mode, android.view.MenuItem item) {
+        int start = Math.min(textView.getSelectionStart(), textView.getSelectionEnd());
+        int end = Math.max(textView.getSelectionStart(), textView.getSelectionEnd());
+        if (!offsetsMatch || start < 0 || end <= start) {
+          return false;
+        }
+        int itemId = item.getItemId();
+        if (itemId == android.R.id.copy) {
+          // Copy from the original entities: formatting and custom emoji go to the clipboard as HTML.
+          UI.copyText(TD.toCopyText(Td.substring(text, start, end)), R.string.CopiedText);
+          mode.finish();
+          return true;
+        }
+        if (itemId == R.id.btn_quoteSelection) {
+          TdApi.FormattedText quote = Td.substring(text, start, end);
+          if (quote.entities != null && quote.entities.length > 0) {
+            List<TdApi.TextEntity> entities = new ArrayList<>(quote.entities.length);
+            for (TdApi.TextEntity entity : quote.entities) {
+              if (isQuoteEntity(entity.type)) {
+                entities.add(entity);
+              }
+            }
+            quote.entities = entities.toArray(new TdApi.TextEntity[0]);
+          }
+          final TdApi.InputTextQuote inputQuote = new TdApi.InputTextQuote(quote, start);
+          mode.finish();
+          popupLayout.hideWindow(true);
+          msg.getMessageProperties(message.id, properties -> runOnUiThreadOptional(() -> {
+            if (properties != null) {
+              showReply(new MessageWithProperties(message, properties), inputQuote, 0, "", true, true);
+              if (inputView != null && inputView.isEmpty()) {
+                Keyboard.show(inputView);
+              }
+            }
+          }));
+          return true;
+        }
+        return false;
+      }
+
+      @Override
+      public void onDestroyActionMode (android.view.ActionMode mode) { }
+    });
+
+    android.widget.ScrollView scrollView = new android.widget.ScrollView(context);
+    scrollView.addView(textView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    textView.measure(
+      View.MeasureSpec.makeMeasureSpec(Math.min(Screen.currentWidth(), Screen.dp(640f)), View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+    );
+    int scrollHeight = Math.min(textView.getMeasuredHeight(), (int) (Screen.currentHeight() * .6f));
+    scrollView.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, scrollHeight));
+    sheet.addView(scrollView);
+
+    popupLayout.setDismissListener(popup -> textView.performDestroy());
+    popupLayout.showSimplePopupView(sheet, sheet.getEstimatedHeight() + extraBottomInsetWithoutIme);
   }
 
   private boolean needInlineAttachButton () {
