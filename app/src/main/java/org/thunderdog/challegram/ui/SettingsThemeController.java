@@ -216,8 +216,10 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
           v.getToggler().setRadioEnabled(Settings.instance().useSystemFonts(), isUpdate);
         } else if (itemId == R.id.btn_secret_batmanTransitions) {
           v.getToggler().setRadioEnabled(Settings.instance().getNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS), isUpdate);
+        } else if (itemId == R.id.btn_compactChats) {
+          v.getToggler().setRadioEnabled(Settings.instance().useCompactChats(), isUpdate);
         } else if (itemId == R.id.btn_chatListStyle) {
-          switch (Settings.instance().getChatListMode()) {
+          switch (Settings.instance().getChatListStyle()) {
             case Settings.CHAT_MODE_3LINE_BIG:
               v.setData(R.string.ChatListStyle3);
               break;
@@ -394,6 +396,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
 
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_chatListStyle, 0, R.string.ChatListStyle));
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_compactChats, 0, R.string.CompactChats));
 
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_chatBackground, 0, R.string.Wallpaper));
@@ -1192,6 +1196,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       Settings.instance().setNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS, adapter.toggleView(v));
     } else if (viewId == R.id.btn_chatListStyle) {
       showChatListOptions();
+    } else if (viewId == R.id.btn_compactChats) {
+      Settings.instance().setUseCompactChats(adapter.toggleView(v));
     } else if (viewId == R.id.btn_instantViewMode) {
       showInstantViewOptions();
     } else if (viewId == R.id.btn_chatSwipes) {
@@ -1678,7 +1684,7 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
   }
 
   private void showChatListOptions () {
-    int chatListStyle = Settings.instance().getChatListMode();
+    int chatListStyle = Settings.instance().getChatListStyle();
     showSettings(new SettingsWrapBuilder(R.id.btn_chatListStyle).setRawItems(new ListItem[]{
       /*new SettingItem(SettingItem.TYPE_CHECKBOX_OPTION, R.id.btn_chatListStyleOptIcons, 0, R.string.ChatListStyleOptIcons, R.id.btn_chatListStyleOptIcons, Settings.instance().),
       new SettingItem(SettingItem.TYPE_CHECKBOX_OPTION, R.id.btn_chatListStyleOptFormatting, 0, R.string.ChatListStyleOptFormatting, R.id.btn_chatListStyleOptFormatting, Settings.instance().),*/
@@ -1686,7 +1692,7 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_chatListStyle2, 0, R.string.ChatListStyle2, R.id.btn_chatListStyle, chatListStyle == Settings.CHAT_MODE_3LINE),
       new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_chatListStyle3, 0, R.string.ChatListStyle3, R.id.btn_chatListStyle, chatListStyle == Settings.CHAT_MODE_3LINE_BIG),
     }).setIntDelegate((id, result) -> {
-      int newChatListStyle = Settings.instance().getChatListMode();
+      int newChatListStyle = Settings.instance().getChatListStyle();
       int chatListStyleResultId = result.get(R.id.btn_chatListStyle);
       if (chatListStyleResultId == R.id.btn_chatListStyle1) {
         newChatListStyle = Settings.CHAT_MODE_2LINE;

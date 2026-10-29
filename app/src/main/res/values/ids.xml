@@ -756,6 +756,7 @@
   <!--<item type="id" name="btn_chatListStyleOptIcons" />
   <item type="id" name="btn_chatListStyleOptFormatting" />-->
   <item type="id" name="btn_chatListStyle" />
+  <item type="id" name="btn_compactChats" />
   <item type="id" name="btn_chatListStyle1" />
   <item type="id" name="btn_chatListStyle2" />
   <item type="id" name="btn_chatListStyle3" />

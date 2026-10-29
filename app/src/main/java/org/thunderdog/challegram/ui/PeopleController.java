@@ -34,6 +34,7 @@ import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.telegram.TdlibContactManager;
 import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.v.CustomRecyclerView;
 import org.thunderdog.challegram.widget.BetterChatView;
@@ -99,6 +100,7 @@ public class PeopleController extends RecyclerViewController<PeopleController.Ar
     adapter = new SettingsAdapter(this) {
       @Override
       protected void setUser (ListItem item, int position, UserView userView, boolean isUpdate) {
+        userView.setCompact(Settings.instance().useCompactChats());
         final int itemId = item.getId();
         if (itemId == R.id.contact) {
           TdlibContactManager.UnregisteredContact contact = (TdlibContactManager.UnregisteredContact) item.getData();

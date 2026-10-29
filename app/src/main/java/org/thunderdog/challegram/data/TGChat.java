@@ -246,7 +246,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   private int lastCounterAddWidth;
 
   private void layoutContent () {
-    if (listMode == Settings.CHAT_MODE_2LINE) {
+    if (Settings.isTwoLineChatListMode(listMode)) {
       layoutText();
     } else {
       setPrefix();
@@ -1199,7 +1199,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   private void layoutText () {
     int avail = currentWidth - ChatView.getLeftPadding(listMode) - ChatView.getRightPadding() - (lastCounterAddWidth = getCounterAddWidth());
     textLeft = ChatView.getLeftPadding(listMode);
-    if ((flags & FLAG_HAS_PREFIX) != 0 && prefix != null && listMode == Settings.CHAT_MODE_2LINE) {
+    if ((flags & FLAG_HAS_PREFIX) != 0 && prefix != null && Settings.isTwoLineChatListMode(listMode)) {
       int prefixWidth = prefix.getWidth();
       avail -= prefixWidth;
       textLeft += prefixWidth;
@@ -1238,11 +1238,11 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   private int textIconsPadding;
 
   private static TextStyleProvider getTextStyleProvider (int chatListMode) {
-    return Paints.robotoStyleProvider(chatListMode == Settings.CHAT_MODE_3LINE ? 15 : 16);
+    return Paints.robotoStyleProvider(chatListMode == Settings.CHAT_MODE_3LINE || chatListMode == Settings.CHAT_MODE_2LINE_COMPACT ? 15 : 16);
   }
 
   private static TextStyleProvider getTitleStyleProvider (int chatListMode) {
-    return Paints.robotoStyleProvider(chatListMode == Settings.CHAT_MODE_3LINE ? 16 : 17);
+    return Paints.robotoStyleProvider(chatListMode == Settings.CHAT_MODE_3LINE || chatListMode == Settings.CHAT_MODE_2LINE_COMPACT ? 16 : 17);
   }
 
   public @Nullable IntList getTextIconIds () {
@@ -1264,19 +1264,19 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
         prefix = Lang.getString(R.string.Draft);
         flags |= FLAG_CONTENT_STRING;
       } else if (isOutgoing()) {
-        prefix = Lang.getString(listMode != Settings.CHAT_MODE_2LINE && tdlib.isMultiChat(chat) && Td.getSenderId(chat.lastMessage) == chat.id ? R.string.FromYouAnonymous : R.string.FromYou);
+        prefix = Lang.getString(!Settings.isTwoLineChatListMode(listMode) && tdlib.isMultiChat(chat) && Td.getSenderId(chat.lastMessage) == chat.id ? R.string.FromYouAnonymous : R.string.FromYou);
         flags |= FLAG_CONTENT_STRING;
       } else if (chat.lastMessage != null && !Td.isProximityAlertTriggered(chat.lastMessage.content)) {
-        prefix = listMode == Settings.CHAT_MODE_2LINE && Td.getMessageAuthorId(chat.lastMessage) == chat.lastMessage.chatId && StringUtils.isEmpty(chat.lastMessage.authorSignature) ?
+        prefix = Settings.isTwoLineChatListMode(listMode) && Td.getMessageAuthorId(chat.lastMessage) == chat.lastMessage.chatId && StringUtils.isEmpty(chat.lastMessage.authorSignature) ?
           Lang.getString(R.string.FromAnonymous) :
-          tdlib.senderName(chat.lastMessage, false, listMode == Settings.CHAT_MODE_2LINE);
+          tdlib.senderName(chat.lastMessage, false, Settings.isTwoLineChatListMode(listMode));
       } else {
         prefix = null;
       }
 
       if (!StringUtils.isEmpty(prefix)) {
         int avail;
-        if (listMode != Settings.CHAT_MODE_2LINE) {
+        if (!Settings.isTwoLineChatListMode(listMode)) {
           avail = currentWidth - ChatView.getLeftPadding(listMode) - ChatView.getRightPadding() - getCounterAddWidth();
         } else {
           avail = Screen.dp(120f);
@@ -1285,7 +1285,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
           Text.Builder b = new Text.Builder(prefix, avail, getTextStyleProvider(listMode), BitwiseUtils.hasFlag(flags, FLAG_TEXT_DRAFT) ? TextColorSets.Regular.NEGATIVE : TextColorSets.Regular.NORMAL)
             .singleLine()
             .textFlags(Text.FLAG_ELLIPSIZE_NO_FILL);
-          if (needSuffix && listMode == Settings.CHAT_MODE_2LINE) {
+          if (needSuffix && Settings.isTwoLineChatListMode(listMode)) {
             b.suffix(": ");
           }
           this.prefix = b.build();
@@ -1310,7 +1310,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   }
 
   private boolean isSingleLine () {
-    return listMode == Settings.CHAT_MODE_2LINE || (flags & FLAG_HAS_PREFIX) != 0;
+    return Settings.isTwoLineChatListMode(listMode) || (flags & FLAG_HAS_PREFIX) != 0;
   }
 
   private void setTextValue (String text, TextEntity[] entities, boolean isTranslatable) {
@@ -1604,7 +1604,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       int avail = currentWidth - ChatView.getLeftPadding(listMode) - ChatView.getRightPadding() - getCounterAddWidth();
       int iconWidth = statusHelper.actionIconWidth();
       if (avail > 0) {
-        Text.Builder b = new Text.Builder(chatActionText, avail, getTextStyleProvider(listMode), TextColorSets.Regular.LIGHT).maxLineCount(listMode == Settings.CHAT_MODE_2LINE ? 1 : 2);
+        Text.Builder b = new Text.Builder(chatActionText, avail, getTextStyleProvider(listMode), TextColorSets.Regular.LIGHT).maxLineCount(Settings.isTwoLineChatListMode(listMode) ? 1 : 2);
         if (iconWidth > 0) {
           b.lineMarginProvider((lineIndex, y, defaultMaxWidth, lineHeight) -> lineIndex == 0 ? iconWidth : 0);
         }

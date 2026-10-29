@@ -7,4 +7,5 @@
   <string name="TabletFoldersSide">Планшет: папки сбоку</string>
   <string name="TabletFoldersBelowSearch">Планшет: папки под поиском</string>
   <string name="CategoryMainShort">Все</string>
+  <string name="CompactChats">Компактные чаты</string>
 </resources>

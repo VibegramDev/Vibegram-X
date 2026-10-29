@@ -238,6 +238,7 @@ public class Settings {
   private static final String KEY_TUTORIAL_PSA = "settings_tutorial_psa";
   private static final String KEY_CHAT_FONT_SIZE = "settings_font_size";
   private static final String KEY_CHAT_LIST_MODE = "settings_chat_list_mode";
+  private static final String KEY_COMPACT_CHATS = "settings_compact_chats";
   private static final String KEY_CHAT_TRANSLATE_MODE = "settings_chat_translate_mode";
   private static final String KEY_CHAT_DO_NOT_TRANSLATE_MODE = "settings_chat_do_not_translate_mode";
   private static final String KEY_CHAT_DO_NOT_TRANSLATE_LIST = "settings_chat_do_not_translate_list";
@@ -1263,6 +1264,12 @@ public class Settings {
   public static final int CHAT_MODE_2LINE = 1;
   public static final int CHAT_MODE_3LINE = 2;
   public static final int CHAT_MODE_3LINE_BIG = 3;
+  /** Two lines with a smaller avatar and row height. Never stored: derived from {@link #useCompactChats()}. */
+  public static final int CHAT_MODE_2LINE_COMPACT = 4;
+
+  public static boolean isTwoLineChatListMode (int chatListMode) {
+    return chatListMode == CHAT_MODE_2LINE || chatListMode == CHAT_MODE_2LINE_COMPACT;
+  }
 
   public interface ChatListModeChangeListener {
     void onChatListModeChanged (int newChatListMode);
@@ -1271,12 +1278,47 @@ public class Settings {
   private Integer _chatListMode;
   private ReferenceList<ChatListModeChangeListener> chatListModeListeners;
 
+  /**
+   * Effective chat list mode, used for layout. Returns {@link #CHAT_MODE_2LINE_COMPACT} when compact chats are enabled.
+   */
   public int getChatListMode () {
+    return useCompactChats() ? CHAT_MODE_2LINE_COMPACT : getChatListStyle();
+  }
+
+  /**
+   * Chat list style selected by the user, ignoring compact chats.
+   */
+  public int getChatListStyle () {
     if (_chatListMode == null) {
       int defaultMode = CHAT_MODE_3LINE; // TODO determine based on display settings
       _chatListMode = pmc.getInt(KEY_CHAT_LIST_MODE, defaultMode);
     }
     return _chatListMode;
+  }
+
+  private Boolean _compactChats;
+
+  public boolean useCompactChats () {
+    if (_compactChats == null) {
+      _compactChats = pmc.getBoolean(KEY_COMPACT_CHATS, false);
+    }
+    return _compactChats;
+  }
+
+  public void setUseCompactChats (boolean compact) {
+    if (useCompactChats() != compact) {
+      pmc.putBoolean(KEY_COMPACT_CHATS, _compactChats = compact);
+      notifyChatListModeChanged();
+    }
+  }
+
+  private void notifyChatListModeChanged () {
+    if (chatListModeListeners != null) {
+      final int mode = getChatListMode();
+      for (ChatListModeChangeListener listener : chatListModeListeners) {
+        listener.onChatListModeChanged(mode);
+      }
+    }
   }
 
   public void addChatListModeListener (ChatListModeChangeListener listener) {
@@ -1292,13 +1334,9 @@ public class Settings {
   }
 
   public void setChatListMode (int mode) {
-    if (getChatListMode() != mode) {
+    if (getChatListStyle() != mode) {
       pmc.putInt(KEY_CHAT_LIST_MODE, _chatListMode = mode);
-      if (chatListModeListeners != null) {
-        for (ChatListModeChangeListener listener : chatListModeListeners) {
-          listener.onChatListModeChanged(mode);
-        }
-      }
+      notifyChatListModeChanged();
     }
   }
 
