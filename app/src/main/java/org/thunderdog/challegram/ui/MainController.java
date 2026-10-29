@@ -3804,12 +3804,14 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       TdlibCounter counter = tdlib.getCounter(chatList);
       updateCounter(chatList, unreadCounter, counter, /* animated */ false);
     }
-    boolean showIcon = hasIcon(chatFolderStyle) || (pagerItemId == MAIN_PAGER_ITEM_ID && pagerItemPosition == 0);
-    if (!showIcon) {
-      iconResource = ResourcesCompat.ID_NULL;
-    }
     if (TextUtils.isEmpty(sectionName)) {
       sectionName = null;
+    }
+    // Icons hidden by the folder style are hidden for every folder, "All chats" included;
+    // an icon is kept only when the item would otherwise be empty.
+    boolean showIcon = hasIcon(chatFolderStyle) || sectionName == null;
+    if (!showIcon) {
+      iconResource = ResourcesCompat.ID_NULL;
     }
     ViewPagerTopView.Item item = new ViewPagerTopView.Item(sectionName, iconResource, unreadCounter);
     item.setMinWidth(Screen.dp(56f - ViewPagerTopView.COMPACT_ITEM_PADDING * 2));
