@@ -147,6 +147,7 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
     boolean needRebuild = false;
     for (TdApi.NotificationGroup rawGroup : update.groups) {
       if (accept(rawGroup.type)) {
+        rawGroup.notifications = filterMutedForumTopicNotifications(rawGroup.chatId, rawGroup.notifications);
         TdlibNotificationGroup group = new TdlibNotificationGroup(tdlib, rawGroup);
         if (!group.isEmpty()) {
           groups.put(rawGroup.id, group);
@@ -169,10 +170,49 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
 
   private boolean haveRebuilt;
 
+  /**
+   * Drops notifications about messages in forum topics muted by their own notification settings.
+   * TDLib applies only chat-level settings, so such topics would otherwise notify like the rest of the forum.
+   */
+  private TdApi.Notification[] filterMutedForumTopicNotifications (long chatId, @Nullable TdApi.Notification[] notifications) {
+    if (notifications == null || notifications.length == 0 || !tdlib.isForum(chatId)) {
+      return notifications;
+    }
+    List<TdApi.Notification> result = null;
+    for (int i = 0; i < notifications.length; i++) {
+      TdApi.Notification notification = notifications[i];
+      boolean isMuted = false;
+      if (notification.type.getConstructor() == TdApi.NotificationTypeNewMessage.CONSTRUCTOR) {
+        TdApi.Message message = ((TdApi.NotificationTypeNewMessage) notification.type).message;
+        if (message.topicId != null && message.topicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR) {
+          isMuted = tdlib.isForumTopicMuted(message.chatId, ((TdApi.MessageTopicForum) message.topicId).forumTopicId, true);
+        }
+      }
+      if (isMuted) {
+        TDLib.Tag.notifications("Filtering notification %d from muted forum topic, chatId=%d", notification.id, chatId);
+        if (result == null) {
+          result = new ArrayList<>(notifications.length);
+          for (int j = 0; j < i; j++) {
+            result.add(notifications[j]);
+          }
+        }
+      } else if (result != null) {
+        result.add(notification);
+      }
+    }
+    return result != null ? result.toArray(new TdApi.Notification[0]) : notifications;
+  }
+
   public void updateGroup (TdApi.UpdateNotificationGroup update) {
     if (!accept(update.type))
       return;
     boolean isSilent = update.notificationSoundId == 0;
+    if (update.addedNotifications != null && update.addedNotifications.length > 0) {
+      update.addedNotifications = filterMutedForumTopicNotifications(update.chatId, update.addedNotifications);
+      if (update.addedNotifications.length == 0) {
+        isSilent = true;
+      }
+    }
     if (!isSilent && update.notificationSettingsChatId != 0 && ChatId.isUserChat(update.notificationSettingsChatId) && tdlib.settings().needMuteNonContacts()) {
       TdApi.User user = tdlib.chatUser(update.notificationSettingsChatId);
       if (user != null && !user.isContact) {
@@ -197,22 +237,6 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       int oldTotalCount = group.getTotalCount();
 
       int visualChangeCount = group.updateGroup(update, addedNotifications, removedNotifications);
-
-      // Filter out notifications from muted forum topics and make silent if all are muted
-      if (addedNotifications != null && !addedNotifications.isEmpty()) {
-        Iterator<TdlibNotification> iter = addedNotifications.iterator();
-        while (iter.hasNext()) {
-          TdlibNotification notification = iter.next();
-          if (notification.isFromMutedForumTopic(tdlib)) {
-            TDLib.Tag.notifications("Filtering notification from muted forum topic, chatId=%d", update.chatId);
-            iter.remove();
-            visualChangeCount--;
-          }
-        }
-        if (addedNotifications.isEmpty()) {
-          isSilent = true;
-        }
-      }
 
       if (removedNotifications != null && !removedNotifications.isEmpty()) {
         notifications.removeAll(removedNotifications);
@@ -273,22 +297,8 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       if (group.isEmpty())
         return;
 
-      // Filter out notifications from muted forum topics for new groups
-      List<TdlibNotification> groupNotifications = new ArrayList<>(group.notifications());
-      Iterator<TdlibNotification> iter = groupNotifications.iterator();
-      while (iter.hasNext()) {
-        TdlibNotification notification = iter.next();
-        if (notification.isFromMutedForumTopic(tdlib)) {
-          TDLib.Tag.notifications("Filtering notification from muted forum topic (new group), chatId=%d", update.chatId);
-          iter.remove();
-        }
-      }
-      if (groupNotifications.isEmpty()) {
-        isSilent = true;
-      }
-
       groups.put(update.notificationGroupId, group);
-      notifications.addAll(groupNotifications);
+      notifications.addAll(group.notifications());
       Collections.sort(notifications);
     }
     boolean needNotification = !isSilent && context.allowNotificationSound(update.chatId);
