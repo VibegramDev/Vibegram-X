@@ -172,9 +172,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
         rect.set(0, 0, getWidth(), getHeight());
         float radius = getHeight() / 2f;
         c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(containerColor()));
-        if (needOutlineStroke()) {
-          c.drawRoundRect(rect, radius, radius, Paints.strokeSmallPaint(Theme.separatorColor()));
-        }
+        // Thin outline in every theme (as exteragram's dock): the toolbar floats over washed out content.
+        c.drawRoundRect(rect, radius, radius, Paints.strokeSmallPaint(needOutlineStroke() ? Theme.separatorColor() : M3.outlineVariant()));
       }
     };
     dockBackground.setWillNotDraw(false);
@@ -566,6 +565,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     int padding = Screen.dp(RAIL_PADDING);
     FrameLayoutFix.LayoutParams params;
     dockBackground.setVisibility(isDock ? View.VISIBLE : View.GONE);
+    // Dock: shadows of the toolbar and the FABs go beyond the bounds of their elements.
+    setClipChildren(!isDock);
     if (isDock) {
       params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getDockAreaHeight(), Gravity.BOTTOM);
       params.leftMargin = params.rightMargin = getRailMargin();
@@ -605,7 +606,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       // Dock: every element floats on its own (M3 floating toolbar level 3, FABs level 3).
-      float dockElevation = isDock ? Screen.dp(M3.ELEVATION_LEVEL2) : 0;
+      float dockElevation = isDock ? Screen.dp(M3.ELEVATION_LEVEL3) : 0;
       dockBackground.setElevation(dockElevation);
       searchView.setElevation(isDock ? Screen.dp(M3.ELEVATION_LEVEL3) : 0);
       scrollTopView.setElevation(isDock ? Screen.dp(M3.ELEVATION_LEVEL3) : 0);

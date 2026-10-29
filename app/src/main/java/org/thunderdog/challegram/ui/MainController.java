@@ -143,6 +143,7 @@ import org.thunderdog.challegram.widget.M3MainTitleView;
 import org.thunderdog.challegram.widget.M3SearchBarView;
 import org.thunderdog.challegram.widget.M3Tooltip;
 import org.thunderdog.challegram.widget.M3BottomScrimView;
+import org.thunderdog.challegram.widget.M3DockScrimView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.M3AccountItemView;
 import org.thunderdog.challegram.widget.PopupLayout;
@@ -202,6 +203,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private MainNavigationBar navigationBar;
   /** Tablet: fades the chat list into surface behind the floating bar. */
   private M3BottomScrimView navigationScrim;
+  /** Navigation style "dock": washes the chat list out towards the bottom, below the folder chips. */
+  private @Nullable M3DockScrimView dockScrim;
   /** Tablet layout only: M3 search app bar, the search bar in place of the app bar title. */
   private @Nullable M3SearchBarView searchBarView;
   /** Tablet layout with chat folders only: the folder tabs take the title place, search is an app bar button. */
@@ -232,6 +235,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void updateBottomBarMargins () {
+    updateDockScrim();
     if (bottomBar != null) {
       int height = extraBottomInsetWithoutIme;
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) bottomBar.getLayoutParams();
@@ -259,6 +263,24 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       if (bottomBarShadow != null) {
         bottomBarShadow.setVisibility(isDockStyle() ? View.GONE : View.VISIBLE);
       }
+    }
+  }
+
+  private void updateDockScrim () {
+    if (dockScrim == null) {
+      return;
+    }
+    boolean visible = navigationBar != null && navigationBar.isDock();
+    dockScrim.setVisibility(visible ? View.VISIBLE : View.GONE);
+    if (visible) {
+      int dockBottom = extraBottomInsetWithoutIme + MainNavigationBar.getRailMargin();
+      // From a little above the row of the search FAB and the folder chips to the bottom of the screen.
+      int height = dockBottom + MainNavigationBar.getDockContentHeight() + Screen.dp(16f);
+      FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) dockScrim.getLayoutParams();
+      if (params == null || params.height != height || params.gravity != Gravity.BOTTOM) {
+        dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.BOTTOM));
+      }
+      dockScrim.setDockTopOffset(dockBottom + MainNavigationBar.getDockHeight());
     }
   }
 
@@ -299,6 +321,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     pagerWrap = new FrameLayoutFix(context);
     pagerWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     pagerWrap.addView(pager);
+    // Above the chat lists, below the folder chips (added later) and the dock (another parent, above everything).
+    dockScrim = new M3DockScrimView(context);
+    dockScrim.setVisibility(View.GONE);
+    pagerWrap.addView(dockScrim);
+    addThemeInvalidateListener(dockScrim);
 
     mainWrap = new FrameLayoutFix(context);
     mainWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -774,7 +801,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         RippleSupport.setTransparentBlackSelector(sectionView);
         menu.addView(sectionView);
       }
-      pagerWrap.addView(menu, 1);
+      pagerWrap.addView(menu, dockScrim != null ? pagerWrap.indexOfChild(dockScrim) + 1 : 1);
       parent = pagerWrap;
     }
     if (visible) {
@@ -1435,6 +1462,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       navigationScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, scrimHeight, Gravity.BOTTOM));
       navigationScrim.setVisibility(isBar ? View.VISIBLE : View.GONE);
     }
+    updateDockScrim();
     updateDockCollapsed(false);
     updateHeaderDockButtons();
     if (modeChanged && headerView != null && isFocused() && !inTransformMode() && navigationController != null && !navigationController.isAnimating()) {
