@@ -8,4 +8,7 @@
   <string name="TabletFoldersBelowSearch">Планшет: папки под поиском</string>
   <string name="CategoryMainShort">Все</string>
   <string name="CompactChats">Компактные чаты</string>
+  <string name="NavigationStyle">Навигация</string>
+  <string name="NavigationStyleRail">Боковая панель</string>
+  <string name="NavigationStyleDock">Нижний док</string>
 </resources>

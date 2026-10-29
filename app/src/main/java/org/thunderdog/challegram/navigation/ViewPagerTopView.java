@@ -26,6 +26,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.SystemClock;
 import android.text.Layout;
 import android.text.Spanned;
@@ -62,6 +63,7 @@ import org.thunderdog.challegram.telegram.TGLegacyManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.PropertyId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
@@ -653,6 +655,79 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     }
   }
 
+  // Chip style (navigation style "dock"): every item is a separate floating pill, the selected one is filled.
+
+  public static final float CHIP_HEIGHT = 40f;
+  /** Half of the gap between two chips. */
+  public static final float CHIP_INSET = 3f;
+  /** Horizontal padding of the label inside a chip (plus the inset). */
+  public static final float CHIP_ITEM_PADDING = 14f + CHIP_INSET;
+
+  private boolean chipStyle;
+
+  public void setChipStyle (boolean chipStyle) {
+    if (this.chipStyle != chipStyle) {
+      this.chipStyle = chipStyle;
+      int childCount = getChildCount();
+      for (int index = 0; index < childCount; index++) {
+        View childView = getChildAt(index);
+        if (childView instanceof BackgroundView) {
+          applyItemBackground(childView);
+        }
+      }
+      invalidate();
+    }
+  }
+
+  public boolean isChipStyle () {
+    return chipStyle;
+  }
+
+  private void applyItemBackground (View view) {
+    if (chipStyle) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Theme.RIPPLE_COLOR), null, new ChipMask()));
+      } else {
+        RippleSupport.setTransparentBlackSelector(view);
+      }
+    } else if (isDark) {
+      RippleSupport.setTransparentBlackSelector(view);
+    } else {
+      RippleSupport.setTransparentWhiteSelector(view);
+    }
+  }
+
+  private static void setChipRect (RectF rect, float left, float right, int viewHeight) {
+    float inset = Screen.dp(CHIP_INSET);
+    float height = Screen.dp(CHIP_HEIGHT);
+    float top = (viewHeight - height) / 2f;
+    rect.set(left + inset, top, right - inset, top + height);
+  }
+
+  /** Opaque chip shape: masks the pressed ripple of an item. */
+  private static class ChipMask extends Drawable {
+    @Override
+    public void draw (@NonNull Canvas c) {
+      Rect bounds = getBounds();
+      RectF rect = Paints.getRectF();
+      setChipRect(rect, bounds.left, bounds.right, bounds.height());
+      rect.offset(0, bounds.top);
+      float radius = rect.height() / 2f;
+      c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(0xffffffff));
+    }
+
+    @Override
+    public void setAlpha (int alpha) { }
+
+    @Override
+    public void setColorFilter (@Nullable android.graphics.ColorFilter colorFilter) { }
+
+    @Override
+    public int getOpacity () {
+      return android.graphics.PixelFormat.TRANSLUCENT;
+    }
+  }
+
   private boolean isDark;
 
   public void setUseDarkBackground () {
@@ -666,11 +741,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       for (int index = 0; index < childCount; index++) {
         View childView = getChildAt(index);
         if (childView instanceof BackgroundView) {
-          if (useDark) {
-            RippleSupport.setTransparentBlackSelector(childView);
-          } else {
-            RippleSupport.setTransparentWhiteSelector(childView);
-          }
+          applyItemBackground(childView);
         }
       }
     }
@@ -691,11 +762,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
   private BackgroundView newBackgroundView (int i) {
     BackgroundView backgroundView = new BackgroundView(getContext());
-    if (isDark) {
-      RippleSupport.setTransparentBlackSelector(backgroundView);
-    } else {
-      RippleSupport.setTransparentWhiteSelector(backgroundView);
-    }
+    applyItemBackground(backgroundView);
     backgroundView.setLayoutParams(new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
     backgroundView.setOnClickListener(this);
     backgroundView.setOnLongClickListener(this);
@@ -1271,8 +1338,8 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     final boolean wrapContent = shouldWrapContent();
 
     if (overlayFactor != 1f) {
-      int textToColor = Theme.getColor(toTextColorId);
-      int textFromColor = fromTextColorId != ColorId.NONE ?
+      int textToColor = chipStyle ? M3.onPrimary() : Theme.getColor(toTextColorId);
+      int textFromColor = chipStyle ? M3.onSurfaceVariant() : fromTextColorId != ColorId.NONE ?
         ColorUtils.alphaColor(fromTextColorAlphaId != PropertyId.NONE ? Theme.getProperty(fromTextColorAlphaId) : 1f, Theme.getColor(fromTextColorId)) :
         ColorUtils.alphaColor(Theme.getSubtitleAlpha(), Theme.getColor(ColorId.headerText));
       int selectionColor = selectionColorId != ColorId.NONE ?
@@ -1299,10 +1366,12 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       } else {
         indicatorRect.set(selectionLeft, selectionTop, selectionRight, selectionBottom + indicatorRadius);
       }
-      c.save();
-      c.clipRect(selectionLeft, selectionTop, selectionRight, selectionBottom);
-      c.drawRoundRect(indicatorRect, indicatorRadius, indicatorRadius, Paints.fillingPaint(finalSelectionColor));
-      c.restore();
+      if (!chipStyle) {
+        c.save();
+        c.clipRect(selectionLeft, selectionTop, selectionRight, selectionBottom);
+        c.drawRoundRect(indicatorRect, indicatorRadius, indicatorRadius, Paints.fillingPaint(finalSelectionColor));
+        c.restore();
+      }
 
       int cx = rtl ? totalWidth : 0;
       int itemIndex = 0;
@@ -1326,6 +1395,17 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
         }
         if (rtl)
           cx -= itemWidth;
+        if (chipStyle && !item.hidden) {
+          // M3 filter chip look: surfaceContainerHigh pill, the selected one is filled with primary.
+          RectF chipRect = Paints.getRectF();
+          setChipRect(chipRect, cx, cx + itemWidth, viewHeight);
+          float chipRadius = chipRect.height() / 2f;
+          float chipSelection = itemSelectionFactor * (1f - disabledFactor);
+          c.drawRoundRect(chipRect, chipRadius, chipRadius, Paints.fillingPaint(ColorUtils.fromToArgb(M3.surfaceContainerHigh(), M3.primary(), chipSelection)));
+          if (Theme.isDark() && chipSelection < 1f) {
+            c.drawRoundRect(chipRect, chipRadius, chipRadius, Paints.strokeSmallPaint(ColorUtils.alphaColor(1f - chipSelection, M3.outlineVariant())));
+          }
+        }
         if (!item.hidden) {
           int contentWidth = Math.min(item.getContentWidth(labelFactor), item.getWidth(labelFactor));
           int horizontalPadding = Math.max(itemWidth - contentWidth, 0) / 2;

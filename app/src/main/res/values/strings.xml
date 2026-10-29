@@ -4173,6 +4173,9 @@
   <string name="ChatListStyle2">Three lines</string>
   <string name="ChatListStyle3">Three lines (bigger text)</string>
   <string name="CompactChats">Compact chats</string>
+  <string name="NavigationStyle">Navigation</string>
+  <string name="NavigationStyleRail">Side rail</string>
+  <string name="NavigationStyleDock">Bottom dock</string>
 
   <string name="format_tracksAndDuration">%1$s, %2$s</string>
 

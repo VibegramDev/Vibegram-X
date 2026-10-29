@@ -111,7 +111,26 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private float collapseFactor;
 
   private boolean isBar;
+  /**
+   * Phone, navigation style "dock": horizontal floating toolbar at the bottom with the sections, the search FAB next to
+   * it and a small scroll to top FAB above the search FAB (shown while the chat list is scrolled).
+   */
+  private boolean isDock;
+  private final View dockBackground;
   private int selectedItem = ITEM_CHATS;
+
+  /** M3 Expressive floating toolbar height. */
+  private static final float DOCK_HEIGHT = 64f;
+  /** Search FAB: as tall as the toolbar, the main action of the screen. */
+  private static final float DOCK_FAB_SIZE = 64f;
+  private static final float DOCK_FAB_RADIUS = M3.CORNER_LARGE_INCREASED;
+  /** Space between the toolbar and the search FAB. */
+  private static final float DOCK_FAB_GAP = 8f;
+  /** Small FAB (scroll to top) above the search FAB. */
+  private static final float DOCK_SMALL_FAB_SIZE = 40f;
+  private static final float DOCK_SMALL_FAB_RADIUS = M3.CORNER_MEDIUM;
+  private static final float DOCK_SMALL_FAB_GAP = 12f;
+  private static final float DOCK_PADDING = 8f;
 
   /** 0: search icon, 1: search is open, the segment shows a close icon. */
   private float searchOpenFactor;
@@ -144,6 +163,31 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       })
       .callback((counter, sizeChanged) -> invalidateItems())
       .build();
+
+    dockBackground = new View(context) {
+      @Override
+      protected void onDraw (@NonNull Canvas c) {
+        RectF rect = Paints.getRectF();
+        rect.set(0, 0, getWidth(), getHeight());
+        float radius = getHeight() / 2f;
+        c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(containerColor()));
+        if (needOutlineStroke()) {
+          c.drawRoundRect(rect, radius, radius, Paints.strokeSmallPaint(Theme.separatorColor()));
+        }
+      }
+    };
+    dockBackground.setWillNotDraw(false);
+    dockBackground.setVisibility(View.GONE);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      dockBackground.setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), view.getHeight() / 2f);
+        }
+      });
+    }
+    addView(dockBackground);
+    themeProvider.addThemeInvalidateListener(dockBackground);
 
     avatarView = new AvatarView(context);
     avatarView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(AVATAR_SIZE), Screen.dp(AVATAR_SIZE), Gravity.CENTER_HORIZONTAL | Gravity.TOP));
@@ -190,7 +234,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     // Phone rail and tablet bar have no labels (accepted deviation): plain tooltip with the label on tap and hold,
     // 4dp from the dock edge: before the rail, above the bar.
     M3Tooltip.BoundsProvider railBounds = (anchor, outRect) -> {
-      if (isBar) {
+      if (isDock) {
+        // Every element of the dock is its own visual boundary (toolbar items: the toolbar height).
+        outRect.set(0, 0, anchor.getWidth(), anchor.getHeight());
+      } else if (isBar) {
         // Horizontal bounds of the item, vertical bounds of the bar container (the visual boundary).
         outRect.set(0, -anchor.getTop(), anchor.getWidth(), getHeight() - anchor.getTop());
       } else {
@@ -198,7 +245,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
         outRect.set(-anchor.getLeft(), 0, getWidth() - anchor.getLeft(), anchor.getHeight());
       }
     };
-    M3Tooltip.PlacementProvider tooltipPlacement = anchor -> isBar ? M3Tooltip.PLACEMENT_ABOVE : M3Tooltip.PLACEMENT_START;
+    M3Tooltip.PlacementProvider tooltipPlacement = anchor -> isBar || isDock ? M3Tooltip.PLACEMENT_ABOVE : M3Tooltip.PLACEMENT_START;
     M3Tooltip.TextProvider tooltipText = anchor -> anchor == searchView && searchOpenFactor >= .5f ? Lang.getString(R.string.vg_CloseSearch) : anchor instanceof ItemView ? ((ItemView) anchor).label : anchor.getContentDescription();
     M3Tooltip.bind(searchView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
     M3Tooltip.bind(scrollTopView, M3Tooltip.PLACEMENT_START, railBounds, tooltipText);
@@ -226,7 +273,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       setOutlineProvider(new ViewOutlineProvider() {
         @Override
         public void getOutline (View view, Outline outline) {
-          if (isBar) {
+          if (isDock) {
+            outline.setEmpty();
+          } else if (isBar) {
             outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), getBarRadius());
           } else {
             outline.setRoundRect(0, getRailTop(), view.getWidth(), view.getHeight(), getRailRadius());
@@ -298,7 +347,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   /** Top of the visible rail: it shrinks towards the bottom while collapsing. */
   private int getRailTop () {
-    if (isBar) {
+    if (isBar || isDock) {
       return 0;
     }
     int height = getHeight() > 0 ? getHeight() : getRailHeight();
@@ -306,6 +355,21 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   }
 
   private void updateCollapsedViews () {
+    if (isDock) {
+      // Dock: the sections and search stay, only the small scroll to top FAB comes up above the search FAB.
+      float factor = MathUtils.clamp(collapseFactor);
+      applyCollapse(searchView, 1f, 0, false);
+      for (ItemView item : items) {
+        applyCollapse(item, 1f, 0, false);
+      }
+      scrollTopView.setAlpha(factor);
+      scrollTopView.setScaleX(.6f + .4f * factor);
+      scrollTopView.setScaleY(.6f + .4f * factor);
+      scrollTopView.setTranslationY(Screen.dp(DOCK_SMALL_FAB_GAP) * (1f - factor));
+      scrollTopView.setVisibility(factor > 0f ? View.VISIBLE : View.INVISIBLE);
+      return;
+    }
+    scrollTopView.setTranslationY(0f);
     float factor = isBar ? 0f : MathUtils.clamp(collapseFactor);
     // Sections leave first (upwards, towards the app bar), the settings item turns into the scroll to top button.
     float leave = MathUtils.clamp(factor / .6f);
@@ -391,6 +455,29 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return isBar;
   }
 
+  public boolean isDock () {
+    return isDock;
+  }
+
+  /** Dock: full height of the dock area (small FAB, gap, toolbar), without the margin. */
+  public static int getDockAreaHeight () {
+    return Screen.dp(DOCK_SMALL_FAB_SIZE + DOCK_SMALL_FAB_GAP + DOCK_HEIGHT);
+  }
+
+  public static int getDockHeight () {
+    return Screen.dp(DOCK_HEIGHT);
+  }
+
+  /** Dock: width of the column with the search FAB and the small FAB, including the gap to the toolbar. */
+  public static int getDockFabColumnWidth () {
+    return Screen.dp(DOCK_FAB_SIZE + DOCK_FAB_GAP);
+  }
+
+  /** Dock: distance from the bottom of the dock area to the center of the small FAB. */
+  public static int getDockSmallFabCenterY () {
+    return Screen.dp(DOCK_HEIGHT + DOCK_SMALL_FAB_GAP + DOCK_SMALL_FAB_SIZE / 2f);
+  }
+
   public static int getBarHeight () {
     return Screen.dp(BAR_HEIGHT);
   }
@@ -458,12 +545,27 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
    * @param railBottomOffset extra space below the rail (chat folders displayed at the bottom)
    */
   public void setLayoutMode (boolean isBar, int bottomInset, int railBottomOffset) {
-    boolean modeChanged = this.isBar != isBar || getLayoutParams() == null;
+    setLayoutMode(isBar, false, bottomInset, railBottomOffset);
+  }
+
+  /**
+   * @param isDock phone only: navigation style "dock" (ignored with isBar)
+   */
+  public void setLayoutMode (boolean isBar, boolean isDock, int bottomInset, int railBottomOffset) {
+    isDock = isDock && !isBar;
+    boolean modeChanged = this.isBar != isBar || this.isDock != isDock || getLayoutParams() == null;
     this.isBar = isBar;
+    this.isDock = isDock;
     int itemSize = Screen.dp(RAIL_ITEM_SIZE);
     int padding = Screen.dp(RAIL_PADDING);
     FrameLayoutFix.LayoutParams params;
-    if (isBar) {
+    dockBackground.setVisibility(isDock ? View.VISIBLE : View.GONE);
+    if (isDock) {
+      params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getDockAreaHeight(), Gravity.BOTTOM);
+      params.leftMargin = params.rightMargin = getRailMargin();
+      params.bottomMargin = getRailMargin() + bottomInset;
+      setPadding(0, 0, 0, 0);
+    } else if (isBar) {
       params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
       params.leftMargin = params.rightMargin = getBarMargin();
       params.bottomMargin = getBarMargin() + bottomInset;
@@ -476,11 +578,38 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       setPadding(padding, padding, padding, padding);
     }
     setLayoutParams(params);
-    // Phone: search is the first item of the rail, the scroll to top button takes the place of the last one.
-    searchView.setLayoutParams(FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT));
-    FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
-    scrollTopParams.topMargin = itemSize * items.length;
-    scrollTopView.setLayoutParams(scrollTopParams);
+    if (isDock) {
+      // Search FAB at the bottom-end corner, the small scroll to top FAB centered above it.
+      int endGravity = Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT;
+      int fabSize = Screen.dp(DOCK_FAB_SIZE);
+      searchView.setLayoutParams(FrameLayoutFix.newParams(fabSize, fabSize, Gravity.BOTTOM | endGravity));
+      int smallFabSize = Screen.dp(DOCK_SMALL_FAB_SIZE);
+      FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(smallFabSize, smallFabSize, Gravity.TOP | endGravity);
+      scrollTopParams.leftMargin = scrollTopParams.rightMargin = (fabSize - smallFabSize) / 2;
+      scrollTopView.setLayoutParams(scrollTopParams);
+      dockBackground.setLayoutParams(FrameLayoutFix.newParams(0, getDockHeight(), Gravity.BOTTOM | Gravity.LEFT));
+    } else {
+      // Phone: search is the first item of the rail, the scroll to top button takes the place of the last one.
+      searchView.setLayoutParams(FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT));
+      FrameLayoutFix.LayoutParams scrollTopParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
+      scrollTopParams.topMargin = itemSize * items.length;
+      scrollTopView.setLayoutParams(scrollTopParams);
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      // Dock: every element floats on its own (M3 floating toolbar level 3, FABs level 3).
+      float dockElevation = isDock ? Screen.dp(M3.ELEVATION_LEVEL2) : 0;
+      dockBackground.setElevation(dockElevation);
+      searchView.setElevation(isDock ? Screen.dp(M3.ELEVATION_LEVEL3) : 0);
+      scrollTopView.setElevation(isDock ? Screen.dp(M3.ELEVATION_LEVEL3) : 0);
+      searchView.setOutlineProvider(isDock ? new FabOutline(DOCK_FAB_RADIUS) : ViewOutlineProvider.BACKGROUND);
+      scrollTopView.setOutlineProvider(isDock ? new FabOutline(DOCK_SMALL_FAB_RADIUS) : ViewOutlineProvider.BACKGROUND);
+      for (ItemView item : items) {
+        // Above the toolbar background (children are drawn in Z order), without own shadows (no outline).
+        item.setTranslationZ(dockElevation);
+      }
+    }
+    setPressedStateLayer(searchView, isDock ? new FabMask(DOCK_FAB_RADIUS) : new IndicatorMask(false));
+    setPressedStateLayer(scrollTopView, isDock ? new FabMask(DOCK_SMALL_FAB_RADIUS) : new IndicatorMask(false));
     // Tooltips on every section item (no labels in both modes); search and scroll to top exist in the rail only.
     searchView.setLongClickable(!isBar);
     scrollTopView.setLongClickable(!isBar);
@@ -498,7 +627,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     }
     for (int i = 0; i < items.length; i++) {
       FrameLayoutFix.LayoutParams itemParams;
-      if (isBar) {
+      if (isDock) {
+        itemParams = FrameLayoutFix.newParams(0, getDockHeight(), Gravity.BOTTOM | Gravity.LEFT);
+      } else if (isBar) {
         itemParams = FrameLayoutFix.newParams(0, getBarHeight(), Gravity.TOP | Gravity.LEFT);
       } else {
         itemParams = FrameLayoutFix.newParams(itemSize, itemSize, Gravity.TOP | Gravity.LEFT);
@@ -515,8 +646,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     Views.setTopMargin(avatarView, getIconCenterY() - Screen.dp(AVATAR_SIZE) / 2);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       // Tablet bar: soft shadow drawn by M3BottomScrimView (same as the floating message composer).
-      setElevation(isBar ? 0 : Screen.dp(4f));
-      setClipToOutline(true);
+      // Dock: the container is transparent, its elements have their own shadows.
+      setElevation(isBar || isDock ? 0 : Screen.dp(4f));
+      setClipToOutline(!isDock);
       invalidateOutline();
     }
     if (modeChanged) {
@@ -526,12 +658,33 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   }
 
   private int getIconCenterY () {
-    return isBar ? Screen.dp(BAR_ICON_CENTER_Y) : Screen.dp(RAIL_ITEM_SIZE) / 2;
+    return isDock ? Screen.dp(DOCK_HEIGHT) / 2 : isBar ? Screen.dp(BAR_ICON_CENTER_Y) : Screen.dp(RAIL_ITEM_SIZE) / 2;
   }
 
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
-    if (isBar) {
+    if (isDock) {
+      // Toolbar takes the width left by the FAB column, items are spread evenly inside its padding.
+      int width = MeasureSpec.getSize(widthMeasureSpec);
+      int toolbarWidth = Math.max(0, width - getDockFabColumnWidth());
+      int toolbarLeft = Lang.rtl() ? width - toolbarWidth : 0;
+      FrameLayoutFix.LayoutParams backgroundParams = (FrameLayoutFix.LayoutParams) dockBackground.getLayoutParams();
+      if (backgroundParams.width != toolbarWidth || backgroundParams.leftMargin != toolbarLeft) {
+        backgroundParams.width = toolbarWidth;
+        backgroundParams.leftMargin = toolbarLeft;
+      }
+      int padding = Screen.dp(DOCK_PADDING);
+      int contentWidth = toolbarWidth - padding * 2;
+      int itemWidth = contentWidth / items.length;
+      for (int i = 0; i < items.length; i++) {
+        FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) items[i].getLayoutParams();
+        int left = toolbarLeft + padding + itemWidth * (Lang.rtl() ? items.length - 1 - i : i);
+        if (params.width != itemWidth || params.leftMargin != left) {
+          params.width = itemWidth;
+          params.leftMargin = left;
+        }
+      }
+    } else if (isBar) {
       int width = MeasureSpec.getSize(widthMeasureSpec) - getPaddingLeft() - getPaddingRight();
       int itemWidth = width / items.length;
       for (int i = 0; i < items.length; i++) {
@@ -555,6 +708,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   @Override
   protected void onDraw (Canvas c) {
+    if (isDock) {
+      // Transparent container: the toolbar and the FABs draw themselves.
+      return;
+    }
     int fillingColor = containerColor();
     {
       RectF rect = Paints.getRectF();
@@ -577,6 +734,50 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     avatarView.performDestroy();
   }
 
+  /** Dock FAB shape: rounded square filling the view. */
+  private static class FabOutline extends ViewOutlineProvider {
+    private final float radiusDp;
+
+    FabOutline (float radiusDp) {
+      this.radiusDp = radiusDp;
+    }
+
+    @Override
+    public void getOutline (View view, Outline outline) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), Screen.dp(radiusDp));
+      }
+    }
+  }
+
+  /** Opaque dock FAB shape, masks the pressed ripple. */
+  private static class FabMask extends Drawable {
+    private final float radiusDp;
+
+    FabMask (float radiusDp) {
+      this.radiusDp = radiusDp;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      RectF rect = Paints.getRectF();
+      rect.set(getBounds());
+      float radius = Screen.dp(radiusDp);
+      c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(0xffffffff));
+    }
+
+    @Override
+    public void setAlpha (int alpha) { }
+
+    @Override
+    public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+    @Override
+    public int getOpacity () {
+      return PixelFormat.TRANSLUCENT;
+    }
+  }
+
   /** Opaque shape of the active indicator of an item, masks the pressed ripple. */
   private class IndicatorMask extends Drawable {
     private final boolean followLayoutMode;
@@ -594,7 +795,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     public void draw (@NonNull Canvas c) {
       Rect bounds = getBounds();
       RectF rect = Paints.getRectF();
-      boolean bar = followLayoutMode && isBar;
+      boolean bar = followLayoutMode && (isBar || isDock);
       float width = Math.min(bounds.width() - Screen.dp(8f), Screen.dp(bar ? BAR_INDICATOR_WIDTH : RAIL_INDICATOR_WIDTH));
       float height = Screen.dp(INDICATOR_HEIGHT);
       float cx = bounds.exactCenterX();
@@ -679,6 +880,31 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       float cx = getWidth() / 2f;
       float cy = getHeight() / 2f;
       float open = openIcon != null ? searchOpenFactor : 0f;
+      if (isDock) {
+        // FAB: search is the primary action (primaryContainer), scroll to top is a small surface FAB.
+        boolean isPrimary = openIcon != null;
+        RectF rect = Paints.getRectF();
+        rect.set(0, 0, getWidth(), getHeight());
+        float radius = Screen.dp(isPrimary ? DOCK_FAB_RADIUS : DOCK_SMALL_FAB_RADIUS);
+        c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(isPrimary ? M3.primaryContainer() : M3.surfaceContainerHigh()));
+        if (needOutlineStroke() && !isPrimary) {
+          c.drawRoundRect(rect, radius, radius, Paints.strokeSmallPaint(Theme.separatorColor()));
+        }
+        int iconColor = isPrimary ? M3.onPrimaryContainer() : M3.onSurfaceVariant();
+        if (open < 1f) {
+          c.save();
+          c.rotate(90f * open, cx, cy);
+          Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - open, iconColor)));
+          c.restore();
+        }
+        if (open > 0f && openIcon != null) {
+          c.save();
+          c.rotate(-90f * (1f - open), cx, cy);
+          Drawables.draw(c, openIcon, cx - openIcon.getMinimumWidth() / 2f, cy - openIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(open, iconColor)));
+          c.restore();
+        }
+        return;
+      }
       if (open > 0f) {
         RectF rect = Paints.getRectF();
         float indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
@@ -790,7 +1016,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       if (widthFactor > 0f) {
         RectF rect = Paints.getRectF();
         int indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
-        float indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isBar ? BAR_INDICATOR_WIDTH : RAIL_INDICATOR_WIDTH)) * widthFactor;
+        float indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isBar || isDock ? BAR_INDICATOR_WIDTH : RAIL_INDICATOR_WIDTH)) * widthFactor;
         rect.set(cx - indicatorWidth / 2f, cy - indicatorHeight / 2f, cx + indicatorWidth / 2f, cy + indicatorHeight / 2f);
         c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(selected, M3.secondaryContainer())));
       }

@@ -234,10 +234,60 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private void updateBottomBarMargins () {
     if (bottomBar != null) {
       int height = extraBottomInsetWithoutIme;
-      Views.setBottomMargin(bottomBar, height);
-      bottomBarSpace.setLayoutHeight(height, true);
+      FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) bottomBar.getLayoutParams();
+      int bottomMargin, leftMargin, rightMargin, barHeight;
+      if (isDockStyle()) {
+        // Folder chips: in the row of the small FAB, to the start of the FAB column, centered with the small FAB.
+        barHeight = getHeaderHeight();
+        bottomMargin = height + MainNavigationBar.getRailMargin() + MainNavigationBar.getDockSmallFabCenterY() - barHeight / 2;
+        int fabColumn = MainNavigationBar.getRailMargin() + MainNavigationBar.getDockFabColumnWidth();
+        leftMargin = Lang.rtl() ? fabColumn : 0;
+        rightMargin = Lang.rtl() ? 0 : fabColumn;
+      } else {
+        barHeight = getHeaderHeight() + Screen.dp(3f) - Screen.dp(1f);
+        bottomMargin = height;
+        leftMargin = rightMargin = 0;
+      }
+      if (params.bottomMargin != bottomMargin || params.leftMargin != leftMargin || params.rightMargin != rightMargin || params.height != barHeight) {
+        params.bottomMargin = bottomMargin;
+        params.leftMargin = leftMargin;
+        params.rightMargin = rightMargin;
+        params.height = barHeight;
+        bottomBar.setLayoutParams(params);
+      }
+      bottomBarSpace.setLayoutHeight(isDockStyle() ? 0 : height, true);
+      if (bottomBarShadow != null) {
+        bottomBarShadow.setVisibility(isDockStyle() ? View.GONE : View.VISIBLE);
+      }
     }
   }
+
+  /** Bottom margin of the folder filter menu shown above the folders at the bottom. */
+  private int getFolderMenuBottomMargin () {
+    if (isDockStyle()) {
+      // Dock style: above the chips row.
+      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockSmallFabCenterY() + getHeaderHeight() / 2;
+    }
+    return getHeaderHeight();
+  }
+
+  /** Phone, navigation style "dock" (tablet always uses its own layout). */
+  private boolean isDockStyle () {
+    return !isTabletNavigationBar() && Settings.instance().getNavigationStyle() == Settings.NAVIGATION_STYLE_DOCK;
+  }
+
+  private final Settings.NavigationStyleListener navigationStyleListener = newStyle -> {
+    if (isDestroyed()) {
+      return;
+    }
+    checkNavigationBarLayout();
+    checkTabs();
+    checkMenu();
+    checkMargins();
+    updateBottomBarMargins();
+    invalidateBottomBarOffset();
+    updateHeaderDockButtons();
+  };
 
   @Override
   protected void onCreateView (Context context, FrameLayoutFix contentView, ViewPager pager) {
@@ -305,6 +355,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     tdlib.listeners().subscribeToChatFoldersUpdates(this);
     tdlib.context().global().addCountersListener(this);
     Settings.instance().addChatFolderSettingsListener(this);
+    Settings.instance().addNavigationStyleListener(navigationStyleListener);
     if (Settings.instance().chatFoldersEnabled()) {
       if (this.chatFolderInfos != tdlib.chatFolders()) {
         updatePagerSections(true);
@@ -692,7 +743,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         }
       };
       int gravity = (top ? Gravity.TOP : Gravity.BOTTOM) | Gravity.LEFT;
-      int marginBottom = top ? 0 : getHeaderHeight();
+      int marginBottom = top ? 0 : getFolderMenuBottomMargin();
       menu.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, gravity, 0, 0, 0, marginBottom));
 
       menu.setPadding(menu.getPaddingLeft(), menu.getPaddingTop() + Screen.dp(14f), menu.getPaddingRight(), menu.getPaddingBottom() + Screen.dp(13f));
@@ -873,7 +924,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private boolean updateHeaderDockButtonsImpl () {
     boolean changed = false;
     boolean isTablet = isTabletNavigationBar();
-    float factor = navigationBar != null && !isTablet ? navigationBar.getCollapseFactor() : 0f;
+    // Dock style: the sections never leave the dock, so they never come up into the app bar.
+    float factor = navigationBar != null && !isTablet && !navigationBar.isDock() ? navigationBar.getCollapseFactor() : 0f;
     // Tablet with chat folders: neither the dock nor the title has search.
     // Tablet: search is always the search bar in the app bar.
     float searchFactor = isTablet ? 0f : factor;
@@ -1306,6 +1358,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       // Tablet: the list scrolls under the floating bar, the last chat can be scrolled above it.
       return MainNavigationBar.getBarTotalHeight() + Screen.dp(8f);
     }
+    if (navigationBar.isDock()) {
+      // Dock style: toolbar and FABs at the bottom, the folder chips are in the row of the small FAB above them.
+      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockAreaHeight() + Screen.dp(8f);
+    }
     // Phone: floating dock at the bottom-end corner, above the folders bar if there is one.
     int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
     return foldersBar + MainNavigationBar.getRailMargin() + navigationBar.getRailTotalHeight() + Screen.dp(8f);
@@ -1321,7 +1377,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return;
     }
     int margin = Screen.dp(SnackBar.MARGIN);
-    if (navigationBar != null && !navigationBar.isBar()) {
+    if (navigationBar != null && navigationBar.isDock()) {
+      // Above the whole dock area (folder chips included).
+      updateSnackBar.setHorizontalMargins(margin, margin);
+      updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + getChatListNavigationInset());
+    } else if (navigationBar != null && !navigationBar.isBar()) {
       int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
       int dockSide = MainNavigationBar.getRailMargin() + MainNavigationBar.getRailWidth() + Screen.dp(8f);
       updateSnackBar.setHorizontalMargins(margin, dockSide);
@@ -1368,7 +1428,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (folderRail != null) {
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
-    navigationBar.setLayoutMode(isBar, extraBottomInsetWithoutIme, displayTabsAtBottom() ? getHeaderHeight() : 0);
+    navigationBar.setLayoutMode(isBar, isDockStyle(), extraBottomInsetWithoutIme, displayTabsAtBottom() && !isDockStyle() ? getHeaderHeight() : 0);
     if (navigationScrim != null) {
       // Covers the bar, its margins and the fade above it.
       int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + extraBottomInsetWithoutIme;
@@ -1550,7 +1610,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     int paddingLeft, paddingRight;
     // The tabs are never inside the app bar, so there are no app bar buttons to leave room for.
     paddingLeft = paddingRight = 0;
-    if (displayTabsAtBottom()) {
+    if (displayTabsAtBottom() && isDockStyle()) {
+      // First chip starts at the same distance from the screen edge as the dock.
+      int edge = MainNavigationBar.getRailMargin() - Screen.dp(ViewPagerTopView.CHIP_INSET);
+      recyclerView.setClipToPadding(false);
+      recyclerView.setPadding(Lang.rtl() ? 0 : edge, 0, Lang.rtl() ? edge : 0, 0);
+    } else if (displayTabsAtBottom()) {
       recyclerView.setPadding(0, 0, 0, 0);
     } else {
       recyclerView.setClipToPadding(false);
@@ -1610,6 +1675,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     context().appUpdater().removeListener(this);
     tdlib.context().global().removeCountersListener(this);
     Settings.instance().removeChatFolderSettingsListener(this);
+    Settings.instance().removeNavigationStyleListener(navigationStyleListener);
     tdlib.listeners().unsubscribeFromChatFoldersUpdates(this);
     if (chatListUnreadCountListener != null) {
       tdlib.listeners().removeTotalChatCounterListener(chatListUnreadCountListener);
@@ -3183,6 +3249,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private @Nullable ViewGroup bottomBar;
+  private @Nullable View bottomBarShadow;
   private @Nullable FillingSpace bottomBarSpace;
   private @Px float bottomBarOffsetByPlayer;
   private @Px float bottomBarOffsetBySnackBar;
@@ -3203,7 +3270,22 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void invalidateBottomBarOffset () {
+    if (bottomBar != null && isDockStyle()) {
+      // Dock style: the folder chips fade and sink a little when hidden on scroll, the dock stays.
+      float visible = isBottomBarVisible.getFloatValue();
+      float y = bottomBarOffsetByPlayer + bottomBarOffsetBySnackBar;
+      bottomBar.setTranslationY(y + Screen.dp(16f) * (1f - visible));
+      bottomBar.setAlpha(visible);
+      bottomBar.setVisibility(visible > 0f ? View.VISIBLE : View.INVISIBLE);
+      bottomBarSpace.setTranslationY(0);
+      if (navigationBar != null) {
+        navigationBar.setTranslationY(Math.min(y, 0));
+      }
+      return;
+    }
     if (bottomBar != null) {
+      bottomBar.setAlpha(1f);
+      bottomBar.setVisibility(View.VISIBLE);
       float bottomBarOffsetByScroll = (getHeaderHeight() + Screen.dp(2f) + Views.getBottomMargin(bottomBar)) * (1f - isBottomBarVisible.getFloatValue());
       float y = bottomBarOffsetByPlayer + bottomBarOffsetByScroll + bottomBarOffsetBySnackBar;
       bottomBar.setTranslationY(y);
@@ -3282,9 +3364,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     headerCell.getTopView().setUseDarkBackground(displayTabsAtBottom);
     headerCell.getTopView().setDrawSelectionAtTop(displayTabsAtBottom);
     headerCell.getTopView().setSlideOffDirection(displayTabsAtBottom ? ViewPagerTopView.SLIDE_OFF_DIRECTION_TOP : ViewPagerTopView.SLIDE_OFF_DIRECTION_BOTTOM);
-    headerCell.getTopView().setItemPadding(Screen.dp(hasFolders ? ViewPagerTopView.COMPACT_ITEM_PADDING : ViewPagerTopView.DEFAULT_ITEM_PADDING));
+    // Dock style: the folders are separate floating chips above the dock.
+    boolean chipStyle = displayTabsAtBottom && isDockStyle();
+    headerCell.getTopView().setChipStyle(chipStyle);
+    headerCell.getTopView().setItemPadding(Screen.dp(chipStyle ? ViewPagerTopView.CHIP_ITEM_PADDING : hasFolders ? ViewPagerTopView.COMPACT_ITEM_PADDING : ViewPagerTopView.DEFAULT_ITEM_PADDING));
     headerCell.getTopView().setItemSpacing(Screen.dp(hasFolders ? ViewPagerTopView.COMPACT_ITEM_SPACING : ViewPagerTopView.DEFAULT_ITEM_SPACING));
-    headerCellView.setFadingEdgeLength(displayTabsAtBottom ? 0f : 16f);
+    headerCellView.setFadingEdgeLength(displayTabsAtBottom && !chipStyle ? 0f : 16f);
     headerCellView.setM3Divider(placement == FOLDERS_BELOW_SEARCH);
 
     // Where the tabs go: the bottom bar (phone), the strip below the app bar (tablet) or nowhere (rail / no folders).
@@ -3305,7 +3390,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         target.addView(headerCellView);
       }
     }
-    if (displayTabsAtBottom) {
+    if (chipStyle) {
+      // Chips float over the list: no bar background, the chips draw themselves.
+      Views.setTopMargin(headerCellView, 0);
+      ViewUtils.setBackground(headerCellView, null);
+      addThemeInvalidateListener(headerCellView);
+    } else if (displayTabsAtBottom) {
       Views.setTopMargin(headerCellView, Screen.dp(3f) - Screen.dp(1f));
       // Folder tabs at the bottom = navigation area: surfaceContainer (M3 roles, every theme).
       ViewUtils.setBackground(headerCellView, M3.roleDrawable(M3.SURFACE_CONTAINER));
@@ -3331,6 +3421,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       pagerWrap.removeView(bottomBarSpace);
       bottomBarSpace.performDestroy();
       bottomBar = null;
+      bottomBarShadow = null;
       bottomBarSpace = null;
       if (Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL) {
         isBottomBarVisible.setValue(false, false);
@@ -3343,6 +3434,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       mainWrap.removeView(topTabsBar);
       topTabsBar = null;
     }
+    updateBottomBarMargins();
+    invalidateBottomBarOffset();
     updateFolderRail();
   }
 
@@ -3356,6 +3449,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       int headerHeight = getHeaderHeight();
       bottomBar = new FrameLayoutFix(context);
       bottomBar.addView(shadowView);
+      bottomBarShadow = shadowView;
       pagerWrap.addView(bottomBar, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, headerHeight + shadowHeight - Screen.dp(1f), Gravity.BOTTOM));
 
       bottomBarSpace = new FillingSpace(context);
@@ -3378,7 +3472,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       FrameLayoutFix.LayoutParams layoutParams = (FrameLayoutFix.LayoutParams) menu.getLayoutParams();
       boolean displayTabsAtBottom = displayTabsAtBottom();
       int gravity = (displayTabsAtBottom ? Gravity.BOTTOM : Gravity.TOP) | Gravity.LEFT;
-      int bottomMargin = displayTabsAtBottom ? getHeaderHeight() : 0;
+      int bottomMargin = displayTabsAtBottom ? getFolderMenuBottomMargin() : 0;
       // Tablet: the folder menu opens below the tab strip under the app bar.
       int topMargin = displayTabsBelowSearch() ? getTopTabsBarHeight() : 0;
       if (layoutParams.topMargin != topMargin) {

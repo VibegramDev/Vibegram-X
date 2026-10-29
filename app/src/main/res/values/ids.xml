@@ -757,6 +757,9 @@
   <item type="id" name="btn_chatListStyleOptFormatting" />-->
   <item type="id" name="btn_chatListStyle" />
   <item type="id" name="btn_compactChats" />
+  <item type="id" name="btn_navigationStyle" />
+  <item type="id" name="btn_navigationStyleRail" />
+  <item type="id" name="btn_navigationStyleDock" />
   <item type="id" name="btn_chatListStyle1" />
   <item type="id" name="btn_chatListStyle2" />
   <item type="id" name="btn_chatListStyle3" />

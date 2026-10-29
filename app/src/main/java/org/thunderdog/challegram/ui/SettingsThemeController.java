@@ -216,6 +216,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
           v.getToggler().setRadioEnabled(Settings.instance().useSystemFonts(), isUpdate);
         } else if (itemId == R.id.btn_secret_batmanTransitions) {
           v.getToggler().setRadioEnabled(Settings.instance().getNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS), isUpdate);
+        } else if (itemId == R.id.btn_navigationStyle) {
+          v.setData(Settings.instance().getNavigationStyle() == Settings.NAVIGATION_STYLE_DOCK ? R.string.NavigationStyleDock : R.string.NavigationStyleRail);
         } else if (itemId == R.id.btn_compactChats) {
           v.getToggler().setRadioEnabled(Settings.instance().useCompactChats(), isUpdate);
         } else if (itemId == R.id.btn_chatListStyle) {
@@ -398,6 +400,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_chatListStyle, 0, R.string.ChatListStyle));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_compactChats, 0, R.string.CompactChats));
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_navigationStyle, 0, R.string.NavigationStyle));
 
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_chatBackground, 0, R.string.Wallpaper));
@@ -1196,6 +1200,16 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       Settings.instance().setNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS, adapter.toggleView(v));
     } else if (viewId == R.id.btn_chatListStyle) {
       showChatListOptions();
+    } else if (viewId == R.id.btn_navigationStyle) {
+      int style = Settings.instance().getNavigationStyle();
+      showSettings(new SettingsWrapBuilder(R.id.btn_navigationStyle).setRawItems(new ListItem[] {
+        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleRail, 0, R.string.NavigationStyleRail, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_RAIL),
+        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleDock, 0, R.string.NavigationStyleDock, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_DOCK),
+      }).setIntDelegate((id, result) -> {
+        int resultId = result.get(R.id.btn_navigationStyle);
+        Settings.instance().setNavigationStyle(resultId == R.id.btn_navigationStyleDock ? Settings.NAVIGATION_STYLE_DOCK : Settings.NAVIGATION_STYLE_RAIL);
+        adapter.updateValuedSettingById(R.id.btn_navigationStyle);
+      }).setAllowResize(false));
     } else if (viewId == R.id.btn_compactChats) {
       Settings.instance().setUseCompactChats(adapter.toggleView(v));
     } else if (viewId == R.id.btn_instantViewMode) {
