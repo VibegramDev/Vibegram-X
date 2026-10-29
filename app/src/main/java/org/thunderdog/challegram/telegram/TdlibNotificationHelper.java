@@ -175,7 +175,9 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
    * TDLib applies only chat-level settings, so such topics would otherwise notify like the rest of the forum.
    */
   private TdApi.Notification[] filterMutedForumTopicNotifications (long chatId, @Nullable TdApi.Notification[] notifications) {
-    if (notifications == null || notifications.length == 0 || !tdlib.isForum(chatId)) {
+    // Not gated on Tdlib.isForum: the supergroup may be missing from the cache when woken up by a push,
+    // the topic of the message is enough.
+    if (notifications == null || notifications.length == 0 || !ChatId.isSupergroup(chatId)) {
       return notifications;
     }
     List<TdApi.Notification> result = null;
