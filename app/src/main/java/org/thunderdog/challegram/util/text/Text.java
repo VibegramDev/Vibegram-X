@@ -3574,6 +3574,22 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     return end;
   }
 
+  /** True, if the point is over the text itself (not links: they keep their own long press). */
+  public boolean isSelectableTextAt (int touchX, int touchY) {
+    final int slop = Screen.dp(6f);
+    for (TextPart part : parts) {
+      if (!isSelectablePart(part)) {
+        continue;
+      }
+      int px = part.makeX(lastStartX, lastEndX, lastEndXBottomPadding);
+      int py = lastStartY + part.getY();
+      if (touchX >= px - slop && touchX <= px + part.getWidth() + slop && touchY >= py - slop && touchY <= py + getLineHeight(part.getLineIndex()) + slop) {
+        return part.getClickableEntity() == null;
+      }
+    }
+    return false;
+  }
+
   /** Char offset at the given point of the last drawn position of the text (the same coordinates as touches). */
   public int getOffsetAt (int touchX, int touchY) {
     final int startX = lastStartX, endX = lastEndX, endXBottomPadding = lastEndXBottomPadding;

@@ -973,11 +973,12 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       float titleTextLeft = baseTextLeft, subtitleTextLeft = baseTextLeft;
       if (centered) {
         if (trimmedTitle != null) {
+          // additionalTextEndPadding already includes the emoji status and the scam/fake mark.
           float titleWidth = trimmedTitle.getWidth() + additionalTextEndPadding
             + (showLock ? Screen.dp(16f) : 0)
             + (showVerify ? Screen.dp(24f) : 0)
             + (showMute ? Screen.dp(24f) : 0)
-            + (emojiStatusHelper.needDrawEmojiStatus() ? emojiStatusHelper.getWidth() + Screen.dp(6f) : 0);
+            + (emojiStatusHelper.needDrawEmojiStatus() ? Screen.dp(6f) : 0);
           titleTextLeft = getCenteredLeft(titleWidth);
         }
         if (trimmedSubtitle != null) {

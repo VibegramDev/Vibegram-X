@@ -741,6 +741,40 @@ public class TGMessageText extends TGMessage {
   }
 
   @Override
+  public boolean isSelectableTextAt (float x, float y) {
+    TextWrapper wrapper = effectiveWrapper;
+    Text current = wrapper != null ? wrapper.getCurrent() : null;
+    return current != null && !current.isEmpty() && current.isSelectableTextAt((int) x, (int) y);
+  }
+
+  @Override
+  public boolean startTextSelectionAt (MessageView view, float x, float y) {
+    TextWrapper wrapper = effectiveWrapper;
+    Text current = wrapper != null ? wrapper.getCurrent() : null;
+    if (current == null || current.isEmpty()) {
+      return false;
+    }
+    clearTextSelection();
+    selectionText = current;
+    current.setSelection(0, 0, getSelectionColor());
+    selectWordAt(view, x, y);
+    if (!current.hasSelection()) {
+      selectionText = null;
+      return false;
+    }
+    // The same touch continues as a drag of the end handle, as in the official app.
+    selectionTouchX = x;
+    selectionTouchY = y;
+    selectionTouchMoved = true;
+    draggingHandle = HANDLE_END;
+    handleTouchOffsetY = 0;
+    if (view.getParent() != null) {
+      view.getParent().requestDisallowInterceptTouchEvent(true);
+    }
+    return true;
+  }
+
+  @Override
   public boolean hasTextSelection () {
     return selectionText != null && selectionText.hasSelection();
   }

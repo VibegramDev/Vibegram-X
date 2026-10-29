@@ -3684,7 +3684,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
     if (getChatId() != 0) {
       if (isSelfChat()) {
-        return R.id.menu_search;
+        // Centered titles: the avatar takes the end button, Search is in the "more" menu.
+        return Settings.instance().needCenterTitles() && !Lang.rtl() ? R.id.menu_more : R.id.menu_search;
       }
       if (isSecretChat()) {
         return R.id.menu_secretChat;
@@ -3750,7 +3751,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_more) {
-      header.addMoreButton(menu, this);
+      HeaderButton moreButton = header.addMoreButton(menu, this);
+      if (previewMode == PREVIEW_MODE_NONE && getChatId() != 0) {
+        checkAvatarAsMoreButton(moreButton);
+      }
     } else if (id == R.id.menu_gallery) {
       header.addButton(menu, R.id.menu_btn_gallery, R.drawable.baseline_image_24, getHeaderIconColorId(), this, Screen.dp(52f));
     } else if (id == R.id.menu_share) {
@@ -10136,6 +10140,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return textSelectionMessage != null;
   }
 
+  /** Long press on the text of a message: word selection that follows the finger (toolbar after release). */
+  public boolean startTextSelectionAt (TGMessage msg, MessageView view, float x, float y) {
+    if (!msg.canBeSaved() || isEditingMessage() || inSelectMode() || inPreviewMode || !msg.isSelectableTextAt(x, y)) {
+      return false;
+    }
+    finishTextSelection();
+    if (!msg.startTextSelectionAt(view, x, y)) {
+      return false;
+    }
+    textSelectionMessage = msg;
+    return true;
+  }
+
   public void finishTextSelection () {
     TGMessage msg = textSelectionMessage;
     textSelectionMessage = null;
@@ -10623,7 +10640,24 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   public void sendMusic (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, TdApi.MessageSendOptions initialSendOptions) {
-    sendMusic(view, musicFiles, needGroupMedia, allowReply, null, initialSendOptions);
+    sendMusic(view, musicFiles, needGroupMedia, allowReply, takeComposerTextAsCaption(true), initialSendOptions);
+  }
+
+  /**
+   * Text typed in the composer becomes the caption of the media sent from the attach menu, as in the official app
+   * (instead of staying in the composer and being sent as a separate message).
+   */
+  @Nullable
+  private TdApi.FormattedText takeComposerTextAsCaption (boolean applyMarkdown) {
+    if (inputView == null || isEditingMessage() || inputView.isEmpty() || previewMode != PREVIEW_MODE_NONE) {
+      return null;
+    }
+    TdApi.FormattedText text = inputView.getOutputText(applyMarkdown);
+    if (Td.isEmpty(text)) {
+      return null;
+    }
+    inputView.setInput("", false, true);
+    return text;
   }
 
   public void sendMusic (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
@@ -10850,7 +10884,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, TdApi.MessageSendOptions initialSendOptions) {
-    sendFiles(view, paths, needGroupMedia, allowReply, null, initialSendOptions);
+    sendFiles(view, paths, needGroupMedia, allowReply, paths != null && !paths.isEmpty() ? takeComposerTextAsCaption(true) : null, initialSendOptions);
   }
 
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
@@ -10960,6 +10994,20 @@ public class MessagesController extends ViewController<MessagesController.Argume
   public boolean sendPhotosAndVideosCompressed (final ImageGalleryFile[] files, final boolean needGroupMedia, final TdApi.MessageSendOptions modifiedSendOptions, boolean disableMarkdown, boolean asFiles, boolean showCaptionAboveMedia, boolean hasSpoiler) {
     if (files == null || files.length == 0) {
       return false;
+    }
+    boolean hasCaption = false;
+    for (ImageGalleryFile file : files) {
+      if (!Td.isEmpty(file.getCaption(false, false))) {
+        hasCaption = true;
+        break;
+      }
+    }
+    if (!hasCaption) {
+      // Markdown of the composer text is parsed with the caption (ImageGalleryFile#getCaption).
+      TdApi.FormattedText composerText = takeComposerTextAsCaption(false);
+      if (composerText != null) {
+        files[needGroupMedia ? files.length - 1 : 0].setCaption(composerText);
+      }
     }
 
     // TODO check RightId.SEND_PHOTOS / RightId.SEND_VIDEOS

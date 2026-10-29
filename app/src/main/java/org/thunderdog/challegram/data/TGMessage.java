@@ -3012,6 +3012,15 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     return false;
   }
 
+  /** Long press on the text: selects the word under the finger, further moves of the same touch extend it. */
+  public boolean startTextSelectionAt (MessageView view, float x, float y) {
+    return false;
+  }
+
+  public boolean isSelectableTextAt (float x, float y) {
+    return false;
+  }
+
   public void clearTextSelection () { }
 
   public void selectAllText () { }
