@@ -138,10 +138,47 @@ public class EditText extends android.widget.EditText {
 
   @Override
   public InputConnection onCreateInputConnection (EditorInfo outAttrs) {
-    if (backspaceListener == null) {
-      return super.onCreateInputConnection(outAttrs);
-    } else {
-      return new BackspaceConnectionWrapper(this, super.onCreateInputConnection(outAttrs), true);
+    InputConnection connection = super.onCreateInputConnection(outAttrs);
+    if (connection == null) {
+      return null;
+    }
+    if (backspaceListener != null) {
+      connection = new BackspaceConnectionWrapper(this, connection, true);
+    }
+    return new RichPasteConnectionWrapper(this, connection, true);
+  }
+
+  /**
+   * Keyboards (e.g. the clipboard strip of Gboard) paste the plain text of the clipboard through
+   * {@link InputConnection#commitText}, losing formatting and custom emoji. When the committed text is exactly
+   * the plain text of a formatted clip, paste the formatted version instead, as the "Paste" context menu does.
+   */
+  private static class RichPasteConnectionWrapper extends InputConnectionWrapper {
+    private final EditText editText;
+
+    public RichPasteConnectionWrapper (EditText editText, InputConnection target, boolean mutable) {
+      super(target, mutable);
+      this.editText = editText;
+    }
+
+    @Override
+    public boolean commitText (CharSequence text, int newCursorPosition) {
+      if (text != null && text.length() > 1) {
+        CharSequence richText = null;
+        try {
+          richText = U.getRichPasteText(editText.getContext(), text);
+        } catch (Throwable t) {
+          Log.e("Cannot read the clipboard", t);
+        }
+        if (richText != null) {
+          beginBatchEdit();
+          finishComposingText();
+          editText.paste(richText, false);
+          endBatchEdit();
+          return true;
+        }
+      }
+      return super.commitText(text, newCursorPosition);
     }
   }
 
