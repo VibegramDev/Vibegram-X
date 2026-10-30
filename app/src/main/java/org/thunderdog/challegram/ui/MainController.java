@@ -241,12 +241,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) bottomBar.getLayoutParams();
       int bottomMargin, leftMargin, rightMargin, barHeight;
       if (isDockStyle()) {
-        // Folder chips: in the row of the search FAB above the toolbar, to the start of the FAB, centered with it.
+        // Folder chips: a row above the floating bar (the same bar as in the tablet layout).
         barHeight = getHeaderHeight();
-        bottomMargin = height + MainNavigationBar.getRailMargin() + MainNavigationBar.getDockFabRowCenterY() - barHeight / 2;
-        int fabColumn = MainNavigationBar.getRailMargin() + MainNavigationBar.getDockFabColumnWidth();
-        leftMargin = Lang.rtl() ? fabColumn : 0;
-        rightMargin = Lang.rtl() ? 0 : fabColumn;
+        bottomMargin = height + getDockChipsBottom();
+        leftMargin = rightMargin = 0;
       } else {
         barHeight = getHeaderHeight() + Screen.dp(3f) - Screen.dp(1f);
         bottomMargin = height;
@@ -270,32 +268,48 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (dockScrim == null) {
       return;
     }
-    boolean visible = navigationBar != null && navigationBar.isDock();
+    // Dock style: the list washes out towards the bottom of the screen behind the floating bar and the folder chips
+    // (the same fade as the former dock: 70% surface at the top of the bar, 92% at the bottom of the screen).
+    boolean visible = navigationBar != null && isDockStyle();
     dockScrim.setVisibility(visible ? View.VISIBLE : View.GONE);
     if (visible) {
-      int dockBottom = extraBottomInsetWithoutIme + MainNavigationBar.getRailMargin();
-      // From a little above the row of the search FAB and the folder chips to the bottom of the screen.
-      int height = dockBottom + MainNavigationBar.getDockContentHeight() + Screen.dp(16f);
+      int barTop = extraBottomInsetWithoutIme + MainNavigationBar.getBarTotalHeight();
+      // From a little above the folder chips (the same distance without folders) to the bottom of the screen.
+      int height = extraBottomInsetWithoutIme + getDockChipsBottom() + getHeaderHeight() + Screen.dp(16f);
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) dockScrim.getLayoutParams();
       if (params == null || params.height != height || params.gravity != Gravity.BOTTOM) {
         dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.BOTTOM));
       }
-      dockScrim.setDockTopOffset(dockBottom + MainNavigationBar.getDockHeight());
+      dockScrim.setDockTopOffset(barTop);
     }
+  }
+
+  /** Dock style: distance from the bottom (above the system inset) to the bottom of the folder chips row. */
+  private static int getDockChipsBottom () {
+    return MainNavigationBar.getBarTotalHeight() + Screen.dp(8f);
   }
 
   /** Bottom margin of the folder filter menu shown above the folders at the bottom. */
   private int getFolderMenuBottomMargin () {
     if (isDockStyle()) {
       // Dock style: above the chips row.
-      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockFabRowCenterY() + getHeaderHeight() / 2;
+      return getDockChipsBottom() + getHeaderHeight();
     }
     return getHeaderHeight();
   }
 
-  /** Phone, navigation style "dock" (tablet always uses its own layout). */
+  /**
+   * Phone, navigation style "dock": the floating bar of the tablet layout (pill with its soft shadow and the fade
+   * above it) at the bottom of the screen, folders as chips above it, search in the app bar.
+   * Tablet always uses its own layout.
+   */
   private boolean isDockStyle () {
     return !isTabletNavigationBar() && Settings.instance().getNavigationStyle() == Settings.NAVIGATION_STYLE_DOCK;
+  }
+
+  /** Phone, navigation style "bar": M3 navigation bar at the bottom, folders as tabs below the app bar. */
+  private boolean isNavBarStyle () {
+    return !isTabletNavigationBar() && Settings.instance().getNavigationStyle() == Settings.NAVIGATION_STYLE_BAR;
   }
 
   private final Settings.NavigationStyleListener navigationStyleListener = newStyle -> {
@@ -464,10 +478,16 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         }
       });
       if (Settings.instance().chatFoldersEnabled()) {
+        // M3 badge: same colors on selected and unselected tabs (a faded error badge was 2.5:1).
         headerCell.getTopView().setCounterAlphaProvider(new ViewPagerTopView.CounterAlphaProvider() {
           @Override
           public float getTextAlpha (Counter counter, float alphaFactor) {
-            return MathUtils.fromTo(1f, .5f + .5f * alphaFactor, counter.getMuteFactor());
+            return 1f;
+          }
+
+          @Override
+          public float getBackgroundAlpha (Counter counter, float alphaFactor) {
+            return 1f;
           }
         });
       }
@@ -652,7 +672,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       if (filter == FILTER_NONE && !menuNeedArchive) {
         item = getDefaultMainItem();
       } else {
-        CharSequence sectionName = getMenuSectionName(pagerItemId, pagerItemPosition, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ false);
+        CharSequence sectionName = getMenuSectionName(pagerItemId, pagerItemPosition, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY);
         item = new ViewPagerTopView.Item(sectionName);
       }
     }
@@ -952,10 +972,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     boolean changed = false;
     boolean isTablet = isTabletNavigationBar();
     // Dock style: the sections never leave the dock, so they never come up into the app bar.
-    float factor = navigationBar != null && !isTablet && !navigationBar.isDock() ? navigationBar.getCollapseFactor() : 0f;
+    boolean isNavBar = navigationBar != null && !isTablet && navigationBar.isNavBar();
+    float factor = navigationBar != null && !isTablet && !navigationBar.isDock() && !isNavBar ? navigationBar.getCollapseFactor() : 0f;
     // Tablet with chat folders: neither the dock nor the title has search.
     // Tablet: search is always the search bar in the app bar.
-    float searchFactor = isTablet ? 0f : factor;
+    // Navigation bar: it has no search item, search is always the search button of the app bar.
+    float searchFactor = isTablet ? 0f : isNavBar || isDockStyle() ? 1f : factor;
     for (LinearLayout menu : mainMenus) {
       for (int i = 0; i < menu.getChildCount(); i++) {
         View button = menu.getChildAt(i);
@@ -1073,6 +1095,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       }
       menu.addItem(R.id.btn_addAccount, Lang.getString(R.string.AddAccount), R.drawable.baseline_person_add_24, null, onClick);
       menu.setAnchor((int) touchPoint[0], (int) touchPoint[1], (int) touchPoint[0], (int) touchPoint[1], false);
+      menu.setAnchorPane(getValue());
       popupLayout.showMoreView(menu);
     } else {
       OptionsLayout sheet = new OptionsLayout(context, this, null);
@@ -1144,13 +1167,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   @Override
   protected SearchEditTextDelegate genSearchHeader (HeaderView headerView) {
     // Wrapper drawn behind the back and clear buttons of the app bar: draws the focused contained search bar
-    // (phone and tablet; same rounded container and height as the unfocused tablet bar, 8dp horizontal padding
-    // of the expanded full-screen search bar).
+    // (phone and tablet; same rounded container and height as the unfocused tablet bar, focused margins 12dp).
     HeaderEditText editText = headerView.genSearchHeader(useLightSearchHeader(), this);
     FrameLayoutFix wrap = new FrameLayoutFix(context) {
       @Override
       protected void onDraw (Canvas c) {
-        int margin = Screen.dp(8f);
+        int margin = Screen.dp(M3SearchBarView.FOCUSED_MARGIN);
         int barHeight = Screen.dp(M3SearchBarView.BAR_HEIGHT);
         int top = (getMeasuredHeight() - barHeight) / 2;
         RectF rect = Paints.getRectF();
@@ -1382,8 +1404,16 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return 0;
     }
     if (navigationBar.isBar()) {
-      // Tablet: the list scrolls under the floating bar, the last chat can be scrolled above it.
+      // Tablet and phone dock style: the list scrolls under the floating bar, the last chat can be scrolled above it
+      // (phone: and above the folder chips).
+      if (isDockStyle() && displayTabsAtBottom()) {
+        return getDockChipsBottom() + getHeaderHeight() + Screen.dp(8f);
+      }
       return MainNavigationBar.getBarTotalHeight() + Screen.dp(8f);
+    }
+    if (navigationBar.isNavBar()) {
+      // Navigation bar: the list ends at its top edge (the system inset is applied separately).
+      return MainNavigationBar.getNavBarHeight();
     }
     if (navigationBar.isDock()) {
       // Dock style: toolbar at the bottom, the folder chips and the search FAB in the row above it.
@@ -1404,7 +1434,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return;
     }
     int margin = Screen.dp(SnackBar.MARGIN);
-    if (navigationBar != null && navigationBar.isDock()) {
+    if (navigationBar != null && navigationBar.isNavBar()) {
+      // M3: the snackbar appears above the navigation bar.
+      updateSnackBar.setHorizontalMargins(margin, margin);
+      updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + MainNavigationBar.getNavBarHeight() + margin);
+    } else if (navigationBar != null && navigationBar.isDock()) {
       // Above the whole dock area (folder chips included).
       updateSnackBar.setHorizontalMargins(margin, margin);
       updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + getChatListNavigationInset());
@@ -1443,24 +1477,32 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return navigationController != null && navigationController.isTabletSplit() && navigationController.isTabletMaster(this);
   }
 
+  private boolean appliedTabletNavigation;
+
   /** Called when the chat list is moved into or out of the tablet split layout. */
   public void checkNavigationBarLayout () {
     if (navigationBar == null) {
       return;
     }
-    boolean isBar = isTabletNavigationBar();
-    boolean modeChanged = navigationBar.isBar() != isBar;
+    boolean isTablet = isTabletNavigationBar();
+    // Phone dock style uses the floating bar of the tablet layout.
+    boolean isBar = isTablet || isDockStyle();
+    boolean modeChanged = appliedTabletNavigation != isTablet;
+    appliedTabletNavigation = isTablet;
     // Folders move between the bottom bar (phone) and the rail / strip below the app bar (tablet).
     checkFoldersPlacement();
     if (folderRail != null) {
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
-    navigationBar.setLayoutMode(isBar, isDockStyle(), extraBottomInsetWithoutIme, displayTabsAtBottom() && !isDockStyle() ? getHeaderHeight() : 0);
+    navigationBar.setCompactBar(!isTablet && isDockStyle());
+    navigationBar.setLayoutMode(isBar, false, isNavBarStyle(), extraBottomInsetWithoutIme, displayTabsAtBottom() && !isDockStyle() ? getHeaderHeight() : 0);
     if (navigationScrim != null) {
       // Covers the bar, its margins and the fade above it.
       int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + extraBottomInsetWithoutIme;
       navigationScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, scrimHeight, Gravity.BOTTOM));
       navigationScrim.setVisibility(isBar ? View.VISIBLE : View.GONE);
+      // Phone dock style: only the shadow of the bar, the fade is drawn by the dock scrim.
+      navigationScrim.setShadowOnly(!isTablet && isDockStyle());
     }
     updateDockScrim();
     updateDockCollapsed(false);
@@ -1498,12 +1540,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   /** Tablet: the floating navigation bar at the bottom of the left pane. */
   public @Nullable View getTabletNavigationBar () {
-    return navigationBar != null && navigationBar.isBar() ? navigationBar : null;
+    return navigationBar != null && navigationBar.isBar() && isTabletNavigationBar() ? navigationBar : null;
   }
 
   /** Bottom space a section list needs to scroll its last item above the floating bar of the left pane. */
   public int getTabletSectionNavigationInset () {
-    return navigationBar != null && navigationBar.isBar() ? getChatListNavigationInset() : 0;
+    return navigationBar != null && navigationBar.isBar() && isTabletNavigationBar() ? getChatListNavigationInset() : 0;
   }
 
   /** Highlights the section opened in the right pane of the tablet layout. */
@@ -1640,7 +1682,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     paddingLeft = paddingRight = 0;
     if (displayTabsAtBottom() && isDockStyle()) {
       // First chip starts at the same distance from the screen edge as the dock.
-      int edge = MainNavigationBar.getRailMargin() - Screen.dp(ViewPagerTopView.CHIP_INSET);
+      int edge = MainNavigationBar.getBarMargin() - Screen.dp(ViewPagerTopView.CHIP_INSET);
       recyclerView.setClipToPadding(false);
       recyclerView.setPadding(Lang.rtl() ? 0 : edge, 0, Lang.rtl() ? edge : 0, 0);
     } else if (displayTabsAtBottom()) {
@@ -2165,7 +2207,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return chats;
   }
 
-  private CharSequence getMenuSectionName (long pagerItemId, int pagerItemPosition, boolean hasFolders, @ChatFolderStyle int chatFolderStyle, boolean upperCase) {
+  private CharSequence getMenuSectionName (long pagerItemId, int pagerItemPosition, boolean hasFolders, @ChatFolderStyle int chatFolderStyle) {
     int selectedFilter = getSelectedFilter(pagerItemId);
     boolean isMain = pagerItemId == MAIN_PAGER_ITEM_ID;
     boolean isArchive = pagerItemId == ARCHIVE_PAGER_ITEM_ID;
@@ -2186,9 +2228,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       } else {
         source = Lang.getString(getMainSectionNameRes(FILTER_NONE, /* hasFolders */ true));
       }
-      if (upperCase) {
-        source = Lang.uppercase(source);
-      }
       if (useGlobalFilter() && selectedFilter == globalFilter || selectedFilter == FILTER_NONE) {
         return source;
       }
@@ -2200,7 +2239,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     } else {
       sectionName = Lang.getString(getMainSectionNameRes(selectedFilter, hasFolders));
     }
-    return upperCase ? Lang.uppercase(sectionName) : sectionName;
+    return sectionName;
   }
 
   @StringRes
@@ -2391,7 +2430,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       throw new UnsupportedOperationException();
     }
     return new CharSequence[] {
-      getMenuSectionName(MAIN_PAGER_ITEM_ID, /* pagerItemPosition */ 0, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY, /* upperCase */ false)
+      getMenuSectionName(MAIN_PAGER_ITEM_ID, /* pagerItemPosition */ 0, /* hasFolders */ false, ChatFolderStyle.LABEL_ONLY)
     };
   }
 
@@ -2401,7 +2440,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private ViewPagerTopView.Item getDefaultMainItem () {
     if (defaultMainItem == null) {
-      CharSequence mainItem = getMenuSectionName(MAIN_PAGER_ITEM_ID, 0, false, ChatFolderStyle.LABEL_ONLY,  /* upperCase */ false);
+      CharSequence mainItem = getMenuSectionName(MAIN_PAGER_ITEM_ID, 0, false, ChatFolderStyle.LABEL_ONLY);
       UnreadCounterColorSet unreadCounterColorSet = UnreadCounterColorSet.create(this);
       Counter unreadCounter = new Counter.Builder()
         .textSize(12f)
@@ -3534,7 +3573,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return FOLDERS_NONE;
     }
     if (!isTabletNavigationBar()) {
-      return FOLDERS_BOTTOM;
+      // Navigation bar at the bottom: the folders are tabs below the app bar ("consider using tabs to organize
+      // similar content within a page"), two bars at the bottom would compete with each other.
+      return isNavBarStyle() ? FOLDERS_BELOW_SEARCH : FOLDERS_BOTTOM;
     }
     return tdlib.settings().displayTabletFoldersBelowSearch() ? FOLDERS_BELOW_SEARCH : FOLDERS_SIDE;
   }
@@ -3767,13 +3808,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private ViewPagerTopView.Item buildMainSectionItem (int pagerItemPosition, @ChatFolderStyle int chatFolderStyle) {
-    CharSequence sectionName = getMenuSectionName(MAIN_PAGER_ITEM_ID, pagerItemPosition, /* hasFolders */ true, chatFolderStyle, /* upperCase */ false);
+    CharSequence sectionName = getMenuSectionName(MAIN_PAGER_ITEM_ID, pagerItemPosition, /* hasFolders */ true, chatFolderStyle);
     int iconResource = menuNeedArchive ? R.drawable.baseline_archive_24 : R.drawable.baseline_forum_24;
     return buildSectionItem(MAIN_PAGER_ITEM_ID, pagerItemPosition, ChatPosition.CHAT_LIST_MAIN, sectionName, iconResource, chatFolderStyle);
   }
 
   private ViewPagerTopView.Item buildArchiveSectionItem (int pagerItemPosition, @ChatFolderStyle int chatFolderStyle) {
-    CharSequence sectionName = getMenuSectionName(ARCHIVE_PAGER_ITEM_ID, pagerItemPosition, /* hasFolders */ true, chatFolderStyle, /* upperCase */ false);
+    CharSequence sectionName = getMenuSectionName(ARCHIVE_PAGER_ITEM_ID, pagerItemPosition, /* hasFolders */ true, chatFolderStyle);
     int iconResource = R.drawable.baseline_archive_24;
     return buildSectionItem(ARCHIVE_PAGER_ITEM_ID, pagerItemPosition, ChatPosition.CHAT_LIST_ARCHIVE, sectionName, iconResource, chatFolderStyle);
   }
@@ -3888,7 +3929,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
   }
 
-  /** M3 badge of the folder tabs (every theme): error / onError; muted chats fade to a neutral outlined badge. */
+  /**
+   * M3 badge of the folder rail, tabs and chips (every theme): error / onError; muted chats — neutral
+   * secondaryContainer / onSecondaryContainer, as the muted counters of chat rows (badges: label ≥ 3:1).
+   */
   public static class UnreadCounterColorSet implements TextColorSet {
     private @Nullable Counter counter;
 
@@ -3903,35 +3947,19 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     @ColorInt
     @Override
     public int defaultTextColor () {
-      return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
+      return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSecondaryContainer(), counter.getMuteFactor()) : M3.onError();
     }
-
-    // Muted: the same M3 badge pill, low emphasis: faint onSurfaceVariant tint with a dashed outline.
-    private static final float MUTED_FILL_ALPHA = .12f, MUTED_OUTLINE_ALPHA = .55f;
 
     @ColorInt
     @Override
     public int backgroundColor (boolean isPressed) {
-      if (counter == null) {
-        return M3.error();
-      }
-      float mute = counter.getMuteFactor();
-      return ColorUtils.fromToArgb(M3.error(), ColorUtils.alphaColor(MUTED_FILL_ALPHA, M3.onSurfaceVariant()), mute);
+      return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.secondaryContainer(), counter.getMuteFactor()) : M3.error();
     }
 
     @ColorInt
     @Override
     public int outlineColor (boolean isPressed) {
-      if (counter == null) {
-        return Color.TRANSPARENT;
-      }
-      float mute = counter.getMuteFactor();
-      return ColorUtils.fromToArgb(M3.error(), ColorUtils.alphaColor(MUTED_OUTLINE_ALPHA, M3.onSurfaceVariant()), mute);
-    }
-
-    @Override
-    public boolean outlineDashed () {
-      return counter != null && counter.getMuteFactor() > .5f;
+      return counter != null ? backgroundColor(isPressed) : Color.TRANSPARENT;
     }
   }
 

@@ -34,6 +34,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.loader.ImageGalleryFile;
 import org.thunderdog.challegram.loader.ImageReceiver;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PorterDuffColorId;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Keyboard;
@@ -66,6 +67,7 @@ public class EditHeaderView extends FrameLayoutFix implements RtlCheckListener, 
     this.parent = parent;
 
     setWillNotDraw(false);
+    parent.addThemeInvalidateListener(this);
 
     receiver = new ImageReceiver(this, 0);
     receiver.prepareToBeCropped();
@@ -309,8 +311,15 @@ public class EditHeaderView extends FrameLayoutFix implements RtlCheckListener, 
     Views.restore(c, s);
     int cx = receiver.centerX();
     int cy = receiver.centerY();
-    c.drawCircle(cx, cy, avatarRadius, Paints.fillingPaint(0x20000000));
-    Drawables.draw(c, icon, cx - (int) (icon.getMinimumWidth() * .5f), cy - (int) (icon.getMinimumHeight() * .5f), PorterDuffPaint.get(iconColorId));
+    float iconLeft = cx - (int) (icon.getMinimumWidth() * .5f), iconTop = cy - (int) (icon.getMinimumHeight() * .5f);
+    if (file == null) {
+      // M3: no photo yet — primaryContainer / onPrimaryContainer (the old 12% black circle with a white icon was 1.4:1).
+      c.drawCircle(cx, cy, avatarRadius, Paints.fillingPaint(M3.primaryContainer()));
+      Drawables.draw(c, icon, iconLeft, iconTop, Paints.getPorterDuffPaint(M3.onPrimaryContainer()));
+    } else {
+      c.drawCircle(cx, cy, avatarRadius, Paints.fillingPaint(0x20000000));
+      Drawables.draw(c, icon, iconLeft, iconTop, PorterDuffPaint.get(iconColorId));
+    }
   }
 
   public void setInputEnabled (boolean enabled) {
@@ -322,6 +331,7 @@ public class EditHeaderView extends FrameLayoutFix implements RtlCheckListener, 
   public void setPhoto (ImageGalleryFile file) {
     this.file = file;
     receiver.requestFile(file);
+    invalidate();
   }
 
   public void setIcon (@DrawableRes int iconRes, @PorterDuffColorId int colorId) {

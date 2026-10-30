@@ -177,6 +177,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   DoneListener {
   // Constants
 
+
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     Mode.USER,
@@ -438,10 +439,11 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           callButton.setTranslationX(Screen.dp(StopwatchHeaderButton.WIDTH));
         }
       }
-      if (id == R.id.menu_profile || id == R.id.menu_profile_bot) {
+      if (id == R.id.menu_profile_bot) {
         HeaderButton button = header.addButton(realMenu, R.id.menu_btn_manage, R.drawable.baseline_edit_24, buttonColorId, this, Screen.dp(49f));
         button.setVisibility(canManageChat() ? View.VISIBLE : View.GONE);
       }
+      // Group/channel app bar: at most two actions, "Add member" and ⋮ ("Manage" lives in ⋮).
       if (id == R.id.menu_profile) {
         HeaderButton button = header.addButton(realMenu, R.id.menu_btn_addContact, R.drawable.baseline_person_add_24, buttonColorId, this, Screen.dp(49f));
         button.setVisibility(canAddAnyKindOfMembers() ? View.VISIBLE : View.GONE);
@@ -449,6 +451,13 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       HeaderButton moreButton = header.addMoreButton(realMenu, this, buttonColorId);
       if (id == R.id.menu_profile_manage) {
         moreButton.setVisibility(hasMoreItems() ? View.VISIBLE : View.INVISIBLE);
+      }
+      // M3: "Make sure icon buttons have a container fill." (as the back button)
+      for (int i = 0; i < realMenu.getChildCount(); i++) {
+        View child = realMenu.getChildAt(i);
+        if (child instanceof HeaderButton) {
+          ((HeaderButton) child).setContainerFill(true);
+        }
       }
 
       LinearLayout transformedMenu = new LinearLayout(context());
@@ -668,9 +677,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     IntList ids = new IntList(4);
     StringList strings = new StringList(4);
 
-    if (canAddAnyKindOfMembers()) {
-      ids.append(R.id.more_btn_addMember);
-      strings.append(Lang.getString(R.string.AddMember));
+    if (canManageChat()) {
+      ids.append(R.id.menu_btn_manage);
+      strings.append(isChannel() ? R.string.ManageChannel : R.string.ManageGroup);
     }
     if (mode == Mode.CHANNEL || mode == Mode.SUPERGROUP) {
       if (Td.hasUsername(supergroup)) {
@@ -771,6 +780,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       case Mode.GROUP: {
         if (id == R.id.more_btn_addMember) {
           addMember(null);
+        } else if (id == R.id.menu_btn_manage) {
+          manageChat();
         } else if (id == R.id.btn_recentActions) {
           openRecentActions();
         } else if (id == R.id.btn_enabledReactions) {
@@ -1665,18 +1676,19 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
     topCellView = new ViewPagerHeaderViewCompact(context);
     ViewSupport.setThemedBackground(topCellView, ColorId.filling, this);
+    // M3 primary tabs: "The container is defined by a divider on the bottom edge"
+    topCellView.setM3Divider(true);
     ViewPagerTopView topView = topCellView.getTopView();
     topView.setUseDarkBackground();
-    /*if (!UI.isTablet) {
-      topView.setFitsParentWidth(true);
-    }*/
     topView.setOnItemClickListener(this);
-    topView.setSelectionColorId(ColorId.profileSectionActive);
-    topView.setTextFromToColorId(ColorId.textLight, ColorId.profileSectionActiveContent);
+    topView.setPrimaryTabsStyle(true);
     addThemeInvalidateListener(topView);
-    topView.setShowLabelOnActiveOnly(!isEditing() && !Settings.instance().needReduceMotion());
     topView.setItems(getPagerTitles());
     topCellView.getRecyclerView().setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    // Scrollable tabs: "the first visible tab should be offset by 52dp from the left side".
+    int offset = Screen.dp(52f);
+    topCellView.getRecyclerView().setPadding(Lang.rtl() ? 0 : offset, 0, Lang.rtl() ? offset : 0, 0);
+    topCellView.getRecyclerView().setClipToPadding(false);
     topView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
     topCellView.setLayoutParams(params);
     topWrap.addView(topCellView);
@@ -2060,8 +2072,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     }
     final int menuId = getMenuId();
     if (menuId == R.id.menu_profile) {
-      if (canManageChat())
-        totalWidth += Screen.dp(49f);
       if (canAddAnyKindOfMembers())
         totalWidth += Screen.dp(49f);
       totalWidth += Screen.dp(49f);
@@ -2679,11 +2689,24 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   }
 
   private static ViewPagerTopView.Item newItem (SharedBaseController<?> c) {
-    return new ViewPagerTopView.Item(
-      Lang.uppercase(c.getName().toString()),
-      c.getIcon(),
-      null
-    );
+    // M3 tabs: text labels only, sentence case.
+    return new ViewPagerTopView.Item(c.getName().toString());
+  }
+
+  private void addTabItem (SharedBaseController<?> c, int index) {
+    if (index == -1) {
+      topCellView.getTopView().addItem(newItem(c));
+    } else {
+      topCellView.getTopView().addItemAtIndex(newItem(c), index);
+    }
+  }
+
+  private void removeTabItem (int index) {
+    if (index == -1) {
+      topCellView.getTopView().removeLastItem();
+    } else {
+      topCellView.getTopView().removeItemAt(index);
+    }
   }
 
   private void checkChannelMembers () {
@@ -2697,7 +2720,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         controllers.add(c);
         registerController(c);
         pagerAdapter.notifyItemInserted(controllers.size() - 1);
-        topCellView.getTopView().addItem(newItem(c));
+        addTabItem(c, -1);
       } else {
         int i = controllers.indexOf(existingMembersController);
         if (i == -1) {
@@ -2705,7 +2728,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         }
         ViewController<?> c = controllers.remove(i);
         unregisterController(c);
-        topCellView.getTopView().removeLastItem();
+        removeTabItem(-1);
         pagerAdapter.notifyItemRemoved(i);
         c.destroy();
       }
@@ -6006,7 +6029,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     registerController(c);
     controllers.add(c);
     pagerAdapter.notifyItemInserted(controllers.size() - 1);
-    topCellView.getTopView().addItem(newItem(c));
+    addTabItem(c, -1);
     pagerAdapter.notifyDataSetChanged();
   }
 
@@ -6019,7 +6042,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       throw new IllegalStateException();
     pagerAdapter.notifyItemRemoved(i);
     unregisterController(c);
-    topCellView.getTopView().removeItemAt(i);
+    removeTabItem(i);
     c.destroy();
     pagerAdapter.notifyDataSetChanged();
   }
@@ -6165,7 +6188,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       controllers.add(c);
       registerController(c);
       pagerAdapter.notifyItemInserted(controllers.size() - 1);
-      topCellView.getTopView().addItem(newItem(c));
+      addTabItem(c, -1);
     } else {
       SharedBaseController<?> c = controllers.get(visualIndex);
       if (SharedBaseController.isMediaController(c) && c.provideSearchFilter().getConstructor() == filter.getConstructor()) {
@@ -6175,7 +6198,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       controllers.add(visualIndex, c);
       registerController(c);
       pagerAdapter.notifyItemInserted(visualIndex);
-      topCellView.getTopView().addItemAtIndex(newItem(c), visualIndex);
+      addTabItem(c, visualIndex);
     }
     pagerAdapter.notifyDataSetChanged();
   }

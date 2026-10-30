@@ -82,6 +82,7 @@ import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 import org.thunderdog.challegram.widget.SendButton;
+import org.thunderdog.challegram.widget.M3Sheets;
 import org.thunderdog.challegram.widget.ShadowView;
 
 import java.util.ArrayList;
@@ -223,7 +224,7 @@ public class MediaLayout extends FrameLayoutFix implements
     switch (mode) {
       case MODE_LOCATION: {
         items = new MediaBottomBar.BarItem[] {
-          new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location, ColorId.attachLocation, Screen.dp(1f))
+          new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location)
         };
         index = 0;
         break;
@@ -231,7 +232,7 @@ public class MediaLayout extends FrameLayoutFix implements
       case MODE_AVATAR_PICKER:
       case MODE_GALLERY: {
         items = new MediaBottomBar.BarItem[] {
-          new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Gallery, ColorId.attachPhoto, Screen.dp(1f))
+          new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Gallery)
         };
         index = 0;
         break;
@@ -249,22 +250,22 @@ public class MediaLayout extends FrameLayoutFix implements
         if (rtl) {
           items = new MediaBottomBar.BarItem[]{
             needVote ?
-              new MediaBottomBar.BarItem(R.drawable.baseline_poll_24, R.string.CreatePoll, ColorId.attachInlineBot) :
-              new MediaBottomBar.BarItem(R.drawable.deproko_baseline_bots_24, R.string.InlineBot, ColorId.attachInlineBot),
-            new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location, ColorId.attachLocation, Screen.dp(1f)),
-            new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery, ColorId.attachPhoto),
-            new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File, ColorId.attachFile),
-            new MediaBottomBar.BarItem(R.drawable.baseline_person_24, R.string.AttachContact, ColorId.attachContact, Screen.dp(1f))
+              new MediaBottomBar.BarItem(R.drawable.baseline_poll_24, R.string.CreatePoll) :
+              new MediaBottomBar.BarItem(R.drawable.deproko_baseline_bots_24, R.string.InlineBot),
+            new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location),
+            new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery),
+            new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File),
+            new MediaBottomBar.BarItem(R.drawable.baseline_person_24, R.string.AttachContact)
           };
         } else {
           items = new MediaBottomBar.BarItem[]{
-            new MediaBottomBar.BarItem(R.drawable.baseline_person_24, R.string.AttachContact, ColorId.attachContact, Screen.dp(1f)),
-            new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File, ColorId.attachFile),
-            new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery, ColorId.attachPhoto),
-            new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location, ColorId.attachLocation, Screen.dp(1f)),
+            new MediaBottomBar.BarItem(R.drawable.baseline_person_24, R.string.AttachContact),
+            new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File),
+            new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery),
+            new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location),
             needVote ?
-              new MediaBottomBar.BarItem(R.drawable.baseline_poll_24, R.string.CreatePoll, ColorId.attachInlineBot) :
-              new MediaBottomBar.BarItem(R.drawable.deproko_baseline_bots_24, R.string.InlineBot, ColorId.attachInlineBot)
+              new MediaBottomBar.BarItem(R.drawable.baseline_poll_24, R.string.CreatePoll) :
+              new MediaBottomBar.BarItem(R.drawable.deproko_baseline_bots_24, R.string.InlineBot)
           };
         }
         index = 2;
@@ -320,7 +321,7 @@ public class MediaLayout extends FrameLayoutFix implements
       });
     }
 
-    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL));
 
     ThemeManager.instance().addThemeListener(this);
     Lang.addLanguageListener(this);
@@ -338,7 +339,7 @@ public class MediaLayout extends FrameLayoutFix implements
       setCustomBottomBar(currentController.createCustomBottomBar());
     }
 
-    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL));
     ThemeManager.instance().addThemeListener(this);
     Lang.addLanguageListener(this);
   }
@@ -437,7 +438,13 @@ public class MediaLayout extends FrameLayoutFix implements
   }
 
   public int getCurrentContentWidth () {
-    return bottomBar != null ? bottomBar.getCurrentBarWidth() : Screen.currentWidth();
+    return bottomBar != null ? bottomBar.getCurrentBarWidth() : M3Sheets.width(Screen.currentWidth());
+  }
+
+  @Override
+  protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+    // M3 bottom sheet width: up to 640dp, centered with 56dp side margins in wider windows (M3Sheets).
+    super.onMeasure(M3Sheets.measureSpec(widthMeasureSpec), heightMeasureSpec);
   }
 
   public HeaderView getHeaderView () {
@@ -1902,6 +1909,10 @@ public class MediaLayout extends FrameLayoutFix implements
     }
   }
 
+  public float getHeaderFactor () {
+    return headerFactor;
+  }
+
   public void setHeaderFactor (float factor) {
     if (this.headerFactor != factor) {
       this.headerFactor = factor;
@@ -1909,6 +1920,9 @@ public class MediaLayout extends FrameLayoutFix implements
         headerView.setAlpha(factor);
         int offsetY = HeaderView.getSize(false) + headerView.getFilling().getExtraHeight();
         headerView.setTranslationY(-offsetY + (int) ((float) offsetY * factor));
+      }
+      if (currentController != null) {
+        currentController.invalidateSheetOutline();
       }
     }
   }

@@ -153,7 +153,7 @@ public final class ColumnDataPicker implements Destroyable {
       }
 
       EmojiTextView commitButton = newCommitButton(c, forcedTheme);
-      Views.setMediumText(commitButton, Lang.uppercase(commitButtonText.toString()));
+      Views.setMediumText(commitButton, commitButtonText.toString());
 
       for (Column column : columns) {
         InfiniteRecyclerView<SimpleStringItem> picker = new InfiniteRecyclerView<SimpleStringItem>(c.context(), false);

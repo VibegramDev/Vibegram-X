@@ -466,7 +466,7 @@ public class ThemeController extends ViewPagerController<ThemeController.Args> i
     String[] names = new String[themeSections.length];
     int i = 0;
     for (int sectionId : themeSections) {
-      names[i] = Lang.uppercase(Lang.getString(getSectionName(sectionId)));
+      names[i] = Lang.getString(getSectionName(sectionId));
       i++;
     }
     return names;

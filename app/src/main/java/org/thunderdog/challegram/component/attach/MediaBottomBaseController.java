@@ -17,11 +17,14 @@ package org.thunderdog.challegram.component.attach;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
+import android.graphics.Outline;
 import android.graphics.Rect;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 
 import androidx.annotation.CallSuper;
 import androidx.annotation.NonNull;
@@ -35,17 +38,19 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.ViewController;
-import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.widget.EmptyTextView;
+import org.thunderdog.challegram.widget.M3Sheets;
 
 import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
 
 public abstract class MediaBottomBaseController<T> extends ViewController<T> {
@@ -285,7 +290,19 @@ public abstract class MediaBottomBaseController<T> extends ViewController<T> {
       }
     });
     recyclerView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-    ViewSupport.setThemedBackground(recyclerView, getRecyclerBackgroundColorId());
+    // M3 modal bottom sheet (M3Sheets, as OptionsLayout): surfaceContainerLow container, 28dp top corners that
+    // straighten once the sheet is expanded to full screen and its app bar appears.
+    ViewUtils.setBackground(recyclerView, M3.roleDrawable(M3.SURFACE_CONTAINER_LOW));
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      recyclerView.setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          int radius = (int) (M3Sheets.radius() * (1f - mediaLayout.getHeaderFactor()));
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight() + radius, radius);
+        }
+      });
+      recyclerView.setClipToOutline(true);
+    }
     addThemeInvalidateListener(recyclerView);
     recyclerView.setItemAnimator(new CustomItemAnimator(AnimatorUtils.DECELERATE_INTERPOLATOR, 150l));
     recyclerView.setLayoutParams(params);
@@ -316,8 +333,11 @@ public abstract class MediaBottomBaseController<T> extends ViewController<T> {
 
   }
 
-  protected @ColorId int getRecyclerBackgroundColorId () {
-    return ColorId.filling;
+  /** The sheet's top corners follow the app bar (MediaLayout#setHeaderFactor). */
+  public void invalidateSheetOutline () {
+    if (recyclerView != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      recyclerView.invalidateOutline();
+    }
   }
 
   public void dispatchRecyclerTouchEvent (MotionEvent e) {

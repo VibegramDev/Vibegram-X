@@ -195,7 +195,6 @@ public class ChatFolderInviteLinkControllerPage extends BottomSheetViewControlle
     button.setPadding(Screen.dp(12f), 0, Screen.dp(12f), 0);
     button.setEllipsize(TextUtils.TruncateAt.END);
     button.setGravity(Gravity.CENTER);
-    button.setAllCaps(true);
 
     FrameLayoutFix frame = new FrameLayoutFix(context);
     frame.setOnClickListener(this);

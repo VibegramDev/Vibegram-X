@@ -1480,32 +1480,16 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
     animator.animateTo(1f);
   }
 
-  /** Long press on the text selects it (as in the official app); elsewhere the message gets selected. */
-  private boolean startTextSelection () {
-    ViewController<?> c = ViewController.findRoot(this);
-    if (c instanceof MessagesController && msg.supportsTextSelection() && ((MessagesController) c).startTextSelectionAt(msg, this, touchX, touchY)) {
-      flags &= ~(FLAG_CAUGHT_CLICK | FLAG_CAUGHT_MESSAGE_TOUCH);
-      return true;
-    }
-    return false;
-  }
-
   private void onLongPress () {
     if ((flags & FLAG_CAUGHT_CLICK) != 0) {
-      if (startTextSelection()) {
-        return;
-      }
       if (performLongPress()) {
         flags &= ~FLAG_CAUGHT_CLICK;
         setLongPressed(true);
       }
     } else if ((flags & FLAG_CAUGHT_MESSAGE_TOUCH) != 0) {
       flags &= ~FLAG_CAUGHT_MESSAGE_TOUCH;
-      if (msg.performLongPress(this, touchX, touchY)) {
-        setLongPressed(true);
-      } else if (startTextSelection()) {
-        return;
-      } else if (performLongPress()) {
+      // Text is selected only via «Select Text» in the message menu: a long press never copies it.
+      if (msg.performLongPress(this, touchX, touchY) || performLongPress()) {
         setLongPressed(true);
       }
     }

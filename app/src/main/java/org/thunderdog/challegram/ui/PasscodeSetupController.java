@@ -53,6 +53,7 @@ import org.thunderdog.challegram.widget.SeparatorView;
 import org.thunderdog.challegram.widget.ShadowView;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntList;
@@ -107,6 +108,82 @@ public class PasscodeSetupController extends ViewController<PasscodeSetupControl
     return textView;
   }
 
+  // Material 3 segmented groups, as SettingsAdapter.setSegmented draws them for list screens: cards inset by 16dp with
+  // outer corners 16dp, inner corners 4dp and 2dp gaps; separators and shadows only keep their space.
+
+  private static final float SEGMENT_INSET = 16f, SEGMENT_GAP = 2f;
+
+  private void applySegments () {
+    if (settingsList == null) {
+      return;
+    }
+    segmentGroup(passcodeView, changeView);
+    segmentGroup(biometricsView, visibilityView, autoLockView);
+    segmentGroup(notificationsView);
+    segmentGroup(screenshotView);
+    hideDecorations(settingsList);
+  }
+
+  private void hideDecorations (ViewGroup group) {
+    for (int i = 0; i < group.getChildCount(); i++) {
+      View view = group.getChildAt(i);
+      if (view instanceof SeparatorView) {
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params.height != Screen.dp(SEGMENT_GAP)) {
+          params.height = Screen.dp(SEGMENT_GAP);
+          view.setLayoutParams(params);
+        }
+        if (view.getVisibility() == View.VISIBLE) {
+          view.setVisibility(View.INVISIBLE);
+        }
+      } else if (view instanceof ShadowView) {
+        if (view.getVisibility() == View.VISIBLE) {
+          view.setVisibility(View.INVISIBLE);
+        }
+      } else if (view instanceof TextView) {
+        setSegmentMargins(view);
+      } else if (view instanceof ViewGroup && !(view instanceof SettingView)) {
+        hideDecorations((ViewGroup) view);
+      }
+    }
+  }
+
+  private static void setSegmentMargins (View view) {
+    ViewGroup.LayoutParams params = view.getLayoutParams();
+    ViewGroup.MarginLayoutParams margins = params instanceof ViewGroup.MarginLayoutParams ?
+      (ViewGroup.MarginLayoutParams) params :
+      new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, params != null ? params.height : ViewGroup.LayoutParams.WRAP_CONTENT);
+    int inset = Screen.dp(SEGMENT_INSET);
+    if (margins != params || margins.leftMargin != inset || margins.rightMargin != inset) {
+      margins.leftMargin = margins.rightMargin = inset;
+      view.setLayoutParams(margins);
+    }
+  }
+
+  private void segmentGroup (View... rows) {
+    View previous = null;
+    for (int i = 0; i < rows.length; i++) {
+      View row = rows[i];
+      if (row == null || row.getVisibility() == View.GONE) {
+        continue;
+      }
+      View next = null;
+      for (int k = i + 1; k < rows.length; k++) {
+        if (rows[k] != null && rows[k].getVisibility() != View.GONE) {
+          next = rows[k];
+          break;
+        }
+      }
+      setSegmentMargins(row);
+      if (!(row.getBackground() instanceof SettingHolder.SegmentBackground)) {
+        ViewUtils.setBackground(row, new SettingHolder.SegmentBackground());
+        addThemeInvalidateListener(row);
+      }
+      ((SettingHolder.SegmentBackground) row.getBackground()).setShape(row, previous != null, next != null);
+      previous = row;
+    }
+  }
+
   private void checkItemsAvailability () {
     boolean isAvailable = getPasscodeMode() != Passcode.MODE_BIOMETRICS && BiometricAuthentication.isAvailable();
     biometricsSeparator.setVisibility(isAvailable ? View.VISIBLE : View.GONE);
@@ -125,6 +202,7 @@ public class PasscodeSetupController extends ViewController<PasscodeSetupControl
         bottomShadowView.setVisibility(shadowVisibility);
       }
     }
+    applySegments();
   }
 
   private TdApi.Chat specificChat;
@@ -331,6 +409,7 @@ public class PasscodeSetupController extends ViewController<PasscodeSetupControl
 
     settingsList.addView(autoLockWrap);
     contentView.addView(settingsList);
+    applySegments();
 
     FrameLayoutFix wrapper = new FrameLayoutFix(context);
     ViewSupport.setThemedBackground(wrapper, ColorId.background, this);

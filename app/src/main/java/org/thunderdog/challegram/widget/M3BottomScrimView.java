@@ -36,7 +36,8 @@ import org.thunderdog.challegram.tool.Screen;
 
 /**
  * Backdrop of a floating bottom container (tablet dock, tablet message composer): content scrolled under the
- * container fades into {@code surface} above it, is hidden below its top edge, and the container casts a soft
+ * container fades into {@code surface} above it and stays faintly visible below its top edge (the fade of the
+ * phone dock), and the container casts a soft
  * shadow. Both floating containers use this view, so their fade and shadow are identical.
  */
 public class M3BottomScrimView extends View implements ThemeInvalidateListener {
@@ -45,21 +46,47 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     boolean getShape (@NonNull M3BottomScrimView view, @NonNull RectF out);
   }
 
-  /** Height of the fade above the floating container. */
+  /**
+   * Height of the fade above the floating container: as the fade of the phone dock (from a little above the folder
+   * chips to the top edge of the dock).
+   */
   public static int getFadeHeight () {
-    return Screen.dp(24f);
+    return Screen.dp(80f);
   }
 
+  /** Opacity of the surface at the top edge of the container and at the bottom of the view (as the phone dock). */
+  private static final int ALPHA_AT_CONTAINER = 0xB3, ALPHA_AT_BOTTOM = 0xEB;
+
   private final Paint fadePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Paint solidPaint = new Paint();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF shape = new RectF();
   private @Nullable ShapeProvider provider;
   private float radius;
-  private int fadeColor, fadeHeight;
+  private int fadeColor, fadeHeight, fadeTotalHeight;
+  private boolean shadowOnly;
+  private int fadeHeightOverride = -1;
 
   public M3BottomScrimView (Context context) {
     super(context);
+  }
+
+  /**
+   * Height of the fade above the container for this view (message composer: short, so the last message right above
+   * the composer stays undimmed), -1 for {@link #getFadeHeight()}.
+   */
+  public void setFadeHeight (int fadeHeight) {
+    if (this.fadeHeightOverride != fadeHeight) {
+      this.fadeHeightOverride = fadeHeight;
+      invalidate();
+    }
+  }
+
+  /** Draws only the shadow of the floating container: the content behind it is washed out by another view. */
+  public void setShadowOnly (boolean shadowOnly) {
+    if (this.shadowOnly != shadowOnly) {
+      this.shadowOnly = shadowOnly;
+      invalidate();
+    }
   }
 
   public void setShapeProvider (@Nullable ShapeProvider provider, float radius) {
@@ -78,25 +105,31 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     if (provider == null || !provider.getShape(this, shape)) {
       return;
     }
-    final int surface = M3.surface();
-    final int fade = getFadeHeight();
-    if (fadeColor != surface || fadeHeight != fade) {
-      fadeColor = surface;
-      fadeHeight = fade;
-      int rgb = surface & 0x00FFFFFF;
-      fadePaint.setShader(new LinearGradient(0, 0, 0, fade,
-        new int[] {rgb, (0x99 << 24) | rgb, (0xFF << 24) | rgb},
-        new float[] {0f, .5f, 1f},
-        Shader.TileMode.CLAMP));
+    if (shadowOnly) {
+      drawShadow(c, shape, radius);
+      return;
     }
+    final int surface = M3.surface();
+    final int fade = fadeHeightOverride >= 0 ? fadeHeightOverride : getFadeHeight();
     final int width = getWidth();
     final float top = shape.top;
+    // From the top of the fade to the bottom of the view: transparent -> 70% surface at the top edge of the container
+    // -> 92% at the bottom (the content stays faintly visible below the container, as under the phone dock).
+    final int total = Math.max(fade + 1, Math.round(getHeight() - top) + fade);
+    if (fadeColor != surface || fadeHeight != fade || fadeTotalHeight != total) {
+      fadeColor = surface;
+      fadeHeight = fade;
+      fadeTotalHeight = total;
+      int rgb = surface & 0x00FFFFFF;
+      fadePaint.setShader(new LinearGradient(0, 0, 0, total,
+        new int[] {rgb, (ALPHA_AT_CONTAINER << 24) | rgb, (ALPHA_AT_BOTTOM << 24) | rgb},
+        new float[] {0f, (float) fade / total, 1f},
+        Shader.TileMode.CLAMP));
+    }
     c.save();
     c.translate(0, top - fade);
-    c.drawRect(0, 0, width, fade, fadePaint);
+    c.drawRect(0, 0, width, total, fadePaint);
     c.restore();
-    solidPaint.setColor(surface);
-    c.drawRect(0, top, width, getHeight(), solidPaint);
     drawShadow(c, shape, radius);
   }
 

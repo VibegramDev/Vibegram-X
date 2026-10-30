@@ -21,6 +21,7 @@ import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.graphics.Canvas;
 import android.util.SparseIntArray;
 import android.view.View;
 import android.widget.Toast;
@@ -45,6 +46,8 @@ import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeCustom;
 import org.thunderdog.challegram.theme.ThemeDelegate;
@@ -52,11 +55,14 @@ import org.thunderdog.challegram.theme.ThemeId;
 import org.thunderdog.challegram.theme.ThemeInfo;
 import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Fonts;
+import org.thunderdog.challegram.tool.Paints;
+import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.unsorted.AppContext;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.AppUpdater;
+import org.thunderdog.challegram.util.DrawModifier;
 import org.thunderdog.challegram.util.DrawableModifier;
 import org.thunderdog.challegram.util.Permissions;
 import org.thunderdog.challegram.util.StringList;
@@ -149,6 +155,10 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       protected void setValuedSetting (ListItem item, SettingView v, boolean isUpdate) {
         v.setDrawModifier(item.getDrawModifier());
         final int itemId = item.getId();
+        if (item.getViewType() == ListItem.TYPE_RADIO_OPTION) {
+          // Theme rows: the text after the 24dp color swatch, like after a leading icon.
+          v.forcePadding(itemId == R.id.btn_theme ? Screen.dp(73f) : 0, v.getForcedPaddingRight());
+        }
         if (itemId == R.id.btn_theme) {
           v.setName(item.getString()); // FIXME in {@link SettingsAdapter#updateValuedItemByPosition}?
           RadioView view = v.findRadioView();
@@ -217,7 +227,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
         } else if (itemId == R.id.btn_secret_batmanTransitions) {
           v.getToggler().setRadioEnabled(Settings.instance().getNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS), isUpdate);
         } else if (itemId == R.id.btn_navigationStyle) {
-          v.setData(Settings.instance().getNavigationStyle() == Settings.NAVIGATION_STYLE_DOCK ? R.string.NavigationStyleDock : R.string.NavigationStyleRail);
+          int navigationStyle = Settings.instance().getNavigationStyle();
+          v.setData(navigationStyle == Settings.NAVIGATION_STYLE_BAR ? R.string.NavigationStyleBar : navigationStyle == Settings.NAVIGATION_STYLE_DOCK ? R.string.NavigationStyleDock : R.string.NavigationStyleRail);
         } else if (itemId == R.id.btn_compactChats) {
           v.getToggler().setRadioEnabled(Settings.instance().useCompactChats(), isUpdate);
         } else if (itemId == R.id.btn_centerTitles) {
@@ -750,7 +761,20 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
     item.setData(theme);
     item.setIntValue(themeId);
     item.setSelected(isCurrent);
-    item.setRadioColorId(Theme.getCircleColorId(isCustom ? theme.parentThemeId() : themeId));
+    // The radio keeps the M3 colors; the theme color is a round swatch in the leading slot
+    // ("color swatches, color names, and a checkbox action", m3.material.io/components/lists).
+    final @ColorId int swatchColorId = Theme.getCircleColorId(isCustom ? theme.parentThemeId() : themeId);
+    item.setDrawModifier(new DrawModifier() {
+      @Override
+      public void afterDraw (View view, Canvas c) {
+        float radius = Screen.dp(12f);
+        float cx = Lang.rtl() ? view.getMeasuredWidth() - Screen.dp(30f) : Screen.dp(30f);
+        float cy = view.getMeasuredHeight() / 2f;
+        c.drawCircle(cx, cy, radius, Paints.fillingPaint(Theme.getColor(swatchColorId)));
+        // Keeps a swatch close to the container color visible.
+        c.drawCircle(cx, cy, radius - Screen.dp(.5f), Paints.strokeSmallPaint(M3.outlineVariant()));
+      }
+    });
     return item;
   }
 
@@ -1209,9 +1233,10 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       showSettings(new SettingsWrapBuilder(R.id.btn_navigationStyle).setRawItems(new ListItem[] {
         new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleRail, 0, R.string.NavigationStyleRail, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_RAIL),
         new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleDock, 0, R.string.NavigationStyleDock, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_DOCK),
+        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleBar, 0, R.string.NavigationStyleBar, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_BAR),
       }).setIntDelegate((id, result) -> {
         int resultId = result.get(R.id.btn_navigationStyle);
-        Settings.instance().setNavigationStyle(resultId == R.id.btn_navigationStyleDock ? Settings.NAVIGATION_STYLE_DOCK : Settings.NAVIGATION_STYLE_RAIL);
+        Settings.instance().setNavigationStyle(resultId == R.id.btn_navigationStyleBar ? Settings.NAVIGATION_STYLE_BAR : resultId == R.id.btn_navigationStyleDock ? Settings.NAVIGATION_STYLE_DOCK : Settings.NAVIGATION_STYLE_RAIL);
         adapter.updateValuedSettingById(R.id.btn_navigationStyle);
       }).setAllowResize(false));
     } else if (viewId == R.id.btn_compactChats) {

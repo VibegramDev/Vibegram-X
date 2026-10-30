@@ -46,12 +46,14 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiverProvider;
 import org.thunderdog.challegram.loader.ImageReceiver;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.telegram.TGLegacyManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PorterDuffColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
@@ -158,12 +160,10 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     }
 
     switch (type) {
-      case TYPE_INFO: {
-        setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(76f)));
-        break;
-      }
+      case TYPE_INFO:
       case TYPE_INFO_COMPACT: {
-        setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(64f)));
+        // M3 two-line list item: 72dp (ListTokens.ListItemTwoLineContainerHeight).
+        setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(72f)));
         break;
       }
       case TYPE_INFO_MULTILINE: {
@@ -172,13 +172,14 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
       }
       case TYPE_RADIO: {
         addToggler();
-        setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(55f)));
+        setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f)));
         break;
       }
       case TYPE_SETTING:
       case TYPE_SETTING_INACTIVE:
       case TYPE_INFO_SUPERCOMPACT: {
-        setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(55f)));
+        // M3 one-line list item: 56dp (ListTokens.ListItemOneLineContainerHeight).
+        setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f)));
         break;
       }
       default: {
@@ -393,9 +394,9 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
   private int getCurrentHeight () {
     int height;
     if (text != null) {
-      height = Math.max(text.getHeight() + (int) pDataTop - Screen.dp(13f) + Screen.dp(12f) + Screen.dp(25), Screen.dp(76f));
+      height = Math.max(text.getHeight() + (int) pDataTop - Screen.dp(13f) + Screen.dp(12f) + Screen.dp(25), Screen.dp(72f));
     } else {
-      height = Screen.dp(76f);
+      height = Screen.dp(72f);
     }
     if (displayItemNameText != null) {
       height += displayItemNameText.getHeight() - displayItemNameText.getLineHeight();
@@ -662,8 +663,9 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     if (type == TYPE_INFO_SUPERCOMPACT) {
       boolean hasName = !StringUtils.isEmpty(swapDataAndName ? itemData : itemName);
       pTop = Screen.dp((hasName ? 10f : 21f) + 13f);
-    } else if (type == TYPE_INFO_COMPACT) {
-      pTop = Screen.dp(15f + 13f);
+    } else if (type == TYPE_INFO || type == TYPE_INFO_COMPACT || type == TYPE_INFO_MULTILINE) {
+      // Two lines centered in the 72dp row.
+      pTop = Screen.dp(19f + 13f);
     } else {
       pTop = Screen.dp(21f + 13f);
     }
@@ -702,7 +704,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
       }
     }
 
-    pIconTop = (flags & FLAG_CENTER_ICON) != 0 && icon != null ?  (totalHeight / 2f - icon.getMinimumHeight() / 2f) : Screen.dp(type == TYPE_INFO || type == TYPE_INFO_COMPACT || type == TYPE_INFO_MULTILINE ? 20f : 16f);
+    pIconTop = (flags & FLAG_CENTER_ICON) != 0 && icon != null ?  (totalHeight / 2f - icon.getMinimumHeight() / 2f) : Screen.dp(type == TYPE_INFO || type == TYPE_INFO_COMPACT ? 24f : type == TYPE_INFO_MULTILINE ? 20f : 16f);
     pIconLeft = Screen.dp(18f);
   }
 
@@ -895,13 +897,43 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     }
   }
 
+  /** Tablet: the left pane row whose screen is open in the right pane (filled with secondaryContainer by its segment). */
+  private boolean isTabletSelected () {
+    return NavigationController.isTabletSelectedRow(this, null, 0);
+  }
+
   @Override
   public int defaultTextColor () {
+    // M3 list label: onSurface ("Text and icons typically use on surface and on surface variant"),
+    // onSecondaryContainer on the selected row; disabled: onSurface 38% (ListTokens.ListItemDisabledLabelTextOpacity).
+    // textNegative ("Log out", destructive rows) follows its icon: the error role, not the theme's own negative color.
+    final int color = isTabletSelected() ? M3.onSecondaryContainer() : textColorId == ColorId.text ? M3.onSurface() : textColorId == ColorId.textNegative ? M3.error() : Theme.getColor(textColorId);
     if (disabledAlpha != -1f) {
-      return ColorUtils.alphaColor(MathUtils.fromTo(disabledAlpha, 1f, isEnabled.getFloatValue()), Theme.getColor(textColorId));
+      return ColorUtils.alphaColor(MathUtils.fromTo(disabledAlpha, 1f, isEnabled.getFloatValue()), color);
     } else {
-      return ColorUtils.fromToArgb(Theme.textDecentColor(), Theme.getColor(textColorId), isEnabled.getFloatValue());
+      return ColorUtils.fromToArgb(ColorUtils.alphaColor(.38f, M3.onSurface()), color, isEnabled.getFloatValue());
     }
+  }
+
+  /** M3 supporting text: onSurfaceVariant; error state (textNegative): error. */
+  private int subtitleColor () {
+    int color = dataColorId == 0 ? M3.onSurfaceVariant() : dataColorId == ColorId.textNegative ? M3.error() : Theme.getColor(dataColorId);
+    return (flags & FLAG_DATA_SUBTITLE) != 0 ? ColorUtils.alphaColor(Theme.getSubtitleAlpha(), color) : color;
+  }
+
+  /** M3 leading icon: onSurfaceVariant; error state (iconNegative, textNegative): error; selected row: onSecondaryContainer. */
+  private int leadingIconColor () {
+    int color;
+    if (isTabletSelected()) {
+      color = M3.onSecondaryContainer();
+    } else if (iconColorId == ColorId.NONE || iconColorId == ColorId.icon) {
+      color = M3.onSurfaceVariant();
+    } else if (iconColorId == ColorId.iconNegative || iconColorId == ColorId.textNegative) {
+      color = M3.error();
+    } else {
+      color = Theme.getColor(iconColorId);
+    }
+    return ColorUtils.alphaColor(iconAlpha, color);
   }
 
   @Override
@@ -922,11 +954,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
   private final TextColorSet subtitleColorSet = new TextColorSetOverride(this) {
     @Override
     public int defaultTextColor () {
-      int subtitleColor = Theme.getColor(dataColorId != 0 ? dataColorId : ColorId.textLight);
-      if ((flags & FLAG_DATA_SUBTITLE) != 0) {
-        subtitleColor = ColorUtils.alphaColor(Theme.getSubtitleAlpha(), subtitleColor);
-      }
-      return subtitleColor;
+      return subtitleColor();
     }
   };
 
@@ -949,7 +977,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
         c.save();
         c.rotate(MathUtils.fromTo(0, 90, iconRotated.getFloatValue()), cx, cy);
       }
-      Drawables.draw(c, icon, x, y, lastIconResource == 0 ? Paints.getBitmapPaint() : iconColorId != 0 ? PorterDuffPaint.get(iconColorId, iconAlpha) : Paints.getIconGrayPorterDuffPaint());
+      Drawables.draw(c, icon, x, y, lastIconResource == 0 ? Paints.getBitmapPaint() : Paints.getPorterDuffPaint(leadingIconColor()));
       if (needRotateIcon) {
         c.restore();
       }
@@ -975,10 +1003,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
 
     if (type == TYPE_INFO || type == TYPE_INFO_COMPACT || type == TYPE_INFO_SUPERCOMPACT || (type == TYPE_INFO_MULTILINE && text == null)) {
       if (displayItemName != null) {
-        int subtitleColor = Theme.getColor(dataColorId != 0 ? dataColorId : ColorId.textLight);
-        if ((flags & FLAG_DATA_SUBTITLE) != 0) {
-          subtitleColor = ColorUtils.alphaColor(Theme.getSubtitleAlpha(), subtitleColor);
-        }
+        int subtitleColor = subtitleColor();
         drawText(c, displayItemName, displayItemNameLayout, pLeft, pTop, (int) (pTop - Screen.dp(12f)), Paints.getRegularTextPaint(13f, subtitleColor), rtl, width, displayItemNameWidth, displayItemNameText, subtitleColorSet, emojiStatusHelper, complexReceiver);
       }
       if (displayItemData != null) {
@@ -986,10 +1011,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
       }
     } else if (type == TYPE_INFO_MULTILINE) {
       if (displayItemName != null) {
-        int subtitleColor = Theme.getColor(dataColorId != 0 ? dataColorId : ColorId.textLight);
-        if ((flags & FLAG_DATA_SUBTITLE) != 0) {
-          subtitleColor = ColorUtils.alphaColor(Theme.getSubtitleAlpha(), subtitleColor);
-        }
+        int subtitleColor = subtitleColor();
         float top = (int) pDataTop - Screen.dp(13f) + text.getHeight() + Screen.dp(17f);
         drawText(c, displayItemName, displayItemNameLayout, pLeft, (int) pDataTop - Screen.dp(13f) + text.getHeight() + Screen.dp(15f), (int) (top - Screen.dp(12f)), Paints.getRegularTextPaint(13f, subtitleColor), rtl, width, displayItemNameWidth, displayItemNameText, subtitleColorSet, emojiStatusHelper, complexReceiver);
       }

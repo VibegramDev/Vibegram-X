@@ -27,6 +27,8 @@ import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
+import android.text.Layout;
+import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -71,6 +73,7 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
   private static final float INDICATOR_TOP = 6f;
   private static final float ICON_SIZE = 24f;
   private static final float LABEL_SIZE = 12f;
+  private static final float LABEL_LINE_HEIGHT = 16f;
 
   public static class Entry {
     public final CharSequence label;
@@ -141,7 +144,7 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
         view = items.get(i);
       } else {
         view = new ItemView(getContext(), i);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(ITEM_HEIGHT));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         params.bottomMargin = Screen.dp(ITEM_SPACING);
         view.setLayoutParams(params);
         items.add(view);
@@ -231,6 +234,8 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
     private final int index;
     private @Nullable Entry entry;
     private @Nullable Drawable icon;
+    private @Nullable String[] labelLines;
+    private int labelLinesWidth;
 
     public ItemView (Context context, int index) {
       super(context);
@@ -250,9 +255,39 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
       if (this.entry == null || this.entry.iconRes != entry.iconRes) {
         icon = entry.iconRes != 0 ? Drawables.get(getResources(), entry.iconRes) : null;
       }
+      if (this.entry == null || !TextUtils.equals(this.entry.label, entry.label)) {
+        labelLines = null;
+        requestLayout();
+      }
       this.entry = entry;
       setContentDescription(entry.label);
       invalidate();
+    }
+
+    /** M3 rail: «Don’t truncate or display an ellipsis in place of label text» — a long label wraps between words, centered. */
+    private String[] getLabelLines (int width) {
+      CharSequence label = entry != null ? entry.label : null;
+      int maxWidth = Math.max(0, width - Screen.dp(8f));
+      if (TextUtils.isEmpty(label) || maxWidth == 0) {
+        return new String[0];
+      }
+      if (labelLines == null || labelLinesWidth != maxWidth) {
+        // Bold (selected) is the widest style: the item keeps its height when the selection moves.
+        StaticLayout layout = new StaticLayout(label, Paints.getBoldTextPaint(LABEL_SIZE), maxWidth, Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
+        labelLines = new String[layout.getLineCount()];
+        for (int i = 0; i < labelLines.length; i++) {
+          labelLines[i] = label.subSequence(layout.getLineStart(i), layout.getLineEnd(i)).toString().trim();
+        }
+        labelLinesWidth = maxWidth;
+      }
+      return labelLines;
+    }
+
+    @Override
+    protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+      int width = MeasureSpec.getSize(widthMeasureSpec);
+      int extraLines = Math.max(0, getLabelLines(width).length - 1);
+      setMeasuredDimension(width, Screen.dp(ITEM_HEIGHT) + Screen.dp(LABEL_LINE_HEIGHT) * extraLines);
     }
 
     @Override
@@ -277,15 +312,15 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
         Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(iconColor));
       }
       // Label: selected = bold secondary, others = medium onSurfaceVariant (as in the navigation bar).
-      CharSequence label = entry.label;
-      if (!TextUtils.isEmpty(label)) {
+      String[] lines = getLabelLines(getWidth());
+      if (lines.length > 0) {
         int color = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.secondary(), selected);
         TextPaint paint = selected >= .5f ? Paints.getBoldTextPaint(LABEL_SIZE, color) : Paints.getMediumTextPaint(LABEL_SIZE, color, false);
-        float maxWidth = getWidth() - Screen.dp(8f);
-        CharSequence text = TextUtils.ellipsize(label, paint, maxWidth, TextUtils.TruncateAt.END);
-        float textWidth = paint.measureText(text, 0, text.length());
         float baseline = indicatorTop + indicatorHeight + Screen.dp(4f) - paint.ascent();
-        c.drawText(text, 0, text.length(), cx - textWidth / 2f, baseline, paint);
+        for (String line : lines) {
+          c.drawText(line, cx - paint.measureText(line) / 2f, baseline, paint);
+          baseline += Screen.dp(LABEL_LINE_HEIGHT);
+        }
       }
     }
 

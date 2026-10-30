@@ -42,6 +42,7 @@ import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.telegram.TdlibMessageViewer;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PorterDuffColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
@@ -52,6 +53,7 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.ListItem;
 import org.thunderdog.challegram.ui.SettingHolder;
 import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.widget.AttachDelegate;
 import org.thunderdog.challegram.widget.BaseView;
@@ -336,6 +338,13 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
     invalidate();
   }
 
+  private boolean primaryTitle;
+
+  /** Title in the primary role instead of the sender's accent color (pinned bar: small text needs 4.5:1). */
+  public void setPrimaryTitle () {
+    this.primaryTitle = true;
+  }
+
   public void setUseAvatarFallback (boolean useAvatarFallback) {
     this.useAvatarFallback = useAvatarFallback;
   }
@@ -527,7 +536,7 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
       throw new IllegalStateException();
     }
     String title = getTitle();
-    TdlibAccentColor accentColor = data.accentColor();
+    TdlibAccentColor accentColor = primaryTitle ? null : data.accentColor();
 
     Drawable drawable;
     if (!Td.isEmpty(data.quote)) {
@@ -553,7 +562,7 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
         Paints.robotoStyleProvider(TEXT_SIZE),
         accentColor != null ?
           accentColor::getNameColor :
-          TextColorSets.Regular.MESSAGE_AUTHOR,
+          primaryTitle ? (TextColorSet) M3::primary : TextColorSets.Regular.MESSAGE_AUTHOR,
         null
       ).viewProvider(viewProvider)
        .singleLine()

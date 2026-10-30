@@ -601,7 +601,7 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
   }
 
   protected void setButtonText (ListItem item, ScalableTextView view, boolean isUpdate) {
-    CharSequence text = item.getString() != null ? Lang.uppercase(item.getString().toString()) : null;
+    CharSequence text = item.getString() != null ? item.getString().toString() : null;
     if (isUpdate) {
       view.replaceText(text);
     } else {

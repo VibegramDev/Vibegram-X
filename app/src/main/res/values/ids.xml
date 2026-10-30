@@ -764,6 +764,7 @@
   <item type="id" name="btn_quoteSelection" />
   <item type="id" name="btn_navigationStyleRail" />
   <item type="id" name="btn_navigationStyleDock" />
+  <item type="id" name="btn_navigationStyleBar" />
   <item type="id" name="btn_chatListStyle1" />
   <item type="id" name="btn_chatListStyle2" />
   <item type="id" name="btn_chatListStyle3" />
@@ -1152,6 +1153,7 @@
   <item type="id" name="btn_calls_vibrate" />
 
   <item type="id" name="btn_previewChat" />
+  <item type="id" name="btn_showChatPreview" />
   <item type="id" name="btn_inApp_chatSounds" />
 
   <item type="id" name="btn_events_contactJoined" />

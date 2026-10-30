@@ -15,12 +15,17 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.view.Gravity;
 
+import androidx.annotation.NonNull;
+
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.navigation.FloatingButton;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
@@ -40,13 +45,14 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
   public DoneButton (Context context) {
     super(context);
 
-    init(R.drawable.baseline_check_24, 56f, 4f, ColorId.circleButtonRegular, ColorId.circleButtonRegularIcon);
+    init(R.drawable.baseline_check_24, 56f, 0f, ColorId.circleButtonRegular, ColorId.circleButtonRegularIcon);
+    // M3 FAB, same as the navigation FloatingButton.
+    FloatingButton.setM3FabBackground(this);
 
-    int padding = Screen.dp(4f);
     FrameLayoutFix.LayoutParams params;
-    params = FrameLayoutFix.newParams(Screen.dp(56f) + padding * 2, Screen.dp(56f) + padding * 2, (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM);
-    params.rightMargin = Screen.dp(16f) - padding;
-    params.bottomMargin = Screen.dp(16f) - padding;
+    params = FrameLayoutFix.newParams(Screen.dp(56f), Screen.dp(56f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM);
+    params.rightMargin = params.leftMargin = Screen.dp(16f);
+    params.bottomMargin = Screen.dp(16f);
     setLayoutParams(params);
 
     setAlpha(0f);
@@ -79,9 +85,15 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
       rootFrameLayout = Views.findAncestor(this, RootFrameLayout.class, true);
       if (rootFrameLayout != null) {
         rootFrameLayout.addInsetsChangeListener(this);
-        Views.setBottomMargin(this, Screen.dp(16f) - Screen.dp(4f) + rootFrameLayout.getSystemInsets().bottom);
+        Views.setBottomMargin(this, Screen.dp(16f) + rootFrameLayout.getSystemInsets().bottom);
       }
     }
+  }
+
+  @Override
+  public void draw (@NonNull Canvas c) {
+    setCustomIconColor(M3.onPrimaryContainer());
+    super.draw(c);
   }
 
   @Override
@@ -95,7 +107,7 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
 
   @Override
   public void onInsetsChanged (RootFrameLayout viewGroup, Rect effectiveInsets, Rect effectiveInsetsWithoutIme, Rect systemInsets, Rect systemInsetsWithoutIme, boolean isUpdate) {
-    Views.setBottomMargin(this, Screen.dp(16f) - Screen.dp(4f) + systemInsets.bottom);
+    Views.setBottomMargin(this, Screen.dp(16f) + systemInsets.bottom);
   }
 
   private boolean isVisible;

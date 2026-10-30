@@ -33,7 +33,6 @@ import org.thunderdog.challegram.mediaview.MediaViewController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.RightId;
 import org.thunderdog.challegram.telegram.Tdlib;
-import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.widget.PopupLayout;
 
@@ -137,16 +136,16 @@ public class MediaToReplacePickerManager extends MediaLayoutManager {
         public MediaBottomBar.BarItem[] getBottomBarItems () {
           if (allowGallery && allowFiles) {
             return new MediaBottomBar.BarItem[] {
-              new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File, ColorId.attachFile),
-              new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery, ColorId.attachPhoto)
+              new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File),
+              new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery)
             };
           } else if (allowFiles) {
             return new MediaBottomBar.BarItem[] {
-              new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File, ColorId.attachFile)
+              new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File)
             };
           } else if (allowGallery) {
             return new MediaBottomBar.BarItem[] {
-              new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery, ColorId.attachPhoto)
+              new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery)
             };
           }
 

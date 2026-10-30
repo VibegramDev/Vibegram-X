@@ -180,7 +180,7 @@ public class ChatLinksController extends RecyclerViewController<ChatLinksControl
       @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         if (item.getId() == R.id.btn_deleteAllRevokedLinks) {
-          view.setIconColorId(ColorId.textNegative);
+          view.setIconColorId(ColorId.NONE); // M3: regular list colors, the error role is for error states.
         } else if (item.getId() == R.id.btn_inviteLink) {
           TdApi.ChatInviteLink link = (TdApi.ChatInviteLink) item.getData();
           view.setData(generateLinkSubtitle(link));
@@ -583,7 +583,7 @@ public class ChatLinksController extends RecyclerViewController<ChatLinksControl
       ListItem[] arr = new ListItem[]{
         new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.RevokedInviteLinks),
         new ListItem(ListItem.TYPE_SHADOW_TOP),
-        new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAllRevokedLinks, R.drawable.baseline_delete_24, R.string.DeleteAllRevokedLinks).setTextColorId(ColorId.textNegative),
+        new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAllRevokedLinks, R.drawable.baseline_delete_24, R.string.DeleteAllRevokedLinks),
         new ListItem(ListItem.TYPE_SEPARATOR_FULL),
         linkItem,
         new ListItem(ListItem.TYPE_SHADOW_BOTTOM)
@@ -795,7 +795,7 @@ public class ChatLinksController extends RecyclerViewController<ChatLinksControl
     if (!inviteLinksRevoked.isEmpty()) {
       items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.RevokedInviteLinks));
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAllRevokedLinks, R.drawable.baseline_delete_24, R.string.DeleteAllRevokedLinks).setTextColorId(ColorId.textNegative));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAllRevokedLinks, R.drawable.baseline_delete_24, R.string.DeleteAllRevokedLinks));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
 
       for (TdApi.ChatInviteLink inviteLink : inviteLinksRevoked) {

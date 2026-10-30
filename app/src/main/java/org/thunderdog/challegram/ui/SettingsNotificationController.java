@@ -522,7 +522,7 @@ public class SettingsNotificationController extends RecyclerViewController<Setti
         @TdlibNotificationManager.Status int status = tdlib.notifications().getNotificationBlockStatus();
 
         List<ListItem> itemsToAdd = new ArrayList<>();
-        itemsToAdd.add(errorButton = new ListItem(ListItem.TYPE_SETTING, R.id.btn_showAdvanced, getErrorIcon(status), getErrorText(status)).setTextColorId(ColorId.textNegative));
+        itemsToAdd.add(errorButton = new ListItem(ListItem.TYPE_SETTING, R.id.btn_showAdvanced, getErrorIcon(status), getErrorText(status)));
         itemsToAdd.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
         itemsToAdd.add(errorHint = new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, makeErrorDescription(status), false));
 
@@ -1176,7 +1176,7 @@ public class SettingsNotificationController extends RecyclerViewController<Setti
           if (inErrorMode = needErrorMode()) {
             @TdlibNotificationManager.Status int status = tdlib.notifications().getNotificationBlockStatus();
 
-            items.add(errorButton = new ListItem(ListItem.TYPE_SETTING, R.id.btn_showAdvanced, getErrorIcon(status), getErrorText(status)).setTextColorId(ColorId.textNegative));
+            items.add(errorButton = new ListItem(ListItem.TYPE_SETTING, R.id.btn_showAdvanced, getErrorIcon(status), getErrorText(status)));
             items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
             items.add(errorHint = new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, makeErrorDescription(status), false));
           }

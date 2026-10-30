@@ -431,7 +431,6 @@ public class CountryController extends TelegramViewController<CountryController.
           int height = getHeaderHeight();
           if (navigationController != null) {
             navigationController.getHeaderView().setBackgroundHeight(height);
-            navigationController.getFloatingButton().updatePosition(height);
           }
         }
       }

@@ -85,7 +85,7 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
     ArrayList<ListItem> items = new ArrayList<>();
 
     if (tdlib.allowQrLoginCamera()) {
-      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_qrLogin, R.drawable.xt3000_baseline_qrcode_scan_24, R.string.ScanQR).setTextColorId(ColorId.textNeutral));
+      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_qrLogin, R.drawable.xt3000_baseline_qrcode_scan_24, R.string.ScanQR));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     }
 
@@ -101,7 +101,7 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
       items.add(new ListItem(ListItem.TYPE_SESSIONS_EMPTY));
     } else {
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_terminateAllSessions, R.drawable.baseline_cancel_24, R.string.TerminateAllSessions).setTextColorId(ColorId.textNegative));
+      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_terminateAllSessions, R.drawable.baseline_cancel_24, R.string.TerminateAllSessions));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
       boolean first = true;
@@ -256,11 +256,6 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
         if (item.getViewType() == ListItem.TYPE_VALUED_SETTING_COMPACT) {
           view.forcePadding(Screen.dp(63f), 0);
         }
-        @PorterDuffColorId int iconColorId = item.getTextColorId(ColorId.NONE);
-        if (iconColorId == ColorId.textNegative) {
-          iconColorId = ColorId.iconNegative;
-        }
-        view.setIconColorId(iconColorId);
         final int itemId = item.getId();
         if (itemId == R.id.btn_terminateAllSessions) {
           view.setData(R.string.ClearOtherSessionsHelp);

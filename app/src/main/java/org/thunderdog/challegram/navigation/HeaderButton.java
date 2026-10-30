@@ -140,8 +140,21 @@ public class HeaderButton extends View {
     }
   }
 
+  private boolean containerFill;
+
+  /** M3: "Make sure icon buttons have a container fill." Same tonal circle as {@link BackHeaderButton}. */
+  public void setContainerFill (boolean containerFill) {
+    if (this.containerFill != containerFill) {
+      this.containerFill = containerFill;
+      invalidate();
+    }
+  }
+
   @Override
   protected void onDraw (Canvas c) {
+    if (containerFill && drawable != null && drawableRes != 0 && themeColorId != 0) {
+      c.drawCircle(getMeasuredWidth() / 2f, getMeasuredHeight() / 2f, Screen.dp(20f), Paints.fillingPaint(ColorUtils.alphaColor(.12f, getColor(0))));
+    }
     if (progressFactor > 0f) {
       if (progress != null) {
         progress.forceColor(ColorUtils.alphaColor(progressFactor, getColor(Theme.progressColor())));

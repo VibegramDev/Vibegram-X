@@ -736,7 +736,7 @@ public class ThemeListController extends RecyclerViewController<ThemeListControl
             addThemeInvalidateListener(newView);
             newView.setTypeface(Fonts.getRobotoBold());
             newView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 10f);
-            newView.setText(Lang.uppercase(Lang.getString(R.string.New)));
+            newView.setText(Lang.getString(R.string.New));
             newView.setLayoutParams(lp);
 
             ll.addView(newView);

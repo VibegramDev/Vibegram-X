@@ -1508,10 +1508,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
       if (useFloatSwitch != 0) {
         floatSwitch.setHeightFactor(heightFactor, baseHasFloat ? 1f - raptor : raptor, useFloatSwitch != 1);
-        if (translationMode == MODE_VERTICAL) {
-          float changeFactor = translateForward ? getHeightFactor(fromHeight) : getHeightFactor(fromHeight + heightDiff);
-          floatSwitch.setTranslationY(floatSwitch.getTranslationY() - (Size.getHeaderPortraitSize() * changeFactor) * (1f - heightFactor));
-        }
       }
     } else if (useFloatSwitch == 1) {
       floatSwitch.setHeightFactor(getHeightFactor(fromHeight), baseHasFloat ? 1f - raptor : raptor, false);

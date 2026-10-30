@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Vibegram X: fallback for strings missing from the cloud language pack (system locale ru). -->
+<!-- Vibegram X: strings missing from the cloud language pack. Lang reads them in the app language
+     (values-ru with the Russian pack), not in the system locale. -->
 <resources>
   <string name="ScrollToTop">Наверх</string>
   <string name="ChatFoldersPositionSide">Сбоку</string>
@@ -15,4 +16,60 @@
   <string name="NavigationStyle">Навигация</string>
   <string name="NavigationStyleRail">Боковая панель</string>
   <string name="NavigationStyleDock">Нижний док</string>
+  <string name="NavigationStyleBar">Нижняя панель</string>
+
+  <string name="RichMessageDetails">Подробнее</string>
+  <string name="RichMessageEmpty">Пустое сообщение</string>
+  <string name="RichMessageUnsupportedBlock">Эта часть сообщения пока не поддерживается</string>
+
+  <string name="WebProxy">WEB-прокси</string>
+  <string name="AddWebProxy">Добавить WEB-прокси</string>
+  <string name="ProxyWeb">WEB %1$s</string>
+  <string name="WebProxyHint">WEB-прокси передаёт трафик Telegram через HTTPS-страницу сайта прокси в скрытом WebView. Введите имя хоста, при необходимости с путём (host/path), и секрет: 32 шестнадцатеричные цифры, перед ними может стоять dd. Нужен актуальный Android System WebView. Подключение работает, пока приложение запущено.</string>
+  <string name="WebProxyInvalid">Неверный адрес или секрет. Укажите имя хоста (можно с путём, без схемы и порта) и секрет из 32 шестнадцатеричных цифр.</string>
+  <string name="EnableProxyAlertHintWeb">Трафик идёт через HTTPS-страницу этого сайта в скрытом WebView. Это работает, только пока приложение запущено, а сайт должен поддерживать мост WEB-прокси.</string>
+  <string name="UseProxyType">Тип</string>
+  <string name="ProxyHintPill">%1$s · Нажмите для прокси</string>
+  <string name="ProxyHintInfo">Интернет работает, но Vibegram X всё ещё не может подключиться к Telegram. Может помочь прокси.</string>
+  <string name="ProxyHintEnable">Включить сохранённый прокси</string>
+  <string name="ProxyHintNotNow">Не сейчас</string>
+
+  <string name="ThemeMonetWhite">Monet (светлая)</string>
+  <string name="ThemeMonetDark">Monet (тёмная)</string>
+  <string name="ThemeMonetBlack">Monet (чёрная)</string>
+
+  <string name="Topics">Темы</string>
+  <string name="NoTopics">Тем пока нет</string>
+  <string name="LoadingTopics">Загрузка тем…</string>
+  <string name="PinTopic">Закрепить тему</string>
+  <string name="UnpinTopic">Открепить тему</string>
+  <string name="CloseTopic">Закрыть тему</string>
+  <string name="ReopenTopic">Открыть тему снова</string>
+  <string name="EditTopic">Изменить тему</string>
+  <string name="DeleteTopic">Удалить тему</string>
+  <string name="DeleteTopicConfirm">Удалить тему **%1$s**? Все сообщения в этой теме будут удалены.</string>
+  <string name="NewTopic">Новая тема</string>
+  <string name="TopicName">Название темы</string>
+  <string name="TopicNameHint">Введите название темы</string>
+  <string name="EnableTopics">Темы</string>
+  <string name="EnableTopicsDesc">Включите темы, чтобы разделить обсуждения в группе. Переключать эту настройку может только владелец группы.</string>
+  <string name="TopicsLayoutTabs">Показывать вкладками</string>
+  <string name="TopicsLayoutTabsDesc">Темы будут показаны горизонтальными вкладками вверху чата, а не списком.</string>
+  <string name="TabInfo">О группе</string>
+  <string name="TopicWasCreated">Тема создана</string>
+  <string name="TopicWasRenamed">Тема переименована в %1$s</string>
+  <string name="TopicIconChanged">Значок темы изменён</string>
+  <string name="TopicWasClosed">Тема закрыта</string>
+  <string name="TopicWasReopened">Тема открыта снова</string>
+  <string name="GeneralTopicWasHidden">Тема «Основное» скрыта</string>
+  <string name="GeneralTopicWasShown">Тема «Основное» показана</string>
+  <string name="ViewAsChat">Показать как чат</string>
+  <string name="ShowChatPreview">Предпросмотр</string>
+  <string name="ViewAsTopics">Показать темы списком</string>
+  <string name="ViewAsTabs">Показать темы вкладками</string>
+  <string name="FilterByTopic">Фильтр по теме</string>
+  <string name="SearchForMessages">Поиск сообщений</string>
+  <string name="NoMessagesFound">Сообщения не найдены</string>
+  <string name="ChangeTopicIcon">Изменить значок темы</string>
+  <string name="ResetTopicIcon">Сбросить значок темы</string>
 </resources>

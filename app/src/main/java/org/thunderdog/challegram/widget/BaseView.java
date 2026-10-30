@@ -399,7 +399,22 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
   @Override
   public void onLongPressFinish (View view, float x, float y) {
     setInLongPress(false, x, y);
+    if (keepChatPreviewOnRelease()) {
+      // A chat preview stays after the finger is lifted: the chat scrolls, «Open» opens it, a tap outside or Back closes.
+      if (pendingController != null) {
+        pendingSticky = true;
+      } else {
+        currentOpenPreview = null;
+        UI.getContext(getContext()).makeForceTouchSticky();
+      }
+      return;
+    }
     closePreview();
+  }
+
+  private boolean keepChatPreviewOnRelease () {
+    ViewController<?> preview = currentOpenPreview != null ? currentOpenPreview : pendingController;
+    return preview instanceof MessagesController && useOpenButtonInChatPreview();
   }
 
   // MessagesController-specific
@@ -505,7 +520,7 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
     if (!Config.FORCE_TOUCH_ENABLED) {
       return FORCE_TOUCH_NONE;
     }
-    if (tdlib != null && chatId != 0 && Settings.instance().needPreviewChatOnHold()) {
+    if (tdlib != null && chatId != 0 && Settings.instance().needPreviewChatOnHold() && canPreviewChatAt(x, y)) {
       if (ChatId.isSecret(chatId))
         return FORCE_TOUCH_NONE;
       TdApi.Chat chat = tdlib.chatSync(chatId, 100l);
@@ -522,7 +537,51 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
     return FORCE_TOUCH_NONE;
   }
 
+  /**
+   * Whether a chat preview shows the single «Open» button instead of action icons:
+   * by default when no owner supplies its own actions (and not the «Unpin» of a pinned messages preview).
+   */
+  protected boolean useOpenButtonInChatPreview () {
+    return actionListProvider == null && !(filter instanceof TdApi.SearchMessagesFilterPinned);
+  }
+
+  /** Whether holding at (x, y) previews the chat; false there leaves the long press to the long click listener. */
+  protected boolean canPreviewChatAt (float x, float y) {
+    return true;
+  }
+
+  /** Whether {@link #openChatPreview()} can open the preview of this view's chat (the «Preview» menu item). */
+  public final boolean canOpenChatPreview () {
+    if (!Config.FORCE_TOUCH_ENABLED || tdlib == null || chatId == 0 || ChatId.isSecret(chatId) || tdlib.isForum(chatId)) {
+      return false;
+    }
+    return (threadMessages == null || threadMessages.length == 0) && tdlib.chat(chatId) != null;
+  }
+
+  /**
+   * Opens the chat preview without a held finger (from a menu): it stays until a tap —
+   * an action under the tap, the chat itself on the content, closing outside or by Back.
+   */
+  public final boolean openChatPreview () {
+    if (!canOpenChatPreview() || currentOpenPreview != null || pendingController != null) {
+      return false;
+    }
+    TdApi.Chat chat = tdlib.chat(chatId);
+    final MessagesController controller = new MessagesController(getContext(), tdlib);
+    controller.setInForceTouchMode(true);
+    controller.setArguments(createChatPreviewArguments(chatList, chat, null, null, filter));
+    openPreviewAsync(controller, getMeasuredWidth() / 2f, getMeasuredHeight() / 2f, true);
+    return true;
+  }
+
   private void openPreviewAsync (final ViewController<?> controller, final float x, final float y) {
+    openPreviewAsync(controller, x, y, false);
+  }
+
+  private boolean pendingSticky;
+
+  private void openPreviewAsync (final ViewController<?> controller, final float x, final float y, final boolean sticky) {
+    pendingSticky = sticky;
     controller.setInForceTouchMode(true);
     if (controller.wouldHideKeyboardInForceTouchMode()) {
       UI.getContext(getContext()).hideSoftwareKeyboard();
@@ -534,7 +593,7 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
         if (pendingController == controller) {
           pendingController = null;
           pendingTask = null;
-          openPreview(controller, x, y);
+          openPreview(controller, x, y, pendingSticky);
         }
       }
     };
@@ -563,6 +622,10 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
   }
 
   private void openPreview (ViewController<?> controller, float x, float y) {
+    openPreview(controller, x, y, false);
+  }
+
+  private void openPreview (ViewController<?> controller, float x, float y, boolean sticky) {
     ViewController<?> ancestor = ViewController.findAncestor(this);
     if ((ancestor != null && tdlib != null && ancestor.tdlib() != null && ancestor.tdlib().id() != tdlib.id())) {
       return;
@@ -573,6 +636,7 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
     ForceTouchView.ForceTouchContext context = new ForceTouchView.ForceTouchContext(tdlib, this, controller.getValue(), controller);
     context.setStateListener(controller);
     context.setAnimationSourcePoint(sourceX, sourceY);
+    context.setSticky(sticky);
 
     if (controller instanceof ForceTouchView.PreviewDelegate) {
       ((ForceTouchView.PreviewDelegate) controller).onPrepareForceTouchContext(context);
@@ -589,7 +653,17 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
     ArrayList<ActionItem> actions = new ArrayList<>(5);
     ForceTouchView.ActionListener listener = null;
 
-    if (actionListProvider != null) {
+    final boolean openButton = controller instanceof MessagesController && useOpenButtonInChatPreview();
+    if (openButton) {
+      context.setScrollableView(((MessagesController) controller).getMessagesView());
+      // A chat preview has one action, «Open» (the chat actions are in the long-press menu); none if it can't open.
+      if (allowMaximizePreview) {
+        context.setOpenButton(Lang.getString(R.string.Open));
+        if (context.getStateListenerArgument() == null) {
+          context.setStateListenerArgument(controller); // the maximize listener reads the previewed controller from it
+        }
+      }
+    } else if (actionListProvider != null) {
       listener = actionListProvider.onCreateActions(this, context, actions, controller);
     } else if (controller instanceof MessagesController && ancestor != null) {
       // TODO move MessagesController-related stuff somewhere out of BaseView
@@ -627,9 +701,11 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
     }
 
     if (UI.getContext(getContext()).openForceTouch(context)) {
-      currentOpenPreview = controller;
-      forceTouchHelper.onLongPress(this, x, y);
-      setInLongPress(true, x, y);
+      if (!sticky) {
+        currentOpenPreview = controller;
+        forceTouchHelper.onLongPress(this, x, y);
+        setInLongPress(true, x, y);
+      }
     } else {
       controller.destroy();
     }

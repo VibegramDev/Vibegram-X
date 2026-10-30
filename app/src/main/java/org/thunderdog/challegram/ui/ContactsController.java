@@ -769,7 +769,6 @@ public class ContactsController extends TelegramViewController<ContactsControlle
       int height = getHeaderHeight();
       if (navigationController != null) {
         navigationController.getHeaderView().setBackgroundHeight(height);
-        navigationController.getFloatingButton().updatePosition(height);
       }
     }
   }

@@ -3831,7 +3831,7 @@ public class TdlibUi extends Handler {
             case TdApi.SettingsSectionDevices.CONSTRUCTOR: {
               SettingsSessionsController sessions = new SettingsSessionsController(context.context(), context.tdlib());
               SettingsWebsitesController websites = new SettingsWebsitesController(context.context(), context.tdlib());
-              result = new SimpleViewPagerController(context.context(), context.tdlib(), new ViewController<?>[] {sessions, websites}, new String[] {Lang.uppercase(Lang.getString(R.string.Devices)), Lang.getString(R.string.Websites)}, false);
+              result = new SimpleViewPagerController(context.context(), context.tdlib(), new ViewController<?>[] {sessions, websites}, new String[] {Lang.getString(R.string.Devices), Lang.getString(R.string.Websites)}, false);
               break;
             }
             case TdApi.SettingsSectionLanguage.CONSTRUCTOR: {
@@ -5285,20 +5285,31 @@ public class TdlibUi extends Handler {
       strings.append(R.string.ArchiveHide);
     }
 
-    context.showOptions(Lang.pluralBold(R.string.xArchivedChats, archive.totalCount()), ids.get(), strings.get(), null, icons.get(), (v, optionId) -> {
+    // Long press on the archive row: the small menu at the finger in any window width, as for chats.
+    context.showOptions(context.getOptions(Lang.pluralBold(R.string.xArchivedChats, archive.totalCount()), ids.get(), strings.get(), null, icons.get(), Text.LINE_COUNT_UNLIMITED), (v, optionId) -> {
       if (optionId == R.id.btn_markChatAsRead) {
         tdlib.readAllChats(new TdApi.ChatListArchive(), readCount -> UI.showToast(Lang.plural(R.string.ReadAllChatsDone, readCount), Toast.LENGTH_SHORT));
       } else if (optionId == R.id.btn_pinUnpinChat) {
         tdlib.settings().toggleUserPreference(TdlibSettingsManager.PREFERENCE_HIDE_ARCHIVE);
       }
       return true;
-    });
+    }, null, context.context().getRecentTouchPoint(), null);
   }
 
   public void showChatOptions (ViewController<?> context, final TdApi.ChatList chatList, final long chatId, final ThreadInfo messageThread, final TdApi.MessageSource source, boolean canSelect, boolean isSelected, @Nullable Runnable onSelect) {
+    showChatOptions(context, chatList, chatId, messageThread, source, canSelect, isSelected, onSelect, null);
+  }
+
+  /**
+   * @param onPreview opens the chat preview; non-null adds the «Preview» item (the preview by holding is on the avatar).
+   * @return the menu window, null when no menu opened
+   */
+  public @Nullable PopupLayout showChatOptions (ViewController<?> context, final TdApi.ChatList chatList, final long chatId, final ThreadInfo messageThread, final TdApi.MessageSource source, boolean canSelect, boolean isSelected, @Nullable Runnable onSelect, @Nullable Runnable onPreview) {
+    // The long press that opened the options: the small menu opens at the finger in any window width.
+    final float[] anchor = context.context().getRecentTouchPoint();
     TdApi.Chat chat = tdlib.chat(chatId);
     if (chat == null)
-      return;
+      return null;
 
     boolean available = tdlib.chatAvailable(chat);
     TdApi.ChatPosition position = ChatPosition.findPosition(chat, chatList);
@@ -5306,17 +5317,24 @@ public class TdlibUi extends Handler {
       if (position != null && position.source instanceof TdApi.ChatSourcePublicServiceAnnouncement) {
         showHidePsaConfirm(context, chatList, chatId, null);
       }
-      return;
+      return null;
     }
 
     final boolean hasNotifications = tdlib.chatNotificationsEnabled(chat);
 
-    final int size = canSelect && onSelect != null ? 8 : 7;
+    final int size = (canSelect && onSelect != null ? 8 : 7) + (onPreview != null ? 1 : 0);
 
     IntList ids = new IntList(size);
     StringList strings = new StringList(size);
     IntList colors = new IntList(size);
     IntList icons = new IntList(size);
+
+    if (onPreview != null) {
+      ids.append(R.id.btn_showChatPreview);
+      strings.append(R.string.ShowChatPreview);
+      colors.append(ViewController.OptionColor.NORMAL);
+      icons.append(R.drawable.baseline_visibility_24);
+    }
 
     if (canSelect && onSelect != null) {
       ids.append(R.id.btn_selectChat);
@@ -5421,13 +5439,21 @@ public class TdlibUi extends Handler {
         throw new IllegalArgumentException();
     }
 
-    context.showOptions(chatName, ids.get(), strings.get(), colors.get(), icons.get(), (itemView, id) -> {
+    // The chat name header is never dropped: a short single-line info may be dropped when the menu does not fit
+    // at the finger, so private chats («Chat with …», one more item) lost it, unlike channels.
+    ViewController.Options options = context.getOptions(chatName, ids.get(), strings.get(), colors.get(), icons.get(), Text.LINE_COUNT_UNLIMITED);
+    options.keepInfo = true;
+    return context.showOptions(options, (itemView, id) -> {
       if (id == R.id.btn_selectChat) {
         onSelect.run();
         return true;
       }
+      if (id == R.id.btn_showChatPreview) {
+        onPreview.run();
+        return true;
+      }
       return processChatAction(context, chatList, chatId, messageThread, source, id, null);
-    });
+    }, null, anchor, null);
   }
 
   private void showPinUnpinConfirm (ViewController<?> context, final TdApi.ChatList chatList, final long chatId, TdApi.MessageSource source, @Nullable Runnable after) {

@@ -320,12 +320,12 @@ public class Lang {
       if (languagePackInfo == null)
         languagePackInfo = Settings.instance().getLanguagePackInfo();
       final String key = getResourceEntryName(resId);
-      TdApi.LanguagePackStringValueOrdinary string = getStringValue(key, languagePackInfo);
+      TdApi.LanguagePackStringValueOrdinary string = isLocalKey(languagePackInfo, key) ? null : getStringValue(key, languagePackInfo);
       if (string != null)
         return string.value;
     }
     try {
-      return getAndroidString(resId);
+      return getAndroidResources(allowCloud ? languagePackInfo : null).getString(resId);
     } catch (Resources.NotFoundException e) {
       Log.e("Resource not found (shitty modified lang pack?): %d %s", resId, getResourceEntryName(resId));
       return "";
@@ -333,13 +333,53 @@ public class Lang {
   }
 
   private static String getAndroidString (@StringRes int resId) throws Resources.NotFoundException {
-    // TODO non-current languagePackInfo
     return UI.getResources().getString(resId);
   }
 
-  private static String getAndroidString (@StringRes int resId, Object... formatArgs) {
-    // TODO non-current languagePackInfo
-    return UI.getResources().getString(resId, formatArgs);
+  private static final class LanguageResources {
+    final String packId;
+    final Resources resources;
+    final String[] localKeys;
+
+    LanguageResources (String packId, Resources resources, String[] localKeys) {
+      this.packId = packId;
+      this.resources = resources;
+      this.localKeys = localKeys;
+    }
+  }
+
+  private static volatile LanguageResources languageResources;
+
+  /**
+   * Resources in the app language (res/values-&lt;language of the pack&gt;, e.g. values-ru with the Russian cloud
+   * pack on an English system), not the system locale: they back keys missing from the pack, and their
+   * {@code vg_LangLocalKeys} replace the pack's own strings (abbreviations in the cloud translation).
+   * API 16 (no createConfigurationContext) keeps the system locale and no local keys.
+   */
+  private static LanguageResources getLanguageResources (@NonNull TdApi.LanguagePackInfo languagePackInfo) {
+    LanguageResources current = languageResources;
+    if (current == null || !current.packId.equals(languagePackInfo.id)) {
+      Resources resources = UI.getResources();
+      String[] localKeys = new String[0];
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+        Configuration configuration = new Configuration(resources.getConfiguration());
+        String[] code = normalizeLanguageCode(!StringUtils.isEmpty(languagePackInfo.baseLanguagePackId) ? languagePackInfo.pluralCode : languagePackInfo.id).split("[-_]");
+        configuration.setLocale(code.length > 1 ? new Locale(code[0], code[1]) : new Locale(code[0]));
+        resources = AppContext.get().createConfigurationContext(configuration).getResources();
+        localKeys = resources.getStringArray(R.array.vg_LangLocalKeys);
+      }
+      languageResources = current = new LanguageResources(languagePackInfo.id, resources, localKeys);
+    }
+    return current;
+  }
+
+  private static Resources getAndroidResources (@Nullable TdApi.LanguagePackInfo languagePackInfo) {
+    return languagePackInfo != null ? getLanguageResources(languagePackInfo).resources : UI.getResources();
+  }
+
+  private static boolean isLocalKey (@NonNull TdApi.LanguagePackInfo languagePackInfo, String key) {
+    String[] localKeys = getLanguageResources(languagePackInfo).localKeys;
+    return localKeys.length > 0 && ArrayUtils.indexOf(localKeys, key) >= 0;
   }
 
   private static final int FLAG_LOWERCASE = 1;
@@ -433,7 +473,7 @@ public class Lang {
       if (languagePackInfo == null)
         languagePackInfo = Settings.instance().getLanguagePackInfo();
       final String key = getResourceEntryName(resId);
-      TdApi.LanguagePackStringValueOrdinary string = getStringValue(key, languagePackInfo);
+      TdApi.LanguagePackStringValueOrdinary string = isLocalKey(languagePackInfo, key) ? null : getStringValue(key, languagePackInfo);
       if (string != null) {
         try {
           return formatString(applyFlags(string.value, flags), hasSpanned, creator, formatArgs);
@@ -443,11 +483,12 @@ public class Lang {
       }
     }
     try {
+      Resources resources = getAndroidResources(allowCloud ? languagePackInfo : null);
       if (creator != null || flags != 0 || hasSpanned) {
-        String format = applyFlags(getAndroidString(resId), flags);
+        String format = applyFlags(resources.getString(resId), flags);
         return formatString(format, hasSpanned, creator, formatArgs);
       } else {
-        return getAndroidString(resId, formatArgs);
+        return resources.getString(resId, formatArgs);
       }
     } catch (Resources.NotFoundException e) {
       Log.e("Resource not found (shitty modified lang pack?): %d %s", resId, getResourceEntryName(resId));
@@ -1306,11 +1347,6 @@ public class Lang {
 
   public static String plural (@StringRes int res, final long num, Object... args) {
     return plural(res, num, null, args).toString();
-  }
-
-  public static String uppercase (String string) {
-    // TODO allowUppercase()
-    return string.toUpperCase(locale());
   }
 
   public static String lowercase (String string) {

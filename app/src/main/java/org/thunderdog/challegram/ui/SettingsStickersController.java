@@ -151,14 +151,14 @@ public class SettingsStickersController extends ViewPagerController<SettingsCont
   @Override
   protected String[] getPagerSections () {
     return type == TYPE_STICKER ? new String[] {
-      Lang.uppercase(Lang.getString(R.string.Trending)),
-      Lang.uppercase(Lang.getString(R.string.Installed)),
-      Lang.uppercase(Lang.getString(R.string.Archived)),
-      Lang.uppercase(Lang.getString(R.string.Masks))
+      Lang.getString(R.string.Trending),
+      Lang.getString(R.string.Installed),
+      Lang.getString(R.string.Archived),
+      Lang.getString(R.string.Masks)
     }: new String[] {
-      Lang.uppercase(Lang.getString(R.string.Trending)),
-      Lang.uppercase(Lang.getString(R.string.Installed)),
-      Lang.uppercase(Lang.getString(R.string.Archived))
+      Lang.getString(R.string.Trending),
+      Lang.getString(R.string.Installed),
+      Lang.getString(R.string.Archived)
     };
   }
 

@@ -474,21 +474,6 @@ public class Paints {
   private static @Px float lastCounterOutlineWidth;
   private static @ColorInt int lastCounterOutlineColor;
 
-  private static Paint counterDashedOutlinePaint;
-
-  /** Same as {@link #getCounterOutlinePaint}, dashed. */
-  public static Paint getCounterDashedOutlinePaint (@Px float width, @ColorInt int color) {
-    if (counterDashedOutlinePaint == null || counterDashedOutlinePaint.getStrokeWidth() != width) {
-      counterDashedOutlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-      counterDashedOutlinePaint.setStyle(Paint.Style.STROKE);
-      counterDashedOutlinePaint.setStrokeWidth(width);
-      counterDashedOutlinePaint.setStrokeCap(Paint.Cap.ROUND);
-      counterDashedOutlinePaint.setPathEffect(new android.graphics.DashPathEffect(new float[] {width * 2f, width * 1.5f}, 0));
-    }
-    counterDashedOutlinePaint.setColor(color);
-    return counterDashedOutlinePaint;
-  }
-
   public static Paint getCounterOutlinePaint (@Px float width, @ColorInt int color) {
     if (counterOutlinePaint == null) {
       counterOutlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);

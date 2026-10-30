@@ -345,7 +345,7 @@ public class Settings2FAController extends RecyclerViewController<Settings2FACon
           new ListItem(ListItem.TYPE_SHADOW_TOP),
           new ListItem(ListItem.TYPE_SETTING, R.id.btn_resendRecoveryEmail, 0, R.string.ResendRecoveryEmailCode),
           new ListItem(ListItem.TYPE_SEPARATOR_FULL),
-          new ListItem(ListItem.TYPE_SETTING, R.id.btn_abort2FA, 0, R.string.AbortPassword).setTextColorId(ColorId.textNegative),
+          new ListItem(ListItem.TYPE_SETTING, R.id.btn_abort2FA, 0, R.string.AbortPassword),
           new ListItem(ListItem.TYPE_SHADOW_BOTTOM),
         }, false);
         this.adapter.setLockFocusOn(this, true);
@@ -378,7 +378,7 @@ public class Settings2FAController extends RecyclerViewController<Settings2FACon
         items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
         items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_resendRecoveryEmail, 0, R.string.ResendRecoveryEmailCode));
         items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-        items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_abortRecoveryEmail, 0, state.hasRecoveryEmailAddress ? R.string.AbortRecoveryEmailChange : R.string.AbortRecoveryEmail).setTextColorId(ColorId.textNegative));
+        items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_abortRecoveryEmail, 0, state.hasRecoveryEmailAddress ? R.string.AbortRecoveryEmailChange : R.string.AbortRecoveryEmail));
         items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
         this.adapter.setLockFocusOn(this, false);
       }

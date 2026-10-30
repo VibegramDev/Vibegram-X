@@ -2278,8 +2278,23 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     if (context.needHideKeyboard()) {
       forceTouchWindow.setHideKeyboard();
     }
+    // Closed by itself (Back, a tap on a sticky preview): forget it, or no preview opens again.
+    final PopupLayout window = forceTouchWindow;
+    window.setDismissListener(popup -> {
+      if (forceTouchWindow == window) {
+        forceTouchWindow = null;
+        forceTouchView = null;
+      }
+    });
     forceTouchWindow.showAnimatedPopupView(forceTouchView, forceTouchView);
     return true;
+  }
+
+  /** The held preview stays open after the finger is lifted (see {@link ForceTouchView#setSticky()}). */
+  public void makeForceTouchSticky () {
+    if (forceTouchWindow != null && forceTouchView != null) {
+      forceTouchView.setSticky();
+    }
   }
 
   public void processForceTouchMoveEvent (float x, float y, float startX, float startY) {

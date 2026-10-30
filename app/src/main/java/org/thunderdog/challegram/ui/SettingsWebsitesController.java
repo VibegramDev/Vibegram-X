@@ -76,7 +76,7 @@ public class SettingsWebsitesController extends RecyclerViewController<SettingsP
     }
 
     ArrayList<ListItem> items = new ArrayList<>(6 + websites.size() * 2);
-    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_terminateAllSessions, 0, R.string.TerminateAllWebSessions).setTextColorId(ColorId.textNegative));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_terminateAllSessions, 0, R.string.TerminateAllWebSessions));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.ClearOtherWebSessionsHelp));
 

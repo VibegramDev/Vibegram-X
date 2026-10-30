@@ -19,33 +19,48 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
+import android.graphics.Outline;
 import android.graphics.Paint;
+import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewOutlineProvider;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.support.RippleSupport;
-import org.thunderdog.challegram.support.SimpleShapeDrawable;
-import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.unsorted.Size;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
+import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.Destroyable;
 
+/**
+ * M3 FAB (FabBaselineTokens): 56dp, CornerLarge (16dp), primaryContainer / onPrimaryContainer, Level3,
+ * bottom trailing corner with 16dp margins. "FABs remain in place on scroll".
+ */
 public class FloatingButton extends View implements Destroyable, RootFrameLayout.InsetsChangeListener {
-  private float center;
-  private float heightDiff;
+  private static final float SIZE = 56f;
+  private static final float MARGIN = 16f;
+
+  private final float center;
 
   private boolean isShowing;
 
@@ -54,27 +69,69 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
   public FloatingButton (Context context) {
     super(context);
 
-    heightDiff = -Size.getMaximumHeaderSizeDifference();
-    RippleSupport.setCircleBackground(this, 56f, 4f, ColorId.headerButton, true, null);
+    int size = Screen.dp(SIZE);
+    center = (float) size * .5f;
 
-    int padding = Screen.dp(4f);
-    int size = Screen.dp(56f);
-    center = (float) size * .5f + padding;
+    setM3FabBackground(this);
 
     FrameLayoutFix.LayoutParams params;
 
-    params = FrameLayoutFix.newParams(size + padding * 2, size + padding * 2, Gravity.TOP | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT));
-    params.topMargin = HeaderView.getBigSize(true) - Screen.dp(30f) - padding;
-    params.rightMargin = params.leftMargin = Screen.dp(16f) - padding;
+    params = FrameLayoutFix.newParams(size, size, Gravity.BOTTOM | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT));
+    params.rightMargin = params.leftMargin = params.bottomMargin = Screen.dp(MARGIN);
 
     setLayoutParams(params);
 
     isShowing = true;
 
-    setTranslationY(heightDiff);
     setAlpha(0f);
     setScaleX(MIN_SCALE);
     setScaleY(MIN_SCALE);
+  }
+
+  /**
+   * M3 FAB container for a 56dp view: primaryContainer, CornerLarge, onPrimaryContainer pressed state layer,
+   * Level3 shadow (API 21+). Colors are read on every draw, so they follow theme changes.
+   */
+  public static void setM3FabBackground (View view) {
+    GradientDrawable mask = new GradientDrawable();
+    mask.setCornerRadius(Screen.dp(M3.CORNER_LARGE));
+    mask.setColor(0xFFFFFFFF);
+    Drawable container = new Drawable() {
+      @Override
+      public void draw (@NonNull Canvas c) {
+        RectF rect = Paints.getRectF();
+        rect.set(getBounds());
+        float radius = Screen.dp(M3.CORNER_LARGE);
+        c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(M3.primaryContainer()));
+      }
+
+      @Override
+      public void setAlpha (int alpha) { }
+
+      @Override
+      public void setColorFilter (@Nullable ColorFilter colorFilter) { }
+
+      @Override
+      public int getOpacity () {
+        return PixelFormat.TRANSLUCENT;
+      }
+    };
+    view.setBackgroundDrawable(new M3StateLayerDrawable(container, mask, ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onPrimaryContainer())) {
+      @Override
+      public void draw (@NonNull Canvas c) {
+        setColor(ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onPrimaryContainer()));
+        super.draw(c);
+      }
+    });
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      view.setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), Screen.dp(M3.CORNER_LARGE));
+        }
+      });
+      view.setElevation(Screen.dp(M3.ELEVATION_LEVEL3));
+    }
   }
 
   private RootFrameLayout rootView;
@@ -85,13 +142,13 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
     rootView = Views.findAncestor(this, RootFrameLayout.class, true);
     if (rootView != null) {
       rootView.addInsetsChangeListener(this);
-      applyTopInset(rootView.getTopInset());
+      applyBottomInset(rootView.getSystemInsets().bottom);
     }
   }
 
   @Override
   public void onInsetsChanged (RootFrameLayout viewGroup, Rect effectiveInsets, Rect effectiveInsetsWithoutIme, Rect systemInsets, Rect systemInsetsWithoutIme, boolean isUpdate) {
-    applyTopInset(effectiveInsets.top);
+    applyBottomInset(systemInsets.bottom);
   }
 
   @Override
@@ -100,8 +157,8 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
     performDestroy();
   }
 
-  private void applyTopInset (int topInset) {
-    Views.setTopMargin(this, HeaderView.getBigSize(false) + topInset - Screen.dp(30f) - Screen.dp(4f));
+  private void applyBottomInset (int bottomInset) {
+    Views.setBottomMargin(this, Screen.dp(MARGIN) + bottomInset);
   }
 
   @Override
@@ -165,10 +222,7 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
     }
   }
 
-  private float heightFactor = -1f, scaleFactor = -1f;
-  private float fromHeightFactor;
-  private float toHeightFactor;
-  private boolean translateFully;
+  private float scaleFactor = -1f;
 
   private Animator.AnimatorListener hideListener;
 
@@ -183,72 +237,28 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
     if (touchEnabled != enabled) {
       touchEnabled = enabled;
       setEnabled(enabled);
-      if (Views.HARDWARE_LAYER_ENABLED) {
-        Views.setLayerType(this, enabled ? (SimpleShapeDrawable.USE_SOFTWARE_SHADOW ? LAYER_TYPE_SOFTWARE : LAYER_TYPE_HARDWARE) : LAYER_TYPE_NONE);
-      }
     }
   }
 
   private static final long OVERSHOOT_DURATION = 380l;
 
   public void initHeightFactor (float heightFactor, float heightFactor2, float scaleFactor, boolean animate, boolean translation) {
-    fromHeightFactor = heightFactor;
-    toHeightFactor = heightFactor2;
-    translateFully = translation;
-    if (toHeightFactor == fromHeightFactor) {
-      setTranslationY((1f - heightFactor) * heightDiff);
-    } else {
-      setHeightFactor(heightFactor, scaleFactor, animate);
-    }
+    setHeightFactor(heightFactor, scaleFactor, animate);
   }
 
-  @SuppressWarnings ("SuspiciousNameCombination")
+  /**
+   * M3: "FABs remain in place on scroll" — the header height neither moves nor hides the button.
+   * Only screen transitions ({@code animate == false}) fade it in and out by {@code scaleFactor}.
+   */
   public void setHeightFactor (float heightFactor, float scaleFactor, boolean animate) {
-    if (this.heightFactor != heightFactor || this.scaleFactor != scaleFactor) {
-      this.heightFactor = heightFactor;
+    if (!animate && this.scaleFactor != scaleFactor) {
       this.scaleFactor = scaleFactor;
-      if (translateFully) {
-        setTranslationY((1f - heightFactor) * heightDiff - Size.getHeaderPortraitSize() * fromHeightFactor * (1f - heightFactor));
-      } else if (animate || fromHeightFactor != toHeightFactor) {
-        setTranslationY((1f - heightFactor) * heightDiff);
-      }
-      if (animate) {
-        if (heightFactor == 0f) {
-          if (isShowing) {
-            isShowing = false;
-            Views.animate(this, 0f, 0f, 0f, OVERSHOOT_DURATION, AnimatorUtils.ANTICIPATE_OVERSHOOT_INTERPOLATOR, getHideListener());
-          }
-        } else {
-          if (!isShowing) {
-            isShowing = true;
-            setTouchEnabled(true);
-            Views.animate(this, 1f, 1f, 1f, OVERSHOOT_DURATION, AnimatorUtils.ANTICIPATE_OVERSHOOT_INTERPOLATOR, null);
-          }
-        }
-      } else {
-        /*float origH = heightFactor;
-
-        if (fromHeightFactor != toHeightFactor) {
-          if (fromHeightFactor != 0f) {
-            heightFactor = Math.min(heightFactor / fromHeightFactor, 1f);
-          } else if (toHeightFactor != 0f) {
-            heightFactor = heightFactor / toHeightFactor;
-          }
-        }
-
-        if (origH == heightFactor) {
-          Logger.v("%f", heightFactor);
-        } else {
-          Logger.w("%f %f", origH, heightFactor);
-        }*/
-
-        float realAlpha = MathUtils.clamp(scaleFactor);
-        setAlpha(realAlpha);
-        float scale = MIN_SCALE + (1f - MIN_SCALE) * scaleFactor;
-        setScaleX(scale);
-        setScaleY(scale);
-        setTouchEnabled(isShowing = realAlpha != 0f);
-      }
+      float realAlpha = MathUtils.clamp(scaleFactor);
+      setAlpha(realAlpha);
+      float scale = MIN_SCALE + (1f - MIN_SCALE) * scaleFactor;
+      setScaleX(scale);
+      setScaleY(scale);
+      setTouchEnabled(isShowing = realAlpha != 0f);
     }
   }
 
@@ -257,7 +267,7 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
       return 0;
     }
     if (resource == R.drawable.baseline_chat_bubble_24) {
-      return Screen.dp(17f) + Screen.dp(4f);
+      return Screen.dp(17f);
       /*case R.drawable.ic_camera_gray: {
         return Screen.dp(19f) + Screen.dp(4f);
       }*/
@@ -285,9 +295,9 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
   @Override
   protected void onDraw (Canvas c) {
     if (icon != null) {
-      draw(c, iconRes, icon, center, iconTop, Paints.getHeaderFloatIconPorterDuffPaint(), 1f);
+      draw(c, iconRes, icon, center, iconTop, Paints.getPorterDuffPaint(M3.onPrimaryContainer()), 1f);
     } else if (leftIcon != null || rightIcon != null) {
-      Paint paint = Paints.getHeaderFloatIconPorterDuffPaint();
+      Paint paint = Paints.getPorterDuffPaint(M3.onPrimaryContainer());
       if (leftIcon != null)
         draw(c, leftIconRes, leftIcon, center, leftIconTop, paint, 1f - MathUtils.clamp(factor));
       if (rightIcon != null)
@@ -327,21 +337,13 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
     }
   }
 
-  public void updatePosition (int height) {
-    float heightFactor = (float) (height - Size.getHeaderPortraitSize()) / (float) Size.getMaximumHeaderSizeDifference();
-    setTranslationY((1f - heightFactor) * heightDiff);
-  }
-
   public void show (ViewController<?> c) {
     int icon = c.getFloatingButtonId();
-    int height = c.getHeaderHeight();
-    float heightFactor = (float) (height - Size.getHeaderPortraitSize()) / (float) Size.getMaximumHeaderSizeDifference();
 
     isShowing = true;
 
     setTouchEnabled(true);
     setIcons(0, icon);
-    setTranslationY((1f - heightFactor) * heightDiff);
 
     showFactor = 0f;
 

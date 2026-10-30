@@ -20,12 +20,10 @@ import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -51,12 +49,11 @@ import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.util.CharacterStyleFilter;
-import org.thunderdog.challegram.v.EditText;
-import org.thunderdog.challegram.widget.EmojiEditText;
+import org.thunderdog.challegram.widget.MaterialEditText;
+import org.thunderdog.challegram.widget.MaterialEditTextGroup;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 
 import me.vkryl.android.text.CodePointCountFilter;
-import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.StringUtils;
 import tgx.td.TdConstants;
 
@@ -68,8 +65,7 @@ public class CreateChannelController extends ViewController<String[]> implements
     avatarPickerManager = new AvatarPickerManager(this);
   }
 
-  private EditText descView;
-  private ImageView iconView;
+  private MaterialEditText descView;
 
   // Header view
 
@@ -85,59 +81,41 @@ public class CreateChannelController extends ViewController<String[]> implements
     ViewSupport.setThemedBackground(contentView, ColorId.filling, this);
     contentView.setPadding(0, Size.getHeaderSizeDifference(false), 0, 0);
 
-    FrameLayoutFix frameLayout = new FrameLayoutFix(context);
-    frameLayout.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    frameLayout.setPadding(Screen.dp(16f), Screen.dp(32f), Screen.dp(16f), 0);
-
-    iconView = new ImageView(context);
-    iconView.setScaleType(ImageView.ScaleType.CENTER);
-    iconView.setImageResource(R.drawable.baseline_info_24);
-    iconView.setColorFilter(Theme.iconColor());
-    addThemeFilterListener(iconView, ColorId.icon);
-    iconView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(24f), Screen.dp(46f), Lang.gravity(), Lang.rtl() ? 0 : Screen.dp(6f), 0, Lang.rtl() ? Screen.dp(6f) : 0, 0));
-    frameLayout.addView(iconView);
-
     String[] args = getArguments();
 
-    int marginRight = 0; // Screen.dp(32f);
-    int marginLeft = Screen.dp(24f) + Screen.dp(16f) * 2;
+    // M3 outlined text field (MaterialEditTextGroup), no card; the label replaces the old info icon.
+    MaterialEditTextGroup descGroup = new MaterialEditTextGroup(context, tdlib);
+    descGroup.applyRtl(Lang.rtl());
+    descGroup.addThemeListeners(this);
+    descGroup.setHint(R.string.Description);
+    descGroup.setMaxLength(TdConstants.MAX_CHANNEL_DESCRIPTION_LENGTH);
+    LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    descParams.leftMargin = descParams.rightMargin = descParams.topMargin = Screen.dp(16f);
+    descGroup.setLayoutParams(descParams);
 
-    int padding = Screen.dp(9f);
-
-    descView = new EmojiEditText(context);
-    descView.initDefault();
+    descView = descGroup.getEditText();
     descView.setId(R.id.edit_description);
-    descView.setOnFocusChangeListener((v, hasFocus) -> {
-      removeThemeListenerByTarget(iconView);
-      iconView.setColorFilter(hasFocus ? Theme.togglerActiveColor() : Theme.iconColor());
-      int id = hasFocus ? ColorId.togglerActive : ColorId.icon;
-      addThemeFilterListener(iconView, id);
-    });
-    descView.setPadding(0, padding, 0, padding);
     descView.setSingleLine(false);
     descView.setMaxLines(4);
-    descView.setHint(Lang.getString(R.string.Description));
     descView.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-    descView.setGravity(Lang.gravity());
     descView.setFilters(new InputFilter[] {
       new CodePointCountFilter(TdConstants.MAX_CHANNEL_DESCRIPTION_LENGTH),
       new EmojiFilter(),
       new CharacterStyleFilter()
     });
     descView.setInputType(descView.getInputType() | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-    descView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.NO_GRAVITY, Lang.rtl() ? marginRight : marginLeft, 0, Lang.rtl() ? marginLeft : marginRight, 0));
-    frameLayout.addView(descView);
 
     if (args != null) {
-      Views.setText(descView, args[1]);
+      descGroup.setText(args[1]);
     }
-    contentView.addView(frameLayout);
+    contentView.addView(descGroup);
 
+    // Supporting text under the field: aligned with the field text (16dp inside the container).
     hintView = new NoScrollTextView(context);
     hintView.setTextColor(Theme.textDecent2Color());
     hintView.setTypeface(Fonts.getRobotoRegular());
     hintView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-    hintView.setPadding(Screen.dp(Lang.rtl() ? 22f : 72f), Screen.dp(5f), Screen.dp(Lang.rtl() ? 72f : 22f), Screen.dp(16f));
+    hintView.setPadding(Screen.dp(32f), Screen.dp(4f), Screen.dp(32f), Screen.dp(16f));
     hintView.setGravity(Lang.gravity());
     hintView.setText(Lang.getString(R.string.DescriptionInfo));
     contentView.addView(hintView);

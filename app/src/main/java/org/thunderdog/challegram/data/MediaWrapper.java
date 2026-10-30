@@ -1113,7 +1113,8 @@ public class MediaWrapper implements FileProgressComponent.SimpleListener, FileP
         getFileProgress().setVideoStreamingOptions(needTopOffset, false, isSmallStreamingUI ? FileProgressComponent.STREAMING_UI_MODE_SMALL : FileProgressComponent.STREAMING_UI_MODE_LARGE, durationRect, downloadedAnimator);
       //}
 
-      c.drawRoundRect(durationRect, pDurationCorners, pDurationCorners, Paints.fillingPaint(ColorUtils.alphaColor(alpha * (1f - selectionFactor), 0x4c000000)));
+      // White label over any photo: 60% black keeps ≥4.5:1 even over a white frame (was 30%, ~2.1:1).
+      c.drawRoundRect(durationRect, pDurationCorners, pDurationCorners, Paints.fillingPaint(ColorUtils.alphaColor(alpha * (1f - selectionFactor), 0x99000000)));
 
       // This is set to fix text visible outside the rounded rect during the animation
       durationRect.right -= pDurationCorners / 2f;

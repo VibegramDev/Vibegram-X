@@ -123,7 +123,7 @@ public abstract class SettingsCloudController<T extends Settings.CloudSetting> e
             radioView.setActive(isCurrent, isUpdate);
           }
           radioView.setChecked(isEffective, isUpdate);
-          view.setDataColorId(isCurrent && isEffective ? ColorId.textNeutral : 0);
+          view.setDataColorId(0);
 
           view.getReceiver().requestFile(setting.getPreviewFile());
         }

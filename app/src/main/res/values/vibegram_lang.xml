@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: keys whose string from res/values-<app language> replaces the cloud language pack translation
+     (Lang.isLocalKey). Each language lists its own keys; none by default. -->
+<resources>
+  <string-array name="vg_LangLocalKeys" />
+</resources>
