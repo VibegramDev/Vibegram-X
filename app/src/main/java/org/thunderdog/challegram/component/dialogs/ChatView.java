@@ -45,6 +45,7 @@ import org.thunderdog.challegram.telegram.TdlibMessageViewer;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibStatusManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
@@ -186,6 +187,9 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
   private final ComplexReceiver reactionsReceiver;
 
   private final BoolAnimator isSelected = new BoolAnimator(this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
+  /** The row whose menu is open: M3 pressed state layer (onSurface 10%) until the menu closes. */
+  private final BoolAnimator isMenuTarget = new BoolAnimator(this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
+  private long menuTargetChatId;
   private final RefreshRateLimiter refreshRateLimiter;
 
   public ChatView (Context context, Tdlib tdlib) {
@@ -208,6 +212,12 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     textMediaReceiver = new ComplexReceiver(this)
       .setUpdateListener(refreshRateLimiter);
     setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+  }
+
+  /** Highlights the row while its menu is open; keyed by the chat, so a recycled row does not keep it. */
+  public void setMenuTarget (boolean isMenuTarget) {
+    menuTargetChatId = isMenuTarget ? getChatId() : 0;
+    this.isMenuTarget.setValue(isMenuTarget, true);
   }
 
   public void setIsSelected (boolean isSelected, boolean animated) {
@@ -406,7 +416,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
         setCustomControllerProvider(new CustomControllerProvider() {
           @Override
           public boolean needsForceTouch (BaseView v, float x, float y) {
-            return Settings.instance().needPreviewChatOnHold();
+            return Settings.instance().needPreviewChatOnHold() && canPreviewChatAt(x, y);
           }
 
           @Override
@@ -535,6 +545,18 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     }
   }
 
+  /** Chat list rows: the preview has only «Open»; mute, pin, delete etc. are in the long-press menu. */
+  @Override
+  protected boolean useOpenButtonInChatPreview () {
+    return true;
+  }
+
+  /** The preview opens by holding the avatar column; holding the rest of the row opens the chat menu. */
+  @Override
+  protected boolean canPreviewChatAt (float x, float y) {
+    return canStartDrag(x, y);
+  }
+
   public boolean canStartDrag (float x, float y) {
     int chatListMode = getChatListMode();
     int threshold = ChatView.getAvatarLeft(chatListMode) * 2 + ChatView.getAvatarSize(chatListMode);
@@ -609,6 +631,10 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
       c.drawColor(ColorUtils.alphaColor(.8f, Theme.fillingColor()));
     } else if (isOpenedInTabletLayout()) {
       c.drawColor(NavigationController.getTabletSelectionColor());
+    }
+    float menuTargetFactor = isMenuTarget.getFloatValue();
+    if (menuTargetFactor > 0f && menuTargetChatId == getChatId()) {
+      c.drawColor(ColorUtils.alphaColor(.1f * menuTargetFactor, M3.onSurface()));
     }
 
     c.drawText(chat.getTime(), (rtl ? viewWidth - chat.getTimeLeft() - chat.getTimeWidth() : chat.getTimeLeft()), getTitleTop(chatListMode), timePaint);

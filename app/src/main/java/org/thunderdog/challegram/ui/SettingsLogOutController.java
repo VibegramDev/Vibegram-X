@@ -94,7 +94,7 @@ public class SettingsLogOutController extends RecyclerViewController<Integer> im
       @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         @IdRes int itemId = item.getId();
-        view.setIconColorId(itemId == R.id.btn_logout || itemId == R.id.btn_deleteAccount ? ColorId.iconNegative : ColorId.NONE);
+        view.setIconColorId(itemId == R.id.btn_logout ? ColorId.iconNegative : ColorId.NONE);
       }
 
       @Override
@@ -145,7 +145,7 @@ public class SettingsLogOutController extends RecyclerViewController<Integer> im
 
     if (type == Type.DELETE_ACCOUNT) {
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAccount, R.drawable.baseline_delete_alert_24, R.string.DeleteAccountBtn).setTextColorId(ColorId.textNegative));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAccount, R.drawable.baseline_delete_alert_24, R.string.DeleteAccountBtn));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
       items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.DeleteAccountInfo));
     }

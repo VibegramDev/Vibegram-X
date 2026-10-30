@@ -107,6 +107,7 @@ import org.thunderdog.challegram.util.Poller;
 import org.thunderdog.challegram.util.RateLimiter;
 import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.v.ChatsRecyclerView;
+import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.BaseView;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.JoinedUsersView;
@@ -2313,7 +2314,19 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
             tdlib.ui().showArchiveOptions(this, tdlib.chatList(ChatPosition.CHAT_LIST_ARCHIVE));
           }
         } else {
-          tdlib.ui().showChatOptions(this, chatList(), chat.getChatId(), null, new TdApi.MessageSourceChatList(), canSelectChat(chat), isChatSelected(chat), () -> selectUnselectChat(chat, true));
+          // Holding the avatar opens the preview (ChatView.canPreviewChatAt); the rest of the row the menu with «Preview».
+          ChatView chatView = (ChatView) v;
+          PopupLayout menu = tdlib.ui().showChatOptions(this, chatList(), chat.getChatId(), null, new TdApi.MessageSourceChatList(), canSelectChat(chat), isChatSelected(chat), () -> selectUnselectChat(chat, true),
+            chatView.canOpenChatPreview() ? () -> {
+              if (chatView.getChat() == chat) {
+                chatView.openChatPreview();
+              }
+            } : null);
+          if (menu != null) {
+            // The row the menu is about stays highlighted while the menu is open.
+            chatView.setMenuTarget(true);
+            menu.addOnDismissPrepare(() -> chatView.setMenuTarget(false));
+          }
         }
         return true;
       }

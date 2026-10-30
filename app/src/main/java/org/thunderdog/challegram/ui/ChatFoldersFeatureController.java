@@ -233,7 +233,6 @@ public class ChatFoldersFeatureController extends SinglePageBottomSheetViewContr
       button.setPadding(Screen.dp(12f), 0, Screen.dp(12f), 0);
       button.setEllipsize(TextUtils.TruncateAt.END);
       button.setGravity(Gravity.CENTER);
-      button.setAllCaps(true);
       button.setId(R.id.btn_done);
       button.setTextColor(Theme.getColor(ColorId.fillingPositiveContent));
       button.setOnClickListener(v -> {

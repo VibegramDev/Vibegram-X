@@ -69,7 +69,6 @@ import org.thunderdog.challegram.widget.ProgressComponent;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import me.vkryl.android.AnimatorUtils;
@@ -177,7 +176,7 @@ public class TGInlineKeyboard {
     this.isCustom = true;
     this.disableCustomPadding = disableCustomPadding;
 
-    Button button = new Button(this, parent, text.toUpperCase(Locale.ROOT), iconRes, maxWidth - getButtonPadding() * 2);
+    Button button = new Button(this, parent, text, iconRes, maxWidth - getButtonPadding() * 2);
     button.setClickListener(listener);
     button.setViewProvider(viewProvider);
 
@@ -501,7 +500,7 @@ public class TGInlineKeyboard {
       this.dirtyRect = new Rect();
       this.style = button.style;
       setIcon(button.iconCustomEmojiId);
-      String text = uppercase(cleanButtonText(button.text));
+      String text = cleanButtonText(button.text);
       this.needFakeBold = Text.needFakeBold(text);
       TextPaint textPaint = Paints.getBoldPaint14(needFakeBold);
       this.wrapper = new EmojiString(text, Math.max(0, maxWidth - getIconSpace()), textPaint);
@@ -602,22 +601,18 @@ public class TGInlineKeyboard {
       this.isCustom = true;
     }
 
-    private String uppercase (String text) {
-      return useWhiteMode() ? text : text.toUpperCase(Locale.ROOT);
-    }
-
     public void set (TdApi.InlineKeyboardButton button, int maxWidth) {
       this.type = button.type;
       this.style = button.style;
       final boolean iconChanged = iconCustomEmojiId != button.iconCustomEmojiId;
       setIcon(button.iconCustomEmojiId);
-      String text = uppercase(cleanButtonText(button.text));
+      String text = cleanButtonText(button.text);
       final boolean reset = !wrapper.getText().equals(text);
       final int textMaxWidth = Math.max(0, maxWidth - getIconSpace());
       if (reset || iconChanged || wrapper.getMaxWidth() != textMaxWidth) {
         this.needFakeBold = Text.needFakeBold(text);
         TextPaint textPaint = Paints.getBoldPaint14(needFakeBold);
-        this.wrapper = new EmojiString(uppercase(text), textMaxWidth, textPaint);
+        this.wrapper = new EmojiString(text, textMaxWidth, textPaint);
       }
       if (reset || !Td.equalsTo(type, button.type)) {
         if (contextId == Integer.MAX_VALUE) {

@@ -22,6 +22,7 @@ import android.view.View;
 
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -111,35 +112,17 @@ public class RadioView extends View implements FactorAnimator.Target {
     final float radius = Screen.dp(9f);
     final float innerRadius = Screen.dp(5f);
 
-    final int color = Theme.getColor(colorId != 0 ? colorId : ColorId.controlInactive);
-    final int radioFillingColor = ColorUtils.fromToArgb(color, colorId != 0 && useColor ? color : Theme.radioFillingColor(), activeAnimator.getFloatValue());
+    // M3 RadioButtonTokens: unselected ring onSurfaceVariant, selected ring and dot primary
+    // (a custom color only for the radios that show a color, e.g. LED colors).
+    final int unselectedColor = colorId != 0 ? Theme.getColor(colorId) : M3.onSurfaceVariant();
+    final int selectedColor = ColorUtils.fromToArgb(unselectedColor, colorId != 0 && useColor ? unselectedColor : M3.primary(), activeAnimator.getFloatValue());
 
     final float selectFactor = checkAnimator.getFloatValue();
 
-    if (selectFactor == 0f || selectFactor == 1f) {
-      radioPaint.setColor(ColorUtils.fromToArgb(color, radioFillingColor, selectFactor));
-      c.drawCircle(cx, cy, radius, radioPaint);
-    }
-
-    final float factor = 1f - selectFactor;
-
-    if (factor == 0f) {
-      c.drawCircle(cx, cy, innerRadius, Paints.fillingPaint(radioFillingColor));
-    } else if (factor != 1f) {
-      final float addRadius = Screen.dp(4f);
-      final float totalRadius = innerRadius + radius;
-
-      final float currentRadius = factor * totalRadius;
-      final float fillRadius = Math.max(0, currentRadius - addRadius);
-
-      final float radioFactor = AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(1f - MathUtils.clamp(fillRadius / (totalRadius - addRadius)));
-      final int radioColor = ColorUtils.fromToArgb(color, radioFillingColor, radioFactor);
-
-      c.drawCircle(cx, cy, innerRadius + Math.min(addRadius, currentRadius), Paints.fillingPaint(radioColor));
-      c.drawCircle(cx, cy, fillRadius, Paints.fillingPaint(Theme.fillingColor()));
-
-      radioPaint.setColor(radioColor);
-      c.drawCircle(cx, cy, radius, radioPaint);
+    radioPaint.setColor(ColorUtils.fromToArgb(unselectedColor, selectedColor, selectFactor));
+    c.drawCircle(cx, cy, radius, radioPaint);
+    if (selectFactor > 0f) {
+      c.drawCircle(cx, cy, innerRadius * selectFactor, Paints.fillingPaint(selectedColor));
     }
   }
 

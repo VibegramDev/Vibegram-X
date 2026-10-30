@@ -29,7 +29,9 @@ public interface ThemeDelegate {
    *   the app bar ({@code headerBackground}) are surface; segmented settings cards are surfaceContainer
    *   ({@code SettingsAdapter.setSegmented}), navigation (rail, dock, folder tabs) surfaceContainer;</li>
    *   <li>app bar title and icons onSurface, tabs primary / onSurfaceVariant;</li>
-   *   <li>the status bar gets no tint and dark icons in light themes.</li>
+   *   <li>the status bar gets no tint and dark icons in light themes;</li>
+   *   <li>floating chat buttons (scroll down, mentions, reactions, collapsed mute bell, camera): secondaryContainer
+   *   with an onSecondaryContainer icon (FAB: "Ensure the icon has a minimum 3:1 contrast ratio with the container").</li>
    * </ul>
    */
   @ColorInt
@@ -50,6 +52,13 @@ public interface ThemeDelegate {
         return getRoleColor(M3.ON_SURFACE_VARIANT);
       case ColorId.statusBar:
         return 0;
+      case ColorId.circleButtonChat:
+        return getRoleColor(M3.SECONDARY_CONTAINER);
+      case ColorId.circleButtonChatIcon:
+        return getRoleColor(M3.ON_SECONDARY_CONTAINER);
+      case ColorId.textLink:
+        // Links in descriptions and info rows on surface: primary (the raw Monet link color gave 4.3:1, «4.5:1 for small text»).
+        return getRoleColor(M3.PRIMARY);
     }
     return getRawColor(colorId);
   }

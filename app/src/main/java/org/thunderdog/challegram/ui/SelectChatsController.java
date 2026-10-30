@@ -831,7 +831,6 @@ public class SelectChatsController extends RecyclerViewController<SelectChatsCon
       int headerHeight = getHeaderHeight();
       if (navigationController != null) {
         navigationController.getHeaderView().setBackgroundHeight(headerHeight);
-        navigationController.getFloatingButton().updatePosition(headerHeight);
       }
     }
   }

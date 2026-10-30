@@ -588,7 +588,7 @@ public class StickerPreviewView extends FrameLayoutFix implements FactorAnimator
     sendView.setTypeface(Fonts.getRobotoMedium());
     sendView.setTextColor(Theme.getColor(ColorId.textNeutral));
     themeListenerList.addThemeColorListener(sendView, ColorId.textNeutral);
-    Views.setMediumText(sendView, Lang.uppercase(Lang.getString(isEmoji ? R.string.PasteCustomEmoji : R.string.SendSticker)));
+    Views.setMediumText(sendView, Lang.getString(isEmoji ? R.string.PasteCustomEmoji : R.string.SendSticker));
     sendView.setOnClickListener(onClickListener);
     RippleSupport.setTransparentBlackSelector(sendView);
     int paddingLeft = Screen.dp(12f);
@@ -617,7 +617,7 @@ public class StickerPreviewView extends FrameLayoutFix implements FactorAnimator
       viewView.setTypeface(Fonts.getRobotoMedium());
       viewView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15f);
       viewView.setTextColor(Theme.getColor(ColorId.textNeutral));
-      Views.setMediumText(viewView, Lang.uppercase(Lang.getString(R.string.ViewPackPreview)));
+      Views.setMediumText(viewView, Lang.getString(R.string.ViewPackPreview));
       themeListenerList.addThemeColorListener(viewView, ColorId.textNeutral);
       viewView.setOnClickListener(onClickListener);
       RippleSupport.setTransparentBlackSelector(viewView);

@@ -204,6 +204,24 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   private final Rect anchorRect = new Rect();
   private final Rect anchorInsets = new Rect();
   private boolean anchorAlignEnd;
+  private int reservedTop;
+
+  /** Keeps {@code height} px of the window free above the container for a row attached to the menu (message reactions). */
+  public void setReservedTop (int height) {
+    if (this.reservedTop != height) {
+      this.reservedTop = height;
+      requestLayout();
+    }
+  }
+
+  public Rect getAnchorInsets () {
+    return anchorInsets;
+  }
+
+  /** @return rows added with addItem / addHeaderView / addDivider (they live in an inner layout when scrollable). */
+  public int getRowCount () {
+    return itemsLayout.getChildCount();
+  }
 
   /**
    * Places the menu next to {@code left..bottom} (screen coordinates; a touch point is an empty rect): below it if it
@@ -211,12 +229,29 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
    * ({@code alignEnd}: ends at its end edge) and flips when it would be cut off.
    */
   public void setAnchor (int left, int top, int right, int bottom, boolean alignEnd) {
+    anchorPaneLeft = anchorPaneRight = 0;
     setAnchorMode(ANCHOR_MODE_RECT);
     anchorRect.set(left, top, right, bottom);
     anchorAlignEnd = alignEnd;
     setTranslationX(0);
     setTranslationY(0);
     requestLayout();
+  }
+
+  private int anchorPaneLeft, anchorPaneRight;
+
+  /**
+   * Keeps the anchored menu horizontally inside {@code pane} (e.g. the right pane of the tablet layout that owns the
+   * touched row), so it does not cover the other pane. Call after {@link #setAnchor}.
+   */
+  public void setAnchorPane (@Nullable View pane) {
+    if (pane != null && pane.getWidth() > 0 && pane.getWindowToken() != null) {
+      int paneLeft = Views.getLocationOnScreen(pane)[0];
+      anchorPaneLeft = paneLeft;
+      anchorPaneRight = paneLeft + pane.getWidth();
+    } else {
+      anchorPaneLeft = anchorPaneRight = 0;
+    }
   }
 
   @Override
@@ -239,7 +274,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     int anchorTop = anchorRect.top - parentTop, anchorBottom = anchorRect.bottom - parentTop;
     int padding = Screen.dp(PADDING);
     // The visible container keeps an 8dp gap from the window edges (as the edge-anchored menu does).
-    int minTop = anchorInsets.top + padding, maxBottom = parentHeight - anchorInsets.bottom - padding;
+    int minTop = anchorInsets.top + reservedTop + padding, maxBottom = parentHeight - anchorInsets.bottom - padding;
     if (anchorBottom + height - padding * 2 <= maxBottom) {
       return anchorBottom - padding;
     }
@@ -257,6 +292,10 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     int anchorLeft = anchorRect.left - parentLeft, anchorRight = anchorRect.right - parentLeft;
     int padding = Screen.dp(PADDING);
     int minLeft = anchorInsets.left + padding, maxRight = parent.getWidth() - anchorInsets.right - padding;
+    if (anchorPaneRight > anchorPaneLeft && anchorPaneRight - anchorPaneLeft - padding * 2 >= width - padding * 2) {
+      minLeft = Math.max(minLeft, anchorPaneLeft - parentLeft + padding);
+      maxRight = Math.min(maxRight, anchorPaneRight - parentLeft - padding);
+    }
     int startAligned, endAligned;
     if (Lang.rtl()) {
       startAligned = anchorRight - width + padding;
@@ -310,9 +349,20 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     }
   }
 
-  /** M3 menu divider: 1dp outlineVariant with 8dp above and below. */
+  /**
+   * M3 menu divider: 1dp outlineVariant with 8dp above and below.
+   * Takes no space while no visible row is above it (a header that is hidden until its data loads).
+   */
   public void addDivider () {
     View divider = new View(getContext()) {
+      @Override
+      protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        if (isEdgeItem(this, true)) {
+          setMeasuredDimension(getMeasuredWidth(), 0);
+        }
+      }
+
       @Override
       protected void onDraw (Canvas c) {
         c.drawRect(0, Screen.dp(8f), getMeasuredWidth(), Screen.dp(8f) + Math.max(1, Screen.dp(1f)), Paints.fillingPaint(M3.get(M3.OUTLINE_VARIANT, forcedTheme)));
@@ -564,9 +614,14 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
 
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+    final int parentHeight = MeasureSpec.getSize(heightMeasureSpec);
+    if (anchorMode == ANCHOR_MODE_RECT && MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
+      // Stays between the system bars; a scrollable menu scrolls when it is taller than that.
+      heightMeasureSpec = MeasureSpec.makeMeasureSpec(Math.max(0, parentHeight - anchorInsets.top - anchorInsets.bottom - reservedTop), MeasureSpec.AT_MOST);
+    }
     super.onMeasure(MeasureSpec.makeMeasureSpec(getItemsWidth(), MeasureSpec.EXACTLY), heightMeasureSpec);
     if (anchorMode == ANCHOR_MODE_RECT && droppableHeader != null && droppableHeader.getVisibility() == View.VISIBLE && getParent() instanceof View && MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
-      if (findAnchorTop((View) getParent(), MeasureSpec.getSize(heightMeasureSpec), getMeasuredHeight(), false) == Integer.MIN_VALUE) {
+      if (findAnchorTop((View) getParent(), parentHeight, getMeasuredHeight(), false) == Integer.MIN_VALUE) {
         droppableHeader.setVisibility(View.GONE);
         super.onMeasure(MeasureSpec.makeMeasureSpec(getItemsWidth(), MeasureSpec.EXACTLY), heightMeasureSpec);
       }
@@ -576,16 +631,20 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   @Override
   public int getItemsWidth () {
     int padding = Screen.dp(PADDING);
-    int childCount = getChildCount();
+    int childCount = itemsLayout.getChildCount();
     int maxWidth = 0;
     for (int i = 0; i < childCount; i++) {
-      View v = getChildAt(i);
+      View v = itemsLayout.getChildAt(i);
       if (v == null || v.getVisibility() == View.GONE) {
         continue;
       }
       if (v instanceof TextView) {
         // Items may be changed after they were added (e.g. a trailing lock icon); their tag may belong to the caller.
-        v.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+        // Height stays exact: this runs outside of measure too, and a wrap_content height would leave the label
+        // drawn against a smaller measured height than the 48dp row it is laid out in.
+        ViewGroup.LayoutParams params = v.getLayoutParams();
+        int heightSpec = params != null && params.height > 0 ? MeasureSpec.makeMeasureSpec(params.height, MeasureSpec.EXACTLY) : MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+        v.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), heightSpec);
         maxWidth = Math.max(maxWidth, v.getMeasuredWidth());
       } else if (v.getTag() instanceof Integer) {
         maxWidth = Math.max(maxWidth, (Integer) v.getTag());
@@ -611,9 +670,9 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     int itemHeight = Screen.dp(ITEM_HEIGHT);
     int padding = Screen.dp(PADDING);
     int total = 0;
-    int childCount = getChildCount();
+    int childCount = itemsLayout.getChildCount();
     for (int i = 0; i < childCount; i++) {
-      View v = getChildAt(i);
+      View v = itemsLayout.getChildAt(i);
       if (v != null && v.getVisibility() != View.GONE) {
         ViewGroup.LayoutParams params = v.getLayoutParams();
         total += params != null && params.height > 0 ? params.height : itemHeight;

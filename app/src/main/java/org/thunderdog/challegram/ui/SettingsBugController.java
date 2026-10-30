@@ -460,19 +460,6 @@ public class SettingsBugController extends RecyclerViewController<SettingsBugCon
       @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         final int itemId = item.getId();
-        if (isMainCrash) {
-          @PorterDuffColorId int colorId;
-          if (itemId == R.id.btn_launchApp) {
-            colorId = ColorId.iconActive;
-              /*case R.id.btn_shareError:
-            case R.id.btn_showError:*/
-          } else if (itemId == R.id.btn_eraseDatabase) {
-            colorId = ColorId.iconNegative;
-          } else {
-            colorId = ColorId.NONE;
-          }
-          view.setIconColorId(colorId);
-        }
         if (itemId == R.id.btn_log_verbosity) {
           final boolean isCapturing = Log.isCapturing();
           if (isUpdate) {
@@ -650,7 +637,7 @@ public class SettingsBugController extends RecyclerViewController<SettingsBugCon
 
       if (!items.isEmpty())
         items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_launchApp, R.drawable.baseline_warning_24, R.string.LaunchApp).setTextColorId(ColorId.textNeutral));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_launchApp, R.drawable.baseline_warning_24, R.string.LaunchApp));
       if (!(BuildConfig.DEBUG || BuildConfig.EXPERIMENTAL)) {
         items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
         items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_update, R.drawable.baseline_system_update_24, R.string.LaunchAppCheckUpdate));
@@ -668,7 +655,7 @@ public class SettingsBugController extends RecyclerViewController<SettingsBugCon
         case Crash.Type.TDLIB_DATABASE_BROKEN:
         case Crash.Type.TDLIB: {
           items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-          items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_eraseDatabase, R.drawable.baseline_delete_forever_24, R.string.LaunchAppEraseDatabase).setTextColorId(ColorId.textNegative));
+          items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_eraseDatabase, R.drawable.baseline_delete_forever_24, R.string.LaunchAppEraseDatabase));
           break;
         }
       }
@@ -938,7 +925,7 @@ public class SettingsBugController extends RecyclerViewController<SettingsBugCon
 
         if (isMainCrash) {
           items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-          items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_shareError, R.drawable.baseline_share_24, R.string.LaunchAppShareError).setTextColorId(ColorId.textNegative));
+          items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_shareError, R.drawable.baseline_share_24, R.string.LaunchAppShareError));
           items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
         }
 

@@ -166,7 +166,8 @@ public class SettingHolder extends RecyclerView.ViewHolder {
       case ListItem.TYPE_INFO_SETTING:
       case ListItem.TYPE_VALUED_SETTING:
       case ListItem.TYPE_VALUED_SETTING_WITH_RADIO: { // 6, 5 OK
-        return Screen.dp(76f);
+        // M3 two-line list item: 72dp (ListTokens.ListItemTwoLineContainerHeight).
+        return Screen.dp(72f);
       }
       case ListItem.TYPE_EDITTEXT_POLL_OPTION_ADD: {
         return Screen.dp(57f);
@@ -177,7 +178,7 @@ public class SettingHolder extends RecyclerView.ViewHolder {
       case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_RADIO_2:
       case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_TOGGLER:
       case ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_CHECKBOX: {
-        return Screen.dp(64f);
+        return Screen.dp(72f);
       }
       case ListItem.TYPE_SHADOW_TOP: { // 2 OK
         return Screen.dp(6f);
@@ -222,13 +223,16 @@ public class SettingHolder extends RecyclerView.ViewHolder {
       case ListItem.TYPE_CHECKBOX_OPTION_WITH_AVATAR:
       case ListItem.TYPE_RADIO_OPTION:
       case ListItem.TYPE_RADIO_OPTION_LEFT:
-      case ListItem.TYPE_RADIO_OPTION_WITH_AVATAR:
+      case ListItem.TYPE_RADIO_OPTION_WITH_AVATAR: {
+        // M3 one-line list item: 56dp (ListTokens.ListItemOneLineContainerHeight).
+        return Screen.dp(56f);
+      }
       case ListItem.TYPE_SHADOWED_OFFSET: {
         return Screen.dp(55f);
       }
       case ListItem.TYPE_INFO_MULTILINE:
       case ListItem.TYPE_CHECKBOX_OPTION_DOUBLE_LINE: {
-        return Screen.dp(76f);
+        return Screen.dp(72f);
       }
       case ListItem.TYPE_HEADER_PADDED: {
         return Screen.dp(32f) + Screen.dp(4f);
@@ -1121,9 +1125,8 @@ public class SettingHolder extends RecyclerView.ViewHolder {
             break;
           }
           case ListItem.TYPE_EDITTEXT_CHANNEL_DESCRIPTION: {
+            // M3 outlined field, as the name field above it; the label is the hint.
             editText.addLengthCounter(false);
-            editText.getEditText().setLineDisabled(true);
-            editText.setEmptyHint(R.string.DescriptionEmptyHint);
             break;
           }
         }
@@ -1587,7 +1590,6 @@ public class SettingHolder extends RecyclerView.ViewHolder {
           secretState.setCompoundDrawablePadding(Screen.dp(8));
           secretState.setText(Lang.getString(R.string.SessionSecretChats));
           secretState.setTextColor(Theme.getColor(ColorId.textSecure));
-          secretState.setAllCaps(true);
           secretState.setGravity(Gravity.CENTER_VERTICAL);
           secretState.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12f);
           layout.addView(secretState);
@@ -1604,7 +1606,6 @@ public class SettingHolder extends RecyclerView.ViewHolder {
           callsState.setCompoundDrawablePadding(Screen.dp(8));
           callsState.setText(Lang.getString(R.string.SessionAcceptsCalls));
           callsState.setTextColor(Theme.getColor(ColorId.textNeutral));
-          callsState.setAllCaps(true);
           callsState.setGravity(Gravity.CENTER_VERTICAL);
           callsState.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12f);
           layout.addView(callsState);
@@ -2837,7 +2838,7 @@ public class SettingHolder extends RecyclerView.ViewHolder {
 
     /** Position of the row in its group: rounds the outer corners, keeps 4dp where it touches a neighbour. */
     void setShape (View view, boolean connectedTop, boolean connectedBottom) {
-      content.row = view;
+      content.row = mask.row = view;
       if (content.setShape(connectedTop, connectedBottom) | mask.setShape(connectedTop, connectedBottom)) {
         invalidateSelf();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -2906,7 +2907,7 @@ public class SettingHolder extends RecyclerView.ViewHolder {
 
   private static final class SegmentShape extends Drawable {
     private final boolean isContent;
-    /** Row of the content shape: filled as selected in the tablet left pane. */
+    /** Row of the shape: selected in the tablet left pane when its screen is open in the right pane. */
     private @Nullable View row;
     private boolean connectedTop, connectedBottom;
     /** 0 = resting segment, 1 = dragged (16dp on every corner); may overshoot (spatial spring). */
@@ -2935,11 +2936,17 @@ public class SettingHolder extends RecyclerView.ViewHolder {
       this.liftFactor = liftFactor;
     }
 
+    private boolean isSelected () {
+      return row != null && NavigationController.isTabletSelectedRow(row, null, 0);
+    }
+
     Path buildPath () {
       float outer = Screen.dp(M3.CORNER_LARGE);
       float inner = Screen.dp(M3.CORNER_EXTRA_SMALL);
       Rect bounds = getBounds();
       float maxRadius = Math.min(bounds.width(), bounds.height()) / 2f;
+      // Selected: "Selected list items have a 16dp corner radius all around" (m3.material.io/components/lists).
+      float shapeFactor = isSelected() ? 1f : this.shapeFactor;
       float top = MathUtils.clamp(MathUtils.fromTo(connectedTop ? inner : outer, outer, shapeFactor), 0f, maxRadius);
       float bottom = MathUtils.clamp(MathUtils.fromTo(connectedBottom ? inner : outer, outer, shapeFactor), 0f, maxRadius);
       radii[0] = radii[1] = radii[2] = radii[3] = top;
@@ -2953,11 +2960,8 @@ public class SettingHolder extends RecyclerView.ViewHolder {
     @Override
     public void draw (@NonNull Canvas c) {
       Path path = buildPath();
-      // Cards on the surface page: one containment level up.
-      c.drawPath(path, Paints.fillingPaint(isContent ? M3.surfaceContainer() : 0xFFFFFFFF));
-      if (isContent && row != null && NavigationController.isTabletSelectedRow(row, null, 0)) {
-        c.drawPath(path, Paints.fillingPaint(NavigationController.getTabletSelectionColor()));
-      }
+      // Cards on the surface page: one containment level up; the selected row: secondaryContainer (ListTokens).
+      c.drawPath(path, Paints.fillingPaint(!isContent ? 0xFFFFFFFF : isSelected() ? M3.secondaryContainer() : M3.surfaceContainer()));
       if (isContent && liftFactor > 0f) {
         c.drawPath(path, Paints.fillingPaint(ColorUtils.alphaColor(M3.STATE_DRAGGED * MathUtils.clamp(liftFactor), M3.onSurface())));
       }

@@ -683,6 +683,16 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     return chipStyle;
   }
 
+  private boolean primaryTabsStyle;
+
+  /** M3 primary tabs on a surface (PrimaryNavigationTabTokens): label onSurfaceVariant → primary, indicator primary. */
+  public void setPrimaryTabsStyle (boolean primaryTabsStyle) {
+    if (this.primaryTabsStyle != primaryTabsStyle) {
+      this.primaryTabsStyle = primaryTabsStyle;
+      invalidate();
+    }
+  }
+
   private void applyItemBackground (View view) {
     if (chipStyle) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -1338,11 +1348,11 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     final boolean wrapContent = shouldWrapContent();
 
     if (overlayFactor != 1f) {
-      int textToColor = chipStyle ? M3.onPrimary() : Theme.getColor(toTextColorId);
-      int textFromColor = chipStyle ? M3.onSurfaceVariant() : fromTextColorId != ColorId.NONE ?
+      int textToColor = chipStyle ? M3.onPrimary() : primaryTabsStyle ? M3.primary() : Theme.getColor(toTextColorId);
+      int textFromColor = chipStyle || primaryTabsStyle ? M3.onSurfaceVariant() : fromTextColorId != ColorId.NONE ?
         ColorUtils.alphaColor(fromTextColorAlphaId != PropertyId.NONE ? Theme.getProperty(fromTextColorAlphaId) : 1f, Theme.getColor(fromTextColorId)) :
         ColorUtils.alphaColor(Theme.getSubtitleAlpha(), Theme.getColor(ColorId.headerText));
-      int selectionColor = selectionColorId != ColorId.NONE ?
+      int selectionColor = primaryTabsStyle ? M3.primary() : selectionColorId != ColorId.NONE ?
         ColorUtils.alphaColor(selectionAlpha, Theme.getColor(selectionColorId)) :
         ColorUtils.alphaColor(.9f, Theme.getColor(ColorId.headerText));
 

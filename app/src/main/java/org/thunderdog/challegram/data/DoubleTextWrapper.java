@@ -664,7 +664,8 @@ public class DoubleTextWrapper implements MessageSourceProvider, UserProvider, T
     }
 
     if (adminSign != null) {
-      adminSign.draw(c, viewWidth - Screen.dp(14f) - adminSign.getWidth(), view.getMeasuredHeight() / 2 - adminSign.getHeight() / 2, memberInfo != null && TD.isCreator(memberInfo.status) ? TextColorSets.Regular.NEUTRAL : null);
+      // M3 list: trailing supporting text is onSurfaceVariant for every role, owner included.
+      adminSign.draw(c, viewWidth - Screen.dp(14f) - adminSign.getWidth(), view.getMeasuredHeight() / 2 - adminSign.getHeight() / 2, null);
     }
 
     if (!forceSingleLine && trimmedSubtitle != null) {

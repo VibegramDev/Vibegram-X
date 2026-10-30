@@ -116,6 +116,26 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
     this.dismissListener = dismissListener;
   }
 
+  private @Nullable java.util.ArrayList<Runnable> dismissActions;
+
+  /** Runs once when the window starts hiding, besides the {@link DismissListener} (the caller's own cleanup, e.g. a highlight). */
+  public void addOnDismissPrepare (Runnable action) {
+    if (dismissActions == null) {
+      dismissActions = new java.util.ArrayList<>();
+    }
+    dismissActions.add(action);
+  }
+
+  private void runDismissActions () {
+    if (dismissActions != null) {
+      java.util.ArrayList<Runnable> actions = dismissActions;
+      dismissActions = null;
+      for (Runnable action : actions) {
+        action.run();
+      }
+    }
+  }
+
   public void setShowListener (@Nullable ShowListener showListener) {
     this.showListener = showListener;
   }
@@ -352,6 +372,9 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
             // WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);?
             context.getWindowManager().updateViewLayout(rootView, rootView.getLayoutParams());
           }
+          // The window shows a frame after showPopupWindow() computed the Back callback (isBoundWindowShowing() was false):
+          // without this, Back over a menu on the root screen (the chat list) left the app instead of closing the menu.
+          context.notifyBackPressAvailabilityChanged();
           return;
         } catch (Throwable t) {
           Log.e("Cannot show window", t);
@@ -419,6 +442,7 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
       ((BaseActivity) getContext()).removeWindowFromList(this);
       removeWindow();
 
+      runDismissActions();
       if (dismissListener != null) {
         dismissListener.onPopupDismiss(this);
       }
@@ -662,6 +686,7 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
     if (animated) {
       launchHideAnimation();
     } else {
+      runDismissActions();
       if (dismissListener != null) {
         dismissListener.onPopupDismissPrepare(this);
       }
@@ -793,6 +818,7 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
       if (boundController != null) {
         boundController.onPrepareToDismissPopup();
       }
+      runDismissActions();
       if (dismissListener != null) {
         dismissListener.onPopupDismissPrepare(this);
       }

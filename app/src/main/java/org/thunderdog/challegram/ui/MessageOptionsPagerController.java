@@ -15,6 +15,9 @@
 package org.thunderdog.challegram.ui;
 
 import android.content.Context;
+import android.view.ViewOutlineProvider;
+import android.os.Build;
+import android.graphics.Outline;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Point;
@@ -73,6 +76,8 @@ import org.thunderdog.challegram.widget.emoji.EmojiLayoutRecyclerController;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+
+import org.thunderdog.challegram.widget.M3Sheets;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
@@ -295,7 +300,26 @@ public class MessageOptionsPagerController extends BottomSheetViewController<Opt
       vg.addView(reactionsPickerWrapper, 2, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       reactionsPickerWrapper.addView(createReactionsPopupPicker());
     }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      // M3 bottom sheet: top corners 28dp (as OptionsLayout#setM3Sheet), square when it reaches the top of the screen.
+      vg.setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          float lickFactor = getLickViewFactor();
+          int top = (int) Math.max(0, Math.min(getPickerTop(), headerTranslationY - HeaderView.getTopOffset() * lickFactor));
+          int radius = (int) (M3Sheets.radius() * (1f - lickFactor));
+          outline.setRoundRect(0, top, view.getWidth(), view.getHeight() + radius, radius);
+        }
+      });
+      vg.setClipToOutline(true);
+    }
     return vg;
+  }
+
+  private void invalidateSheetOutline () {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && wrapView != null) {
+      wrapView.invalidateOutline();
+    }
   }
 
   private void invalidatePickerWrapper () {
@@ -303,11 +327,13 @@ public class MessageOptionsPagerController extends BottomSheetViewController<Opt
       reactionsPickerWrapper.invalidate();
       setHeaderViewOverTranslation(getPickerTop() - headerTranslationY);
     }
+    invalidateSheetOutline();
   }
 
   @Override
   protected void setHeaderPosition (float y) {
     super.setHeaderPosition(y);
+    invalidateSheetOutline();
     checkReactionPickerPosition();
   }
 
@@ -630,23 +656,6 @@ public class MessageOptionsPagerController extends BottomSheetViewController<Opt
     return Theme.getColor(ColorId.text);
   }
 
-  private Client.ResultHandler handler (View v, Runnable onSuccess) {
-    return object -> {
-      switch (object.getConstructor()) {
-        case TdApi.Ok.CONSTRUCTOR:
-          tdlib.ui().post(onSuccess);
-          break;
-        case TdApi.Error.CONSTRUCTOR:
-          tdlib.ui().post(() -> onSendError(v, (TdApi.Error) object));
-          break;
-      }
-    };
-  }
-
-  private void onSendError (View v, TdApi.Error error) {
-    context().tooltipManager().builder(v).show(tdlib, TD.toErrorString(error)).hideDelayed(3500, TimeUnit.MILLISECONDS);
-    state.message.cancelScheduledSetReactionAnimation();
-  }
 
   @Override
   @SuppressWarnings("deprecation")
@@ -797,6 +806,10 @@ public class MessageOptionsPagerController extends BottomSheetViewController<Opt
     if (reactionsPickerRecyclerView != null) {
       reactionsPickerRecyclerView.invalidateItemDecorations();
       reactionsPickerRecyclerView.scrollToPosition(0);
+      if (showReactionPickerOnOpen) {
+        showReactionPickerOnOpen = false;
+        showReactionPicker();
+      }
     }
   }
 
@@ -818,43 +831,54 @@ public class MessageOptionsPagerController extends BottomSheetViewController<Opt
   }
 
   private void onReactionClick (View v, TGReaction reaction, boolean isLongClick) {
+    toggleReaction(this, state.message, v, reaction, isLongClick, () -> hidePopupWindow(true));
+  }
+
+  /** Sets or removes {@code reaction} picked in the message options (sheet, or the reactions row of the wide-window menu). */
+  public static void toggleReaction (ViewController<?> c, TGMessage message, View v, TGReaction reaction, boolean isLongClick, Runnable hideOptions) {
+    Tdlib tdlib = c.tdlib();
+    int[] positionCords = new int[2];
+    v.getLocationOnScreen(positionCords);
+    int startX = positionCords[0] + v.getMeasuredWidth() / 2;
+    int startY = positionCords[1] + v.getMeasuredHeight() / 2;
+    Client.ResultHandler handler = object -> {
+      if (object.getConstructor() == TdApi.Error.CONSTRUCTOR) {
+        tdlib.ui().post(() -> {
+          c.context().tooltipManager().builder(v).show(tdlib, TD.toErrorString((TdApi.Error) object)).hideDelayed(3500, TimeUnit.MILLISECONDS);
+          message.cancelScheduledSetReactionAnimation();
+        });
+      }
+    };
     if (isLongClick) {
-      if (Config.DISABLE_ANONYMOUS_NON_OWNER_REACTIONS && tdlib.isAnonymousAdminNonCreator(state.message.getChatId())) {
+      if (Config.DISABLE_ANONYMOUS_NON_OWNER_REACTIONS && tdlib.isAnonymousAdminNonCreator(message.getChatId())) {
         return;
       }
-      int[] positionCords = new int[2];
-      v.getLocationOnScreen(positionCords);
-
-      int startX = positionCords[0] + v.getMeasuredWidth() / 2;
-      int startY = positionCords[1] + v.getMeasuredHeight() / 2;
-
-      if (!Config.PROTECT_ANONYMOUS_REACTIONS || state.message.messagesController().callNonAnonymousProtection(state.message.getId() + reaction.getId(), tooltipManager().builder(v))) {
-        if (state.message.getMessageReactions().toggleReaction(reaction.type, true, true, handler(v, () -> {
-        }))) {
-          state.message.scheduleSetReactionAnimationFullscreenFromBottomSheet(reaction, new Point(startX, startY));
+      if (!Config.PROTECT_ANONYMOUS_REACTIONS || message.messagesController().callNonAnonymousProtection(message.getId() + reaction.getId(), c.context().tooltipManager().builder(v))) {
+        if (message.getMessageReactions().toggleReaction(reaction.type, true, true, handler)) {
+          message.scheduleSetReactionAnimationFullscreenFromBottomSheet(reaction, new Point(startX, startY));
         }
-        hidePopupWindow(true);
+        hideOptions.run();
       }
     } else {
-      int[] positionCords = new int[2];
-      v.getLocationOnScreen(positionCords);
-
-      int startX = positionCords[0] + v.getMeasuredWidth() / 2;
-      int startY = positionCords[1] + v.getMeasuredHeight() / 2;
-
-      boolean hasReaction = state.message.getMessageReactions().hasReaction(reaction.type);
-      if (Config.DISABLE_ANONYMOUS_NON_OWNER_REACTIONS && !hasReaction && tdlib.isAnonymousAdminNonCreator(state.message.getChatId())) {
-        tooltipManager().builder(v).show(tdlib, R.string.error_ANONYMOUS_REACTIONS_DISABLED).hideDelayed();
+      boolean hasReaction = message.getMessageReactions().hasReaction(reaction.type);
+      if (Config.DISABLE_ANONYMOUS_NON_OWNER_REACTIONS && !hasReaction && tdlib.isAnonymousAdminNonCreator(message.getChatId())) {
+        c.context().tooltipManager().builder(v).show(tdlib, R.string.error_ANONYMOUS_REACTIONS_DISABLED).hideDelayed();
         return;
       }
-      if (!Config.PROTECT_ANONYMOUS_REACTIONS || hasReaction || state.message.messagesController().callNonAnonymousProtection(state.message.getId() + reaction.getId(), tooltipManager().builder(v))) {
-        if (state.message.getMessageReactions().toggleReaction(reaction.type, false, true, handler(v, () -> {
-        }))) {
-          state.message.scheduleSetReactionAnimationFromBottomSheet(reaction, new Point(startX, startY));
+      if (!Config.PROTECT_ANONYMOUS_REACTIONS || hasReaction || message.messagesController().callNonAnonymousProtection(message.getId() + reaction.getId(), c.context().tooltipManager().builder(v))) {
+        if (message.getMessageReactions().toggleReaction(reaction.type, false, true, handler)) {
+          message.scheduleSetReactionAnimationFromBottomSheet(reaction, new Point(startX, startY));
         }
-        hidePopupWindow(true);
+        hideOptions.run();
       }
     }
+  }
+
+  private boolean showReactionPickerOnOpen;
+
+  /** Opens with the full reactions list expanded (the expand button of the wide-window menu's reactions row). */
+  public void setShowReactionPickerOnOpen () {
+    this.showReactionPickerOnOpen = state.needShowReactionsPopupPicker;
   }
 
 

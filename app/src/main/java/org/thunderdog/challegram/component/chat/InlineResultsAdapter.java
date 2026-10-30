@@ -198,7 +198,7 @@ public class InlineResultsAdapter extends RecyclerView.Adapter<InlineResultsAdap
       }
       case ViewHolder.TYPE_BUTTON: {
         InlineResultButton button = (InlineResultButton) items.get(position - 1);
-        ((TextView) holder.itemView).setText(Lang.uppercase(button.getText()));
+        ((TextView) holder.itemView).setText(button.getText());
         holder.itemView.setTag(button);
         break;
       }

@@ -170,6 +170,52 @@ public class CheckBoxView extends View {
     Views.restore(c, restoreToCount);
   }
 
+  /**
+   * M3 checkbox (18dp, 2dp corners, 2dp outline) drawn by a parent view, e.g. next to a selectable message.
+   * Unchecked: {@code outlineColor} outline. Checked: {@code fillColor} container with a {@code checkColor} check mark.
+   */
+  public static void drawCheckBox (Canvas c, float cx, float cy, float factor, float alpha, int outlineColor, int fillColor, int checkColor) {
+    if (alpha <= 0f) {
+      return;
+    }
+    final float rectFactor = Math.min(factor / FACTOR_DIFF, 1f);
+    final float checkFactor = factor <= FACTOR_DIFF ? 0f : (factor - FACTOR_DIFF) / (1f - FACTOR_DIFF);
+    final float scaleFactor = 1f - (rectFactor == 1f ? 1f - checkFactor : rectFactor) * SCALE_DIFF;
+    final int size = Screen.dp(18f);
+    final int strokeWidth = Screen.dp(2f);
+    final float half = (size - strokeWidth) / 2f;
+
+    final int restoreToCount = Views.save(c);
+    c.scale(scaleFactor, scaleFactor, cx, cy);
+    final int color = ColorUtils.alphaColor(alpha, ColorUtils.fromToArgb(outlineColor, fillColor, rectFactor));
+    RectF rect = Paints.getRectF();
+    rect.set(cx - half, cy - half, cx + half, cy + half);
+    c.drawRoundRect(rect, strokeWidth, strokeWidth, Paints.getProgressPaint(color, strokeWidth));
+    if (rectFactor != 0f) {
+      // The container fills from the outline to the centre.
+      float inner = half - strokeWidth / 2f;
+      float hole = inner * (1f - rectFactor);
+      rect.set(cx - inner, cy - inner, cx + inner, cy + inner);
+      Paint fill = Paints.fillingPaint(color);
+      c.drawRect(rect.left, rect.top, cx - hole, rect.bottom, fill);
+      c.drawRect(cx + hole, rect.top, rect.right, rect.bottom, fill);
+      c.drawRect(cx - hole, rect.top, cx + hole, cy - hole, fill);
+      c.drawRect(cx - hole, cy + hole, cx + hole, rect.bottom, fill);
+      if (checkFactor != 0f) {
+        // Same check mark as onDraw, in the box's own coordinates.
+        c.translate(cx - size / 2f - Screen.dp(.5f), cy - size / 2f);
+        c.rotate(-45f, size / 2f, size / 2f);
+        final int x1 = Screen.dp(4f), y1 = Screen.dp(11f), lineSize = Screen.dp(1.5f);
+        int w2 = (int) ((float) Screen.dp(12f) * checkFactor);
+        int h1 = (int) ((float) Screen.dp(6f) * checkFactor);
+        Paint checkPaint = Paints.fillingPaint(ColorUtils.alphaColor(alpha, checkColor));
+        c.drawRect(x1, y1 - h1, x1 + lineSize, y1, checkPaint);
+        c.drawRect(x1, y1 - lineSize, x1 + w2, y1, checkPaint);
+      }
+    }
+    Views.restore(c, restoreToCount);
+  }
+
   @Override
   public boolean onTouchEvent (MotionEvent event) {
     boolean isEnabled = isEnabled();

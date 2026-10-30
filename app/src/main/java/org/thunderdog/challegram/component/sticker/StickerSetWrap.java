@@ -510,7 +510,6 @@ public class StickerSetWrap extends FrameLayoutFix implements StickersListContro
   }
 
   private void updateButton (String str, boolean positive, boolean animated) {
-    str = Lang.uppercase(str);
     int colorId = positive ? ColorId.textNeutral : ColorId.textNegative;
     if (!textButton.getText().toString().equals(str) || textButton.getCurrentTextColor() != Theme.getColor(colorId)) {
       if (animated) {

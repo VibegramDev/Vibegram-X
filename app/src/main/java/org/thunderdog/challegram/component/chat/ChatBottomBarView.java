@@ -162,7 +162,7 @@ public class ChatBottomBarView extends BaseView {
 
     public void layout (int width) {
       width -= Screen.dp(8f) * 2;
-      this.drawingText = width > 0 ? new Text.Builder(Lang.uppercase(this.text), width - Screen.dp(8f), Paints.robotoStyleProvider(16), TextColorSets.Regular.NEUTRAL).allBold().singleLine().build() : null;
+      this.drawingText = width > 0 ? new Text.Builder(this.text, width - Screen.dp(8f), Paints.robotoStyleProvider(16), TextColorSets.Regular.NEUTRAL).allBold().singleLine().build() : null;
     }
 
     private static final float SCALE = .8f;

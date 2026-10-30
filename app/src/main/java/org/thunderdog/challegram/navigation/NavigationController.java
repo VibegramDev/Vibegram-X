@@ -801,6 +801,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     if (themeListeners != null) {
       themeListeners.onThemeColorsChanged(areTemp);
     }
+    if (floatingButton != null) {
+      // M3 FAB reads its colors while drawing.
+      floatingButton.invalidate();
+    }
   }
 
   private boolean isDestroyed;
@@ -2154,7 +2158,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     boolean directionChanged = Lang.hasDirectionChanged(event, arg1);
 
     if (directionChanged) {
-      if (Views.setGravity(floatingButton, Gravity.TOP | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT)))
+      if (Views.setGravity(floatingButton, Gravity.BOTTOM | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT)))
         Views.updateLayoutParams(floatingButton);
       checkShadowDirection();
     }

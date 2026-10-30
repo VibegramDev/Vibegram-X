@@ -19,6 +19,9 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -49,7 +52,9 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
@@ -63,7 +68,8 @@ import org.thunderdog.challegram.util.ListItemDiffUtilCallback;
 import org.thunderdog.challegram.util.PremiumLockModifier;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.v.CustomRecyclerView;
-import org.thunderdog.challegram.widget.NonMaterialButton;
+import org.thunderdog.challegram.widget.ForegroundCompat;
+import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -155,7 +161,7 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ChatFolders));
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP, chatFoldersPreviousItemId));
     items.addAll(chatFolderItemList);
-    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_createNewFolder, R.drawable.baseline_add_24, R.string.CreateNewFolder).setTextColorId(ColorId.textNeutral));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_createNewFolder, R.drawable.baseline_add_24, R.string.CreateNewFolder));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, recommendedChatFoldersPreviousItemId, 0, R.string.ChatFoldersReorderTip));
 
@@ -182,17 +188,38 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
             settingView.setOnClickListener(SettingsFoldersController.this);
             addThemeInvalidateListener(settingView);
 
-            FrameLayout.LayoutParams params = FrameLayoutFix.newParams(Screen.dp(29f), Screen.dp(28f), Lang.reverseGravity(Gravity.CENTER_VERTICAL));
-            params.leftMargin = params.rightMargin = Screen.dp(17f);
-            NonMaterialButton button = new NonMaterialButton(parent.getContext()) {
+            // M3 filled tonal icon button (FilledTonalIconButtonTokens): 40dp round secondaryContainer container,
+            // onSecondaryContainer icon, 48dp touch target; the 16dp trailing space of the list item.
+            FrameLayout.LayoutParams params = FrameLayoutFix.newParams(Screen.dp(48f), Screen.dp(48f), Lang.reverseGravity(Gravity.CENTER_VERTICAL));
+            params.leftMargin = params.rightMargin = Screen.dp(12f);
+            GradientDrawable oval = new GradientDrawable();
+            oval.setShape(GradientDrawable.OVAL);
+            oval.setColor(0xFFFFFFFF);
+            M3StateLayerDrawable stateLayer = new M3StateLayerDrawable(null, new InsetDrawable(oval, Screen.dp(4f)), 0);
+            Drawable addIcon = Drawables.get(parent.getResources(), R.drawable.baseline_add_24);
+            FrameLayoutFix button = new FrameLayoutFix(parent.getContext()) {
               @Override
               protected void onSizeChanged (int width, int height, int oldWidth, int oldHeight) {
                 settingView.forcePadding(0, Math.max(0, width + params.leftMargin + params.rightMargin - Screen.dp(17f)));
               }
+
+              @Override
+              protected void onDraw (Canvas c) {
+                float cx = getMeasuredWidth() / 2f, cy = getMeasuredHeight() / 2f;
+                boolean enabled = isEnabled();
+                // Disabled: container onSurface 10%, icon onSurface 38%.
+                c.drawCircle(cx, cy, Screen.dp(20f), Paints.fillingPaint(enabled ? M3.secondaryContainer() : ColorUtils.alphaColor(.1f, M3.onSurface())));
+                stateLayer.setColor(ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSecondaryContainer()));
+                if (addIcon != null) {
+                  Drawables.draw(c, addIcon, cx - addIcon.getMinimumWidth() / 2f, cy - addIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(enabled ? M3.onSecondaryContainer() : ColorUtils.alphaColor(.38f, M3.onSurface())));
+                }
+              }
             };
+            button.setWillNotDraw(false);
+            ForegroundCompat.set(button, stateLayer);
             button.setId(R.id.btn_double);
             button.setLayoutParams(params);
-            button.setText(R.string.PlusSign);
+            button.setContentDescription(Lang.getString(R.string.Add));
             button.setOnClickListener(SettingsFoldersController.this);
             settingView.addView(button);
 
@@ -268,7 +295,7 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
           boolean canCreateChatFolder = tdlib.canCreateChatFolder();
           view.setIgnoreEnabled(true);
           view.setVisuallyEnabled(canCreateChatFolder, isUpdate);
-          view.setIconColorId(ColorId.textNeutral);
+          view.setIconColorId(ColorId.NONE);
           disabledAlpha = iconAlpha = canCreateChatFolder ? 1f : .45f;
           PremiumLockModifier modifier = (canCreateChatFolder || tdlib.hasPremium()) ? null : premiumLockModifier;
           view.setDrawModifier(modifier);

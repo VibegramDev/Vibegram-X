@@ -53,13 +53,14 @@ import me.vkryl.android.widget.FrameLayoutFix;
  *
  * Specs (m3.material.io/components/search): fully rounded container, surface container high,
  * leading non-functional search icon in a 48dp tap target, label 4dp after it, no shadow.
- * Height is 48dp instead of 56dp to fit the 56dp app bar; the focused bar drawn by
+ * Height 56dp (search bar container, unfocused and focused); the focused bar drawn by
  * {@code MainController#genSearchHeader} has the same height, so the bar keeps its size when focused.
  */
 public class M3SearchBarView extends FrameLayoutFix {
-  public static final float BAR_HEIGHT = 48f;
-  /** Leading margin: app bar horizontal padding. */
-  public static final float START_MARGIN = 16f;
+  public static final float BAR_HEIGHT = 56f;
+  /** Leading margin: «Unfocused: 24dp, focused: 12dp» ({@link #FOCUSED_MARGIN}). */
+  public static final float START_MARGIN = 24f;
+  public static final float FOCUSED_MARGIN = 12f;
   /** Gap between the bar and the app bar actions. */
   public static final float END_MARGIN = 4f;
 

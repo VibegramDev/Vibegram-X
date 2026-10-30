@@ -285,7 +285,7 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM, inviteLinksNextItemId));
       items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.ChatFolderInviteLinksInfo));
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_removeFolder, R.drawable.baseline_delete_24, R.string.RemoveFolder).setTextColorId(ColorId.textNegative));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_removeFolder, R.drawable.baseline_delete_24, R.string.RemoveFolder));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
 
@@ -1145,8 +1145,6 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
         boolean enabled = canCreateInviteLink();
         view.setIconColorId(ColorId.textNeutral);
         disabledAlpha = iconAlpha = enabled ? 1f : .45f;
-      } else if (item.getId() == R.id.btn_removeFolder) {
-        view.setIconColorId(ColorId.iconNegative);
       } else {
         view.setIconColorId(ColorId.NONE /* theme_color_icon */);
       }

@@ -91,6 +91,7 @@ import org.thunderdog.challegram.telegram.TdlibSender;
 import org.thunderdog.challegram.telegram.TdlibThread;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PorterDuffColorId;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
@@ -128,6 +129,7 @@ import org.thunderdog.challegram.util.text.TextStyleProvider;
 import org.thunderdog.challegram.util.text.TextWrapper;
 import org.thunderdog.challegram.v.MessagesRecyclerView;
 import org.thunderdog.challegram.widget.ShadowView;
+import org.thunderdog.challegram.widget.CheckBoxView;
 import org.thunderdog.challegram.widget.SimplestCheckBox;
 
 import java.lang.annotation.Retention;
@@ -2233,10 +2235,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
           centerX = viewWidth - centerX;
         }
 
-        // float darkFactor = Theme.getDarkFactor();
+        // M3 checkbox: several messages can be selected ("Use checkboxes ... if multiple options can be selected from a list").
         float transparency = manager.controller().wallpaper().getBackgroundTransparency();
-        c.drawCircle(centerX, centerY, Screen.dp(9f) + (int) (Screen.dp(1f) * (1f - transparency)), Paints.strokeBigPaint(ColorUtils.alphaColor(selectableFactor, ColorUtils.fromToArgb(Theme.getColor(ColorId.bubble_messageCheckOutline), Theme.getColor(ColorId.bubble_messageCheckOutlineNoWallpaper), transparency))));
-        SimplestCheckBox.draw(c, centerX, centerY, selectionFactor, null);
+        int outlineColor = ColorUtils.fromToArgb(Theme.getColor(ColorId.bubble_messageCheckOutline), M3.onSurfaceVariant(), transparency);
+        CheckBoxView.drawCheckBox(c, centerX, centerY, selectionFactor, selectableFactor, outlineColor, M3.primary(), M3.onPrimary());
       }
     } else if (selectionFactor > 0f) {
       double radians = Math.toRadians(45f);
@@ -3009,15 +3011,6 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   }
 
   public boolean supportsTextSelection () {
-    return false;
-  }
-
-  /** Long press on the text: selects the word under the finger, further moves of the same touch extend it. */
-  public boolean startTextSelectionAt (MessageView view, float x, float y) {
-    return false;
-  }
-
-  public boolean isSelectableTextAt (float x, float y) {
     return false;
   }
 
@@ -6894,6 +6887,16 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       revokeAnimator.cancel();
       revokeAnimator = null;
     }
+  }
+
+  /** Removes the highlight at once (the message's menu closed), without the 2s delay of {@link #revokeHighlight()}. */
+  public void clearHighlight () {
+    if (highlightFactor == 0f) {
+      return;
+    }
+    cancelHighlightRevoke();
+    revokeAnimator = new FactorAnimator(ANIMATOR_REVOKE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l, 0f);
+    revokeAnimator.animateTo(1f);
   }
 
   public void revokeHighlight () {

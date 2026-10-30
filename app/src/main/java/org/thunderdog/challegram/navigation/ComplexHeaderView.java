@@ -1500,7 +1500,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   public void buildMenuStickerPreview (ArrayList<StickerPreviewView.MenuItem> menuItems, @NonNull TGStickerObj sticker) {
     menuItems.add(new StickerPreviewView.MenuItem(
       StickerPreviewView.MenuItem.MENU_ITEM_TEXT,
-      Lang.uppercase(Lang.getString(R.string.ViewPackPreview)),
+      Lang.getString(R.string.ViewPackPreview),
       R.id.btn_view,
       ColorId.textNeutral
     ));

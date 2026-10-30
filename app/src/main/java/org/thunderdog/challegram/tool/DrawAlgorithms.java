@@ -495,7 +495,7 @@ public class DrawAlgorithms {
             if (haveFilling) {
               c.drawCircle(cx, cy, fillingRadius, Paints.fillingPaint(ColorUtils.alphaColor(backgroundAlpha, fillingColor)));
             }
-            c.drawCircle(cx, cy, outlineRadius, (colorSet.outlineDashed() ? Paints.getCounterDashedOutlinePaint(outlineWidth, ColorUtils.alphaColor(backgroundAlpha, outlineColor)) : Paints.getCounterOutlinePaint(outlineWidth, ColorUtils.alphaColor(backgroundAlpha, outlineColor))));
+            c.drawCircle(cx, cy, outlineRadius, Paints.getCounterOutlinePaint(outlineWidth, ColorUtils.alphaColor(backgroundAlpha, outlineColor)));
           }
         } else if (haveFilling) {
           c.drawCircle(cx, cy, fillingRadius, Paints.fillingPaint(ColorUtils.alphaColor(backgroundAlpha, fillingColor)));
@@ -522,7 +522,7 @@ public class DrawAlgorithms {
               c.drawRoundRect(rectF, fillingRadius, fillingRadius, Paints.fillingPaint(ColorUtils.alphaColor(backgroundAlpha, fillingColor)));
             }
             rectF.inset(-outlineWidth * 0.5f, -outlineWidth * 0.5f);
-            c.drawRoundRect(rectF, outlineRadius, outlineRadius, (colorSet.outlineDashed() ? Paints.getCounterDashedOutlinePaint(outlineWidth, ColorUtils.alphaColor(backgroundAlpha, outlineColor)) : Paints.getCounterOutlinePaint(outlineWidth, ColorUtils.alphaColor(backgroundAlpha, outlineColor))));
+            c.drawRoundRect(rectF, outlineRadius, outlineRadius, Paints.getCounterOutlinePaint(outlineWidth, ColorUtils.alphaColor(backgroundAlpha, outlineColor)));
           }
         } else if (haveFilling) {
           c.drawRoundRect(rectF, fillingRadius, fillingRadius, Paints.fillingPaint(ColorUtils.alphaColor(backgroundAlpha, fillingColor)));

@@ -2373,6 +2373,9 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     /** The caller patches the returned popup's {@link OptionsLayout}: show the bottom sheet on every width. */
     public boolean needSheet;
 
+    /** The info names what the menu is about (a chat): the menu keeps it even when it does not fit at the touch point. */
+    public boolean keepInfo;
+
     public void setNeedSheet (boolean needSheet) {
       this.needSheet = needSheet;
     }
@@ -2472,6 +2475,14 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   public final PopupLayout showOptions (Options options, final OptionDelegate delegate, final @Nullable ThemeDelegate forcedTheme) {
+    return showOptions(options, delegate, forcedTheme, null, null);
+  }
+
+  /**
+   * @param anchor screen point a menu opens at in wide windows (a touch captured before an async load); null: the recent touch.
+   * @param menuHeaders adds rows to that menu after its title and info, above the items.
+   */
+  public final PopupLayout showOptions (Options options, final OptionDelegate delegate, final @Nullable ThemeDelegate forcedTheme, @Nullable float[] anchor, @Nullable RunnableData<MenuMoreWrap> menuHeaders) {
     if (isStackLocked()) {
       Log.i("Ignoring options show because stack is locked");
       return null;
@@ -2538,9 +2549,11 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     float[] touchPoint;
     if (isConfirmation) {
       popupLayout.showFadingPopupView(newOptionsDialog(options, cancelIndex, actionIndex, popupLayout, onClickListener, delegate, forcedTheme));
-    } else if (!options.needSheet && !isCompactWindow() && (touchPoint = context.getRecentTouchPoint()) != null) {
-      MenuMoreWrap menu = newOptionsMenu(options, onClickListener, delegate, forcedTheme);
+    } else if (!options.needSheet && (anchor != null || !isCompactWindow()) && (touchPoint = anchor != null ? anchor : context.getRecentTouchPoint()) != null) {
+      // An explicit anchor (long press on a message or a chat) opens the small menu at the finger on phones too.
+      MenuMoreWrap menu = newOptionsMenu(options, onClickListener, delegate, forcedTheme, menuHeaders);
       menu.setAnchor((int) touchPoint[0], (int) touchPoint[1], (int) touchPoint[0], (int) touchPoint[1], false);
+      menu.setAnchorPane(getValue());
       popupLayout.showMoreView(menu);
     } else {
       OptionsLayout optionsWrap = newOptionsSheet(options, onClickListener, delegate, forcedTheme);
@@ -2604,8 +2617,8 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
   }
 
   /** M3 menu at the touch point that opened the options (windows 600dp and wider); the same component as the ⋮ menu. */
-  private MenuMoreWrap newOptionsMenu (Options options, View.OnClickListener onClickListener, @Nullable OptionDelegate delegate, @Nullable ThemeDelegate forcedTheme) {
-    MenuMoreWrap menu = new MenuMoreWrap(context);
+  private MenuMoreWrap newOptionsMenu (Options options, View.OnClickListener onClickListener, @Nullable OptionDelegate delegate, @Nullable ThemeDelegate forcedTheme, @Nullable RunnableData<MenuMoreWrap> menuHeaders) {
+    MenuMoreWrap menu = new MenuMoreWrap(context, /* scrollable */ true);
     menu.init(getThemeListeners(), forcedTheme);
     int padding = Screen.dp(MenuMoreWrap.ITEM_PADDING);
     if (!StringUtils.isEmpty(options.title)) {
@@ -2636,13 +2649,16 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       // it may be dropped when the menu does not fit next to the touch point otherwise.
       int infoWidth = (int) Math.ceil(Paints.getRegularTextPaint(14f).measureText(info)) + padding * 2;
       boolean singleLine = info.indexOf('\n') == -1 && infoWidth <= Screen.dp(MenuMoreWrap.MAX_WIDTH);
-      menu.addHeaderView(themed(infoView, forcedTheme), infoWidth, singleLine);
+      menu.addHeaderView(themed(infoView, forcedTheme), infoWidth, singleLine && !options.keepInfo);
     }
-    boolean pendingDivider = menu.getChildCount() > 0;
+    if (menuHeaders != null) {
+      menuHeaders.runWithData(menu);
+    }
+    boolean pendingDivider = menu.getRowCount() > 0;
     for (int index = 0; index < options.items.length; index++) {
       OptionItem item = options.items[index];
       if (item == OptionItem.SEPARATOR) {
-        pendingDivider = menu.getChildCount() > 0;
+        pendingDivider = menu.getRowCount() > 0;
         continue;
       }
       if (item.id == R.id.btn_cancel) {
@@ -2966,7 +2982,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
         } else {
           text = Lang.getString(futureRes, Lang.getDate(targetMillis, TimeUnit.MILLISECONDS), Lang.time(targetMillis, TimeUnit.MILLISECONDS));
         }
-        Views.setMediumText(sendView, Lang.uppercase(text));
+        Views.setMediumText(sendView, text);
       };
 
       int dayCount = 366;

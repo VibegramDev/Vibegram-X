@@ -237,7 +237,7 @@ public class SettingsDataController extends RecyclerViewController<SettingsDataC
         new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_dataUsageRoaming, R.drawable.baseline_public_24, R.string.RoamingUsage),
         new ListItem(ListItem.TYPE_SHADOW_BOTTOM),
         new ListItem(ListItem.TYPE_SHADOW_TOP),
-        new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_resetNetworkStats, 0, R.string.ResetStatistics).setTextColorId(ColorId.textNegative),
+        new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_resetNetworkStats, 0, R.string.ResetStatistics),
         new ListItem(ListItem.TYPE_SHADOW_BOTTOM)
       };
     } else {

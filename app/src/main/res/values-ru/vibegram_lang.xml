@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: full words instead of the abbreviations of the Russian cloud pack
+     (m3 content design: «Spell out words whenever possible.»). -->
+<resources>
+  <string-array name="vg_LangLocalKeys">
+    <item>Mute</item>
+    <item>Unmute</item>
+    <item>MuteForever</item>
+    <item>Off</item>
+    <item>PasswordEnabled</item>
+    <item>NotificationsDefaultDisabled</item>
+    <item>SaveOutgoingPhotos</item>
+  </string-array>
+  <string name="Mute">Выключить уведомления</string>
+  <string name="Unmute">Включить уведомления</string>
+  <string name="MuteForever">Выключить навсегда</string>
+  <string name="Off">Выключено</string>
+  <string name="PasswordEnabled">Включён</string>
+  <string name="NotificationsDefaultDisabled">Выключены</string>
+  <string name="SaveOutgoingPhotos">Сохранять отредактированные фото</string>
+</resources>

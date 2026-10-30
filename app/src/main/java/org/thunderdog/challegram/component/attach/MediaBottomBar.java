@@ -22,7 +22,10 @@ import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -33,12 +36,14 @@ import androidx.annotation.NonNull;
 
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
+import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.widget.M3Sheets;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.ViewUtils;
@@ -49,28 +54,18 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
   static class BarItem {
     private final int iconResource;
     private final String name;
-    private final int backgroundColorId;
-    private final int paddingTop;
 
     // internal
     private float measuredWidth;
     private Drawable icon;
     private float factor;
 
-    public BarItem (@DrawableRes int icon, int name, int backgroundColorId) {
+    public BarItem (@DrawableRes int icon, int name) {
       this.iconResource = icon;
       this.name = Lang.getString(name);
-      this.backgroundColorId = backgroundColorId;
-      this.paddingTop = 0;
-    }
-
-    public BarItem (@DrawableRes int icon, int name, int backgroundColorId, int paddingTop) {
-      this.iconResource = icon;
-      this.name = Lang.getString(name);
-      this.backgroundColorId = backgroundColorId;
-      this.paddingTop = paddingTop;
     }
   }
+
 
   interface Callback {
     boolean onBottomPrepareSectionChange (int fromIndex, int toIndex, boolean ignorePermissionsRequest);
@@ -90,15 +85,12 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
 
   // Metrics
   private final int barHeight;
-  private final int textY;
-  private final int iconActivePadding;
 
   private int lastBarWidth, lastScreenHeight;
   private float maxTextWidth;
   private int itemNormalWidth;
   private int itemActiveDiff;
   private int itemStartX;
-  private float circleRadius;
 
   private final GestureDetector flingDetector;
 
@@ -110,8 +102,6 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
     flingDetector = new GestureDetector(context, this);
 
     barHeight = getBarHeight();
-    iconActivePadding = Screen.dp(10f);
-    textY = barHeight - Screen.dp(9f);
 
     setWillNotDraw(false);
     ViewUtils.setBackground(this, new MediaBottomBarBackground());
@@ -125,15 +115,16 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
 
   // Getters
 
+  /** M3 navigation bar with labels under the icons: 64dp, as MainNavigationBar's bar. */
   public static int getBarHeight () {
-    return Screen.dp(56f);
+    return Screen.dp(64f);
   }
 
   public int getCurrentBarWidth () {
     /*if (lastBarWidth != 0 && lastBarWidth == getMeasuredWidth() && false) {
       return lastBarWidth;
     }*/
-    int barWidth = Screen.currentWidth();
+    int barWidth = M3Sheets.width(Screen.currentWidth());
     int maxItemWidth = Screen.dp(168f);
     int itemWidth = barWidth / items.length;
     return itemWidth > maxItemWidth ? maxItemWidth * items.length : barWidth;
@@ -205,13 +196,9 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
       totalWidth = barWidth;
     }
 
-    int itemActiveWidth = Math.max(itemWidth, (int) (maxTextWidth + Screen.dp(40f)));
-    int itemNormalWidth = (totalWidth - itemActiveWidth) / (items.length - 1);
-
-    this.itemNormalWidth = itemNormalWidth;
-    this.itemActiveDiff = itemActiveWidth - itemNormalWidth;
-
-    this.circleRadius = (float) Math.sqrt((barWidth * barWidth) + (barHeight * barHeight)) * .5f;
+    // M3 navigation bar: all destinations have the same width (the selected one no longer widens).
+    this.itemNormalWidth = totalWidth / items.length;
+    this.itemActiveDiff = 0;
   }
 
   // Event handler
@@ -388,7 +375,7 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
 
   public void prepareOverlayAnimation () {
     overlayCenterX = itemStartX;
-    overlayCenterY = barHeight / 2 - (int) ((float) (iconActivePadding - items[index].paddingTop) * factor);
+    overlayCenterY = Screen.dp(INDICATOR_TOP + INDICATOR_HEIGHT / 2f);
     overlayRadius = (float) Math.sqrt((getMeasuredWidth() * getMeasuredWidth()) + (barHeight * barHeight)) * .5f;
     int cx = itemStartX;
     int i = 0;
@@ -412,13 +399,21 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
 
   // Drawing
 
-  private static final float TEXT_THRESHOLD = .55f;
-  private static final float TEXT_SCALE = .2f;
+  // M3 navigation bar item (components/navigation-bar), as in MainNavigationBar: 56x32dp active indicator pill
+  // (secondaryContainer) around the icon, label below it. "Don’t remove the labels from navigation items".
+  private static final float INDICATOR_TOP = 6f, INDICATOR_WIDTH = 56f, INDICATOR_HEIGHT = 32f, LABEL_GAP = 4f, LABEL_LINE_HEIGHT = 16f;
+
+  private TextPaint labelPaint;
+
+  private TextPaint getLabelPaint () {
+    if (labelPaint == null) {
+      labelPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+      labelPaint.setTextSize(Screen.sp(12f)); // M3 label medium, as MainNavigationBar
+    }
+    return labelPaint;
+  }
 
   private class MediaBottomBarBackground extends Drawable {
-    private Paint iconPaint;
-    private int iconColor;
-
     @Override
     public void draw (@NonNull Canvas c) {
       updateBarMetrics();
@@ -430,65 +425,50 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
       int centerX = barWidth / 2;
       int centerY = barHeight / 2;
       int barHeight = MediaBottomBar.this.barHeight + MediaBottomBar.this.getPaddingBottom();
+      final int containerColor = M3.surfaceContainer();
 
       if (overlayFactor != 1f) {
-        int backgroundColor = Theme.getColor(items[index].backgroundColorId);
+        c.drawRect(0, 0, barWidth, barHeight, Paints.fillingPaint(containerColor));
 
-
-        if (factor == 0f) {
-          c.drawRect(0, 0, barWidth, barHeight, Paints.fillingPaint(backgroundColor));
-        } else {
-          int toColor = Theme.getColor(toItem.backgroundColorId);
-
-          c.drawRect(0, 0, barWidth, barHeight, Paints.fillingPaint(ColorUtils.compositeColor(backgroundColor, ColorUtils.alphaColor(factor, toColor))));
-
-          float cx = touchCenterX;
-          float cy = centerY - (int) ((float) (iconActivePadding - fromItem.paddingTop) * factor);
-
-          float x = cx + (centerX - cx) * factor;
-          float y = cy + (centerY - cy) * factor;
-
-          c.drawCircle(x, y, circleRadius * factor, Paints.fillingPaint(toColor));
-        }
+        RectF rect = Paints.getRectF();
+        float indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
+        int iconCenterY = Screen.dp(INDICATOR_TOP + INDICATOR_HEIGHT / 2f);
+        TextPaint paint = getLabelPaint();
+        Paint.FontMetrics metrics = paint.getFontMetrics();
+        float baseline = Screen.dp(INDICATOR_TOP + INDICATOR_HEIGHT + LABEL_GAP) + Screen.dp(LABEL_LINE_HEIGHT) / 2f - (metrics.ascent + metrics.descent) / 2f;
 
         int cx = itemStartX;
         for (BarItem item : items) {
           int itemWidth = itemNormalWidth + Math.round((float) itemActiveDiff * item.factor);
           int itemCenterX = cx + itemWidth / 2;
+          float selected = item.factor;
 
-          int iconCenterY = item.factor == 0f ? centerY : centerY - (int) ((float) (iconActivePadding - item.paddingTop) * item.factor);
-          int iconAlpha = item.factor == 1f ? 255 : 255 - (int) ((255f * .25f) * (1f - item.factor));
-          int color = Theme.getColor(ColorId.attachText);
-          Paint bitmapPaint = iconPaint != null && iconColor == color ? iconPaint : (iconPaint = Paints.createPorterDuffPaint(iconPaint, iconColor = color));
-          bitmapPaint.setAlpha(iconAlpha);
+          // Active indicator: expands from the icon center along the horizontal axis only.
+          if (selected > 0f) {
+            float indicatorWidth = Math.min(itemWidth - Screen.dp(8f), Screen.dp(INDICATOR_WIDTH)) * selected;
+            rect.set(itemCenterX - indicatorWidth / 2f, iconCenterY - indicatorHeight / 2f, itemCenterX + indicatorWidth / 2f, iconCenterY + indicatorHeight / 2f);
+            c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(selected, M3.secondaryContainer())));
+          }
           if (item.icon != null) {
-            Drawables.draw(c, item.icon, itemCenterX - item.icon.getMinimumWidth() / 2, iconCenterY - (int) ((float) item.icon.getMinimumHeight() * .5f), bitmapPaint);
-          } else {
-            c.drawCircle(itemCenterX, iconCenterY, Screen.dp(12f), Paints.fillingPaint(0xffffffff));
+            int iconColor = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.onSecondaryContainer(), selected);
+            Drawables.draw(c, item.icon, itemCenterX - item.icon.getMinimumWidth() / 2f, iconCenterY - item.icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(iconColor));
           }
 
-          if (item.factor == 1f) {
-            int textX = itemCenterX - (int) (item.measuredWidth * .5f);
-            c.drawText(item.name, textX, textY, Paints.getRegularTextPaint(TEXT_SIZE, color));
-          } else if (item.factor >= TEXT_THRESHOLD) {
-            c.save();
-            c.translate(itemCenterX, textY);
-
-            float scale = (1f - TEXT_SCALE) + TEXT_SCALE * item.factor;
-            c.scale(scale, scale);
-
-            int textX = -(int) (item.measuredWidth * .5f);
-            float textFactor = (item.factor - TEXT_THRESHOLD) / (1f - TEXT_THRESHOLD);
-
-            c.drawText(item.name, textX, 0, Paints.getRegularTextPaint(TEXT_SIZE, ColorUtils.alphaColor(textFactor, color)));
-            c.restore();
+          // Label: secondary and bold when active, onSurfaceVariant when inactive.
+          paint.setColor(ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.secondary(), selected));
+          paint.setTypeface(selected >= .5f ? Fonts.getRobotoBold() : Fonts.getRobotoMedium());
+          String text = item.name;
+          if (paint.measureText(text) > itemWidth) {
+            text = TextUtils.ellipsize(text, paint, itemWidth, TextUtils.TruncateAt.END).toString();
           }
+          c.drawText(text, itemCenterX - paint.measureText(text) / 2f, baseline, paint);
 
           cx += itemWidth;
         }
       }
 
       if (overlayFactor != 0f) {
+        // Overlay under the panel that replaces the bar while media is selected (caption): that panel's color.
         final int fillingColor = Theme.fillingColor();
         if (overlayFactor != 1f) {
           c.drawCircle(overlayCenterX + (centerX - overlayCenterX) * overlayFactor, overlayCenterY + (centerY - overlayCenterY) * overlayFactor, overlayRadius * overlayFactor, Paints.fillingPaint(fillingColor));
@@ -516,13 +496,9 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
     }
   }
 
+  /** Navigation bar container color (system navigation bar follows it). */
   public int getCurrentColor ()  {
-    int backgroundColor = Theme.getColor(items[index].backgroundColorId);
-    if (factor != 0f) {
-      int toColor = Theme.getColor(toItem.backgroundColorId);
-      backgroundColor = ColorUtils.compositeColor(backgroundColor, ColorUtils.alphaColor(factor, toColor));
-    }
-    return backgroundColor;
+    return M3.surfaceContainer();
   }
 
   // Gestures

@@ -2689,13 +2689,13 @@ public class ShareController extends TelegramViewController<ShareController.Args
     private float copyWidth;
 
     public void setShareText (@NonNull String text) {
-      this.copyText = Lang.uppercase(text);
+      this.copyText = text;
       this.copyTextFake = Text.needFakeBold(copyText);
       this.copyWidth = U.measureText(copyText, Paints.getTitleBigPaint(copyTextFake));
     }
 
     public void setSendText (@NonNull String text) {
-      sendText = Lang.uppercase(text);
+      sendText = text;
       sendTextFake = Text.needFakeBold(sendText);
       sendWidth = U.measureText(sendText, Paints.getTitleBigPaint(sendTextFake));
     }

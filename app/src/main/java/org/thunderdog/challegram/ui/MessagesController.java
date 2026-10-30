@@ -109,6 +109,7 @@ import org.thunderdog.challegram.component.chat.MessageViewGroup;
 import org.thunderdog.challegram.component.chat.MessagesAdapter;
 import org.thunderdog.challegram.component.chat.MessagesHolder;
 import org.thunderdog.challegram.component.chat.MessagesLayout;
+import org.thunderdog.challegram.component.chat.MessagePreviewView;
 import org.thunderdog.challegram.component.chat.MessagesManager;
 import org.thunderdog.challegram.component.chat.MessagesSearchManagerMiddleware;
 import org.thunderdog.challegram.component.chat.PinnedMessagesBar;
@@ -243,6 +244,8 @@ import org.thunderdog.challegram.widget.CollapseListView;
 import org.thunderdog.challegram.widget.CustomTextView;
 import org.thunderdog.challegram.widget.EmojiLayout;
 import org.thunderdog.challegram.widget.EmojiPacksInfoView;
+import org.thunderdog.challegram.widget.EmojiTextView;
+import org.thunderdog.challegram.widget.MessageReactionsBar;
 import org.thunderdog.challegram.widget.FillingSpace;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.KeyboardFrameLayout;
@@ -646,9 +649,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
-  /** Floating composer: the message list goes down to the bottom edge, its padding keeps messages above the fade. */
+  /**
+   * Floating composer: the message list goes down to the bottom edge, its padding puts the last message right above
+   * the composer (as with the docked composer on phone); the fade only covers messages scrolled under it.
+   */
   private int getFloatingComposerInset () {
-    return composerFloating && bottomWrap != null ? bottomWrap.getMeasuredHeight() + M3BottomScrimView.getFadeHeight() : 0;
+    return composerFloating && bottomWrap != null ? bottomWrap.getMeasuredHeight() : 0;
   }
 
   /** Bounds of the floating composer (reply bar + input field) in the coordinates of the scrim. */
@@ -967,6 +973,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
         c.setArguments(new Arguments(null, chat, null, null, new TdApi.SearchMessagesFilterPinned()));
         navigateTo(c);
       }
+
+      @Override
+      public void onCreateMessagePreview (PinnedMessagesBar view, MessagePreviewView previewView) {
+        previewView.setPrimaryTitle();
+      }
     });
     pinnedMessagesItem = new CollapseListView.Item() {
       @Override
@@ -1029,13 +1040,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
     mentionButton.setLayoutParams(fparams);
     mentionButtonWrap.addView(mentionButton);
 
-    int buttonPadding = Screen.dp(24f);
-    fparams = FrameLayoutFix.newParams(buttonPadding + fparams.width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.RIGHT | Gravity.BOTTOM);
-    fparams.bottomMargin = Screen.dp(24f) * 2 - Screen.dp(28f) / 2;
+    // M3 badges: «Don’t let the badge get cut off or collide with another element» — the counter sits in the
+    // top-right corner of its own button, inside the button's bounds (CounterBadgeView), not above it.
+    fparams = FrameLayoutFix.newParams(fparams.width, fparams.height, Gravity.RIGHT | Gravity.BOTTOM);
 
     mentionCountView = new CounterBadgeView(context);
     mentionCountView.setLayoutParams(fparams);
-    mentionCountView.setPadding(buttonPadding, 0, 0, 0);
     addThemeInvalidateListener(mentionCountView);
     mentionButtonWrap.addView(mentionCountView);
     mentionButton.setTag(mentionCountView);
@@ -1068,11 +1078,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     scrollToBottomButton.setLayoutParams(fparams);
     scrollToBottomButtonWrap.addView(scrollToBottomButton);
 
-    fparams = FrameLayoutFix.newParams(buttonPadding + fparams.width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.RIGHT | Gravity.BOTTOM);
-    fparams.bottomMargin = Screen.dp(24f) * 2 - Screen.dp(28f) / 2;
+    fparams = FrameLayoutFix.newParams(fparams.width, fparams.height, Gravity.RIGHT | Gravity.BOTTOM);
 
     unreadCountView = new CounterBadgeView(context);
-    unreadCountView.setPadding(buttonPadding, 0, 0, 0);
     unreadCountView.setLayoutParams(fparams);
     addThemeInvalidateListener(unreadCountView);
     scrollToBottomButtonWrap.addView(unreadCountView);
@@ -1111,12 +1119,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
       return false;
     });
 
-    fparams = FrameLayoutFix.newParams(buttonPadding + fparams.width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.RIGHT | Gravity.BOTTOM);
-    fparams.bottomMargin = Screen.dp(24f) * 2 - Screen.dp(28f) / 2;
+    fparams = FrameLayoutFix.newParams(fparams.width, fparams.height, Gravity.RIGHT | Gravity.BOTTOM);
 
     reactionsCountView = new CounterBadgeView(context);
     reactionsCountView.setLayoutParams(fparams);
-    reactionsCountView.setPadding(buttonPadding, 0, 0, 0);
     addThemeInvalidateListener(reactionsCountView);
     reactionsButton.setTag(reactionsCountView);
     reactionsButtonWrap.addView(reactionsButton);
@@ -1546,6 +1552,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
       // Messages under the composer: on the tablet they scroll under the floating composer and fade out.
       contentView.addView(messagesView);
       composerScrim = new M3BottomScrimView(context);
+      // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed.
+      composerScrim.setFadeHeight(Screen.dp(4f));
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);
@@ -1611,13 +1619,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
       ProfileController.fillMediaControllers(mediaControllers, context(), tdlib());
       List<ViewPagerTopView.Item> items = new ArrayList<ViewPagerTopView.Item>(mediaControllers.size() + 1);
       items.add(new ViewPagerTopView.Item(
-        Lang.uppercase(Lang.getString(R.string.TabMessages)),
+        Lang.getString(R.string.TabMessages),
         R.drawable.baseline_chat_bubble_24,
         null
       ));
       for (SharedBaseController<?> c : mediaControllers) {
         items.add(new ViewPagerTopView.Item(
-          Lang.uppercase(c.getName().toString()),
+          c.getName().toString(),
           c.getIcon(),
           null
         ));
@@ -4774,6 +4782,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   public void showMessageOptions (MessageContext messageContext, int[] ids, String[] options, int[] icons) {
     final TGMessage msg = messageContext.message;
+    // Captured before the async loads below: the menu opens at this point.
+    final float[] touchPoint = context.getRecentTouchPoint();
     SpannableStringBuilder b = new SpannableStringBuilder();
     if (chat != null) {
       final boolean isChannel = tdlib.isChannel(chat.id);
@@ -4900,6 +4910,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
             }
           }
           Options messageOptions = messageOptionsBuilder.build();
+          if (touchPoint != null) {
+            showMessageOptionsMenu(messageOptions, messageContext, messageHandler, touchPoint, expectAgain ? inject : null);
+            return;
+          }
           if (!messageContext.disableMetadata && msg.canBeReacted()) {
             PopupLayout popupLayout = showMessageOptions(messageOptions, messageContext.message, null, messageHandler);
             if (expectAgain && popupLayout != null) {
@@ -4940,7 +4954,142 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private boolean isMessageOptionsVisible;
 
+  /**
+   * Message options in windows 600dp and wider: the M3 menu at the touch point, the same component as the ⋮ menu
+   * (ViewController#showOptions), with the reactions in a separate row above it (MessageReactionsBar). The read date,
+   * viewers, reactions senders and emoji packs are menu rows; the full reactions list opens the options sheet with
+   * the reactions picker expanded.
+   */
+  private void showMessageOptionsMenu (Options sheetOptions, MessageContext messageContext, OptionDelegate delegate, float[] touchPoint, @Nullable AtomicReference<RunnableData<TdApi.MessageReadDate>> readDateUpdate) {
+    if (isMessageOptionsVisible) {
+      return;
+    }
+    final TGMessage message = messageContext.message;
+    final boolean withMetadata = !messageContext.disableMetadata;
+    final PopupLayout[] popupRef = new PopupLayout[1];
+    final boolean[] expandReactions = new boolean[1];
+    // The read date is a menu row that is updated when it loads (the subtitle of the sheet).
+    Options options = new Options(sheetOptions.info, sheetOptions.title, null, sheetOptions.items, sheetOptions.maxLineCount);
+    PopupLayout popup = showOptions(options, delegate, null, touchPoint, menu -> {
+      int padding = Screen.dp(MenuMoreWrap.ITEM_PADDING);
+
+      EmojiTextView readDateView = OptionsLayout.genSubtitle(context);
+      readDateView.setPadding(padding, 0, padding, 0);
+      RunnableData<OptionItem> setReadDate = item -> {
+        readDateView.setVisibility(item != null ? View.VISIBLE : View.GONE);
+        if (item != null) {
+          OptionsLayout.updateSubtitle(readDateView, item.name, item.icon, item.textColor, item.iconColor, null, this);
+          readDateView.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+          readDateView.setTag(Math.min(readDateView.getMeasuredWidth(), Screen.dp(MenuMoreWrap.MAX_WIDTH)));
+          readDateView.requestLayout();
+        }
+      };
+      setReadDate.runWithData(sheetOptions.subtitle);
+      menu.addHeaderView(readDateView, Math.min(readDateView.getMeasuredWidth(), Screen.dp(MenuMoreWrap.MAX_WIDTH)), false);
+      if (readDateUpdate != null) {
+        readDateUpdate.set(loadedReadDate -> {
+          if (popupRef[0] != null && !popupRef[0].isDestroyed() && loadedReadDate.getConstructor() == TdApi.MessageReadDateRead.CONSTRUCTOR) {
+            setReadDate.runWithData(readItem(tdlib, ((TdApi.MessageReadDateRead) loadedReadDate).readDate));
+          }
+        });
+      }
+
+      if (withMetadata && message.canGetViewers() && !(message.isUnread() && !message.noUnread())) {
+        TextView viewersItem = menu.addItem(R.id.more_btn_openReadReceipts, Lang.getString(R.string.LoadingMessageSeen), R.drawable.baseline_visibility_24, null, null);
+        tdlib.client().send(new TdApi.GetMessageViewers(message.getChatId(), message.getId()), (obj) -> {
+          if (obj.getConstructor() != TdApi.MessageViewers.CONSTRUCTOR) return;
+          runOnUiThreadOptional(() -> {
+            TdApi.MessageViewers viewers = (TdApi.MessageViewers) obj;
+            if (viewers.viewers.length > 1) {
+              viewersItem.setText(MessageSeenController.getViewString(message, viewers.viewers.length).toString());
+            } else if (viewers.viewers.length == 1) {
+              TdApi.MessageViewer viewer = viewers.viewers[0];
+              String name = tdlib.senderName(new TdApi.MessageSenderUser(viewer.userId));
+              viewersItem.setText(viewer.viewDate != 0 ? name + ", " + TGUser.getActionDateStatus(tdlib, viewer.viewDate, message.getMessage()) : name);
+            } else {
+              viewersItem.setText(MessageSeenController.getNobodyString(message));
+            }
+            viewersItem.setOnClickListener((v) -> {
+              popupRef[0].hideWindow(true);
+              if (viewers.viewers.length > 1) {
+                ModernActionedLayout.showMessageSeen(this, message, viewers);
+              } else if (viewers.viewers.length == 1) {
+                tdlib.ui().openPrivateProfile(this, viewers.viewers[0].userId, new TdlibUi.UrlOpenParameters().tooltip(context().tooltipManager().builder(v)));
+              }
+            });
+          });
+        });
+      }
+
+      int reactionsCount = message.getMessageReactions().getTotalCount();
+      if (withMetadata && !Td.isEmpty(message.getMessageReactions().getReactions()) && message.canGetAddedReactions() && reactionsCount > 0) {
+        menu.addItem(View.NO_ID, Lang.plural(R.string.xReacted, reactionsCount), R.drawable.baseline_favorite_24, null, v -> {
+          popupRef[0].hideWindow(true);
+          showMessageAddedReactions(message, null);
+        });
+      }
+
+      long[] emojiPackIds = message.getUniqueEmojiPackIdList();
+      if (emojiPackIds.length > 0) {
+        EmojiPacksInfoView emojiPacksInfoView = new EmojiPacksInfoView(context, this, tdlib);
+        emojiPacksInfoView.setPadding(padding, Screen.dp(8f), padding, Screen.dp(8f));
+        emojiPacksInfoView.update(message.getFirstEmojiId(), emojiPackIds, new ClickableSpan() {
+          @Override
+          public void onClick (@NonNull View widget) {
+            cancelSheduledKeyboardOpeningAndHideAllKeyboards();
+            tdlib.ui().showStickerSets(MessagesController.this, emojiPackIds, true, null);
+            popupRef[0].hideWindow(true);
+          }
+        }, false);
+        menu.addHeaderView(emojiPacksInfoView, Screen.dp(MenuMoreWrap.MAX_WIDTH), false);
+      }
+    });
+    if (popup == null || !(popup.getBoundView() instanceof MenuMoreWrap)) {
+      return;
+    }
+    popupRef[0] = popup;
+    isMessageOptionsVisible = true;
+    // The message the menu is about stays highlighted (as when jumping to a message) while the menu is open.
+    message.highlight(false);
+    popup.addOnDismissPrepare(message::clearHighlight);
+    MenuMoreWrap menu = (MenuMoreWrap) popup.getBoundView();
+    if (withMetadata && message.canBeReacted()) {
+      MessageOptionsPagerController.State state = new MessageOptionsPagerController.State(message, options, (v, reaction, isLongClick) ->
+        MessageOptionsPagerController.toggleReaction(this, message, v, reaction, isLongClick, () -> popup.hideWindow(true))
+      );
+      View.OnClickListener onExpand = state.needShowReactionsPopupPicker ? v -> {
+        expandReactions[0] = true;
+        popup.hideWindow(true);
+      } : null;
+      menu.setReservedTop(Screen.dp(MessageReactionsBar.HEIGHT + MessageReactionsBar.GAP));
+      popup.addView(new MessageReactionsBar(context, this, menu, touchPoint[0], state, onExpand));
+    }
+    popup.setDismissListener(new PopupLayout.DismissListener() {
+      @Override
+      public void onPopupDismissPrepare (PopupLayout popup) {
+        if (!expandReactions[0]) {
+          onHideMessageOptions();
+        }
+      }
+
+      @Override
+      public void onPopupDismiss (PopupLayout popup) {
+        isMessageOptionsVisible = false;
+        if (expandReactions[0]) {
+          showMessageOptions(sheetOptions, message, null, delegate, true);
+        }
+      }
+    });
+    prepareToShowMessageOptions();
+    hideCursorsForInputView();
+  }
+
   private PopupLayout showMessageOptions (Options options, TGMessage message, @Nullable TdApi.ReactionType reactionType, OptionDelegate optionsDelegate) {
+    return showMessageOptions(options, message, reactionType, optionsDelegate, false);
+  }
+
+  /** @param expandReactions opened from the reactions row of the wide-window menu: the reactions picker is expanded, the keyboard state is the menu's. */
+  private PopupLayout showMessageOptions (Options options, TGMessage message, @Nullable TdApi.ReactionType reactionType, OptionDelegate optionsDelegate, boolean expandReactions) {
     if (isMessageOptionsVisible) {
       return null;
     }
@@ -4953,6 +5102,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
         optimizeEmojiLayoutForOptionsWindow(true);
       }
     };
+    if (expandReactions) {
+      r.setShowReactionPickerOnOpen();
+    }
     PopupLayout result = r.show();
     r.setDismissListener(new PopupLayout.DismissListener() {
       @Override
@@ -4966,7 +5118,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
         onHideMessageOptions();
       }
     });
-    prepareToShowMessageOptions();
+    if (!expandReactions) {
+      prepareToShowMessageOptions();
+    }
     hideCursorsForInputView();
     return result;
   }
@@ -6220,7 +6374,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private int actionMode;
 
   public void showActionButton (int resource, int mode) {
-    showActionButton(Lang.uppercase(Lang.getString(resource)), mode, true);
+    showActionButton(Lang.getString(resource), mode, true);
   }
 
   public void showActionButton (String string, int mode) {
@@ -6244,7 +6398,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   public void showActionDeleteChatButton () {
     if (ChatId.isBasicGroup(getChatId()) && chat.lastMessage != null && chat.lastMessage.content.getConstructor() == TdApi.MessageChatUpgradeTo.CONSTRUCTOR) {
-      showActionButton(Lang.uppercase(Lang.getString(R.string.OpenSupergroup)), ACTION_OPEN_SUPERGROUP);
+      showActionButton(Lang.getString(R.string.OpenSupergroup), ACTION_OPEN_SUPERGROUP);
     } else {
       showActionButton(R.string.DeleteChat, ACTION_DELETE_CHAT);
     }
@@ -10138,19 +10292,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   public boolean hasTextSelection () {
     return textSelectionMessage != null;
-  }
-
-  /** Long press on the text of a message: word selection that follows the finger (toolbar after release). */
-  public boolean startTextSelectionAt (TGMessage msg, MessageView view, float x, float y) {
-    if (!msg.canBeSaved() || isEditingMessage() || inSelectMode() || inPreviewMode || !msg.isSelectableTextAt(x, y)) {
-      return false;
-    }
-    finishTextSelection();
-    if (!msg.startTextSelectionAt(view, x, y)) {
-      return false;
-    }
-    textSelectionMessage = msg;
-    return true;
   }
 
   public void finishTextSelection () {

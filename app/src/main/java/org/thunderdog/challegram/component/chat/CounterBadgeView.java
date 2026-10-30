@@ -64,10 +64,8 @@ public class CounterBadgeView extends View {
 
   @Override
   public void onDraw (Canvas c) {
-    int paddingLeft = getPaddingLeft();
-    int paddingRight = getPaddingRight();
-    int x = paddingLeft + (getMeasuredWidth() - paddingLeft - paddingRight) / 2;
-    int y = getMeasuredHeight() / 2;
-    counter.draw(c, x, y, Gravity.CENTER_HORIZONTAL, 1f);
+    // Top-right corner of the button this view covers, inside its bounds (Gravity.RIGHT: cx is the right arc's center).
+    float inset = Screen.dp(13f - 2f) + Screen.dp(1.5f);
+    counter.draw(c, getMeasuredWidth() - getPaddingRight() - inset, getPaddingTop() + inset, Gravity.RIGHT, 1f);
   }
 }

@@ -2492,6 +2492,7 @@
   <string name="GeneralTopicWasHidden">General topic hidden</string>
   <string name="GeneralTopicWasShown">General topic shown</string>
   <string name="ViewAsChat">View as chat</string>
+  <string name="ShowChatPreview">Preview</string>
   <string name="ViewAsTopics">View as topics</string>
   <string name="ViewAsTabs">View as tabs</string>
   <string name="FilterByTopic">Filter by topic</string>
@@ -4180,6 +4181,7 @@
   <string name="NavigationStyle">Navigation</string>
   <string name="NavigationStyleRail">Side rail</string>
   <string name="NavigationStyleDock">Bottom dock</string>
+  <string name="NavigationStyleBar">Navigation bar</string>
 
   <string name="format_tracksAndDuration">%1$s, %2$s</string>
 

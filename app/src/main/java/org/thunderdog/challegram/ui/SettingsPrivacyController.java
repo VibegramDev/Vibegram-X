@@ -249,7 +249,7 @@ public class SettingsPrivacyController extends RecyclerViewController<SettingsPr
       items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.DeleteAccountHelp));
 
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAccount, 0, R.string.DeleteMyAccount).setTextColorId(ColorId.textNegative));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_deleteAccount, 0, R.string.DeleteMyAccount));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
       items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.DeleteMyAccountInfo));
     }
@@ -480,7 +480,7 @@ public class SettingsPrivacyController extends RecyclerViewController<SettingsPr
       SettingsWebsitesController websites = new SettingsWebsitesController(context, tdlib);
       websites.setArguments(this);
 
-      SimpleViewPagerController c = new SimpleViewPagerController(context, tdlib, new ViewController<?>[] {sessions, websites}, new String[] {Lang.uppercase(Lang.getString(R.string.Devices)), Lang.uppercase(Lang.getString(R.string.Websites))}, false);
+      SimpleViewPagerController c = new SimpleViewPagerController(context, tdlib, new ViewController<?>[] {sessions, websites}, new String[] {Lang.getString(R.string.Devices), Lang.getString(R.string.Websites)}, false);
       navigateTo(c);
     } else if (id == R.id.btn_passcode) {
       lastClickedButton = id;

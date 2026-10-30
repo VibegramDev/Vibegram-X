@@ -169,11 +169,8 @@ public class EditSessionController extends EditBaseController<EditSessionControl
     adapter = new SettingsAdapter(this) {
       @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
-        if (item.getId() == R.id.btn_sessionLogout) {
-          view.setIconColorId(ColorId.textNegative);
-        } else {
-          view.setIconColorId(ColorId.icon);
-        }
+        // M3: destructive rows use the regular list colors (the error role is for error states).
+        view.setIconColorId(ColorId.icon);
 
         final int itemId = item.getId();
         if (itemId == R.id.btn_sessionDevice) {
@@ -239,7 +236,7 @@ public class EditSessionController extends EditBaseController<EditSessionControl
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    items.add(new ListItem((session.isPasswordPending || session.isCurrent) ? ListItem.TYPE_SETTING : ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_sessionLogout, R.drawable.baseline_dangerous_24, session.isCurrent ? R.string.LogOut : (session.isPasswordPending ? R.string.TerminateIncompleteSession : R.string.TerminateSession)).setTextColorId(ColorId.textNegative));
+    items.add(new ListItem((session.isPasswordPending || session.isCurrent) ? ListItem.TYPE_SETTING : ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_sessionLogout, R.drawable.baseline_dangerous_24, session.isCurrent ? R.string.LogOut : (session.isPasswordPending ? R.string.TerminateIncompleteSession : R.string.TerminateSession)));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     adapter.setItems(items, false);

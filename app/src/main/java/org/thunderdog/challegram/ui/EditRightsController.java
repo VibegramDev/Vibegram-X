@@ -1132,7 +1132,7 @@ public class EditRightsController extends EditBaseController<EditRightsControlle
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
       items.add(newTransferOwnershipItem(isChannel));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_dismissAdmin, 0, R.string.DismissAdmin).setTextColorId(ColorId.textNegative));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_dismissAdmin, 0, R.string.DismissAdmin));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     } else if (canTransferOwnership) {
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
@@ -1140,7 +1140,7 @@ public class EditRightsController extends EditBaseController<EditRightsControlle
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     } else if (canDismissAdmin) {
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_dismissAdmin, 0, R.string.DismissAdmin).setTextColorId(ColorId.textNegative));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_dismissAdmin, 0, R.string.DismissAdmin));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
 
@@ -1151,7 +1151,7 @@ public class EditRightsController extends EditBaseController<EditRightsControlle
           args.member.memberId.getConstructor() == TdApi.MessageSenderChat.CONSTRUCTOR ? (tdlib.isChannel(Td.getSenderId(args.member.memberId)) ? R.string.UnbanMemberChannel : R.string.UnbanMemberGroup) :
           R.string.UnbanMember :
           R.string.RemoveRestrictions
-        ).setTextColorId(ColorId.textNegative)
+        )
       );
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
@@ -1162,7 +1162,7 @@ public class EditRightsController extends EditBaseController<EditRightsControlle
   }
 
   private static ListItem newTransferOwnershipItem (boolean isChannel) {
-    return new ListItem(ListItem.TYPE_SETTING, R.id.btn_transferOwnership, 0, isChannel ? R.string.TransferOwnershipChannel : R.string.TransferOwnershipGroup).setTextColorId(ColorId.textNegative);
+    return new ListItem(ListItem.TYPE_SETTING, R.id.btn_transferOwnership, 0, isChannel ? R.string.TransferOwnershipChannel : R.string.TransferOwnershipGroup);
   }
 
   private void addEditTitleCells (List<ListItem> items) {

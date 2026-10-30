@@ -114,10 +114,6 @@ public class MediaBottomGalleryController extends MediaBottomBaseController<Medi
     }
   }
 
-  @Override
-  protected int getRecyclerBackgroundColorId () {
-    return ColorId.chatBackground;
-  }
 
   @Override
   public void onMenuItemPressed (int id, View view) {
