@@ -128,15 +128,13 @@ public class ForceTouchView extends FrameLayoutFix implements
   // 56dp: room for the 40dp «Open» button of a chat preview (M3 button height) with 8dp around it.
   public static final float FOOTER_HEIGHT = 56f;
   public static final float HEADER_HEIGHT = 56f;
-  // TEMPORARY: two shapes of the preview card for the owner to choose; delete the losing one.
-  // 1 = card: CornerMedium 12dp, elevation Level1 (1dp); 2 = dialog-like: CornerExtraLarge 28dp, elevation Level3 (6dp).
-  private static final int PREVIEW_SHAPE_VARIANT = 1;
-  private static final float RADIUS = PREVIEW_SHAPE_VARIANT == 1 ? 12f : 28f;
-  private static final float ELEVATION = PREVIEW_SHAPE_VARIANT == 1 ? 1f : 6f;
+  // The preview card is shaped like an M3 dialog (owner's choice): CornerExtraLarge 28dp, elevation Level3 (6dp).
+  private static final float RADIUS = 28f;
+  private static final float ELEVATION = 6f;
 
-  /** Elevated card container is surfaceContainerLow, dialog container surfaceContainerHigh (M3 tokens). */
+  /** M3 dialog container: surfaceContainerHigh. */
   private static int containerColor () {
-    return PREVIEW_SHAPE_VARIANT == 1 ? M3.surfaceContainerLow() : M3.surfaceContainerHigh();
+    return M3.surfaceContainerHigh();
   }
 
   // private static TextPaint hintTextPaint;
