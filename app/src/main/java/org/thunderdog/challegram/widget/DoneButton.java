@@ -18,6 +18,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.view.Gravity;
+import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
@@ -85,7 +86,8 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
       rootFrameLayout = Views.findAncestor(this, RootFrameLayout.class, true);
       if (rootFrameLayout != null) {
         rootFrameLayout.addInsetsChangeListener(this);
-        Views.setBottomMargin(this, Screen.dp(16f) + rootFrameLayout.getSystemInsets().bottom);
+        baseBottomMargin = Screen.dp(16f) + rootFrameLayout.getSystemInsets().bottom;
+        applyBottomMargin();
       }
     }
   }
@@ -107,7 +109,27 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
 
   @Override
   public void onInsetsChanged (RootFrameLayout viewGroup, Rect effectiveInsets, Rect effectiveInsetsWithoutIme, Rect systemInsets, Rect systemInsetsWithoutIme, boolean isUpdate) {
-    Views.setBottomMargin(this, Screen.dp(16f) + systemInsets.bottom);
+    baseBottomMargin = Screen.dp(16f) + systemInsets.bottom;
+    applyBottomMargin();
+  }
+
+  private int baseBottomMargin = -1, extraBottomOffset;
+
+  /** Space taken by a bottom navigation shown over the screen (phone dock sections): the button stays above it. */
+  public void setExtraBottomOffset (int offset) {
+    if (baseBottomMargin == -1 && getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+      baseBottomMargin = ((ViewGroup.MarginLayoutParams) getLayoutParams()).bottomMargin;
+    }
+    if (this.extraBottomOffset != offset) {
+      this.extraBottomOffset = offset;
+      applyBottomMargin();
+    }
+  }
+
+  private void applyBottomMargin () {
+    if (baseBottomMargin != -1) {
+      Views.setBottomMargin(this, baseBottomMargin + extraBottomOffset);
+    }
   }
 
   private boolean isVisible;

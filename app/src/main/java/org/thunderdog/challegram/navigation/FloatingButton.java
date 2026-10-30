@@ -157,8 +157,19 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
     performDestroy();
   }
 
+  private int lastBottomInset, extraBottomOffset;
+
+  /** Space taken by a bottom navigation shown over the screen (phone sections): the button stays above it. */
+  public void setExtraBottomOffset (int offset) {
+    if (this.extraBottomOffset != offset) {
+      this.extraBottomOffset = offset;
+      applyBottomInset(lastBottomInset);
+    }
+  }
+
   private void applyBottomInset (int bottomInset) {
-    Views.setBottomMargin(this, Screen.dp(MARGIN) + bottomInset);
+    lastBottomInset = bottomInset;
+    Views.setBottomMargin(this, Screen.dp(MARGIN) + bottomInset + extraBottomOffset);
   }
 
   @Override

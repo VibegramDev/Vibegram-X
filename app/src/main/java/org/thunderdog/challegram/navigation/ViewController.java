@@ -3569,6 +3569,9 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     flags |= FLAG_FOCUSED;
     flags &= ~FLAG_PREVENT_LEAVING_SEARCH_MODE;
     setFlags(flags);
+    if (navigationController != null) {
+      navigationController.onControllerFocused(this);
+    }
     if (lockFocusView != null && lockFocusView.isEnabled() && (flags & FLAG_KEYBOARD_SHOWN) == 0) {
       if ((flags & FLAG_LOCK_ALWAYS) != 0) {
         setFlags(this.flags | FLAG_KEYBOARD_SHOWN);

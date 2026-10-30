@@ -139,6 +139,24 @@ public class RootFrameLayout extends FrameLayoutFix {
     return U.setRect(rect, left, top, right, bottom);
   }
 
+  /**
+   * Gesture navigation: the system bars have no tappable part (no buttons) at the bottom or the sides.
+   * Before Android 10 there is no gesture navigation.
+   */
+  private static boolean isGestureNavigation (Object insetsRaw) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || insetsRaw == null) {
+      return false;
+    }
+    android.view.WindowInsets windowInsets = (android.view.WindowInsets) insetsRaw;
+    android.graphics.Insets tappable;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      tappable = windowInsets.getInsets(android.view.WindowInsets.Type.tappableElement());
+    } else {
+      tappable = windowInsets.getTappableElementInsets();
+    }
+    return tappable.bottom == 0 && tappable.left == 0 && tappable.right == 0;
+  }
+
   private static Object newWindowInsets (Object originalInsetsRaw, int left, int top, int right, int bottom) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       android.view.WindowInsets originalWindowInsets = (android.view.WindowInsets) originalInsetsRaw;
@@ -347,6 +365,8 @@ public class RootFrameLayout extends FrameLayoutFix {
     windowInsetsRaw = insetsRaw;
     hasInsets = true;
 
+    boolean navigationModeChanged = this instanceof BaseRootLayout && MainNavigationBar.setGestureNavigation(isGestureNavigation(insetsRaw));
+
     if (CAN_DETECT_IME) {
       if (imeHeight > 0) {
         Keyboard.processSize(imeHeight);
@@ -384,7 +404,7 @@ public class RootFrameLayout extends FrameLayoutFix {
       }
     }
 
-    if (effectiveInsetsUpdated || systemInsetsUpdated) {
+    if (effectiveInsetsUpdated || systemInsetsUpdated || navigationModeChanged) {
       notifyChanges(hadInsets);
     }
 

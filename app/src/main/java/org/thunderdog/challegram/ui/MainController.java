@@ -1417,11 +1417,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
     if (navigationBar.isDock()) {
       // Dock style: toolbar at the bottom, the folder chips and the search FAB in the row above it.
-      return MainNavigationBar.getRailMargin() + MainNavigationBar.getDockContentHeight() + Screen.dp(8f);
+      return MainNavigationBar.getRailBottomMargin() + MainNavigationBar.getDockContentHeight() + Screen.dp(8f);
     }
     // Phone: floating dock at the bottom-end corner, above the folders bar if there is one.
     int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
-    return foldersBar + MainNavigationBar.getRailMargin() + navigationBar.getRailTotalHeight() + Screen.dp(8f);
+    return foldersBar + MainNavigationBar.getRailBottomMargin() + navigationBar.getRailTotalHeight() + Screen.dp(8f);
   }
 
   /**
@@ -1446,7 +1446,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       int foldersBar = displayTabsAtBottom() ? getHeaderHeight() : 0;
       int dockSide = MainNavigationBar.getRailMargin() + MainNavigationBar.getRailWidth() + Screen.dp(8f);
       updateSnackBar.setHorizontalMargins(margin, dockSide);
-      updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + foldersBar + MainNavigationBar.getRailMargin());
+      updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + foldersBar + MainNavigationBar.getRailBottomMargin());
     } else {
       updateSnackBar.setHorizontalMargins(margin, margin);
       updateSnackBar.setBottomOffset(extraBottomInsetWithoutIme + Math.max(margin, getChatListNavigationInset()));
@@ -1485,6 +1485,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return;
     }
     boolean isTablet = isTabletNavigationBar();
+    if (isTablet || !usesPersistentNavigation()) {
+      moveNavigationToOverlay(false);
+    }
     // Phone dock style uses the floating bar of the tablet layout.
     boolean isBar = isTablet || isDockStyle();
     boolean modeChanged = appliedTabletNavigation != isTablet;
@@ -1495,10 +1498,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
     navigationBar.setCompactBar(!isTablet && isDockStyle());
-    navigationBar.setLayoutMode(isBar, false, isNavBarStyle(), extraBottomInsetWithoutIme, displayTabsAtBottom() && !isDockStyle() ? getHeaderHeight() : 0);
+    // Over a section this screen is detached (its insets are 0): the system inset comes from the navigation controller.
+    int barInset = navigationInOverlay && overlayNavigation != null ? overlayNavigation.getBottomInsetWithoutIme() : extraBottomInsetWithoutIme;
+    navigationBar.setLayoutMode(isBar, false, isNavBarStyle(), barInset, displayTabsAtBottom() && !isDockStyle() ? getHeaderHeight() : 0);
     if (navigationScrim != null) {
       // Covers the bar, its margins and the fade above it.
-      int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + extraBottomInsetWithoutIme;
+      int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + barInset;
       navigationScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, scrimHeight, Gravity.BOTTOM));
       navigationScrim.setVisibility(isBar ? View.VISIBLE : View.GONE);
       // Phone dock style: only the shadow of the bar, the fade is drawn by the dock scrim.
@@ -1556,10 +1561,19 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private int getTabletSection () {
-    if (!isTabletNavigationBar() || navigationController.getStackSize() < 2) {
+    if (navigationInOverlay && overlaySelectedItem != -1) {
+      // During a transition the stack doesn't match the screen being shown yet.
+      return overlaySelectedItem;
+    }
+    NavigationController nav = navigationController != null ? navigationController : overlayNavigation;
+    if (nav == null || (!isTabletNavigationBar() && !navigationInOverlay) || nav.getStackSize() < 2) {
       return MainNavigationBar.ITEM_CHATS;
     }
-    ViewController<?> section = navigationController.getStack().get(1);
+    return getSectionItem(nav.getStack().get(1));
+  }
+
+  /** Dock item of a section screen ({@link MainNavigationBar#ITEM_CHATS} for any other screen). */
+  private static int getSectionItem (ViewController<?> section) {
     if (section instanceof SettingsController) {
       return MainNavigationBar.ITEM_SETTINGS;
     }
@@ -1584,7 +1598,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void onNavigationItemClick (int item) {
-    if (navigationController == null || navigationController.isAnimating() || context.isNavigationBusy()) {
+    // Over a section (phone) this screen is detached from the navigation controller, the bar still works.
+    NavigationController nav = navigationController != null ? navigationController : overlayNavigation;
+    if (nav == null || nav.isAnimating() || context.isNavigationBusy()) {
       return;
     }
     if (item == MainNavigationBar.ITEM_SCROLL_TOP) {
@@ -1606,8 +1622,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return;
     }
     boolean isTablet = isTabletNavigationBar();
-    if (isTablet && item == getTabletSection() && item != MainNavigationBar.ITEM_CHATS) {
-      // The section is already in the left pane.
+    if ((isTablet || navigationInOverlay) && item == getTabletSection() && item != MainNavigationBar.ITEM_CHATS) {
+      // The section is already in the left pane (phone: on the screen).
       return;
     }
     switch (item) {
@@ -1615,6 +1631,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         if (isTablet && getTabletSection() != MainNavigationBar.ITEM_CHATS) {
           // Close settings/contacts/profile, keep the chat list.
           navigationController.closeTabletDetail();
+        } else if (navigationInOverlay && nav.getStack().getCurrent() != this) {
+          // Phone: back from the section to the chat list.
+          selectOverlayItem(MainNavigationBar.ITEM_CHATS);
+          nav.navigateBack();
         } else {
           onPagerItemClick(0);
         }
@@ -1640,7 +1660,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void openNavigationSection (ViewController<?> c) {
-    if (isDestroyed() || navigationController == null) {
+    NavigationController nav = navigationController != null ? navigationController : overlayNavigation;
+    if (isDestroyed() || nav == null) {
       return;
     }
     // M3 top-level destination: fade-through instead of forward/backward.
@@ -1648,8 +1669,136 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (isTabletNavigationBar()) {
       // Replace whatever is opened in the right pane.
       navigationController.setControllerAnimated(c, true, true);
+    } else if (usesPersistentNavigation()) {
+      // The bottom navigation stays on the screen; one section replaces another.
+      moveNavigationToOverlay(true);
+      // Select the item on tap: the section may take a moment to prepare before its transition starts.
+      selectOverlayItem(getSectionItem(c));
+      if (nav.getStack().getCurrent() != this) {
+        nav.setControllerAnimated(c, true, true);
+      } else {
+        navigateTo(c);
+      }
     } else {
       navigateTo(c);
+    }
+  }
+
+  // Phone, dock and bar styles (owner): the bottom navigation doesn't hide on Calls, Contacts and Settings. While they
+  // are shown it lives in a layer of the navigation controller above the screens (with its shadow), and fades out on
+  // the screens opened from them; it comes back into this screen when the chat list gets focus again.
+
+  private boolean navigationInOverlay;
+  /** This screen loses its navigation controller while a section is above it. */
+  private @Nullable NavigationController overlayNavigation;
+  /** The navigation controller this screen is registered in as {@link NavigationController.PersistentBarHost}. */
+  private @Nullable NavigationController hostNavigation;
+  private int navigationIndex = -1;
+  private final BoolAnimator navigationOverlayVisible = new BoolAnimator(0, (id, factor, fraction, callee) -> {
+    if (overlayNavigation != null && navigationInOverlay) {
+      View layer = overlayNavigation.getPersistentBarLayer();
+      layer.setAlpha(factor);
+      layer.setTranslationY(Screen.dp(16f) * (1f - factor));
+      layer.setVisibility(factor > 0f ? View.VISIBLE : View.INVISIBLE);
+    }
+  }, AnimatorUtils.DECELERATE_INTERPOLATOR, 180L, true);
+
+  private final NavigationController.PersistentBarHost persistentBarHost = new NavigationController.PersistentBarHost() {
+    @Override
+    public void onNavigationTarget (ViewController<?> target) {
+      if (!navigationInOverlay) {
+        if (target != MainController.this && target.isTopLevelDestination() && !isTabletNavigationBar() && usesPersistentNavigation()) {
+          // Back to the single pane (unfolded → folded) with a dock section on top.
+          moveNavigationToOverlay(true);
+        } else {
+          return;
+        }
+      }
+      navigationOverlayVisible.setValue(target == MainController.this || target.isTopLevelDestination(), true);
+      // At the transition start the target isn't in the stack yet: select its item right away.
+      if (target == MainController.this) {
+        selectOverlayItem(MainNavigationBar.ITEM_CHATS);
+      } else if (target.isTopLevelDestination()) {
+        selectOverlayItem(getSectionItem(target));
+      }
+    }
+
+    @Override
+    public void onSystemInsetChanged () {
+      if (navigationInOverlay) {
+        checkNavigationBarLayout();
+      }
+    }
+
+    @Override
+    public int getSectionNavigationInset () {
+      if (!navigationInOverlay && !usesPersistentNavigation()) {
+        return 0;
+      }
+      return (isNavBarStyle() ? MainNavigationBar.getNavBarHeight() : MainNavigationBar.getBarTotalHeight()) + Screen.dp(8f);
+    }
+  };
+
+  /** Item of the screen being shown while the bar is over the sections (the stack changes only after transitions). */
+  private int overlaySelectedItem = -1;
+
+  private void selectOverlayItem (int item) {
+    overlaySelectedItem = item;
+    navigationBar.setSelectedItem(item);
+  }
+
+  private boolean usesPersistentNavigation () {
+    return navigationBar != null && (isDockStyle() || isNavBarStyle());
+  }
+
+  private void moveNavigationToOverlay (boolean toOverlay) {
+    if (navigationInOverlay == toOverlay || navigationBar == null || rootContentView == null) {
+      return;
+    }
+    if (toOverlay) {
+      // Refold with a section on top: this screen is already detached, the host registration keeps the controller.
+      NavigationController nav = navigationController != null ? navigationController : hostNavigation;
+      if (nav == null) {
+        return;
+      }
+      overlayNavigation = nav;
+      hostNavigation = nav;
+    } else if (overlayNavigation == null) {
+      return;
+    }
+    FrameLayoutFix layer = overlayNavigation.getPersistentBarLayer();
+    if (toOverlay) {
+      overlayNavigation.setPersistentBarHost(persistentBarHost);
+      navigationIndex = rootContentView.indexOfChild(navigationScrim);
+      rootContentView.removeView(navigationScrim);
+      rootContentView.removeView(navigationBar);
+      navigationInOverlay = true;
+      layer.addView(navigationScrim);
+      layer.addView(navigationBar);
+      navigationOverlayVisible.setValue(true, false);
+      checkNavigationBarLayout();
+      // Moved during a measure pass (fold/unfold): lay out the bar once more.
+      layer.post(layer::requestLayout);
+    } else {
+      navigationInOverlay = false;
+      overlaySelectedItem = -1;
+      layer.removeView(navigationScrim);
+      layer.removeView(navigationBar);
+      layer.setAlpha(1f);
+      layer.setTranslationY(0f);
+      layer.setVisibility(View.VISIBLE);
+      int index = navigationIndex >= 0 && navigationIndex <= rootContentView.getChildCount() ? navigationIndex : rootContentView.getChildCount();
+      // The tablet section content may have been added meanwhile (unfold): the bar stays above it.
+      if (tabletSectionView != null && tabletSectionView.getParent() == rootContentView) {
+        index = Math.max(index, rootContentView.indexOfChild(tabletSectionView) + 1);
+      }
+      rootContentView.addView(navigationScrim, index);
+      rootContentView.addView(navigationBar, index + 1);
+      navigationIndex = -1;
+      overlayNavigation = null;
+      checkNavigationBarLayout();
+      FrameLayoutFix content = rootContentView;
+      content.post(content::requestLayout);
     }
   }
 
@@ -1755,6 +1904,21 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       tdlib.listeners().removeTotalChatCounterListener(navigationCounterListener);
       navigationCounterListener = null;
     }
+    NavigationController nav = navigationController != null ? navigationController : overlayNavigation != null ? overlayNavigation : hostNavigation;
+    if (navigationInOverlay && nav != null) {
+      FrameLayoutFix layer = nav.getPersistentBarLayer();
+      layer.removeView(navigationScrim);
+      layer.removeView(navigationBar);
+      layer.setAlpha(1f);
+      layer.setTranslationY(0f);
+      layer.setVisibility(View.VISIBLE);
+      navigationInOverlay = false;
+    }
+    if (nav != null) {
+      nav.clearPersistentBarHost(persistentBarHost);
+    }
+    overlayNavigation = null;
+    hostNavigation = null;
     if (navigationBar != null) {
       navigationBar.performDestroy();
     }
@@ -1933,6 +2097,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   @Override
   public void onFocus () {
     super.onFocus();
+    moveNavigationToOverlay(false);
     // FIXME check tdlib.isUnauthorized()
     tdlib.context().changePreferredAccountId(tdlib.id(), TdlibManager.SWITCH_REASON_NAVIGATION);
     if (UI.TEST_MODE == UI.TEST_MODE_USER) {

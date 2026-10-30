@@ -116,6 +116,14 @@ public abstract class RecyclerViewController<T> extends TelegramViewController<T
     if (needRecyclerBottomInset()) {
       Views.applyBottomInset(recyclerView, extraBottomInset);
     }
+    if (doneButton != null) {
+      doneButton.setExtraBottomOffset(getDoneButtonExtraOffset());
+    }
+  }
+
+  /** Dock sections (phone): the button stands above the bottom navigation shown over them. */
+  private int getDoneButtonExtraOffset () {
+    return isTopLevelDestination() && navigationController != null ? navigationController.getPersistentBarFabOffset() : 0;
   }
 
   protected FrameLayout createFrameLayout (Context context) {
@@ -398,6 +406,7 @@ public abstract class RecyclerViewController<T> extends TelegramViewController<T
         }
       });
       doneButton.setLayoutParams(params);
+      doneButton.setExtraBottomOffset(getDoneButtonExtraOffset());
       ((ViewGroup) getValue()).addView(doneButton);
     }
     return doneButton;

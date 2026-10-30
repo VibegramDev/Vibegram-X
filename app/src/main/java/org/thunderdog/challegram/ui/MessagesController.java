@@ -348,8 +348,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private final M3.RoleShape inputBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
   private final M3.RoleShape replyBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
   private final M3.RoleShape bottomSpaceBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
-  /** Tablet: the composer floats like the main screen bar (same margins, height and radius). */
-  private boolean composerFloating, composerLayoutApplied;
+  /** The composer floats like the main screen bar (same margins, height and radius), on phones and tablets. */
+  private boolean composerFloating;
   /** Floating composer: fade and shadow, identical to the tablet dock. */
   private @Nullable M3BottomScrimView composerScrim;
   private FillingSpace bottomSpace;
@@ -1549,7 +1549,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       contentView.addView(wallpaperViewBlurPreview);
     }
     if (previewMode == PREVIEW_MODE_NONE && inputView != null) {
-      // Messages under the composer: on the tablet they scroll under the floating composer and fade out.
+      // Messages under the composer: they scroll under the floating composer and fade out.
       contentView.addView(messagesView);
       composerScrim = new M3BottomScrimView(context);
       // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed.
@@ -8064,26 +8064,32 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   /**
-   * Tablet (chat in the right pane): the composer floats with the margins, height and corner radius of the main
-   * screen bar. Phone: attached to the bottom edge. Called by {@link MessagesLayout} before measuring.
+   * The composer floats with the margins, height and corner radius of the main screen bar, on phones and tablets
+   * alike (owner: one input field for both). Not in chat previews. Called by {@link MessagesLayout} before measuring.
    */
   public void checkComposerLayout () {
     if (inputView == null || bottomWrap == null || previewMode != PREVIEW_MODE_NONE) {
       return;
     }
-    boolean floating = navigationController != null && navigationController.isTabletSplit() && !navigationController.isTabletMaster(this);
-    if (composerLayoutApplied && composerFloating == floating) {
+    if (composerFloating) {
+      // The system navigation mode changed: only the bottom margin depends on it.
+      LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
+      if (inputParams.bottomMargin != MainNavigationBar.getBarBottomMargin()) {
+        inputParams.bottomMargin = MainNavigationBar.getBarBottomMargin();
+        inputView.setLayoutParams(inputParams);
+        messagesView.post(this::updateMessagesViewInset);
+      }
       return;
     }
-    composerLayoutApplied = true;
-    composerFloating = floating;
-    final int margin = floating ? MainNavigationBar.getBarMargin() : 0;
-    final float radius = floating ? MainNavigationBar.getBarRadius() : 0f;
+    composerFloating = true;
+    final int margin = MainNavigationBar.getBarMargin();
 
     LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
-    inputParams.leftMargin = inputParams.rightMargin = inputParams.bottomMargin = margin;
+    inputParams.leftMargin = inputParams.rightMargin = margin;
+    // Margin above the button navigation bar only; right on the gesture area with gestures.
+    inputParams.bottomMargin = MainNavigationBar.getBarBottomMargin();
     inputView.setLayoutParams(inputParams);
-    inputView.setMinimumHeight(floating ? MainNavigationBar.getBarHeight() : Screen.dp(49f));
+    inputView.setMinimumHeight(MainNavigationBar.getBarHeight());
     int verticalPadding = Screen.dp(12f) + getComposerButtonInset();
     inputView.setPadding(inputView.getPaddingLeft(), verticalPadding, inputView.getPaddingRight(), verticalPadding);
     updateInputCorners();
@@ -8094,21 +8100,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
       replyBarView.setLayoutParams(replyParams);
       // Slides out from behind the input field: rounded top merges with the field into one container.
     }
-    // Floating: the space below the composer shows the chat background.
-    ViewUtils.setBackground(bottomSpace, floating ? null : bottomSpaceBackground);
-    // Floating: messages scroll under the composer (bottom padding keeps the last one above it).
+    // The space below the composer shows the chat background.
+    ViewUtils.setBackground(bottomSpace, null);
+    // Messages scroll under the composer (bottom padding keeps the last one above it).
     RelativeLayout.LayoutParams listParams = (RelativeLayout.LayoutParams) messagesView.getLayoutParams();
-    if (floating) {
-      Views.removeRule(listParams, RelativeLayout.ABOVE);
-      listParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
-    } else {
-      Views.removeRule(listParams, RelativeLayout.ALIGN_PARENT_BOTTOM);
-      listParams.addRule(RelativeLayout.ABOVE, R.id.msg_bottom);
-    }
+    Views.removeRule(listParams, RelativeLayout.ABOVE);
+    listParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
     messagesView.setLayoutParams(listParams);
     if (composerScrim != null) {
-      composerScrim.setShapeProvider(floating ? this::getComposerShape : null, MainNavigationBar.getBarRadius());
-      composerScrim.setVisibility(floating ? View.VISIBLE : View.GONE);
+      composerScrim.setShapeProvider(this::getComposerShape, MainNavigationBar.getBarRadius());
+      composerScrim.setVisibility(View.VISIBLE);
     }
     messagesView.post(this::updateMessagesViewInset);
 

@@ -42,6 +42,7 @@ import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.theme.ThemeManager;
+import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.telegram.Tdlib;
@@ -397,6 +398,14 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     }
     if (target != null) {
       target.checkNavigationBarLayout();
+    }
+    if (persistentBarHost != null && target == null) {
+      // Single pane again with a dock section on top: its bottom navigation moves over the screens.
+      ViewController<?> current = getCurrentStackItem();
+      if (current != null) {
+        onPersistentBarTarget(current);
+        applyBottomInset(current);
+      }
     }
   }
 
@@ -766,6 +775,62 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return tabletLayout;
   }
 
+  /**
+   * Phone: the bottom navigation of the main screen stays over the sections opened from it (top-level destinations:
+   * Calls, Contacts, Settings). It is moved into {@link #getPersistentBarLayer()}, above the screens, while they are shown.
+   */
+  public interface PersistentBarHost {
+    /** A screen is about to be shown (transition start) or got focus (transition end, cancelled gesture). */
+    void onNavigationTarget (ViewController<?> target);
+    /** The system inset changed (the host may be detached from the navigation controller and not get it). */
+    void onSystemInsetChanged ();
+    /** Space a section needs at the bottom to scroll its last item above the bar (without the system inset). */
+    int getSectionNavigationInset ();
+  }
+
+  private @Nullable PersistentBarHost persistentBarHost;
+  private @Nullable FrameLayoutFix persistentBarLayer;
+
+  public void setPersistentBarHost (@Nullable PersistentBarHost host) {
+    this.persistentBarHost = host;
+  }
+
+  public void clearPersistentBarHost (PersistentBarHost host) {
+    if (this.persistentBarHost == host) {
+      this.persistentBarHost = null;
+    }
+  }
+
+  /** Layer above the screens and below the app bar; it doesn't take touches itself. */
+  public FrameLayoutFix getPersistentBarLayer () {
+    if (persistentBarLayer == null) {
+      persistentBarLayer = new FrameLayoutFix(rootView.getContext());
+      persistentBarLayer.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+      rootView.addView(persistentBarLayer, rootView.indexOfChild(contentWrapper) + 1);
+    }
+    return persistentBarLayer;
+  }
+
+  void onControllerFocused (ViewController<?> controller) {
+    if (persistentBarHost != null && controller == getStack().getCurrent()) {
+      onPersistentBarTarget(controller);
+    }
+  }
+
+  private void onPersistentBarTarget (ViewController<?> target) {
+    persistentBarHost.onNavigationTarget(target);
+    if (floatingButton != null) {
+      // The section's FAB stands above the bar, as on the chat list (16dp between them).
+      boolean aboveBar = !isTabletSplit() && target.isTopLevelDestination();
+      floatingButton.setExtraBottomOffset(aboveBar ? getPersistentBarFabOffset() : 0);
+    }
+  }
+
+  /** Extra bottom margin of a section's FAB above the bottom navigation (16dp between them, as on the chat list). */
+  public int getPersistentBarFabOffset () {
+    return persistentBarHost != null && !isTabletSplit() ? Math.max(0, persistentBarHost.getSectionNavigationInset() - Screen.dp(8f)) : 0;
+  }
+
   public void addViewUnderHeader (View view) {
     rootView.addView(view, rootView.indexOfChild(headerView));
   }
@@ -1095,6 +1160,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   public void prepareFactorAnimation (ViewController<?> left, ViewController<?> right, boolean forward, int direction, @PredictiveGesture int predictiveGestureMode) {
     preventLayout();
+    if (persistentBarHost != null) {
+      onPersistentBarTarget(forward ? right : left);
+    }
     if (Views.HARDWARE_LAYER_ENABLED) {
       setLayerType(View.LAYER_TYPE_HARDWARE, left, right);
     }
@@ -2174,6 +2242,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   private int bottomInset, bottomInsetWithoutIme;
 
+  public int getBottomInsetWithoutIme () {
+    return bottomInsetWithoutIme;
+  }
+
   public void applyBottomInset (ViewController<?> controller) {
     if (isTabletSection(controller) && tabletLayout.getMain() != null) {
       // Left pane: the list scrolls under the floating bar of the chat list screen.
@@ -2182,6 +2254,16 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         controller.setBottomInset(inset, inset);
       } else {
         Views.setPaddingBottom(controller.getValue(), inset);
+      }
+      return;
+    }
+    if (persistentBarHost != null && !isTabletSplit() && controller.isTopLevelDestination()) {
+      // Phone section under the main screen's bottom navigation: the list scrolls under the bar.
+      int inset = bottomInsetWithoutIme + persistentBarHost.getSectionNavigationInset();
+        if (controller.supportsBottomInset()) {
+        controller.setBottomInset(Math.max(bottomInset, inset), inset);
+      } else {
+        Views.setPaddingBottom(controller.getValue(), Math.max(bottomInset, inset));
       }
       return;
     }
@@ -2205,6 +2287,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       }
       if (tabletLayout != null && tabletLayout.getSection() != null) {
         applyBottomInset(tabletLayout.getSection());
+      }
+      if (persistentBarHost != null) {
+        persistentBarHost.onSystemInsetChanged();
       }
     }
   }
