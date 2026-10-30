@@ -536,10 +536,39 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   /**
    * Tablet bar floats above the chat list (M3 Expressive floating toolbar look): full corner radius,
-   * small margins at the sides and the bottom (our choice: 12dp).
+   * small margins at the sides and the bottom (our choice: 12dp; bottom only with the button navigation bar).
    */
   public static int getBarMargin () {
     return Screen.dp(12f);
+  }
+
+  private static boolean gestureNavigation = true;
+
+  /**
+   * System navigation mode (owner): with the button navigation bar the bar, dock, rail and the message composer keep
+   * their bottom margin above it; with gesture navigation they sit right on the gesture area (side margins stay).
+   * @return true if the mode changed
+   */
+  public static boolean setGestureNavigation (boolean isGestureNavigation) {
+    if (gestureNavigation != isGestureNavigation) {
+      gestureNavigation = isGestureNavigation;
+      return true;
+    }
+    return false;
+  }
+
+  public static boolean isGestureNavigation () {
+    return gestureNavigation;
+  }
+
+  /** Bottom margin of the floating bar and the composer: {@link #getBarMargin()} with the button navigation bar, 0 with gestures. */
+  public static int getBarBottomMargin () {
+    return gestureNavigation ? 0 : getBarMargin();
+  }
+
+  /** Bottom margin of the dock and the rail: {@link #getRailMargin()} with the button navigation bar, 0 with gestures. */
+  public static int getRailBottomMargin () {
+    return gestureNavigation ? 0 : getRailMargin();
   }
 
   /** Full corner radius: half of the bar height (pill), concentric with the vertically centered indicator. */
@@ -549,7 +578,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   /** Space taken at the bottom of the chat list pane by the floating tablet bar (without the system inset). */
   public static int getBarTotalHeight () {
-    return getBarHeight() + getBarMargin();
+    return getBarHeight() + getBarBottomMargin();
   }
 
   public static int getRailWidth () {
@@ -638,7 +667,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     } else if (isDock) {
       params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getDockAreaHeight(), Gravity.BOTTOM);
       params.leftMargin = params.rightMargin = getRailMargin();
-      params.bottomMargin = getRailMargin() + bottomInset;
+      params.bottomMargin = getRailBottomMargin() + bottomInset;
       setPadding(0, 0, 0, 0);
     } else if (isBar) {
       if (isCompactBar) {
@@ -647,13 +676,13 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
         params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
       }
       params.leftMargin = params.rightMargin = getBarMargin();
-      params.bottomMargin = getBarMargin() + bottomInset;
+      params.bottomMargin = getBarBottomMargin() + bottomInset;
       // Keeps the outer indicators away from the rounded ends.
       setPadding(Screen.dp(8f), 0, Screen.dp(8f), 0);
     } else {
       params = FrameLayoutFix.newParams(getRailWidth(), getRailHeight(), Gravity.BOTTOM | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT));
       params.leftMargin = params.rightMargin = getRailMargin();
-      params.bottomMargin = getRailMargin() + bottomInset + railBottomOffset;
+      params.bottomMargin = getRailBottomMargin() + bottomInset + railBottomOffset;
       setPadding(padding, padding, padding, padding);
     }
     setLayoutParams(params);
