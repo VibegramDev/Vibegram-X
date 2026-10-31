@@ -224,6 +224,7 @@
   <item type="id" name="controller_editBio" />
   <item type="id" name="controller_editDescription" />
   <item type="id" name="controller_createPoll" />
+  <item type="id" name="controller_createChecklist" />
   <item type="id" name="controller_chatJoinRequests" />
   <item type="id" name="controller_messageSeen" />
   <item type="id" name="controller_joinDialog" />
@@ -1215,6 +1216,16 @@
   <item type="id" name="btn_messageShareCallLogs" />
   <item type="id" name="btn_messageRetractVote" />
   <item type="id" name="btn_messagePollStop" />
+  <item type="id" name="btn_messageChecklistEdit" />
+  <item type="id" name="btn_messageChecklistAddTasks" />
+  <item type="id" name="btn_checklistTaskCheck" />
+  <item type="id" name="btn_checklistTaskReply" />
+  <item type="id" name="btn_checklistTaskCopyLink" />
+  <item type="id" name="btn_checklistTaskCopy" />
+  <item type="id" name="btn_checklistTaskEdit" />
+  <item type="id" name="btn_checklistTaskDelete" />
+  <item type="id" name="btn_checklistAllowMarking" />
+  <item type="id" name="btn_checklistAllowAdding" />
   <item type="id" name="btn_messageApplyLocalization" />
   <item type="id" name="btn_messageInstallTheme" />
   <item type="id" name="btn_messageShowSource" />

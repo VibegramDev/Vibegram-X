@@ -11,6 +11,13 @@
     <item>NotificationsDefaultDisabled</item>
     <item>SaveOutgoingPhotos</item>
   </string-array>
+  <string-array name="vg_LangLocalPlurals">
+    <item>ChecklistTasksLimit</item>
+    <item>ChatContentChecklistTasksAdded</item>
+    <item>ChatContentChecklistTasksDone</item>
+    <item>ChatContentChecklistTasksNotDone</item>
+    <item>ChatContentChecklistTasksToggled</item>
+  </string-array>
   <string name="Mute">Выключить уведомления</string>
   <string name="Unmute">Включить уведомления</string>
   <string name="MuteForever">Выключить навсегда</string>

@@ -11341,6 +11341,20 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     return canInviteUsers(chat, false);
   }
 
+  /**
+   * Checklists go where the official app offers them: any private chat except secret ones, and groups
+   * whose rights allow polls (the same right covers checklists). Never channels or their direct messages.
+   */
+  public boolean canSendChecklists (long chatId) {
+    if (chatId == 0 || ChatId.isSecret(chatId))
+      return false;
+    if (ChatId.isUserChat(chatId))
+      return !isServiceNotificationsChat(chatId) && !isRepliesChat(chatId);
+    if (isChannel(chatId) || isDirectMessagesChat(chatId) || ChatId.isMonoforumChat(chatId))
+      return false;
+    return canSendPolls(chatId);
+  }
+
   public boolean canSendPolls (long chatId) {
     if (chatId == 0)
       return false;

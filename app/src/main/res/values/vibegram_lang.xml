@@ -3,4 +3,7 @@
      (Lang.isLocalKey). Each language lists its own keys; none by default. -->
 <resources>
   <string-array name="vg_LangLocalKeys" />
+  <!-- Plural keys missing from the cloud pack that res/values-<app language> translates with all plural forms
+       of that language (Lang.isLocalPlural). -->
+  <string-array name="vg_LangLocalPlurals" />
 </resources>
