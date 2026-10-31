@@ -15,10 +15,17 @@
  */
 package org.thunderdog.challegram.ui;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Rect;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -32,8 +39,12 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.component.attach.CustomItemAnimator;
 import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.component.chat.MessagesManager;
+import org.thunderdog.challegram.component.sticker.TGStickerObj;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
+import org.thunderdog.challegram.emoji.CustomEmojiId;
+import org.thunderdog.challegram.emoji.Emoji;
+import org.thunderdog.challegram.emoji.EmojiSpan;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.NavigationStack;
 import org.thunderdog.challegram.telegram.Tdlib;
@@ -44,20 +55,24 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.util.CharacterStyleFilter;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.v.CustomRecyclerView;
+import org.thunderdog.challegram.widget.EmojiLayout;
 import org.thunderdog.challegram.widget.FillingDecoration;
+import org.thunderdog.challegram.widget.MaterialEditText;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.text.CodePointCountFilter;
 import me.vkryl.android.text.RestrictFilter;
+import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.RunnableData;
 import tgx.td.Td;
 
-public class CreateChecklistController extends RecyclerViewController<CreateChecklistController.Args> implements View.OnClickListener, SettingsAdapter.TextChangeListener {
+public class CreateChecklistController extends RecyclerViewController<CreateChecklistController.Args> implements View.OnClickListener, SettingsAdapter.TextChangeListener, EmojiLayout.Listener {
   public static final int MODE_CREATE = 0;
   public static final int MODE_EDIT = 1;
   public static final int MODE_ADD_TASKS = 2;
@@ -177,6 +192,7 @@ public class CreateChecklistController extends RecyclerViewController<CreateChec
           editText.setMaxLength(tdlib.options().checklistTitleLengthMax);
           editText.setAlwaysActive(true);
           editText.getEditText().setLineDisabled(true);
+          bindEmojiButton(editText, true);
         } else if (itemId == R.id.optionAdd) {
           editText.setEmptyHint(R.string.ChecklistAddTask);
           editText.getEditText().setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
@@ -213,15 +229,18 @@ public class CreateChecklistController extends RecyclerViewController<CreateChec
             return false;
           });
           editText.getEditText().setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_ACTION_NEXT);
+          bindEmojiButton(editText, !isLocked);
         }
       }
 
       @Override
       public void onFocusChanged (MaterialEditTextGroup v, boolean isFocused) {
         super.onFocusChanged(v, isFocused);
-        if (isFocused && ((ViewGroup) v.getParent()).getId() == R.id.optionAdd) {
+        final ViewGroup parent = (ViewGroup) v.getParent();
+        if (isFocused && parent.getId() == R.id.optionAdd) {
           addTask();
         }
+        onInputFocusChanged(v, parent.getTag() instanceof ListItem ? (ListItem) parent.getTag() : null, isFocused);
       }
 
       @Override
@@ -495,6 +514,240 @@ public class CreateChecklistController extends RecyclerViewController<CreateChec
     checkDone();
   }
 
+  // Emoji keyboard: the official app shows an emoji button in the focused input (title or task) and
+  // opens its emoji panel, custom emoji included, in place of the system keyboard (Premium only)
+
+  private FrameLayoutFix emojiPanel;
+  private EmojiLayout emojiLayout;
+  private boolean emojiPanelShown;
+  private @Nullable ListItem emojiTargetItem;
+
+  private boolean canUseEmojiKeyboard () {
+    return tdlib.hasPremium();
+  }
+
+  @SuppressLint("ClickableViewAccessibility")
+  private void bindEmojiButton (MaterialEditTextGroup editText, boolean isEnabled) {
+    if (!canUseEmojiKeyboard()) {
+      return;
+    }
+    final boolean isFocused = isEnabled && editText.getEditText().isFocused();
+    editText.setEndButton(emojiPanelShown && isFocused ? R.drawable.baseline_keyboard_24 : R.drawable.baseline_emoticon_outline_24, v -> onEmojiButtonClick(editText));
+    editText.setEndButtonVisible(isFocused, false);
+    editText.getEditText().setOnTouchListener((v, event) -> {
+      if (event.getAction() == MotionEvent.ACTION_UP && emojiPanelShown) {
+        // A tap in a field brings the system keyboard back
+        closeEmojiPanel(false);
+        Keyboard.show(v);
+      }
+      return false;
+    });
+  }
+
+  private static @Nullable ListItem getBoundItem (View view) {
+    ViewGroup parent = view.getParent() instanceof ViewGroup ? (ViewGroup) view.getParent() : null;
+    return parent != null && parent.getTag() instanceof ListItem ? (ListItem) parent.getTag() : null;
+  }
+
+  private void onEmojiButtonClick (MaterialEditTextGroup editText) {
+    ListItem item = getBoundItem(editText);
+    if (item == null) {
+      return;
+    }
+    emojiTargetItem = item;
+    if (emojiPanelShown) {
+      closeEmojiPanel(true);
+    } else {
+      editText.getEditText().requestFocus();
+      openEmojiPanel();
+    }
+  }
+
+  private void onInputFocusChanged (MaterialEditTextGroup v, @Nullable ListItem item, boolean isFocused) {
+    if (!canUseEmojiKeyboard() || item == null || (item.getId() != R.id.title && item.getId() != R.id.option)) {
+      return;
+    }
+    if (isFocused && isLockedTask(item)) {
+      return;
+    }
+    v.setEndButtonVisible(isFocused, true);
+    if (isFocused) {
+      ListItem prevTargetItem = emojiTargetItem;
+      emojiTargetItem = item;
+      if (emojiPanelShown && prevTargetItem != item) {
+        // Another input took the focus: back to the system keyboard, as in the official app
+        closeEmojiPanel(true);
+      } else {
+        v.setEndButtonIcon(emojiPanelShown ? R.drawable.baseline_keyboard_24 : R.drawable.baseline_emoticon_outline_24);
+      }
+    }
+  }
+
+  private @Nullable MaterialEditTextGroup findEmojiTargetGroup () {
+    if (emojiTargetItem == null || adapter == null) {
+      return null;
+    }
+    int i = adapter.indexOfView(emojiTargetItem);
+    if (i == -1) {
+      return null;
+    }
+    View view = getRecyclerView().getLayoutManager().findViewByPosition(i);
+    if (view instanceof ViewGroup && view.getTag() == emojiTargetItem && ((ViewGroup) view).getChildCount() > 0 && ((ViewGroup) view).getChildAt(0) instanceof MaterialEditTextGroup) {
+      return (MaterialEditTextGroup) ((ViewGroup) view).getChildAt(0);
+    }
+    return null;
+  }
+
+  private @Nullable MaterialEditText findEmojiTarget () {
+    MaterialEditTextGroup group = findEmojiTargetGroup();
+    return group != null ? group.getEditText() : null;
+  }
+
+  private int emojiPanelHeight () {
+    return Keyboard.getSize() + extraBottomInsetWithoutIme;
+  }
+
+  private void openEmojiPanel () {
+    if (emojiPanelShown) {
+      return;
+    }
+    final ViewGroup host = (ViewGroup) getValue();
+    if (emojiPanel == null) {
+      emojiPanel = new FrameLayoutFix(context());
+      emojiPanel.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, emojiPanelHeight(), Gravity.BOTTOM));
+      emojiLayout = new EmojiLayout(context());
+      emojiLayout.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+      emojiLayout.initWithMediasEnabled(this, false, this, this, false);
+      emojiLayout.setExtraBottomInset(extraBottomInsetWithoutIme, extraBottomInsetWithoutIme);
+      emojiPanel.addView(emojiLayout);
+      // Above the list, under the done button, which moves above the panel
+      host.addView(emojiPanel, host.indexOfChild(getRecyclerView()) + 1);
+    }
+    emojiPanel.getLayoutParams().height = emojiPanelHeight();
+    emojiPanel.setVisibility(View.VISIBLE);
+    emojiPanel.requestLayout();
+    emojiPanelShown = true;
+    MaterialEditText input = findEmojiTarget();
+    Keyboard.hide(input != null ? input : getRecyclerView());
+    updateEmojiButtonIcon();
+    applyEmojiPanelInsets();
+  }
+
+  private void closeEmojiPanel (boolean showKeyboard) {
+    if (!emojiPanelShown) {
+      return;
+    }
+    emojiPanelShown = false;
+    if (emojiPanel != null) {
+      emojiPanel.setVisibility(View.GONE);
+    }
+    updateEmojiButtonIcon();
+    applyEmojiPanelInsets();
+    if (showKeyboard) {
+      MaterialEditText input = findEmojiTarget();
+      if (input != null) {
+        Keyboard.show(input);
+      }
+    }
+  }
+
+  private void updateEmojiButtonIcon () {
+    MaterialEditTextGroup group = findEmojiTargetGroup();
+    if (group != null) {
+      group.setEndButtonIcon(emojiPanelShown ? R.drawable.baseline_keyboard_24 : R.drawable.baseline_emoticon_outline_24);
+    }
+  }
+
+  /** The list scrolls above the panel and the done button stands over it, as over the system keyboard. */
+  private void applyEmojiPanelInsets () {
+    final int panelHeight = emojiPanelShown ? emojiPanelHeight() : 0;
+    Views.applyBottomInset(getRecyclerView(), Math.max(extraBottomInset, panelHeight));
+    if (doneButtonPrepared) {
+      getDoneButton().setExtraBottomOffset(Math.max(0, panelHeight - extraBottomInset));
+    }
+  }
+
+  @Override
+  protected void onBottomInsetChanged (int extraBottomInset, int extraBottomInsetWithoutIme, boolean isImeInset) {
+    super.onBottomInsetChanged(extraBottomInset, extraBottomInsetWithoutIme, isImeInset);
+    if (emojiPanel != null) {
+      emojiPanel.getLayoutParams().height = emojiPanelHeight();
+      emojiPanel.requestLayout();
+      emojiLayout.setExtraBottomInset(extraBottomInsetWithoutIme, extraBottomInsetWithoutIme);
+    }
+    if (emojiPanelShown) {
+      applyEmojiPanelInsets();
+    }
+  }
+
+  @Override
+  public void onEnterEmoji (String emoji) {
+    insertEmoji(emoji, 0);
+  }
+
+  @Override
+  public void onEnterCustomEmoji (TGStickerObj stickerObj) {
+    TdApi.Sticker sticker = stickerObj.getSticker();
+    if (sticker != null) {
+      insertEmoji(TD.stickerEmoji(sticker), Td.customEmojiId(sticker));
+    }
+  }
+
+  @Override
+  public void onDeleteEmoji () {
+    MaterialEditText input = findEmojiTarget();
+    if (input != null && input.length() > 0) {
+      input.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL));
+    }
+  }
+
+  @Override
+  public boolean isEmojiInputEmpty () {
+    MaterialEditText input = findEmojiTarget();
+    if (input != null) {
+      return input.length() == 0;
+    }
+    return emojiTargetItem == null || StringUtils.isEmpty(emojiTargetItem.getCharSequenceValue());
+  }
+
+  private void insertEmoji (String emoji, long customEmojiId) {
+    if (StringUtils.isEmpty(emoji)) {
+      return;
+    }
+    MaterialEditText input = findEmojiTarget();
+    if (input != null) {
+      int start = Math.max(0, Math.min(input.getSelectionStart(), input.getSelectionEnd()));
+      int end = Math.max(0, Math.max(input.getSelectionStart(), input.getSelectionEnd()));
+      SpannableString s = new SpannableString(emoji);
+      EmojiSpan span = customEmojiId != 0 ?
+        Emoji.instance().newCustomSpan(emoji, null, input, tdlib, customEmojiId) :
+        Emoji.instance().newSpan(emoji, null);
+      if (span != null) {
+        s.setSpan(span, 0, s.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+      }
+      input.getText().replace(start, end, s);
+    } else if (emojiTargetItem != null) {
+      // The input is scrolled away: add the emoji to the value it shows when it comes back
+      CharSequence value = emojiTargetItem.getCharSequenceValue();
+      SpannableStringBuilder b = value != null ? new SpannableStringBuilder(value) : new SpannableStringBuilder();
+      int start = b.length();
+      b.append(emoji);
+      if (customEmojiId != 0) {
+        b.setSpan(new CustomEmojiId(customEmojiId, false), start, b.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+      }
+      emojiTargetItem.setStringValue(b);
+      checkDone();
+    }
+  }
+
+  @Override
+  public void destroy () {
+    super.destroy();
+    if (emojiLayout != null) {
+      emojiLayout.destroy();
+    }
+  }
+
   private void requestFocus (ListItem item) {
     int i = adapter.indexOfView(item);
     View view = getRecyclerView().getLayoutManager().findViewByPosition(i);
@@ -508,27 +761,67 @@ public class CreateChecklistController extends RecyclerViewController<CreateChec
   private @Nullable TdApi.FormattedText getTitle () {
     if (titleItem == null)
       return null;
-    CharSequence cs = StringUtils.trim(titleItem.getCharSequenceValue());
-    if (StringUtils.isEmpty(cs))
-      return null;
     TdApi.Checklist checklist = getArgumentsStrict().checklist;
-    if (checklist != null && checklist.title != null && cs.toString().equals(checklist.title.text)) {
-      // Unchanged: keep the original entities
-      return checklist.title;
-    }
-    return TD.toFormattedText(cs, false);
+    return toInputFormattedText(titleItem.getCharSequenceValue(), checklist != null ? checklist.title : null);
   }
 
   private static @Nullable TdApi.FormattedText getTaskText (ListItem item) {
-    CharSequence cs = StringUtils.trim(item.getCharSequenceValue());
+    TaskData data = (TaskData) item.getData();
+    return toInputFormattedText(item.getCharSequenceValue(), data != null ? data.originalText : null);
+  }
+
+  /**
+   * Text of an input with its custom emoji: the only entities these inputs make, as in the official app.
+   * A text with the same characters and custom emoji as the original keeps the original entities,
+   * including the ones the input can't show.
+   */
+  private static @Nullable TdApi.FormattedText toInputFormattedText (@Nullable CharSequence value, @Nullable TdApi.FormattedText originalText) {
+    CharSequence cs = StringUtils.trim(value);
     if (StringUtils.isEmpty(cs))
       return null;
-    TaskData data = (TaskData) item.getData();
-    if (data != null && data.originalText != null && cs.toString().equals(data.originalText.text)) {
-      return data.originalText;
+    TdApi.FormattedText text = new TdApi.FormattedText(cs.toString(), customEmojiEntities(cs));
+    if (originalText != null && text.text.equals(originalText.text) && customEmojiKey(text.entities).equals(customEmojiKey(originalText.entities))) {
+      return originalText;
     }
-    TdApi.FormattedText text = TD.toFormattedText(cs, false);
-    return Td.isEmpty(text) ? null : text;
+    return text;
+  }
+
+  private static TdApi.TextEntity[] customEmojiEntities (CharSequence cs) {
+    if (!(cs instanceof Spanned))
+      return new TdApi.TextEntity[0];
+    Spanned spanned = (Spanned) cs;
+    EmojiSpan[] spans = spanned.getSpans(0, spanned.length(), EmojiSpan.class);
+    List<TdApi.TextEntity> entities = new ArrayList<>();
+    if (spans != null) {
+      for (EmojiSpan span : spans) {
+        long customEmojiId = span.isCustomEmoji() ? span.getCustomEmojiId() : 0;
+        int start = spanned.getSpanStart(span);
+        int end = spanned.getSpanEnd(span);
+        if (customEmojiId != 0 && start >= 0 && end > start) {
+          entities.add(new TdApi.TextEntity(start, end - start, new TdApi.TextEntityTypeCustomEmoji(customEmojiId)));
+        }
+      }
+    }
+    Collections.sort(entities, (a, b) -> Integer.compare(a.offset, b.offset));
+    return entities.toArray(new TdApi.TextEntity[0]);
+  }
+
+  /** Position and identifier of every custom emoji, in order. */
+  private static String customEmojiKey (@Nullable TdApi.TextEntity[] entities) {
+    if (entities == null || entities.length == 0)
+      return "";
+    List<TdApi.TextEntity> customEmoji = new ArrayList<>();
+    for (TdApi.TextEntity entity : entities) {
+      if (entity.type.getConstructor() == TdApi.TextEntityTypeCustomEmoji.CONSTRUCTOR) {
+        customEmoji.add(entity);
+      }
+    }
+    Collections.sort(customEmoji, (a, b) -> Integer.compare(a.offset, b.offset));
+    StringBuilder b = new StringBuilder();
+    for (TdApi.TextEntity entity : customEmoji) {
+      b.append(entity.offset).append(':').append(entity.length).append(':').append(((TdApi.TextEntityTypeCustomEmoji) entity.type).customEmojiId).append(';');
+    }
+    return b.toString();
   }
 
   private boolean canDone () {
@@ -618,6 +911,12 @@ public class CreateChecklistController extends RecyclerViewController<CreateChec
 
   @Override
   public boolean performOnBackPressed (boolean fromTop, boolean commit) {
+    if (emojiPanelShown) {
+      if (commit) {
+        closeEmojiPanel(false);
+      }
+      return true;
+    }
     if (hasChanges()) {
       if (commit) {
         showOptions(Lang.getString(R.string.ChecklistDiscardPrompt), new int[] {R.id.btn_done, R.id.btn_cancel}, new String[] {Lang.getString(R.string.ChecklistDiscard), Lang.getString(R.string.Cancel)}, new int[] {OptionColor.RED, OptionColor.NORMAL}, new int[] {R.drawable.baseline_delete_forever_24, R.drawable.baseline_cancel_24}, (itemView, id) -> {

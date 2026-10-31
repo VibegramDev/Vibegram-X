@@ -31,8 +31,10 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.widget.ImageView;
 import android.widget.TextView;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
@@ -42,6 +44,7 @@ import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
@@ -250,6 +253,7 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
     this.outlined = outlined;
     editText.setOutlined(outlined);
     final boolean hasCounter = lengthCounter != null;
+    final int endButtonReserve = endButton != null ? Screen.dp(outlined ? END_BUTTON_RESERVE_OUTLINED : END_BUTTON_RESERVE) : 0;
 
     FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) editText.getLayoutParams();
     if (outlined) {
@@ -258,30 +262,49 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, OUTLINED_TEXT_SIZE);
       editText.setMinimumHeight(Screen.dp(OUTLINED_HEIGHT));
       int padding = Screen.dp(OUTLINED_PADDING);
-      editText.setPadding(padding, padding, padding, padding);
+      editText.setPadding(padding + (isRtl ? endButtonReserve : 0), padding, padding + (isRtl ? 0 : endButtonReserve), padding);
     } else {
       params.topMargin = Screen.dp(needHint ? 20f : 8f);
       params.bottomMargin = 0;
       editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
       editText.setMinimumHeight(0);
-      int counterPadding = hasCounter ? Screen.dp(32f) : 0;
-      editText.setPadding(Screen.dp(1.5f) + (isRtl ? counterPadding : 0), Screen.dp(8f), Screen.dp(1.5f) + (isRtl ? 0 : counterPadding), Screen.dp(9f));
+      int endPadding = (hasCounter ? Screen.dp(32f) : 0) + endButtonReserve;
+      editText.setPadding(Screen.dp(1.5f) + (isRtl ? endPadding : 0), Screen.dp(8f), Screen.dp(1.5f) + (isRtl ? 0 : endPadding), Screen.dp(9f));
     }
     editText.setLayoutParams(params);
+
+    if (endButton != null) {
+      FrameLayoutFix.LayoutParams buttonParams = (FrameLayoutFix.LayoutParams) endButton.getLayoutParams();
+      buttonParams.gravity = Gravity.TOP | (isRtl ? Gravity.LEFT : Gravity.RIGHT);
+      if (outlined) {
+        // Trailing icon of the M3 outlined field: centered in the container, 16dp from its edge
+        buttonParams.topMargin = outlinedBoxTop() + (Screen.dp(OUTLINED_HEIGHT) - Screen.dp(END_BUTTON_SIZE)) / 2;
+        buttonParams.leftMargin = buttonParams.rightMargin = Screen.dp(OUTLINED_PADDING) - (Screen.dp(END_BUTTON_SIZE) - Screen.dp(24f)) / 2;
+      } else {
+        // Centered on the first line, so it stays next to the start of a multi-line text
+        buttonParams.topMargin = Math.max(0, params.topMargin + editText.getPaddingTop() + editText.getLineHeight() / 2 - Screen.dp(END_BUTTON_SIZE) / 2);
+        buttonParams.leftMargin = buttonParams.rightMargin = 0;
+      }
+      // The touch target may be taller than a single-line field: it must not change the field height
+      // when it appears, so it doesn't count in the measured height (the overflow is clipped)
+      buttonParams.bottomMargin = -Screen.dp(END_BUTTON_SIZE);
+      endButton.setLayoutParams(buttonParams);
+    }
 
     if (hintView != null) {
       params = (FrameLayoutFix.LayoutParams) hintView.getLayoutParams();
       if (outlined) {
         params.height = Screen.dp(OUTLINED_HEIGHT);
         params.topMargin = outlinedBoxTop();
-        params.leftMargin = params.rightMargin = Screen.dp(OUTLINED_PADDING);
+        params.leftMargin = Screen.dp(OUTLINED_PADDING) + (isRtl ? endButtonReserve : 0);
+        params.rightMargin = Screen.dp(OUTLINED_PADDING) + (isRtl ? 0 : endButtonReserve);
         hintView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, OUTLINED_TEXT_SIZE);
         hintView.setPadding(0, 0, 0, 0);
       } else {
         params.height = Screen.dp(40f);
         params.topMargin = Screen.dp(20f);
-        params.leftMargin = hasCounter && isRtl ? Screen.dp(40f) : 0;
-        params.rightMargin = hasCounter && !isRtl ? Screen.dp(40f) : 0;
+        params.leftMargin = (hasCounter && isRtl ? Screen.dp(40f) : 0) + (isRtl ? endButtonReserve : 0);
+        params.rightMargin = (hasCounter && !isRtl ? Screen.dp(40f) : 0) + (isRtl ? 0 : endButtonReserve);
         hintView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
         hintView.setPadding(Screen.dp(1.5f), 0, Screen.dp(1.5f), 0);
         hintView.setTextColor(Theme.textPlaceholderColor());
@@ -300,7 +323,9 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       } else {
         params.gravity = isRtl ? Gravity.LEFT : Gravity.RIGHT;
         params.topMargin = lengthCounterReduceOffset ? Screen.dp(19f) : Screen.dp(20f) + Screen.dp(11f);
-        params.leftMargin = params.rightMargin = Screen.dp(6f);
+        // The counter stands before the end button
+        params.leftMargin = Screen.dp(6f) + (isRtl ? endButtonReserve : 0);
+        params.rightMargin = Screen.dp(6f) + (isRtl ? 0 : endButtonReserve);
         lengthCounter.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
       }
       lengthCounter.setLayoutParams(params);
@@ -417,7 +442,7 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       editText.setGravity(Gravity.CENTER_VERTICAL | (rtl ? Gravity.RIGHT : Gravity.LEFT));
       if (hintView != null)
         hintView.setGravity(Gravity.CENTER_VERTICAL | (rtl ? Gravity.RIGHT : Gravity.LEFT));
-      if (outlined) {
+      if (outlined || endButton != null) {
         applyFieldLayout();
       }
     }
@@ -506,6 +531,67 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       if (checkboxView != null) {
         themeProvider.addThemeInvalidateListener(checkboxView);
       }
+      if (endButton != null) {
+        themeProvider.addThemeFilterListener(endButton, ColorId.icon);
+      }
+    }
+  }
+
+  // End button: an icon button at the end of the field (emoji keyboard toggle of the checklist inputs,
+  // as the official app's PollEditTextCell). The text always keeps room for it, the button itself
+  // appears with a scale and fade, usually while the field is focused.
+
+  private static final int ANIMATOR_END_BUTTON = 7;
+  private static final float END_BUTTON_SIZE = 48f;
+  private static final float END_BUTTON_RESERVE = 44f;
+  private static final float END_BUTTON_RESERVE_OUTLINED = 32f;
+
+  private @Nullable ImageView endButton;
+  private @Nullable BoolAnimator endButtonVisible;
+
+  public void setEndButton (@DrawableRes int iconRes, @Nullable View.OnClickListener onClickListener) {
+    if (endButton == null) {
+      endButton = new ImageView(getContext());
+      endButton.setScaleType(ImageView.ScaleType.CENTER);
+      endButton.setColorFilter(Theme.iconColor());
+      RippleSupport.setTransparentSelector(endButton);
+      endButton.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(END_BUTTON_SIZE), Screen.dp(END_BUTTON_SIZE)));
+      endButton.setVisibility(View.GONE);
+      endButton.setAlpha(0f);
+      addView(endButton);
+      if (themeProvider != null) {
+        themeProvider.addThemeFilterListener(endButton, ColorId.icon);
+      }
+      endButtonVisible = new BoolAnimator(ANIMATOR_END_BUTTON, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180L);
+      applyFieldLayout();
+    }
+    endButton.setImageResource(iconRes);
+    endButton.setOnClickListener(onClickListener);
+  }
+
+  public void setEndButtonIcon (@DrawableRes int iconRes) {
+    if (endButton != null) {
+      endButton.setImageResource(iconRes);
+    }
+  }
+
+  public void setEndButtonVisible (boolean visible, boolean animated) {
+    if (endButtonVisible != null) {
+      endButtonVisible.setValue(visible, animated);
+    }
+  }
+
+  public @Nullable View getEndButton () {
+    return endButton;
+  }
+
+  private void setEndButtonFactor (float factor) {
+    if (endButton != null) {
+      final float scale = .6f + .4f * factor;
+      endButton.setScaleX(scale);
+      endButton.setScaleY(scale);
+      endButton.setAlpha(factor);
+      endButton.setVisibility(factor > 0f ? View.VISIBLE : View.GONE);
     }
   }
 
@@ -917,6 +1003,10 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       }
       case ANIMATOR_RADIO_VISIBILITY: {
         setRadioVisibility(factor);
+        break;
+      }
+      case ANIMATOR_END_BUTTON: {
+        setEndButtonFactor(factor);
         break;
       }
     }
