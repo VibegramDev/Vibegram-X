@@ -62,6 +62,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import me.vkryl.core.ArrayUtils;
+import me.vkryl.core.StringUtils;
 import tgx.td.Td;
 
 public class AudioService extends Service implements TGPlayerController.TrackListChangeListener, TGPlayerController.TrackListener, AudioController.ApicListener, AudioManager.OnAudioFocusChangeListener {
@@ -133,7 +134,24 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
   // List management
 
   private static boolean isSupportedTrack (TdApi.Message message) {
-    return message != null && Td.isAudio(message.content);
+    // Voice messages need the foreground media service too, as in the official app:
+    // otherwise the system freezes the app and stops them once it goes to the background
+    return message != null && (Td.isAudio(message.content) || (Td.isVoiceNote(message.content) && message.selfDestructType == null));
+  }
+
+  private String getTrackTitle () {
+    if (currentTrack.content.getConstructor() == TdApi.MessageAudio.CONSTRUCTOR) {
+      return TD.getTitle(((TdApi.MessageAudio) currentTrack.content).audio);
+    }
+    String title = currentTdlib.isSelfSender(currentTrack) ? Lang.getString(R.string.FromYou) : currentTdlib.messageAuthor(currentTrack);
+    return StringUtils.isEmpty(title) ? Lang.getString(R.string.AttachAudio) : title;
+  }
+
+  private String getTrackSubtitle () {
+    if (currentTrack.content.getConstructor() == TdApi.MessageAudio.CONSTRUCTOR) {
+      return TD.getSubtitle(((TdApi.MessageAudio) currentTrack.content).audio);
+    }
+    return Lang.getString(R.string.AttachAudio);
   }
 
   private boolean isInitialized () {
@@ -550,16 +568,15 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
   @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private void setSessionMetadata () {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && mediaSession != null) {
-      TdApi.Audio audio = ((TdApi.MessageAudio) currentTrack.content).audio;
       android.media.session.MediaSession session = (android.media.session.MediaSession) mediaSession;
       android.media.MediaMetadata.Builder b = new android.media.MediaMetadata.Builder();
       b.putString(
         android.media.MediaMetadata.METADATA_KEY_TITLE,
-        TD.getTitle(audio)
+        getTrackTitle()
       );
       b.putString(
         android.media.MediaMetadata.METADATA_KEY_ARTIST,
-        TD.getSubtitle(audio)
+        getTrackSubtitle()
       );
       if (playDuration != C.TIME_UNSET && playDuration > 0) {
         b.putLong(
@@ -699,10 +716,8 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
       b.setShowWhen(isPlaying);
     }
 
-    TdApi.Audio audio = ((TdApi.MessageAudio) currentTrack.content).audio;
-
-    b.setContentTitle(TD.getTitle(audio));
-    b.setContentText(TD.getSubtitle(audio));
+    b.setContentTitle(getTrackTitle());
+    b.setContentText(getTrackSubtitle());
     b.setOngoing(playState == TGPlayerController.STATE_PLAYING);
     if (currentCover != null) {
       b.setLargeIcon(currentCover);

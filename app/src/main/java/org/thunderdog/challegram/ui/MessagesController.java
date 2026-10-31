@@ -8080,8 +8080,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (composerFloating) {
       // The system navigation mode changed: only the bottom margin depends on it.
       LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
-      if (inputParams.bottomMargin != MainNavigationBar.getBarBottomMargin()) {
-        inputParams.bottomMargin = MainNavigationBar.getBarBottomMargin();
+      if (inputParams.bottomMargin != getComposerBottomMargin()) {
+        inputParams.bottomMargin = getComposerBottomMargin();
         inputView.setLayoutParams(inputParams);
         messagesView.post(this::updateMessagesViewInset);
       }
@@ -8093,7 +8093,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
     inputParams.leftMargin = inputParams.rightMargin = margin;
     // Margin above the button navigation bar only; right on the gesture area with gestures.
-    inputParams.bottomMargin = MainNavigationBar.getBarBottomMargin();
+    inputParams.bottomMargin = getComposerBottomMargin();
     inputView.setLayoutParams(inputParams);
     inputView.setMinimumHeight(MainNavigationBar.getBarHeight());
     int verticalPadding = Screen.dp(12f) + getComposerButtonInset();
@@ -8127,6 +8127,15 @@ public class MessagesController extends ViewController<MessagesController.Argume
     senderParams.leftMargin = senderParams.rightMargin = margin;
     messageSenderButton.setLayoutParams(senderParams);
     invalidateComposerBackground();
+  }
+
+  /**
+   * Bottom margin of the floating composer: the bar margin above a keyboard (system, emoji or bot commands)
+   * in any navigation mode (owner); otherwise the navigation-dependent margin of the main screen bar.
+   */
+  private int getComposerBottomMargin () {
+    boolean aboveKeyboard = emojiShown || commandsShown || extraBottomInset > extraBottomInsetWithoutIme;
+    return aboveKeyboard ? MainNavigationBar.getBarMargin() : MainNavigationBar.getBarBottomMargin();
   }
 
   /** Floating composer: the input field loses its top corners while the reply bar slides out above it. */
