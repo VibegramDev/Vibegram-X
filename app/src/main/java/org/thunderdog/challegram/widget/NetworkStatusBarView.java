@@ -57,7 +57,6 @@ import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.unsorted.Settings;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -226,7 +225,7 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
   private static final long PROXY_HINT_DELAY_MS = 10_000L;
   private static final String CONNECTIVITY_CHECK_URL = "https://www.gstatic.com/generate_204";
 
-  private boolean proxyTimerScheduled, proxyHintAvailable, proxyHintShown;
+  private boolean proxyTimerScheduled, proxyHintAvailable;
   private int proxyProbeToken;
 
   private final Runnable proxyTimer = this::onProxyTimer;
@@ -243,12 +242,8 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
         if (token == proxyProbeToken && internetWorks && isConnectingState(state)) {
           proxyHintAvailable = true;
           statusWrap.setClickable(true);
-          statusWrap.setOnClickListener(v -> showProxyDialog());
+          statusWrap.setOnClickListener(v -> openProxySettings());
           refreshText();
-          if (!proxyHintShown) {
-            proxyHintShown = true;
-            showProxyDialog();
-          }
         }
       });
     }, "proxy-hint-probe").start();
@@ -260,7 +255,7 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
 
   private void checkProxyHint () {
     if (isConnectingState(state)) {
-      if (!proxyTimerScheduled && !proxyHintAvailable && !proxyHintShown) {
+      if (!proxyTimerScheduled && !proxyHintAvailable) {
         proxyTimerScheduled = true;
         postDelayed(proxyTimer, PROXY_HINT_DELAY_MS);
       }
@@ -278,7 +273,6 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
     removeCallbacks(proxyTimer);
     proxyTimerScheduled = false;
     proxyProbeToken++;
-    proxyHintShown = false;
     if (proxyHintAvailable) {
       proxyHintAvailable = false;
       statusWrap.setOnClickListener(null);
@@ -305,35 +299,14 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
     }
   }
 
-  private void showProxyDialog () {
+  /** The pill itself is the suggestion: a tap opens the proxy settings, no sheet over the chat list. */
+  private void openProxySettings () {
     final BaseActivity context = UI.getContext(getContext());
     final ViewController<?> c = context.navigation().getCurrentStackItem();
     if (c == null || tdlib == null || c instanceof org.thunderdog.challegram.ui.SettingsProxyController) {
       return; // already where the user can fix it
     }
-    final Tdlib tdlib = this.tdlib;
-    final Settings settings = Settings.instance();
-    final boolean canEnable = settings.hasProxyConfiguration() && !settings.checkProxySetting(Settings.PROXY_FLAG_ENABLED);
-    final int[] ids;
-    final String[] titles;
-    final int[] icons;
-    if (canEnable) {
-      ids = new int[] {R.id.btn_proxy, R.id.btn_settings, R.id.btn_cancel};
-      titles = new String[] {Lang.getString(R.string.ProxyHintEnable), Lang.getString(R.string.ProxySettings), Lang.getString(R.string.ProxyHintNotNow)};
-      icons = new int[] {R.drawable.baseline_check_circle_24, R.drawable.baseline_settings_24, R.drawable.baseline_cancel_24};
-    } else {
-      ids = new int[] {R.id.btn_settings, R.id.btn_cancel};
-      titles = new String[] {Lang.getString(R.string.ProxySettings), Lang.getString(R.string.ProxyHintNotNow)};
-      icons = new int[] {R.drawable.baseline_settings_24, R.drawable.baseline_cancel_24};
-    }
-    c.showOptions(Lang.getString(R.string.ProxyHintInfo), ids, titles, null, icons, (itemView, id) -> {
-      if (id == R.id.btn_proxy) {
-        settings.setProxySetting(Settings.PROXY_FLAG_ENABLED, true);
-      } else if (id == R.id.btn_settings) {
-        tdlib.ui().openProxySettings(new TdlibContext(context, tdlib), true);
-      }
-      return true;
-    });
+    tdlib.ui().openProxySettings(new TdlibContext(context, tdlib), true);
   }
 
   private boolean ignoreTranslation;

@@ -30,9 +30,6 @@
   <string name="EnableProxyAlertHintWeb">Трафик идёт через HTTPS-страницу этого сайта в скрытом WebView. Это работает, только пока приложение запущено, а сайт должен поддерживать мост WEB-прокси.</string>
   <string name="UseProxyType">Тип</string>
   <string name="ProxyHintPill">%1$s · Нажмите для прокси</string>
-  <string name="ProxyHintInfo">Интернет работает, но Vibegram X всё ещё не может подключиться к Telegram. Может помочь прокси.</string>
-  <string name="ProxyHintEnable">Включить сохранённый прокси</string>
-  <string name="ProxyHintNotNow">Не сейчас</string>
 
   <string name="ThemeMonetWhite">Monet (светлая)</string>
   <string name="ThemeMonetDark">Monet (тёмная)</string>
