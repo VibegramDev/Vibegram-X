@@ -21,7 +21,6 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -65,7 +64,7 @@ import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.StringUtils;
 import tgx.td.Td;
 
-public class AudioService extends Service implements TGPlayerController.TrackListChangeListener, TGPlayerController.TrackListener, AudioController.ApicListener, AudioManager.OnAudioFocusChangeListener {
+public class AudioService extends Service implements TGPlayerController.TrackListChangeListener, TGPlayerController.TrackListener, AudioController.ApicListener {
 
   @Nullable
   @Override
@@ -74,7 +73,6 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
   }
 
   private static final int MSG_PROCESS_HOOK = 0;
-  private static final int MSG_REQUEST_FOCUS = 1;
 
   private static class EventHandler extends Handler {
     private final AudioService context;
@@ -89,14 +87,6 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
       switch (msg.what) {
         case MSG_PROCESS_HOOK: {
           context.onHookTap();
-          break;
-        }
-        case MSG_REQUEST_FOCUS: {
-          if (msg.arg1 == 1) {
-            context.requestAudioFocusImpl();
-          } else {
-            context.abandonAudioFocusImpl();
-          }
           break;
         }
       }
@@ -204,9 +194,6 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
   private void setPlayState (int playState) {
     if (this.playState != playState) {
       this.playState = playState;
-      if (playState == TGPlayerController.STATE_PLAYING) {
-        requestAudioFocusIfNeeded();
-      }
       if (currentTrack != null) {
         updateNotification();
         setSessionPlayState();
@@ -424,8 +411,6 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
 
     if (!hadTrack) {
       initResources();
-    } else {
-      requestAudioFocusIfNeeded();
     }
 
     setSessionMetadata();
@@ -561,7 +546,6 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
       session.setExtras(new Bundle());
       this.mediaSession = session;
     }
-    requestAudioFocus();
     emptyCover = tryCreatePlaceholder();
   }
 
@@ -638,7 +622,6 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
     }
     this.oldCover = recycleBitmap(oldCover);
     this.currentCover = recycleBitmap(currentCover);
-    abandonAudioFocus();
   }
 
   private void updateNotification () {
@@ -764,78 +747,5 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
     });
   }
 
-  // Focus
-
-  private int audioFocusState = AudioManager.AUDIOFOCUS_GAIN;
-
-  private boolean hasAudioFocus () {
-    return hasFocus(audioFocusState);
-  }
-
-  private boolean audioFocusRequested;
-
-  private void requestAudioFocus () {
-    audioFocusRequested = true;
-    handler.removeMessages(MSG_REQUEST_FOCUS);
-    handler.sendMessageDelayed(Message.obtain(handler, MSG_REQUEST_FOCUS, 1, 0), 180l);
-  }
-
-  private void abandonAudioFocus () {
-    audioFocusRequested = false;
-    handler.removeMessages(MSG_REQUEST_FOCUS);
-    handler.sendMessageDelayed(Message.obtain(handler, MSG_REQUEST_FOCUS, 0, 0), 50l);
-  }
-
-  private void requestAudioFocusImpl () {
-    if (audioFocusRequested) {
-      AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-      if (am != null) {
-        am.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
-        setAudioFocusState(AudioManager.AUDIOFOCUS_GAIN);
-      }
-    }
-  }
-
-  private void abandonAudioFocusImpl () {
-    if (!audioFocusRequested) {
-      AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-      if (am != null) {
-        am.abandonAudioFocus(this);
-      }
-    }
-  }
-
-  private void requestAudioFocusIfNeeded () {
-    if (!hasAudioFocus() || !audioFocusRequested) {
-      requestAudioFocus();
-    }
-  }
-
-  private void setAudioFocusState (int state) {
-    if (audioFocusState != state) {
-      boolean wasSilent = reduceVolume(state);
-      this.audioFocusState = state;
-      boolean hasFocus = hasFocus(state);
-      boolean isSilent = reduceVolume(state);
-
-      TdlibManager.instance().player().setPauseReason(TGPlayerController.PAUSE_REASON_FOCUS, !hasFocus);
-
-      if (wasSilent != isSilent) {
-        TdlibManager.instance().player().setReduceVolume(isSilent);
-      }
-    }
-  }
-
-  private static boolean hasFocus (int focus) {
-    return focus == AudioManager.AUDIOFOCUS_GAIN || focus == AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK;
-  }
-
-  private static boolean reduceVolume (int focus) {
-    return focus == AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK;
-  }
-
-  @Override
-  public void onAudioFocusChange (int focusChange) {
-    setAudioFocusState(focusChange);
-  }
+  // Audio focus: TGPlayerController (all in-app playback shares one focus request).
 }

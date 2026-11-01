@@ -31,6 +31,7 @@ import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.telegram.GlobalMessageListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibManager;
+import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.PlaybackController;
 import org.thunderdog.challegram.unsorted.Settings;
 
@@ -1032,6 +1033,7 @@ public class TGPlayerController implements GlobalMessageListener, ProximityManag
       needResume = false;
       pauseReasons = 0;
     }
+    updatePlayerAudioFocus();
   }
 
   private void playPauseMessageImpl (@Nullable TdApi.Message message, boolean byUserRequest, boolean isNext, Tdlib tdlib, @Nullable PlayListBuilder builder) {
@@ -1766,6 +1768,161 @@ public class TGPlayerController implements GlobalMessageListener, ProximityManag
   public static final int PAUSE_REASON_OPEN_WEB_VIDEO = 1 << 10;
   public static final int PAUSE_REASON_OPEN_ONCE_MEDIA = 1 << 11;
 
+  // Audio focus (one request for all in-app playback)
+
+  public static final int AUDIO_FOCUS_NONE = 0;
+  /** Voice, round video, video: other apps' music fades out (ducking), pauses, and resumes once playback ends. */
+  public static final int AUDIO_FOCUS_TRANSIENT = 1;
+  /** Music: other players stop, as before. */
+  public static final int AUDIO_FOCUS_PERMANENT = 2;
+
+  private static final long AUDIO_FOCUS_FADE_MS = 350;
+  private static final long AUDIO_FOCUS_RELEASE_DELAY_MS = 700;
+
+  private final HashMap<Object, Integer> audioFocusOwners = new HashMap<>();
+  private int audioFocusGain = AUDIO_FOCUS_NONE; // requested by us
+  private int audioFocusState = android.media.AudioManager.AUDIOFOCUS_GAIN; // last change from the system
+  private @Nullable Object audioFocusRequest; // AudioFocusRequest (API 26+)
+  private final Object playerAudioFocusOwner = new Object();
+
+  private final android.media.AudioManager.OnAudioFocusChangeListener audioFocusListener = focusChange -> UI.post(() -> onAudioFocusChange(focusChange));
+
+  private final Runnable audioFocusPauseOthers = () -> {
+    if (audioFocusGain == AUDIO_FOCUS_TRANSIENT) {
+      requestAudioFocusImpl(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+    }
+  };
+
+  private final Runnable audioFocusRelease = () -> {
+    if (audioFocusOwners.isEmpty() && audioFocusGain != AUDIO_FOCUS_NONE) {
+      abandonAudioFocusImpl();
+    }
+  };
+
+  /**
+   * In-app playback (voice, round videos, videos with sound, music) holds the audio focus while it plays.
+   * Pass {@link #AUDIO_FOCUS_NONE} to release. Main thread only.
+   */
+  public void setAudioFocusOwner (Object owner, int focus) {
+    if (Looper.myLooper() != Looper.getMainLooper()) {
+      UI.post(() -> setAudioFocusOwner(owner, focus));
+      return;
+    }
+    Integer current = audioFocusOwners.get(owner);
+    if ((current != null ? current : AUDIO_FOCUS_NONE) == focus) {
+      return;
+    }
+    if (focus == AUDIO_FOCUS_NONE) {
+      audioFocusOwners.remove(owner);
+    } else {
+      audioFocusOwners.put(owner, focus);
+    }
+    int needGain = AUDIO_FOCUS_NONE;
+    for (int ownerFocus : audioFocusOwners.values()) {
+      needGain = Math.max(needGain, ownerFocus);
+    }
+    if (needGain == AUDIO_FOCUS_NONE) {
+      // Short delay: the next voice message in a row keeps the other app paused.
+      UI.removePendingRunnable(audioFocusRelease);
+      UI.post(audioFocusRelease, AUDIO_FOCUS_RELEASE_DELAY_MS);
+      return;
+    }
+    UI.removePendingRunnable(audioFocusRelease);
+    if (needGain == audioFocusGain) {
+      return;
+    }
+    audioFocusGain = needGain;
+    UI.removePendingRunnable(audioFocusPauseOthers);
+    if (needGain == AUDIO_FOCUS_PERMANENT) {
+      requestAudioFocusImpl(android.media.AudioManager.AUDIOFOCUS_GAIN);
+    } else {
+      // Duck first (the system lowers the other app smoothly), then ask it to pause.
+      requestAudioFocusImpl(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+      UI.post(audioFocusPauseOthers, AUDIO_FOCUS_FADE_MS);
+    }
+  }
+
+  private void requestAudioFocusImpl (int gain) {
+    android.media.AudioManager am = (android.media.AudioManager) org.thunderdog.challegram.unsorted.AppContext.get().getSystemService(android.content.Context.AUDIO_SERVICE);
+    if (am == null) {
+      return;
+    }
+    int result;
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+      android.media.AudioFocusRequest request = new android.media.AudioFocusRequest.Builder(gain)
+        .setAudioAttributes(new android.media.AudioAttributes.Builder()
+          .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+          .setContentType(gain == android.media.AudioManager.AUDIOFOCUS_GAIN ? android.media.AudioAttributes.CONTENT_TYPE_MUSIC : android.media.AudioAttributes.CONTENT_TYPE_MOVIE)
+          .build())
+        .setOnAudioFocusChangeListener(audioFocusListener)
+        .build();
+      result = am.requestAudioFocus(request);
+      audioFocusRequest = request;
+    } else {
+      //noinspection deprecation
+      result = am.requestAudioFocus(audioFocusListener, android.media.AudioManager.STREAM_MUSIC, gain);
+    }
+    if (result == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+      onAudioFocusChange(android.media.AudioManager.AUDIOFOCUS_GAIN);
+    }
+  }
+
+  private void abandonAudioFocusImpl () {
+    UI.removePendingRunnable(audioFocusPauseOthers);
+    audioFocusGain = AUDIO_FOCUS_NONE;
+    android.media.AudioManager am = (android.media.AudioManager) org.thunderdog.challegram.unsorted.AppContext.get().getSystemService(android.content.Context.AUDIO_SERVICE);
+    if (am != null) {
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (audioFocusRequest != null) {
+          am.abandonAudioFocusRequest((android.media.AudioFocusRequest) audioFocusRequest);
+        }
+      } else {
+        //noinspection deprecation
+        am.abandonAudioFocus(audioFocusListener);
+      }
+    }
+    audioFocusRequest = null;
+    onAudioFocusChange(android.media.AudioManager.AUDIOFOCUS_GAIN);
+  }
+
+  private void onAudioFocusChange (int focusChange) {
+    if (audioFocusState == focusChange) {
+      return;
+    }
+    boolean wasDucked = audioFocusState == android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK;
+    audioFocusState = focusChange;
+    boolean isDucked = focusChange == android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK;
+    boolean hasFocus = focusChange == android.media.AudioManager.AUDIOFOCUS_GAIN || isDucked;
+    if (wasDucked != isDucked) {
+      setReduceVolume(isDucked);
+    }
+    if (focusChange == android.media.AudioManager.AUDIOFOCUS_LOSS) {
+      // Another app took the focus for good: plain pause (no auto resume), request again on the next playback.
+      UI.removePendingRunnable(audioFocusPauseOthers);
+      UI.removePendingRunnable(audioFocusRelease);
+      audioFocusGain = AUDIO_FOCUS_NONE;
+      audioFocusOwners.clear();
+      audioFocusState = android.media.AudioManager.AUDIOFOCUS_GAIN;
+      setPauseReason(PAUSE_REASON_FOCUS, false);
+      pauseWithReason(PAUSE_REASON_FOCUS);
+      return;
+    }
+    setPauseReason(PAUSE_REASON_FOCUS, !hasFocus);
+  }
+
+  /** Voice and round videos: transient focus, music: permanent; paused by an external reason (call, focus loss) keeps it. */
+  private void updatePlayerAudioFocus () {
+    int focus = AUDIO_FOCUS_NONE;
+    if (message != null && (playState == STATE_PLAYING || playState == STATE_LOADING || (playState == STATE_PAUSED && needResume))) {
+      if (Td.isAudio(message.content)) {
+        focus = AUDIO_FOCUS_PERMANENT;
+      } else if (Td.isVoiceNote(message.content) || Td.isVideoNote(message.content)) {
+        focus = AUDIO_FOCUS_TRANSIENT;
+      }
+    }
+    setAudioFocusOwner(playerAudioFocusOwner, focus);
+  }
+
   private boolean needResume;
   private int pauseReasons;
 
@@ -1785,6 +1942,9 @@ public class TGPlayerController implements GlobalMessageListener, ProximityManag
         } else if (!isPaused && playState == STATE_PAUSED && needResume) {
           needResume = false;
           playPauseMessage(tdlib, message, null);
+        } else if (!isPaused && needResume) {
+          needResume = false;
+          updatePlayerAudioFocus();
         }
       }
     }
