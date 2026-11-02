@@ -414,7 +414,7 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
 
   private boolean keepChatPreviewOnRelease () {
     ViewController<?> preview = currentOpenPreview != null ? currentOpenPreview : pendingController;
-    return preview instanceof MessagesController && useOpenButtonInChatPreview();
+    return preview instanceof MessagesController && isPlainChatPreview();
   }
 
   // MessagesController-specific
@@ -538,10 +538,10 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
   }
 
   /**
-   * Whether a chat preview shows the single «Open» button instead of action icons:
-   * by default when no owner supplies its own actions (and not the «Unpin» of a pinned messages preview).
+   * Whether a chat preview has no action icons: it stays open after the finger is lifted and a tap on it opens the
+   * chat. By default when no owner supplies its own actions (and not the «Unpin» of a pinned messages preview).
    */
-  protected boolean useOpenButtonInChatPreview () {
+  protected boolean isPlainChatPreview () {
     return actionListProvider == null && !(filter instanceof TdApi.SearchMessagesFilterPinned);
   }
 
@@ -653,12 +653,13 @@ public class BaseView extends SparseDrawableView implements ClickHelper.Delegate
     ArrayList<ActionItem> actions = new ArrayList<>(5);
     ForceTouchView.ActionListener listener = null;
 
-    final boolean openButton = controller instanceof MessagesController && useOpenButtonInChatPreview();
-    if (openButton) {
+    final boolean plainPreview = controller instanceof MessagesController && isPlainChatPreview();
+    if (plainPreview) {
       context.setScrollableView(((MessagesController) controller).getMessagesView());
-      // A chat preview has one action, «Open» (the chat actions are in the long-press menu); none if it can't open.
+      context.setButtons(((MessagesController) controller).getFloatingButtons());
+      // No buttons (the chat actions are in the long-press menu): a second tap on the preview opens the chat.
       if (allowMaximizePreview) {
-        context.setOpenButton(Lang.getString(R.string.Open));
+        context.setOpenOnTap(true);
         if (context.getStateListenerArgument() == null) {
           context.setStateListenerArgument(controller); // the maximize listener reads the previewed controller from it
         }

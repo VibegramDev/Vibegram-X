@@ -2004,6 +2004,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return messagesView;
   }
 
+  /** Floating buttons over the messages (scroll to bottom, mentions, reactions) that stay tappable in a preview. */
+  public View[] getFloatingButtons () {
+    return new View[] {scrollToBottomButton, mentionButton, reactionsButton};
+  }
+
   private boolean isInputLess () {
     return tdlib.isChannel(getChatId()) && !tdlib.canSendBasicMessage(chat);
   }
