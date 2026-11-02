@@ -278,7 +278,7 @@ public class AudioController extends BasePlaybackController implements TGAudio.P
   @Override
   protected void startPlayback (Tdlib tdlib, TdApi.Message message, boolean byUserRequest, boolean hadObject, Tdlib previousTdlib, int previousFileId) {
     if (playbackMode == PLAYBACK_MODE_UNSET) {
-      setPlaybackMode(determineBestPlaybackMode(Td.isVoiceNote(message.content)), Td.isAudio(message.content));
+      setPlaybackMode(determineBestPlaybackMode(Td.isVoiceNote(message.content)), Td.isAudio(message.content) || (Td.isVoiceNote(message.content) && message.selfDestructType == null));
     }
     Log.i(Log.TAG_PLAYER, "startPlayback mode:%d byUserRequest:%b, hadObject:%b, previousFileId:%d", playbackMode, byUserRequest, hadObject, previousFileId);
     switch (playbackMode) {

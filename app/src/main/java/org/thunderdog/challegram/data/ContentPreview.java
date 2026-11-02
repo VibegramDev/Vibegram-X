@@ -51,6 +51,9 @@ public class ContentPreview {
   public static final Emoji EMOJI_POLL = new Emoji("\uD83D\uDCCA", R.drawable.baseline_poll_16);
   public static final Emoji EMOJI_POLL_OPTION = new Emoji("\uD83D\uDCCA", R.drawable.baseline_ballot_16);
   public static final Emoji EMOJI_QUIZ = new Emoji("\u2753", R.drawable.baseline_help_16);
+  public static final Emoji EMOJI_CHECKLIST = new Emoji("\u2611\uFE0F", R.drawable.baseline_checklist_16);
+  public static final Emoji EMOJI_CHECKLIST_TASK = new Emoji("\u2B55", R.drawable.baseline_radio_button_unchecked_16);
+  public static final Emoji EMOJI_CHECKLIST_TASK_DONE = new Emoji("\u2705", R.drawable.baseline_check_circle_16);
   public static final Emoji EMOJI_PAID_PHOTO = new Emoji("\u2B50", R.drawable.baseline_premium_star_16); // ⭐
   public static final Emoji EMOJI_PAID_VIDEO = new Emoji("\u2B50", R.drawable.baseline_premium_star_16);
   public static final Emoji EMOJI_PAID_MEDIA = new Emoji("\u2B50", R.drawable.baseline_premium_star_16);
@@ -199,6 +202,23 @@ public class ContentPreview {
     return false;
   }
 
+  /**
+   * Preview of a reply to a checklist task: the task text after a check box in its current state,
+   * as the official app draws it. Returns null, when content is not a checklist or the task is gone.
+   */
+  @Nullable
+  public static ContentPreview getChecklistTaskPreview (@Nullable TdApi.MessageContent content, int taskId) {
+    if (taskId == 0 || content == null || content.getConstructor() != TdApi.MessageChecklist.CONSTRUCTOR) {
+      return null;
+    }
+    TdApi.ChecklistTask task = TD.findTask(((TdApi.MessageChecklist) content).list.tasks, taskId);
+    if (task == null) {
+      return null;
+    }
+    boolean isDone = task.completionDate != 0 || task.completedBy != null;
+    return new ContentPreview(isDone ? EMOJI_CHECKLIST_TASK_DONE : EMOJI_CHECKLIST_TASK, 0, task.text, false);
+  }
+
   @NonNull
   public static ContentPreview getChatListPreview (Tdlib tdlib, long chatId, TdApi.Message message, boolean checkChatRestrictions) {
     return getContentPreview(tdlib, chatId, message, true, true, checkChatRestrictions);
@@ -311,6 +331,30 @@ public class ContentPreview {
         }
         arg1 = ((TdApi.MessagePoll) message.content).poll.type.getConstructor() == TdApi.PollTypeRegular.CONSTRUCTOR ? ARG_NONE : ARG_POLL_QUIZ;
         break;
+      }
+      case TdApi.MessageChecklist.CONSTRUCTOR: {
+        if (allowContent) {
+          formattedText = ((TdApi.MessageChecklist) message.content).list.title;
+        }
+        break;
+      }
+      case TdApi.MessageChecklistTasksAdded.CONSTRUCTOR: {
+        TdApi.MessageChecklistTasksAdded tasksAdded = (TdApi.MessageChecklistTasksAdded) message.content;
+        return new ContentPreview(EMOJI_CHECKLIST, 0, Lang.plural(R.string.ChatContentChecklistTasksAdded, tasksAdded.tasks.length), true);
+      }
+      case TdApi.MessageChecklistTasksDone.CONSTRUCTOR: {
+        TdApi.MessageChecklistTasksDone tasksDone = (TdApi.MessageChecklistTasksDone) message.content;
+        final int doneCount = tasksDone.markedAsDoneTaskIds.length;
+        final int notDoneCount = tasksDone.markedAsNotDoneTaskIds.length;
+        final String text;
+        if (notDoneCount == 0) {
+          text = Lang.plural(R.string.ChatContentChecklistTasksDone, doneCount);
+        } else if (doneCount == 0) {
+          text = Lang.plural(R.string.ChatContentChecklistTasksNotDone, notDoneCount);
+        } else {
+          text = Lang.plural(R.string.ChatContentChecklistTasksToggled, doneCount + notDoneCount);
+        }
+        return new ContentPreview(EMOJI_CHECKLIST, 0, text, true);
       }
       case TdApi.MessageDice.CONSTRUCTOR:
         alternativeText = ((TdApi.MessageDice) message.content).emoji;
@@ -784,9 +828,6 @@ public class ContentPreview {
       case TdApi.MessageSuggestBirthdate.CONSTRUCTOR:
       case TdApi.MessagePassportDataSent.CONSTRUCTOR:
       case TdApi.MessageChatSetBackground.CONSTRUCTOR:
-      case TdApi.MessageChecklist.CONSTRUCTOR:
-      case TdApi.MessageChecklistTasksDone.CONSTRUCTOR:
-      case TdApi.MessageChecklistTasksAdded.CONSTRUCTOR:
       case TdApi.MessageSuggestedPostApprovalFailed.CONSTRUCTOR:
       case TdApi.MessageSuggestedPostApproved.CONSTRUCTOR:
       case TdApi.MessageSuggestedPostDeclined.CONSTRUCTOR:
@@ -1268,10 +1309,22 @@ public class ContentPreview {
           return new ContentPreview(isChannel ? EMOJI_LIVE_STREAM : EMOJI_VIDEO_CHAT, isChannel ? R.string.ChatContentLiveStreamAddSomeone : R.string.ChatContentVideoChatAddSomeone);
         }
       }
+      case TdApi.PushMessageContentChecklist.CONSTRUCTOR: {
+        TdApi.PushMessageContentChecklist checklist = (TdApi.PushMessageContentChecklist) push.content;
+        if (checklist.isPinned)
+          return getNotificationPinned(R.string.ActionPinnedChecklist, TdApi.MessageChecklist.CONSTRUCTOR, tdlib, chatId, push.senderId, push.senderName, checklist.title, false, 0, 0);
+        else
+          return getNotificationPreview(TdApi.MessageChecklist.CONSTRUCTOR, tdlib, chatId, push.senderId, push.senderName, checklist.title);
+      }
+      case TdApi.PushMessageContentChecklistTasksAdded.CONSTRUCTOR: {
+        int taskCount = ((TdApi.PushMessageContentChecklistTasksAdded) push.content).taskCount;
+        return new ContentPreview(EMOJI_CHECKLIST, 0, Lang.plural(R.string.ChatContentChecklistTasksAdded, taskCount), true);
+      }
+      case TdApi.PushMessageContentChecklistTasksDone.CONSTRUCTOR: {
+        int taskCount = ((TdApi.PushMessageContentChecklistTasksDone) push.content).taskCount;
+        return new ContentPreview(EMOJI_CHECKLIST, 0, Lang.plural(R.string.ChatContentChecklistTasksToggled, taskCount), true);
+      }
       case TdApi.PushMessageContentPollOptionAdded.CONSTRUCTOR:
-      case TdApi.PushMessageContentChecklist.CONSTRUCTOR:
-      case TdApi.PushMessageContentChecklistTasksAdded.CONSTRUCTOR:
-      case TdApi.PushMessageContentChecklistTasksDone.CONSTRUCTOR:
       case TdApi.PushMessageContentTonConnectRequest.CONSTRUCTOR:
       case TdApi.PushMessageContentTonWalletTransfer.CONSTRUCTOR: {
         return getNotificationPreview(TdApi.MessageUnsupported.CONSTRUCTOR, tdlib, chatId, push.senderId, push.senderName, null);
@@ -1324,6 +1377,8 @@ public class ContentPreview {
           return new ContentPreview(EMOJI_QUIZ, R.string.Quiz, formattedArgument, argumentTranslatable);
         else
           return new ContentPreview(EMOJI_POLL, R.string.Poll, formattedArgument, argumentTranslatable);
+      case TdApi.MessageChecklist.CONSTRUCTOR:
+        return new ContentPreview(EMOJI_CHECKLIST, R.string.Checklist, formattedArgument, argumentTranslatable);
       case TdApi.MessageVoiceNote.CONSTRUCTOR:
         return new ContentPreview(EMOJI_VOICE, R.string.ChatContentVoice, formattedArgument, argumentTranslatable);
       case TdApi.MessageVideoNote.CONSTRUCTOR:
@@ -1640,7 +1695,6 @@ public class ContentPreview {
       case TdApi.MessageUpgradedGiftPurchaseOfferRejected.CONSTRUCTOR:
       case TdApi.MessageRefundedUpgradedGift.CONSTRUCTOR:
       case TdApi.MessageStakeDice.CONSTRUCTOR:
-      case TdApi.MessageChecklist.CONSTRUCTOR:
       case TdApi.MessageChecklistTasksDone.CONSTRUCTOR:
       case TdApi.MessageChecklistTasksAdded.CONSTRUCTOR:
       case TdApi.MessageGroupCall.CONSTRUCTOR:

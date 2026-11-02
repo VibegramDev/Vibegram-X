@@ -340,11 +340,13 @@ public class Lang {
     final String packId;
     final Resources resources;
     final String[] localKeys;
+    final String[] localPlurals;
 
-    LanguageResources (String packId, Resources resources, String[] localKeys) {
+    LanguageResources (String packId, Resources resources, String[] localKeys, String[] localPlurals) {
       this.packId = packId;
       this.resources = resources;
       this.localKeys = localKeys;
+      this.localPlurals = localPlurals;
     }
   }
 
@@ -354,6 +356,8 @@ public class Lang {
    * Resources in the app language (res/values-&lt;language of the pack&gt;, e.g. values-ru with the Russian cloud
    * pack on an English system), not the system locale: they back keys missing from the pack, and their
    * {@code vg_LangLocalKeys} replace the pack's own strings (abbreviations in the cloud translation).
+   * Plurals listed in {@code vg_LangLocalPlurals} are read from them with the plural rules of the app language
+   * when the pack has no such key (see pluralImpl).
    * API 16 (no createConfigurationContext) keeps the system locale and no local keys.
    */
   private static LanguageResources getLanguageResources (@NonNull TdApi.LanguagePackInfo languagePackInfo) {
@@ -361,14 +365,16 @@ public class Lang {
     if (current == null || !current.packId.equals(languagePackInfo.id)) {
       Resources resources = UI.getResources();
       String[] localKeys = new String[0];
+      String[] localPlurals = new String[0];
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
         Configuration configuration = new Configuration(resources.getConfiguration());
         String[] code = normalizeLanguageCode(!StringUtils.isEmpty(languagePackInfo.baseLanguagePackId) ? languagePackInfo.pluralCode : languagePackInfo.id).split("[-_]");
         configuration.setLocale(code.length > 1 ? new Locale(code[0], code[1]) : new Locale(code[0]));
         resources = AppContext.get().createConfigurationContext(configuration).getResources();
         localKeys = resources.getStringArray(R.array.vg_LangLocalKeys);
+        localPlurals = resources.getStringArray(R.array.vg_LangLocalPlurals);
       }
-      languageResources = current = new LanguageResources(languagePackInfo.id, resources, localKeys);
+      languageResources = current = new LanguageResources(languagePackInfo.id, resources, localKeys, localPlurals);
     }
     return current;
   }
@@ -380,6 +386,11 @@ public class Lang {
   private static boolean isLocalKey (@NonNull TdApi.LanguagePackInfo languagePackInfo, String key) {
     String[] localKeys = getLanguageResources(languagePackInfo).localKeys;
     return localKeys.length > 0 && ArrayUtils.indexOf(localKeys, key) >= 0;
+  }
+
+  private static boolean isLocalPlural (@NonNull TdApi.LanguagePackInfo languagePackInfo, String key) {
+    String[] localPlurals = getLanguageResources(languagePackInfo).localPlurals;
+    return localPlurals.length > 0 && ArrayUtils.indexOf(localPlurals, key) >= 0;
   }
 
   private static final int FLAG_LOWERCASE = 1;
@@ -1789,7 +1800,8 @@ public class Lang {
       throw new Resources.NotFoundException("resId == 0");
 
     String key = getResourceEntryName(resId);
-    TdApi.LanguagePackStringValuePluralized string = getStringPluralized(key, Settings.instance().getLanguagePackInfo());
+    final TdApi.LanguagePackInfo languagePackInfo = Settings.instance().getLanguagePackInfo();
+    TdApi.LanguagePackStringValuePluralized string = getStringPluralized(key, languagePackInfo);
     if (string != null) {
       int languageCode = pluralCode();
       int pluralForm = numberPluralizationForm(languageCode, num);
@@ -1802,6 +1814,22 @@ public class Lang {
         return formatString(value, creator, formatArgs);
       } catch (Throwable t) {
         warnResource(true, languageCode, LangUtils.getPluralForm(resId, pluralForm));
+      }
+    } else if (languagePackInfo != null && isLocalPlural(languagePackInfo, key)) {
+      // Vibegram X: a plural missing from the pack but translated in res/values-<app language> (vg_LangLocalPlurals)
+      // uses that translation with the plural rules of the app language, not the system locale with English rules.
+      final Resources resources = getAndroidResources(languagePackInfo);
+      final int languageCode = pluralCode();
+      int pluralForm = numberPluralizationForm(languageCode, num);
+      String value = resources.getString(LangUtils.getPluralForm(resId, pluralForm));
+      if (StringUtils.isEmpty(value) && pluralForm != PluralForm.OTHER) {
+        pluralForm = PluralForm.OTHER;
+        value = resources.getString(LangUtils.getPluralForm(resId, pluralForm));
+      }
+      try {
+        return formatString(applyFlags(value, flags), hasSpanned(formatArgs), creator, formatArgs);
+      } catch (Throwable t) {
+        warnResource(false, languageCode, LangUtils.getPluralForm(resId, pluralForm));
       }
     }
 

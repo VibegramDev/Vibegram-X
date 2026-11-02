@@ -53,6 +53,7 @@ import org.thunderdog.challegram.telegram.CallManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibDataSource;
 import org.thunderdog.challegram.telegram.TdlibFilesManager;
+import org.thunderdog.challegram.player.TGPlayerController;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
@@ -162,6 +163,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       return;
     }
     this.currentItem = mediaItem;
+    checkAudioFocus();
     if (isDetached) {
       return;
     }
@@ -417,6 +419,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   public void destroy () {
     destroyed = true;
     setVideo(null);
+    checkAudioFocus();
   }
 
   // instance state
@@ -541,6 +544,13 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       }
       UI.getContext(context).setScreenFlagEnabled(BaseActivity.SCREEN_FLAG_PLAYING_REGULAR_VIDEO, isPlaying);
     }
+    checkAudioFocus();
+  }
+
+  /** A video with sound pauses other apps' music for a while (see TGPlayerController#setAudioFocusOwner). */
+  private void checkAudioFocus () {
+    boolean needFocus = isPlaying && !isMuted && !forcelyMuted && currentItem != null && !destroyed;
+    TdlibManager.instance().player().setAudioFocusOwner(this, needFocus ? TGPlayerController.AUDIO_FOCUS_TRANSIENT : TGPlayerController.AUDIO_FOCUS_NONE);
   }
 
   public void requestLayout () {
@@ -585,6 +595,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     if (player != null) {
       player.setVolume(muted ? 0f : 1f);
     }
+    checkAudioFocus();
   }
 
   private boolean playNeeded;

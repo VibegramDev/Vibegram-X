@@ -223,6 +223,20 @@ public class MediaBottomBar extends FrameLayoutFix implements GestureDetector.On
     return -1;
   }
 
+  /**
+   * Bounds of the icon indicator of the item at {@code index}, to anchor a tooltip to it.
+   */
+  public void getItemIconBounds (int index, android.graphics.Rect outRect) {
+    int cx = findCenterX(index);
+    if (cx == -1) {
+      outRect.set(0, 0, getMeasuredWidth(), getMeasuredHeight());
+      return;
+    }
+    int halfWidth = Screen.dp(INDICATOR_WIDTH) / 2;
+    int top = Screen.dp(INDICATOR_TOP);
+    outRect.set(cx - halfWidth, top, cx + halfWidth, top + Screen.dp(INDICATOR_HEIGHT));
+  }
+
   private int findTouchIndex (float x) {
     if (items == null || items.length == 0) {
       return -1;

@@ -37,6 +37,7 @@ import org.thunderdog.challegram.data.ContentPreview;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.data.TGMessage;
 import org.thunderdog.challegram.data.TGMessageBotInfo;
+import org.thunderdog.challegram.data.TGMessageChecklist;
 import org.thunderdog.challegram.data.TGMessageLocation;
 import org.thunderdog.challegram.data.TGMessageSticker;
 import org.thunderdog.challegram.data.TGMessageText;
@@ -745,6 +746,15 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
           }
           break;
         }
+        case TdApi.MessageChecklist.CONSTRUCTOR: {
+          TdApi.Checklist checklist = ((TdApi.MessageChecklist) content).list;
+          if (checklist.canAddTasks && isSent && !msg.isScheduled()) {
+            ids.append(R.id.btn_messageChecklistAddTasks);
+            icons.append(R.drawable.baseline_playlist_add_24);
+            strings.append(R.string.ChecklistAddTasks);
+          }
+          break;
+        }
         case TdApi.MessageCall.CONSTRUCTOR: {
           ids.append(R.id.btn_messageCall);
           icons.append(R.drawable.baseline_phone_24);
@@ -904,6 +914,10 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
 
     if (!isMore && msg.canEditText() && isSent) {
       ids.append(R.id.btn_messageEdit);
+      strings.append(R.string.edit);
+      icons.append(R.drawable.baseline_edit_24);
+    } else if (!isMore && msg instanceof TGMessageChecklist && isSent && msg.lastMessageProperties().canBeEdited && msg.allowInteraction()) {
+      ids.append(R.id.btn_messageChecklistEdit);
       strings.append(R.string.edit);
       icons.append(R.drawable.baseline_edit_24);
     }

@@ -142,6 +142,7 @@ import org.thunderdog.challegram.data.TGAudio;
 import org.thunderdog.challegram.data.TGBotStart;
 import org.thunderdog.challegram.data.TGMessage;
 import org.thunderdog.challegram.data.TGMessageBotInfo;
+import org.thunderdog.challegram.data.TGMessageChecklist;
 import org.thunderdog.challegram.data.TGMessageLocation;
 import org.thunderdog.challegram.data.TGMessageMedia;
 import org.thunderdog.challegram.data.TGMessageSticker;
@@ -320,7 +321,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   Settings.VideoModePreferenceListener,
   RecordAudioVideoController.RecordStateListeners,
   ViewPager.OnPageChangeListener, ViewPagerTopView.OnItemClickListener,
-  TGMessage.SelectableDelegate, GlobalAccountListener, EmojiToneHelper.Delegate, ComplexHeaderView.Callback, LiveLocationHelper.Callback, CreatePollController.Callback,
+  TGMessage.SelectableDelegate, GlobalAccountListener, EmojiToneHelper.Delegate, ComplexHeaderView.Callback, LiveLocationHelper.Callback, CreatePollController.Callback, CreateChecklistController.Callback,
   HapticMenuHelper.Provider, HapticMenuHelper.OnItemClickListener, TdlibSettingsManager.DismissRequestsListener, InputView.SelectionChangeListener {
 
   private boolean reuseEnabled;
@@ -5943,6 +5944,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
         TdApi.Message message = selectedMessage.getMessage();
         tdlib.send(new TdApi.SetPollAnswer(message.chatId, message.id, null), tdlib.typedOkHandler());
         return true;
+      } else if (id == R.id.btn_messageChecklistEdit || id == R.id.btn_messageChecklistAddTasks) {
+        if (selectedMessage instanceof TGMessageChecklist) {
+          openChecklistEditor((TGMessageChecklist) selectedMessage, id == R.id.btn_messageChecklistAddTasks ? CreateChecklistController.MODE_ADD_TASKS : CreateChecklistController.MODE_EDIT, 0);
+        }
+        return true;
       } else if (id == R.id.btn_messagePollStop) {
         TdApi.Message message = selectedMessage.getMessage();
         TdApi.Poll poll = ((TdApi.MessagePoll) message.content).poll;
@@ -6943,7 +6949,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (isEditingMessage()) {
       replyBarView.setEditingMessage(new MessageWithProperties(editContext.message, editContext.messageProperties), editContext.localPickedFile);
     } else if (reply != null) {
-      replyBarView.setReplyTo(reply.message, reply.quote);
+      replyBarView.setReplyTo(reply.message, reply.quote, reply.checklistTaskId);
     } else {
       shouldBeVisible = false;
     }
@@ -8074,8 +8080,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (composerFloating) {
       // The system navigation mode changed: only the bottom margin depends on it.
       LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
-      if (inputParams.bottomMargin != MainNavigationBar.getBarBottomMargin()) {
-        inputParams.bottomMargin = MainNavigationBar.getBarBottomMargin();
+      if (inputParams.bottomMargin != getComposerBottomMargin()) {
+        inputParams.bottomMargin = getComposerBottomMargin();
         inputView.setLayoutParams(inputParams);
         messagesView.post(this::updateMessagesViewInset);
       }
@@ -8087,7 +8093,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
     inputParams.leftMargin = inputParams.rightMargin = margin;
     // Margin above the button navigation bar only; right on the gesture area with gestures.
-    inputParams.bottomMargin = MainNavigationBar.getBarBottomMargin();
+    inputParams.bottomMargin = getComposerBottomMargin();
     inputView.setLayoutParams(inputParams);
     inputView.setMinimumHeight(MainNavigationBar.getBarHeight());
     int verticalPadding = Screen.dp(12f) + getComposerButtonInset();
@@ -8121,6 +8127,15 @@ public class MessagesController extends ViewController<MessagesController.Argume
     senderParams.leftMargin = senderParams.rightMargin = margin;
     messageSenderButton.setLayoutParams(senderParams);
     invalidateComposerBackground();
+  }
+
+  /**
+   * Bottom margin of the floating composer: the bar margin above a keyboard (system, emoji or bot commands)
+   * in any navigation mode (owner); otherwise the navigation-dependent margin of the main screen bar.
+   */
+  private int getComposerBottomMargin () {
+    boolean aboveKeyboard = emojiShown || commandsShown || extraBottomInset > extraBottomInsetWithoutIme;
+    return aboveKeyboard ? MainNavigationBar.getBarMargin() : MainNavigationBar.getBarBottomMargin();
   }
 
   /** Floating composer: the input field loses its top corners while the reply bar slides out above it. */
@@ -8222,6 +8237,58 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public TdApi.ChatList provideChatList (CreatePollController context) {
     return openedFromChatList;
+  }
+
+  // Checklists
+
+  @Override
+  public boolean onSendChecklist (CreateChecklistController context, long chatId, @Nullable TdApi.MessageTopic topicId, TdApi.InputMessageChecklist checklist, TdApi.MessageSendOptions sendOptions, RunnableData<TdApi.Message> after) {
+    if (getChatId() == chatId && matchesTopic(topicId)) {
+      send(checklist, true, sendOptions, after);
+      return true;
+    }
+    return false;
+  }
+
+  @Override
+  public boolean areScheduledOnly (CreateChecklistController context) {
+    return areScheduledOnly();
+  }
+
+  @Override
+  public TdApi.ChatList provideChatList (CreateChecklistController context) {
+    return openedFromChatList;
+  }
+
+  /**
+   * Opens the checklist creation screen (attach menu). Creating checklists requires Telegram Premium,
+   * as in the official app.
+   */
+  public boolean openChecklistCreation (@Nullable View anchorView) {
+    long chatId = getChatId();
+    if (chatId == 0 || !tdlib.canSendChecklists(chatId)) {
+      return false;
+    }
+    if (!tdlib.hasPremium()) {
+      tdlib.ui().showPremiumAlert(this, anchorView != null ? anchorView : getValue(), TdlibUi.PremiumFeature.CHECKLISTS);
+      return false;
+    }
+    CreateChecklistController c = new CreateChecklistController(context, tdlib);
+    c.setArguments(CreateChecklistController.Args.newChecklist(chatId, getMessageTopicId(), getInputSuggestedPostInfo(null), this));
+    navigateTo(c);
+    return true;
+  }
+
+  public void openChecklistEditor (TGMessageChecklist msg, int mode, int focusTaskId) {
+    if (!tdlib.hasPremium()) {
+      View view = msg.findCurrentView();
+      tdlib.ui().showPremiumAlert(this, view != null ? view : getValue(), TdlibUi.PremiumFeature.CHECKLISTS);
+      return;
+    }
+    TdApi.Message message = msg.getMessage();
+    CreateChecklistController c = new CreateChecklistController(context, tdlib);
+    c.setArguments(CreateChecklistController.Args.existingChecklist(message.chatId, message.id, msg.getChecklist(), mode, focusTaskId));
+    navigateTo(c);
   }
 
   @Nullable

@@ -18,6 +18,8 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.drawable.Drawable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.util.SparseIntArray;
 import android.view.Gravity;
 import android.view.View;
@@ -44,6 +46,8 @@ import org.thunderdog.challegram.charts.view_data.ChartHeaderView;
 import org.thunderdog.challegram.component.attach.MeasuredAdapterDelegate;
 import org.thunderdog.challegram.component.attach.MediaLocationPlaceView;
 import org.thunderdog.challegram.component.base.SettingView;
+import org.thunderdog.challegram.emoji.CustomEmojiId;
+import org.thunderdog.challegram.emoji.EmojiSpan;
 import org.thunderdog.challegram.component.base.TogglerView;
 import org.thunderdog.challegram.component.chat.DetachedChatHeaderView;
 import org.thunderdog.challegram.component.chat.MessagePreviewView;
@@ -762,6 +766,35 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
     if (lockFocusOn != null && isFocused) {
       lockFocusOn.setLockFocusView(v.getEditText(), showKeyboardAlways);
     }
+  }
+
+  /**
+   * Text of an input field from the value its {@link ListItem} keeps. Custom emoji survive as {@link CustomEmojiId}
+   * spans, which the field turns into its own emoji spans (the stored ones may belong to another field or be
+   * destroyed already); any other value is plain text, as before.
+   */
+  private static @Nullable CharSequence toInputText (@Nullable CharSequence value) {
+    if (!(value instanceof Spanned)) {
+      return value != null ? value.toString() : null;
+    }
+    Spanned spanned = (Spanned) value;
+    EmojiSpan[] spans = spanned.getSpans(0, spanned.length(), EmojiSpan.class);
+    SpannableStringBuilder b = null;
+    if (spans != null) {
+      for (EmojiSpan span : spans) {
+        long customEmojiId = span.isCustomEmoji() ? span.getCustomEmojiId() : 0;
+        int start = spanned.getSpanStart(span);
+        int end = spanned.getSpanEnd(span);
+        if (customEmojiId == 0 || start < 0 || end <= start) {
+          continue;
+        }
+        if (b == null) {
+          b = new SpannableStringBuilder(spanned.toString());
+        }
+        b.setSpan(new CustomEmojiId(customEmojiId, span.forceDisableAnimations()), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+      }
+    }
+    return b != null ? b : spanned.toString();
   }
 
   public void removeRange (int index, int itemCount) {
@@ -1749,7 +1782,7 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
         MaterialEditTextGroup editText = (MaterialEditTextGroup) ((ViewGroup) holder.itemView).getChildAt(0);
         editText.applyRtl(Lang.rtl());
         editText.setHint(item.getString());
-        editText.setText(item.getStringValue());
+        editText.setText(toInputText(item.getCharSequenceValue()));
         EditBaseController.SimpleEditorActionListener editorActionListener = item.getOnEditorActionListener();
         if (editorActionListener != null) {
           editText.getEditText().setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI | editorActionListener.getImeAction());
