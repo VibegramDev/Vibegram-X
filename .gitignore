@@ -17,6 +17,8 @@ obj
 /captures
 /local.properties
 
+/tests/*/checks
+
 libc++_shared.so
 
 # Firebase config: each build provides its own (see README)
