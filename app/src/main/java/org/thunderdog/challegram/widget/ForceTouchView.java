@@ -23,12 +23,12 @@ import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.text.TextPaint;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
@@ -41,6 +41,7 @@ import androidx.annotation.ColorInt;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.annotation.Px;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.UiThread;
@@ -287,51 +288,6 @@ public class ForceTouchView extends FrameLayoutFix implements
   private @Nullable PopupWrapView popupWrapView;
 
   private LinearLayout buttonsList;
-  private @Nullable OpenButtonView openButton;
-
-  /** M3 filled button (FilledButtonTokens): 40dp, full corners, primary / onPrimary, label large, 24dp padding. */
-  private static class OpenButtonView extends View {
-    private final String text;
-    private final RectF rect = new RectF();
-
-    public OpenButtonView (Context context, String text) {
-      super(context);
-      this.text = text;
-      setClickable(true);
-      setFocusable(true);
-      setContentDescription(text);
-    }
-
-    private TextPaint textPaint () {
-      return Paints.getMediumTextPaint(14f, M3.onPrimary(), false);
-    }
-
-    @Override
-    protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
-      int width = (int) Math.ceil(U.measureText(text, textPaint())) + Screen.dp(24f) * 2;
-      setMeasuredDimension(Math.max(width, Screen.dp(48f)), Screen.dp(40f));
-    }
-
-    @Override
-    protected void drawableStateChanged () {
-      super.drawableStateChanged();
-      invalidate();
-    }
-
-    @Override
-    protected void onDraw (Canvas c) {
-      rect.set(0, 0, getWidth(), getHeight());
-      float radius = getHeight() / 2f;
-      c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(M3.primary()));
-      if (isPressed()) {
-        // M3 pressed state layer: onPrimary at 10%.
-        c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(ColorUtils.alphaColor(.1f, M3.onPrimary())));
-      }
-      TextPaint paint = textPaint();
-      Paint.FontMetrics metrics = paint.getFontMetrics();
-      c.drawText(text, (getWidth() - U.measureText(text, paint)) / 2f, getHeight() / 2f - (metrics.ascent + metrics.descent) / 2f, paint);
-    }
-  }
   private Tdlib tdlib;
 
   public void initWithContext (ForceTouchContext context) {
@@ -460,7 +416,7 @@ public class ForceTouchView extends FrameLayoutFix implements
       themeListenerList.addThemeInvalidateListener(headerShadowView);
     }
 
-    if (context.hasFooter() || context.hasOpenButton()) {
+    if (context.hasFooter()) {
       RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(0, /* contentParams.bottomMargin =*/ Screen.dp(FOOTER_HEIGHT));
       params.addRule(RelativeLayout.ALIGN_LEFT, R.id.forceTouch_content);
       params.addRule(RelativeLayout.ALIGN_RIGHT, R.id.forceTouch_content);
@@ -512,21 +468,7 @@ public class ForceTouchView extends FrameLayoutFix implements
         }
       });
 
-      if (context.hasOpenButton()) {
-        // M3 filled button «Open», centered (owner's choice).
-        buttonsList.setGravity(Gravity.CENTER);
-        buttonsList.setPadding(Screen.dp(16f), 0, Screen.dp(16f), 0);
-        openButton = new OpenButtonView(getContext(), context.openButtonText);
-        openButton.setOnClickListener(v -> {
-          if (forceTouchContext != null && forceTouchContext.maximizeListener != null) {
-            maximize();
-          }
-          UI.getContext(getContext()).closeForceTouch();
-        });
-        themeListenerList.addThemeInvalidateListener(openButton);
-        buttonsList.addView(openButton);
-        contentWrap.addView(buttonsList);
-      } else {
+      {
         View offsetView;
 
         final int offsetWeight = context.shrunkenFooter ? 4 : 1;
@@ -650,8 +592,41 @@ public class ForceTouchView extends FrameLayoutFix implements
   private static final int STICKY_TOUCH_SCROLL = 1;
   private static final int STICKY_TOUCH_ACTION = 2;
   private static final int STICKY_TOUCH_OUTSIDE = 3;
-  private static final int STICKY_TOUCH_OPEN = 4;
+  private static final int STICKY_TOUCH_BUTTON = 4;
+  private @Nullable View stickyButton;
+
+  /** A button over the preview content (e.g. «scroll to bottom») under the finger: it must act, not open the chat. */
+  private @Nullable View findPreviewButton (float x, float y) {
+    if (forceTouchContext.buttons != null) {
+      for (View button : forceTouchContext.buttons) {
+        if (button == null) {
+          continue;
+        }
+        View parent = button.getParent() instanceof View ? (View) button.getParent() : null;
+        boolean shown = button.isShown() && button.isEnabled() && button.getAlpha() > 0f && (parent == null || parent.getAlpha() > 0f);
+        if (shown && isInside(button, x, y)) {
+          return button;
+        }
+      }
+    }
+    return null;
+  }
   private int stickyTouchMode;
+  /** Sticky preview that opens on tap: the touch is still a tap (no scroll, it didn't stop a fling). */
+  private boolean stickyTapCandidate;
+  private float stickyDownX, stickyDownY;
+
+  /** Opens the previewed chat in full (a tap on a sticky preview). */
+  private void openPreview () {
+    if (forceTouchContext != null && forceTouchContext.maximizeListener != null) {
+      maximize();
+    }
+    UI.getContext(getContext()).closeForceTouch();
+  }
+
+  private static boolean isScrolling (@Nullable View view) {
+    return view instanceof RecyclerView && ((RecyclerView) view).getScrollState() != RecyclerView.SCROLL_STATE_IDLE;
+  }
 
   private boolean isInside (@Nullable View view, float x, float y) {
     if (view == null || view.getVisibility() != View.VISIBLE) {
@@ -694,9 +669,16 @@ public class ForceTouchView extends FrameLayoutFix implements
     switch (e.getActionMasked()) {
       case MotionEvent.ACTION_DOWN: {
         ImageView actionView = forceTouchContext.hasFooter() ? findActionViewByPosition(x, y) : null;
-        if (isInside(openButton, x, y)) {
-          stickyTouchMode = STICKY_TOUCH_OPEN;
-          openButton.setPressed(true);
+        // A tap anywhere on the card (header or messages) opens the chat; a tap that stops a fling doesn't.
+        stickyTapCandidate = forceTouchContext.opensOnTap() && isInside(contentWrap, x, y) && !isScrolling(forceTouchContext.scrollableView);
+        stickyDownX = e.getX();
+        stickyDownY = e.getY();
+        View button = findPreviewButton(x, y);
+        if (button != null) {
+          stickyTapCandidate = false;
+          stickyTouchMode = STICKY_TOUCH_BUTTON;
+          stickyButton = button;
+          button.setPressed(true);
         } else if (actionView != null) {
           stickyTouchMode = STICKY_TOUCH_ACTION;
           setActionView(actionView);
@@ -709,25 +691,37 @@ public class ForceTouchView extends FrameLayoutFix implements
         break;
       }
       case MotionEvent.ACTION_MOVE: {
+        if (stickyTapCandidate && Math.hypot(e.getX() - stickyDownX, e.getY() - stickyDownY) > ViewConfiguration.get(getContext()).getScaledTouchSlop()) {
+          stickyTapCandidate = false;
+        }
         if (stickyTouchMode == STICKY_TOUCH_SCROLL) {
           dispatchStickyScroll(e);
         } else if (stickyTouchMode == STICKY_TOUCH_ACTION) {
           setActionView(findActionViewByPosition(x, y));
-        } else if (stickyTouchMode == STICKY_TOUCH_OPEN) {
-          openButton.setPressed(isInside(openButton, x, y));
+        } else if (stickyTouchMode == STICKY_TOUCH_BUTTON && stickyButton != null) {
+          stickyButton.setPressed(isInside(stickyButton, x, y));
         }
         break;
       }
       case MotionEvent.ACTION_UP: {
         int mode = stickyTouchMode;
         stickyTouchMode = STICKY_TOUCH_NONE;
-        if (mode == STICKY_TOUCH_OPEN) {
-          openButton.setPressed(false);
-          if (isInside(openButton, x, y)) {
-            openButton.performClick();
-          }
-        } else if (mode == STICKY_TOUCH_SCROLL) {
+        boolean isTap = stickyTapCandidate && isInside(contentWrap, x, y);
+        stickyTapCandidate = false;
+        if (mode == STICKY_TOUCH_SCROLL) {
           dispatchStickyScroll(e);
+        }
+        if (mode == STICKY_TOUCH_BUTTON) {
+          View button = stickyButton;
+          stickyButton = null;
+          if (button != null) {
+            button.setPressed(false);
+            if (isInside(button, x, y)) {
+              button.performClick();
+            }
+          }
+        } else if (isTap) {
+          openPreview();
         } else if (mode == STICKY_TOUCH_ACTION) {
           setActionView(findActionViewByPosition(x, y));
           if (lastActionId != 0) {
@@ -739,10 +733,13 @@ public class ForceTouchView extends FrameLayoutFix implements
         break;
       }
       case MotionEvent.ACTION_CANCEL: {
+        stickyTapCandidate = false;
         if (stickyTouchMode == STICKY_TOUCH_SCROLL) {
           dispatchStickyScroll(e);
-        } else if (stickyTouchMode == STICKY_TOUCH_OPEN) {
-          openButton.setPressed(false);
+        }
+        if (stickyButton != null) {
+          stickyButton.setPressed(false);
+          stickyButton = null;
         }
         stickyTouchMode = STICKY_TOUCH_NONE;
         setActionView(null);
@@ -1279,16 +1276,23 @@ public class ForceTouchView extends FrameLayoutFix implements
     }
 
     private boolean isSticky;
-    private @Nullable String openButtonText;
+    private boolean openOnTap;
     private @Nullable View scrollableView;
 
-    /** The footer is one «Open» button (opens the previewed chat) instead of action icons. */
-    public void setOpenButton (@Nullable String text) {
-      this.openButtonText = text;
+    /** No footer: once the preview stays open, a tap on it opens the previewed chat (owner's choice). */
+    public void setOpenOnTap (boolean openOnTap) {
+      this.openOnTap = openOnTap;
     }
 
-    public boolean hasOpenButton () {
-      return openButtonText != null && !hasFooter();
+    public boolean opensOnTap () {
+      return openOnTap && !hasFooter();
+    }
+
+    private @Nullable View[] buttons;
+
+    /** Buttons over the preview content (scroll to bottom, mentions, reactions): a tap on them acts, not opens the chat. */
+    public void setButtons (@Nullable View... buttons) {
+      this.buttons = buttons;
     }
 
     /** The view a sticky preview scrolls (the messages list). */

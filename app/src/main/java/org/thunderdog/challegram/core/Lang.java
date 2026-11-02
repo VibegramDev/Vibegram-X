@@ -36,6 +36,7 @@ import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.data.ContentPreview;
 import org.thunderdog.challegram.data.TD;
@@ -1101,7 +1102,7 @@ public class Lang {
   // Build no
 
   public static String getAppBuildAndVersion (@Nullable Tdlib tdlib) {
-    String msg = getString(R.string.AppNameAndVersion, BuildConfig.VERSION_NAME);
+    String msg = getString(R.string.AppNameAndVersion, U.getVersionName());
     if (tdlib != null && tdlib.isEmulator()) {
       msg += " (emulator)";
     }

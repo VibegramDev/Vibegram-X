@@ -690,6 +690,8 @@ public class SettingsController extends ViewController<Void> implements
     items.add(new ListItem(ListItem.TYPE_BUILD_NO, R.id.btn_build, 0, Lang.getAppBuildAndVersion(tdlib), false));
 
     processUserFull(tdlib.myUserFull());
+    // The «Devices» row shows the last known sessions at once; loadActiveSessions() refreshes them.
+    sessions = tdlib.cachedSessions();
 
     adapter.setSegmented(SettingsAccountsBlock.LIST_TYPE_ACCOUNT);
     this.contentView.setAdapter(adapter);
@@ -731,15 +733,9 @@ public class SettingsController extends ViewController<Void> implements
     );
   }
 
-  @Override
-  public boolean needAsynchronousAnimation () {
-    return sessions == null;
-  }
-
-  @Override
-  public long getAsynchronousAnimationTimeout (boolean fastAnimation) {
-    return 400l;
-  }
+  // Settings open without waiting for GetActiveSessions (a network request, upstream waited up to 400ms for it on every
+  // open, seen as a delay after a tap in the dock): the «Devices» row shows the cached sessions or «Loading…» and is
+  // updated in place when they arrive.
 
   @Override
   public boolean onLongClick (View v) {
@@ -1459,7 +1455,7 @@ public class SettingsController extends ViewController<Void> implements
     }
 
     SpannableStringBuilder b = new SpannableStringBuilder();
-    b.append(Lang.getMarkdownStringSecure(this, R.string.AppSignature, BuildConfig.VERSION_NAME));
+    b.append(Lang.getMarkdownStringSecure(this, R.string.AppSignature, U.getVersionName()));
 
     showOptions(b, ids.get(), strings.get(), colors.get(), icons.get(), (itemView, id) -> {
       if (id == R.id.btn_copyText) {

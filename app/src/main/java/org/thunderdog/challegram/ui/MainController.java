@@ -934,6 +934,19 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       navigationBar.setSearchOpenFactor(factor);
     }
     updateDockCollapsed(true);
+    updateSearchBackButtonOffset();
+  }
+
+  /**
+   * The back button (56dp wide, circle in its center) sits at the edge of the app bar, while the focused search bar
+   * starts 12dp from it: move the button by these 12dp, so that its circle is centered in the rounded end of the bar
+   * (M3 search bar: the leading icon is 4dp inside the 56dp container) instead of sticking out of it.
+   */
+  private void updateSearchBackButtonOffset () {
+    if (headerView != null) {
+      float offset = isFocused() ? Screen.dp(M3SearchBarView.FOCUSED_MARGIN) * MathUtils.clamp(getSearchTransformFactor()) : 0f;
+      headerView.getBackButton().setContentOffsetX(offset);
+    }
   }
 
   @Override
@@ -2074,6 +2087,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   @Override
   protected void onFocusStateChanged () {
     super.onFocusStateChanged();
+    updateSearchBackButtonOffset();
     if (suggestionsSignal != null) {
       suggestionsSignal.cancel();
       suggestionsSignal = null;
@@ -2124,7 +2138,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void addStartupMarker () {
-    if (Config.ENABLE_BASELINE_PROFILE_HOOKS) {
+    if (Config.ENABLE_TEST_HOOKS) {
       tdlib.awaitConnection(() -> runOnUiThreadOptional(() -> {
         ViewGroup group = (ViewGroup) getWrapUnchecked();
         if (group.findViewById(R.id.startup_marker) == null) {
@@ -2138,7 +2152,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private boolean notificationsRequestPending;
 
   private void showAnnoyingAlertsForCompliance (boolean fromAppResume) {
-    if (Config.ENABLE_BASELINE_PROFILE_HOOKS) {
+    if (Config.ENABLE_TEST_HOOKS) {
       addStartupMarker();
     }
     if (checkSyncAlert()) {

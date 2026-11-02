@@ -679,11 +679,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  /** Part of the message list (dp) that always stays above the floating composer. */
+  private static final float MIN_VISIBLE_LIST_HEIGHT = 72f;
+
+  /** The message menu is shown over the hidden keyboard: the list keeps its padding (see prepareToShowMessageOptions). */
+  private boolean messagesInsetFrozen;
+
   private void updateMessagesViewInset () {
-    if (messagesView == null) {
+    if (messagesView == null || messagesInsetFrozen) {
       return;
     }
-    int inset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? getFloatingComposerInset() : extraBottomInset;
+    int requestedInset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? getFloatingComposerInset() : extraBottomInset;
+    int listHeight = messagesView.getMeasuredHeight();
+    if (listHeight > 0) {
+      // Never let the padding cover the whole list. For a moment the composer with a panel can be as tall as the list
+      // (e.g. the emoji panel opened over the system keyboard on some devices): with no room left the list laid out
+      // its messages above the header, the scroll position was kept from that state, and the chat stayed blank.
+      requestedInset = Math.min(requestedInset, Math.max(0, listHeight - Screen.dp(MIN_VISIBLE_LIST_HEIGHT)));
+    }
+    final int inset = requestedInset;
     int appliedInset = Views.getAppliedBottomInset(messagesView);
     if (inset != appliedInset) {
       manager.maintainScrollPositionAndOffset(() -> {
@@ -886,6 +900,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     params.addRule(RelativeLayout.ALIGN_TOP, R.id.msg_bottom);
 
     topBar = new CollapseListView(context);
+    topBar.setId(R.id.msg_topBar);
     topBar.setLayoutParams(params);
     topBar.setTotalHeightChangeListener(listView -> onMessagesFrameChanged());
 
@@ -1553,8 +1568,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
       // Messages under the composer: they scroll under the floating composer and fade out.
       contentView.addView(messagesView);
       composerScrim = new M3BottomScrimView(context);
-      // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed.
-      composerScrim.setFadeHeight(Screen.dp(4f));
+      // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed, and
+      // eases in from zero there, so there is no line beside the composer where it starts.
+      composerScrim.setFadeHeight(0);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);
@@ -1986,6 +2002,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   public MessagesRecyclerView getMessagesView () {
     return messagesView;
+  }
+
+  /** Floating buttons over the messages (scroll to bottom, mentions, reactions) that stay tappable in a preview. */
+  public View[] getFloatingButtons () {
+    return new View[] {scrollToBottomButton, mentionButton, reactionsButton};
   }
 
   private boolean isInputLess () {
@@ -5132,14 +5153,20 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void prepareToShowMessageOptions () {
     needShowKeyboardAfterHideMessageOptions = getKeyboardState();
     needShowEmojiKeyboardAfterHideMessageOptions = emojiShown;
-    if (needShowKeyboardAfterHideMessageOptions) {    // показываем emoji-клавиатуру, чтобы скрыть системную
+    if (needShowKeyboardAfterHideMessageOptions && composerFloating) {
+      // Floating composer: the keyboard just hides, the composer goes down to its place at the bottom. The original
+      // trick (an empty emoji panel in place of the keyboard) left the composer hanging in the middle of the screen.
+      // The list keeps its padding while the menu is shown, so the message the menu points at doesn't move.
+      messagesInsetFrozen = true;
+      hideSoftwareKeyboard();
+    } else if (needShowKeyboardAfterHideMessageOptions) {    // показываем emoji-клавиатуру, чтобы скрыть системную
       openEmojiKeyboard();                            // делаем emojiLayout невидимым для оптимизации
       emojiLayout.optimizeForDisplayMessageOptionsWindow(true);
     }                                                 // todo: если меню сообщения ниже EmojiLayout, то не скрывать?
   }
 
   private void optimizeEmojiLayoutForOptionsWindow (boolean needOptimize) {
-    if (needShowKeyboardAfterHideMessageOptions || needShowEmojiKeyboardAfterHideMessageOptions) {
+    if (emojiLayout != null && (needShowEmojiKeyboardAfterHideMessageOptions || (needShowKeyboardAfterHideMessageOptions && !composerFloating))) {
       emojiLayout.optimizeForDisplayMessageOptionsWindow(needOptimize);
     }
   }
@@ -5150,6 +5177,17 @@ public class MessagesController extends ViewController<MessagesController.Argume
       emojiLayout.optimizeForDisplayMessageOptionsWindow(false);
     } else if (needShowKeyboardAfterHideMessageOptions) {
       showKeyboard();
+    }
+    if (messagesInsetFrozen) {
+      // The padding follows the composer again once the keyboard is back (or right away if it doesn't come back).
+      messagesView.postDelayed(this::unfreezeMessagesInset, needShowKeyboardAfterHideMessageOptions ? 600 : 0);
+    }
+  }
+
+  private void unfreezeMessagesInset () {
+    if (messagesInsetFrozen) {
+      messagesInsetFrozen = false;
+      updateMessagesViewInset();
     }
   }
 
@@ -8092,7 +8130,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     LinearLayout.LayoutParams inputParams = (LinearLayout.LayoutParams) inputView.getLayoutParams();
     inputParams.leftMargin = inputParams.rightMargin = margin;
-    // Margin above the button navigation bar only; right on the gesture area with gestures.
+    // Same margin as at the sides, above the system navigation in any mode.
     inputParams.bottomMargin = getComposerBottomMargin();
     inputView.setLayoutParams(inputParams);
     inputView.setMinimumHeight(MainNavigationBar.getBarHeight());

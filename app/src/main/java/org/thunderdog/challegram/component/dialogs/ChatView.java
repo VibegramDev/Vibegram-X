@@ -545,9 +545,9 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     }
   }
 
-  /** Chat list rows: the preview has only «Open»; mute, pin, delete etc. are in the long-press menu. */
+  /** Chat list rows: the preview has no buttons (a tap on it opens the chat); mute, pin, delete etc. are in the long-press menu. */
   @Override
-  protected boolean useOpenButtonInChatPreview () {
+  protected boolean isPlainChatPreview () {
     return true;
   }
 

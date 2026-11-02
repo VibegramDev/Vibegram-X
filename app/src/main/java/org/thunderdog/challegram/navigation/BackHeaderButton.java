@@ -19,6 +19,7 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.annotation.Nullable;
 
@@ -46,6 +47,19 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
 
   private boolean reverseAngle;
   private float factor;
+  /** Horizontal shift of the drawn button (circle and arrow), e.g. to sit inside a contained search bar. */
+  private float contentOffsetX;
+
+  public void setContentOffsetX (float offsetX) {
+    if (this.contentOffsetX != offsetX) {
+      this.contentOffsetX = offsetX;
+      // The shifted circle goes past the right edge of the 56dp button: let the header draw it unclipped meanwhile.
+      if (getParent() instanceof ViewGroup) {
+        ((ViewGroup) getParent()).setClipChildren(offsetX == 0f);
+      }
+      invalidate();
+    }
+  }
 
   private HeaderView parentHeader;
   private final Paint paint;
@@ -164,6 +178,17 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
 
   @Override
   public void onDraw (Canvas c) {
+    if (contentOffsetX != 0f) {
+      c.save();
+      c.translate(Lang.rtl() ? -contentOffsetX : contentOffsetX, 0);
+      drawButton(c);
+      c.restore();
+    } else {
+      drawButton(c);
+    }
+  }
+
+  private void drawButton (Canvas c) {
     // M3 back button: the arrow in a tonal circle (as in Android settings). Fades in from the menu icon.
     float containerFactor = MathUtils.clamp(factor);
     if (containerFactor > 0f) {

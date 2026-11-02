@@ -70,6 +70,7 @@ import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.DoubleHeaderView;
 import org.thunderdog.challegram.navigation.HeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.MenuMoreWrap;
 import org.thunderdog.challegram.navigation.TelegramViewController;
@@ -109,6 +110,7 @@ import org.thunderdog.challegram.widget.EmojiLayout;
 import org.thunderdog.challegram.widget.FillingSpace;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.KeyboardFrameLayout;
+import org.thunderdog.challegram.widget.M3DialogFrame;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.SeparatorView;
 import org.thunderdog.challegram.widget.TextFormattingLayout;
@@ -1081,14 +1083,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
       @Override
       public void onScrolled (@NonNull RecyclerView recyclerView, int dx, int dy) {
         checkHeaderPosition();
-        TdlibChatListSlice displayingList = getDisplayingList();
-        if (displayingList != null && displayingList.canLoad() && !inSearchMode()) {
-          GridLayoutManager gridManager = (GridLayoutManager) recyclerView.getLayoutManager();
-          int i = gridManager.findLastVisibleItemPosition();
-          if (i >= adapter.getItemCount() - gridManager.getSpanCount()) {
-            displayingList.loadMore(30, null);
-          }
-        }
+        loadMoreIfNeeded();
       }
     });
     recyclerView.setHasFixedSize(true);
@@ -2218,7 +2213,11 @@ public class ShareController extends TelegramViewController<ShareController.Args
 
   private void smoothScrollBy (int y) {
     if (y == 0) {
+      // Nothing to scroll (the list always starts under the header now): an empty smooth scroll never reports idle
+      // and would leave the list locked.
       recyclerView.stopScroll();
+      setAutoScrollFinished(true);
+      return;
     }
     setAutoScrollFinished(false);
     /*FIXME replace with
@@ -2242,6 +2241,9 @@ public class ShareController extends TelegramViewController<ShareController.Args
   }
 
   private int calculateSpanCount () {
+    if (isDialog) {
+      return 4;
+    }
     if (UI.isLandscape()) {
       int itemWidth = Screen.smallestSide() / 4;
       return Screen.currentWidth() / itemWidth;
@@ -2462,14 +2464,40 @@ public class ShareController extends TelegramViewController<ShareController.Args
     popupLayout.setNeedRootInsets();
     popupLayout.setTouchProvider(this);
     popupLayout.setIgnoreHorizontal();
-    getValue();
+    // Not a sheet sliding from the bottom, but a dialog (m3.material.io/components/dialogs): full-screen on a phone,
+    // a basic dialog in the center on a tablet ("Full-screen dialogs are for compact breakpoints only, like mobile
+    // devices. For medium and expanded breakpoints, use a basic dialog.").
+    NavigationController navigation = context().navigation();
+    isDialog = navigation != null && navigation.isTabletSplit();
+    View view = getValue();
+    if (isDialog) {
+      // The header leaves room for the status bar at its top: in the dialog that room is cut off.
+      FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+      params.topMargin = -HeaderView.getTopOffset();
+      view.setLayoutParams(params);
+      dialogFrame = new M3DialogFrame(context(), view, Screen.dp(DIALOG_MAX_HEIGHT));
+      dialogFrame.setTag(this);
+    }
     context().addFullScreenView(this, false);
   }
+
+  /** Tablet: the list is a basic dialog in the center of the screen, see {@link #show(boolean)}. */
+  private boolean isDialog;
+  private @Nullable M3DialogFrame dialogFrame;
+  /** Maximum height of the tablet dialog (ours: about 6 rows of chats), dp. */
+  private static final float DIALOG_MAX_HEIGHT = 720f;
 
   @Override
   public void dispatchSystemInsets (View parentView, ViewGroup.MarginLayoutParams originalParams, Rect legacyInsets, Rect insets, Rect insetsWithoutIme, Rect systemInsets, Rect systemInsetsWithoutIme, boolean fitsSystemWindows) {
     super.dispatchSystemInsets(parentView, originalParams, legacyInsets, insets, insetsWithoutIme, systemInsets, systemInsetsWithoutIme, fitsSystemWindows);
     originalParams.bottomMargin = 0;
+    if (dialogFrame != null) {
+      // The dialog stays clear of the system bars and of the keyboard, nothing inside it is under them.
+      dialogFrame.setPadding(insets.left, insets.top, insets.right, insets.bottom);
+      recyclerView.setPadding(0, 0, 0, 0);
+      setBottomInset(0, 0);
+      return;
+    }
     recyclerView.setPadding(0, 0, 0, insets.bottom);
     setBottomInset(insets.bottom, insetsWithoutIme.bottom);
   }
@@ -2484,7 +2512,8 @@ public class ShareController extends TelegramViewController<ShareController.Args
   private void launchOpenAnimation () {
     if (!openLaunched) {
       openLaunched = true;
-      popupLayout.showSimplePopupView(getValue(), calculateTotalHeight());
+      // Dialogs fade in and out (m3.material.io/components/dialogs › Motion), they don't slide.
+      popupLayout.showFadingPopupView(dialogFrame != null ? dialogFrame : getValue());
     }
   }
 
@@ -2492,12 +2521,9 @@ public class ShareController extends TelegramViewController<ShareController.Args
     return Screen.currentHeight(); // UI.getContext(getContext()).getNavigation().getWrap().getMeasuredHeight();
   }
 
+  /** Space above the first row of chats: none, the list starts right under the header (it used to start mid-screen). */
   private int getContentOffset () {
-    return getTargetHeight() / 2 - HeaderView.getSize(true) - (isExpanded ? calculateMovementDistance() : 0) + (canShareLink ? 0 : Screen.dp(56f) / 2 + extraBottomInset);
-  }
-
-  private int calculateTotalHeight () {
-    return getTargetHeight() - (getContentOffset() + HeaderView.getTopOffset());
+    return 0;
   }
 
   @Override
@@ -2580,6 +2606,26 @@ public class ShareController extends TelegramViewController<ShareController.Args
           adapter.notifyItemRangeInserted(startIndex, newItemCount);
           recyclerView.invalidateItemDecorations();
         }
+      }
+      recyclerView.post(() -> {
+        if (!isDestroyed()) {
+          loadMoreIfNeeded();
+        }
+      });
+    }
+  }
+
+  /**
+   * Loads more chats when the end of the list is on screen. Also called after each portion: the list now fills the
+   * whole window, so the first portion (after hiding chats you can't write to) may not fill it and never scroll.
+   */
+  private void loadMoreIfNeeded () {
+    TdlibChatListSlice displayingList = getDisplayingList();
+    if (displayingList != null && displayingList.canLoad() && !inSearchMode()) {
+      GridLayoutManager gridManager = (GridLayoutManager) recyclerView.getLayoutManager();
+      int i = gridManager.findLastVisibleItemPosition();
+      if (i >= adapter.getItemCount() - gridManager.getSpanCount()) {
+        displayingList.loadMore(30, null);
       }
     }
   }
