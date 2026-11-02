@@ -545,8 +545,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private static boolean gestureNavigation = true;
 
   /**
-   * System navigation mode (owner): with the button navigation bar the bar, dock, rail and the message composer keep
-   * their bottom margin above it; with gesture navigation they sit right on the gesture area (side margins stay).
+   * System navigation mode: gesture navigation or the button navigation bar. The bottom margins of the bar, dock, rail
+   * and composer no longer depend on it (owner: margins in both modes).
    * @return true if the mode changed
    */
   public static boolean setGestureNavigation (boolean isGestureNavigation) {
@@ -561,14 +561,14 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     return gestureNavigation;
   }
 
-  /** Bottom margin of the floating bar and the composer: {@link #getBarMargin()} with the button navigation bar, 0 with gestures. */
+  /** Bottom margin of the floating bar and the composer: same as the side margins in any navigation mode (owner). */
   public static int getBarBottomMargin () {
-    return gestureNavigation ? 0 : getBarMargin();
+    return getBarMargin();
   }
 
-  /** Bottom margin of the dock and the rail: {@link #getRailMargin()} with the button navigation bar, 0 with gestures. */
+  /** Bottom margin of the dock and the rail: same as the side margins in any navigation mode (owner). */
   public static int getRailBottomMargin () {
-    return gestureNavigation ? 0 : getRailMargin();
+    return getRailMargin();
   }
 
   /** Full corner radius: half of the bar height (pill), concentric with the vertically centered indicator. */
