@@ -5817,6 +5817,14 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
 
   private SessionsInfo sessionsInfo;
 
+  /** Last loaded list of sessions, or {@code null} if it wasn't loaded yet (or was reset by a session update). */
+  @Nullable
+  public SessionsInfo cachedSessions () {
+    synchronized (dataLock) {
+      return sessionsInfo;
+    }
+  }
+
   @Nullable
   public TdApi.Session currentSession () {
     synchronized (dataLock) {
