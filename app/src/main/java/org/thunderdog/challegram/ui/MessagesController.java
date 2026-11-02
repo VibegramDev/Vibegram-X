@@ -1568,8 +1568,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
       // Messages under the composer: they scroll under the floating composer and fade out.
       contentView.addView(messagesView);
       composerScrim = new M3BottomScrimView(context);
-      // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed.
-      composerScrim.setFadeHeight(Screen.dp(4f));
+      // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed, and
+      // eases in from zero there, so there is no line beside the composer where it starts.
+      composerScrim.setFadeHeight(0);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);

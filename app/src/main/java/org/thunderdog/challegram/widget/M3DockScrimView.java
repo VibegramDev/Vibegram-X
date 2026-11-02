@@ -8,9 +8,7 @@ package org.thunderdog.challegram.widget;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.Shader;
 import android.view.View;
 
 import org.thunderdog.challegram.theme.M3;
@@ -57,12 +55,9 @@ public class M3DockScrimView extends View implements ThemeInvalidateListener {
       shaderColor = surface;
       shaderHeight = height;
       shaderDockTop = dockTop;
-      int rgb = surface & 0x00FFFFFF;
       float dockFraction = MathUtils.clamp((float) dockTop / height, .01f, .99f);
-      paint.setShader(new LinearGradient(0, 0, 0, height,
-        new int[] {rgb, (ALPHA_AT_DOCK << 24) | rgb, (ALPHA_AT_BOTTOM << 24) | rgb},
-        new float[] {0f, dockFraction, 1f},
-        Shader.TileMode.CLAMP));
+      // Eased, not linear: no visible line where the fade starts (see M3BottomScrimView.newSmoothFade).
+      paint.setShader(M3BottomScrimView.newSmoothFade(height, surface, dockFraction, ALPHA_AT_DOCK, ALPHA_AT_BOTTOM));
     }
     c.drawRect(0, 0, getWidth(), height, paint);
   }

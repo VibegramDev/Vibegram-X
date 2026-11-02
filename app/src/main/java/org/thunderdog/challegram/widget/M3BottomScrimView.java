@@ -120,17 +120,39 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
       fadeColor = surface;
       fadeHeight = fade;
       fadeTotalHeight = total;
-      int rgb = surface & 0x00FFFFFF;
-      fadePaint.setShader(new LinearGradient(0, 0, 0, total,
-        new int[] {rgb, (ALPHA_AT_CONTAINER << 24) | rgb, (ALPHA_AT_BOTTOM << 24) | rgb},
-        new float[] {0f, (float) fade / total, 1f},
-        Shader.TileMode.CLAMP));
+      // No fade above the container (message composer): the surface starts from zero at its top edge.
+      fadePaint.setShader(newSmoothFade(total, surface, (float) fade / total, fade > 0 ? ALPHA_AT_CONTAINER : 0, ALPHA_AT_BOTTOM));
     }
     c.save();
     c.translate(0, top - fade);
     c.drawRect(0, 0, width, total, fadePaint);
     c.restore();
     drawShadow(c, shape, radius);
+  }
+
+  private static final int SMOOTH_FADE_STEPS = 12;
+
+  /**
+   * Vertical fade of {@code color} from transparent at 0 to {@code alphaAtContainer} at {@code containerFraction} of
+   * {@code height} and on to {@code alphaAtBottom} at {@code height}. Both parts ease in and out (smoothstep), so the
+   * opacity changes without a jump in its rate: a linear ramp shows a visible line where it starts and where its slope
+   * changes, at the top of the fade and beside the floating container.
+   */
+  public static Shader newSmoothFade (float height, int color, float containerFraction, int alphaAtContainer, int alphaAtBottom) {
+    final int rgb = color & 0x00FFFFFF;
+    final float split = Math.max(0f, Math.min(1f, containerFraction));
+    final int steps = SMOOTH_FADE_STEPS;
+    final int[] colors = new int[steps * 2 + 1];
+    final float[] positions = new float[steps * 2 + 1];
+    for (int i = 0; i <= steps * 2; i++) {
+      boolean upper = i <= steps;
+      float t = upper ? (float) i / steps : (float) (i - steps) / steps;
+      float eased = t * t * (3f - 2f * t);
+      float alpha = upper ? alphaAtContainer * eased : alphaAtContainer + (alphaAtBottom - alphaAtContainer) * eased;
+      colors[i] = (Math.round(alpha) << 24) | rgb;
+      positions[i] = upper ? split * t : split + (1f - split) * t;
+    }
+    return new LinearGradient(0, 0, 0, height, colors, positions, Shader.TileMode.CLAMP);
   }
 
   /** Soft elevation shadow (M3 level 2 look): a wide faint key shadow below and a tight ambient one around. */
