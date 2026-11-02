@@ -198,7 +198,15 @@ public class MediaLayout extends FrameLayoutFix implements
     this.avatarPickerMode = avatarPickerMode;
   }
 
-  private boolean rtl, needVote;
+  private boolean rtl, needVote, needChecklist;
+
+  /** Logical index of the "Checklist" item of the attach menu (after "Poll"/"Inline bot"). */
+  private static final int CHECKLIST_INDEX = 5;
+
+  /** Position in the bottom bar of the attach menu item with the given logical index (items are reversed in RTL). */
+  private int toBarIndex (int logicalIndex) {
+    return rtl && mode != MODE_CUSTOM_ADAPTER && controllers != null ? controllers.length - logicalIndex - 1 : logicalIndex;
+  }
 
   private ItemsAdapter itemsAdapter;
 
@@ -218,6 +226,7 @@ public class MediaLayout extends FrameLayoutFix implements
     this.target = target;
     this.rtl = Lang.rtl();
     this.needVote = false;
+    this.needChecklist = false;
     final MediaBottomBar.BarItem[] items;
     final int index;
 
@@ -247,28 +256,25 @@ public class MediaLayout extends FrameLayoutFix implements
       }
       default: {
         this.needVote = tdlib().canSendPolls(getTargetChatId());
-        if (rtl) {
-          items = new MediaBottomBar.BarItem[]{
-            needVote ?
-              new MediaBottomBar.BarItem(R.drawable.baseline_poll_24, R.string.CreatePoll) :
-              new MediaBottomBar.BarItem(R.drawable.deproko_baseline_bots_24, R.string.InlineBot),
-            new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location),
-            new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery),
-            new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File),
-            new MediaBottomBar.BarItem(R.drawable.baseline_person_24, R.string.AttachContact)
-          };
-        } else {
-          items = new MediaBottomBar.BarItem[]{
-            new MediaBottomBar.BarItem(R.drawable.baseline_person_24, R.string.AttachContact),
-            new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File),
-            new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery),
-            new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location),
-            needVote ?
-              new MediaBottomBar.BarItem(R.drawable.baseline_poll_24, R.string.CreatePoll) :
-              new MediaBottomBar.BarItem(R.drawable.deproko_baseline_bots_24, R.string.InlineBot)
-          };
+        this.needChecklist = tdlib().canSendChecklists(getTargetChatId());
+        List<MediaBottomBar.BarItem> itemList = new ArrayList<>(6);
+        itemList.add(new MediaBottomBar.BarItem(R.drawable.baseline_person_24, R.string.AttachContact));
+        itemList.add(new MediaBottomBar.BarItem(R.drawable.baseline_insert_drive_file_24, R.string.File));
+        itemList.add(new MediaBottomBar.BarItem(R.drawable.baseline_image_24, R.string.Gallery));
+        itemList.add(new MediaBottomBar.BarItem(R.drawable.baseline_location_on_24, R.string.Location));
+        itemList.add(needVote ?
+          new MediaBottomBar.BarItem(R.drawable.baseline_poll_24, R.string.CreatePoll) :
+          new MediaBottomBar.BarItem(R.drawable.deproko_baseline_bots_24, R.string.InlineBot)
+        );
+        if (needChecklist) {
+          itemList.add(new MediaBottomBar.BarItem(R.drawable.baseline_checklist_24, R.string.AttachChecklist));
         }
-        index = 2;
+        if (rtl) {
+          Collections.reverse(itemList);
+        }
+        items = itemList.toArray(new MediaBottomBar.BarItem[0]);
+        // Gallery
+        index = rtl ? items.length - 1 - 2 : 2;
         mode = MODE_DEFAULT;
         break;
       }
@@ -647,7 +653,7 @@ public class MediaLayout extends FrameLayoutFix implements
     switch (code) {
       case BaseActivity.REQUEST_FINE_LOCATION: {
         if (granted) {
-          MediaBottomLocationController c = (MediaBottomLocationController) getControllerForIndex(inSpecificMode() ? 0 : 3);
+          MediaBottomLocationController c = (MediaBottomLocationController) getControllerForIndex(inSpecificMode() ? 0 : toBarIndex(3));
           c.onLocationPermissionOk();
         } else {
           ViewController<?> c = UI.getCurrentStackItem(getContext());
@@ -673,7 +679,7 @@ public class MediaLayout extends FrameLayoutFix implements
         if (requestedPermissionIndex == 1) {
           if (granted) {
             if (bottomBar != null) {
-              bottomBar.setSelectedIndex(1);
+              bottomBar.setSelectedIndex(toBarIndex(1));
             }
           } else {
             ViewController<?> c = UI.getCurrentStackItem(getContext());
@@ -701,7 +707,10 @@ public class MediaLayout extends FrameLayoutFix implements
       return false;
     }
 
-    switch (toIndex) {
+    // Items of the attach menu are reversed in RTL: switch over the logical index,
+    // the same one createControllerForIndex uses.
+    final int logicalIndex = rtl && this.mode != MODE_CUSTOM_ADAPTER ? controllers.length - toIndex - 1 : toIndex;
+    switch (logicalIndex) {
       case 3: {
         boolean googleMapsInstalled;
         try {
@@ -728,6 +737,25 @@ public class MediaLayout extends FrameLayoutFix implements
             bottomBar.setSelectedIndex(toIndex, true);
           }
         })) {
+          return false;
+        }
+        break;
+      }
+      case CHECKLIST_INDEX: {
+        if (needChecklist) {
+          if (target != null && target.isFocused()) {
+            if (!tdlib().hasPremium()) {
+              final int itemIndex = toIndex;
+              target.context().tooltipManager().builder(bottomBar)
+                .locate((targetView, outRect) -> bottomBar.getItemIconBounds(itemIndex, outRect))
+                .icon(R.drawable.baseline_warning_24)
+                .controller(target)
+                .show(tdlib(), Lang.getMarkdownString(target, R.string.ChecklistPremium))
+                .hideDelayed();
+            } else if (target.openChecklistCreation(null)) {
+              hide(false);
+            }
+          }
           return false;
         }
         break;

@@ -299,8 +299,12 @@ public class ReplyBarView extends FrameLayoutFix implements View.OnClickListener
   private MessageWithProperties displayedMessage;
 
   public void setReplyTo (MessageWithProperties msg, @Nullable TdApi.InputTextQuote quote) {
+    setReplyTo(msg, quote, 0);
+  }
+
+  public void setReplyTo (MessageWithProperties msg, @Nullable TdApi.InputTextQuote quote, int checklistTaskId) {
     displayedMessage = msg;
-    pinnedMessagesBar.setMessage(tdlib, msg != null ? msg.message : null, quote);
+    pinnedMessagesBar.setMessage(tdlib, msg != null ? msg.message : null, quote, checklistTaskId, null);
     setLinkPreviewToggleVisible(false);
     setMediaEditToggleVisible(false, false);
     setMessageInputContext(null);

@@ -139,6 +139,7 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
     public final Tdlib tdlib;
     public final TdApi.Message message;
     public final @Nullable TdApi.InputTextQuote quote;
+    public final int checklistTaskId;
     public final @Options int options;
     public @Nullable TdApi.SearchMessagesFilter filter;
     public @Nullable String forcedTitle;
@@ -148,9 +149,14 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
     public @Nullable MediaToReplacePickerManager.LocalPickedFile forcedLocalPickedFile;
 
     public DisplayData (Tdlib tdlib, TdApi.Message message, @Nullable TdApi.InputTextQuote quote, int options) {
+      this(tdlib, message, quote, 0, options);
+    }
+
+    public DisplayData (Tdlib tdlib, TdApi.Message message, @Nullable TdApi.InputTextQuote quote, int checklistTaskId, int options) {
       this.tdlib = tdlib;
       this.message = message;
       this.quote = quote;
+      this.checklistTaskId = checklistTaskId;
       this.options = options;
     }
 
@@ -182,8 +188,8 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
        return linkPreview != null && linkPreview.hasMedia() && !linkPreview.getOutputShowLargeMedia();
     }
 
-    public boolean equalsTo (TdApi.Message message, @Nullable TdApi.InputTextQuote quote, @Options int options, @Nullable LinkPreview linkPreview, @Nullable MediaToReplacePickerManager.LocalPickedFile forceDisplayMedia) {
-      return this.message == message && Td.equalsTo(this.quote, quote) && this.options == options && this.linkPreview == linkPreview && this.forcedLocalPickedFile == forceDisplayMedia;
+    public boolean equalsTo (TdApi.Message message, @Nullable TdApi.InputTextQuote quote, int checklistTaskId, @Options int options, @Nullable LinkPreview linkPreview, @Nullable MediaToReplacePickerManager.LocalPickedFile forceDisplayMedia) {
+      return this.message == message && Td.equalsTo(this.quote, quote) && this.checklistTaskId == checklistTaskId && this.options == options && this.linkPreview == linkPreview && this.forcedLocalPickedFile == forceDisplayMedia;
     }
 
     public TdlibAccentColor accentColor () {
@@ -256,8 +262,12 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
   }
 
   public void setMessage (@Nullable TdApi.Message message, @Nullable TdApi.InputTextQuote quote, @Nullable TdApi.SearchMessagesFilter filter, @Nullable String forcedTitle, @Options int options, @Nullable MediaToReplacePickerManager.LocalPickedFile localPickedFile) {
+    setMessage(message, quote, 0, filter, forcedTitle, options, localPickedFile);
+  }
+
+  public void setMessage (@Nullable TdApi.Message message, @Nullable TdApi.InputTextQuote quote, int checklistTaskId, @Nullable TdApi.SearchMessagesFilter filter, @Nullable String forcedTitle, @Options int options, @Nullable MediaToReplacePickerManager.LocalPickedFile localPickedFile) {
     if (message != null) {
-      DisplayData displayData = new DisplayData(tdlib, message, quote, options);
+      DisplayData displayData = new DisplayData(tdlib, message, quote, checklistTaskId, options);
       displayData.setPreviewFilter(filter);
       displayData.setForcedTitle(forcedTitle);
       displayData.setForcedLocalPickedFile(localPickedFile);
@@ -300,7 +310,7 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
     if (this.data == null && data == null) {
       return;
     }
-    if (this.data != null && data != null && this.data.equalsTo(data.message, data.quote, data.options, data.linkPreview, data.forcedLocalPickedFile)) {
+    if (this.data != null && data != null && this.data.equalsTo(data.message, data.quote, data.checklistTaskId, data.options, data.linkPreview, data.forcedLocalPickedFile)) {
       if (this.data.setForcedTitle(data.forcedTitle)) {
         updateTitleText();
       }
@@ -384,11 +394,14 @@ public class MessagePreviewView extends BaseView implements AttachDelegate, Dest
 
     final ContentPreview forcedContentPreview = data.forcedLocalPickedFile != null ?
       data.forcedLocalPickedFile.buildContentPreview() : null;
+    final ContentPreview taskPreview = !data.messageDeleted ? ContentPreview.getChecklistTaskPreview(data.message.content, data.checklistTaskId) : null;
 
     if (forcedContentPreview != null) {
       this.contentPreview = forcedContentPreview;
     } else if (!Td.isEmpty(data.quote)) {
       this.contentPreview = new ContentPreview(data.quote.text, false);
+    } else if (taskPreview != null) {
+      this.contentPreview = taskPreview;
     } else {
       this.contentPreview = ContentPreview.getChatListPreview(tdlib, data.message.chatId, data.messageDeleted ? null : data.message, true);
     }

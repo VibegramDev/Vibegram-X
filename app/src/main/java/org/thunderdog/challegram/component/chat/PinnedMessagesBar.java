@@ -64,6 +64,7 @@ import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.Destroyable;
 import tgx.td.MessageId;
+import tgx.td.Td;
 
 public class PinnedMessagesBar extends ViewGroup implements Destroyable, MessageListManager.ChangeListener, View.OnClickListener {
   private CustomRecyclerView recyclerView;
@@ -451,7 +452,7 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
         } else if (data.isMessage()) {
           TdApi.Message message = data.message;
           TdApi.InputTextQuote quote = data.quote;
-          previewView.setMessage(message, quote, new TdApi.SearchMessagesFilterPinned(), item.getStringValue(), ignoreAlbums ? MessagePreviewView.Options.IGNORE_ALBUM_REFRESHERS : MessagePreviewView.Options.NONE, data.localPickedFile);
+          previewView.setMessage(message, quote, data.checklistTaskId, new TdApi.SearchMessagesFilterPinned(), item.getStringValue(), ignoreAlbums ? MessagePreviewView.Options.IGNORE_ALBUM_REFRESHERS : MessagePreviewView.Options.NONE, data.localPickedFile);
           if (messageList == null) {
             // override message preview
             MessageId highlightMessageId;
@@ -647,6 +648,7 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
     public final MessagesController.MessageInputContext linkPreviewContext;
     public final String linkPreviewUrl;
     public @Nullable MediaToReplacePickerManager.LocalPickedFile localPickedFile;
+    public int checklistTaskId;
 
     public Entry (Tdlib tdlib, TdApi.Message message, @Nullable TdApi.InputTextQuote quote) {
       this.tdlib = tdlib;
@@ -668,6 +670,11 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
 
     public Entry setForceLocalPicledFile (@Nullable MediaToReplacePickerManager.LocalPickedFile localPickedFile) {
       this.localPickedFile = localPickedFile;
+      return this;
+    }
+
+    public Entry setChecklistTaskId (int checklistTaskId) {
+      this.checklistTaskId = checklistTaskId;
       return this;
     }
 
@@ -703,7 +710,7 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
       if (isLinkPreview()) {
         return StringUtils.equalsTo(this.linkPreviewUrl, b.linkPreviewUrl) && (this.linkPreviewContext == b.linkPreviewContext);
       } else if (isMessage()) {
-        return this.message.chatId == b.message.chatId && this.message.id == b.message.id;
+        return this.message.chatId == b.message.chatId && this.message.id == b.message.id && Td.equalsTo(this.quote, b.quote) && this.checklistTaskId == b.checklistTaskId;
       } else {
         throw new UnsupportedOperationException();
       }
@@ -804,8 +811,12 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
   }
 
   public void setMessage (@Nullable Tdlib tdlib, @Nullable TdApi.Message message, @Nullable TdApi.InputTextQuote quote, @Nullable MediaToReplacePickerManager.LocalPickedFile localPickedFile) {
+    setMessage(tdlib, message, quote, 0, localPickedFile);
+  }
+
+  public void setMessage (@Nullable Tdlib tdlib, @Nullable TdApi.Message message, @Nullable TdApi.InputTextQuote quote, int checklistTaskId, @Nullable MediaToReplacePickerManager.LocalPickedFile localPickedFile) {
     if (tdlib != null && message != null) {
-      setStaticMessageList(Collections.singletonList(new Entry(tdlib, message, quote).setForceLocalPicledFile(localPickedFile)), RecyclerView.NO_POSITION);
+      setStaticMessageList(Collections.singletonList(new Entry(tdlib, message, quote).setForceLocalPicledFile(localPickedFile).setChecklistTaskId(checklistTaskId)), RecyclerView.NO_POSITION);
     } else {
       setMessageList(null);
     }

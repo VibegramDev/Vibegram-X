@@ -7685,14 +7685,16 @@ public class TdlibUi extends Handler {
     PremiumFeature.STICKER,
     PremiumFeature.RESTRICT_VOICE_AND_VIDEO_MESSAGES,
     PremiumFeature.CUSTOM_EMOJI,
-    PremiumFeature.NEW_CHATS_PRIVACY
+    PremiumFeature.NEW_CHATS_PRIVACY,
+    PremiumFeature.CHECKLISTS
   })
   public @interface PremiumFeature {
     int
       STICKER = 1,
       RESTRICT_VOICE_AND_VIDEO_MESSAGES = 2,
       CUSTOM_EMOJI = 3,
-      NEW_CHATS_PRIVACY = 4;
+      NEW_CHATS_PRIVACY = 4,
+      CHECKLISTS = 5;
   }
 
   @Retention(RetentionPolicy.SOURCE)
@@ -7728,6 +7730,9 @@ public class TdlibUi extends Handler {
         break;
       case PremiumFeature.NEW_CHATS_PRIVACY:
         stringRes = R.string.PremiumRequiredNewChats;
+        break;
+      case PremiumFeature.CHECKLISTS:
+        stringRes = R.string.ChecklistPremium;
         break;
       default:
         throw new IllegalStateException();

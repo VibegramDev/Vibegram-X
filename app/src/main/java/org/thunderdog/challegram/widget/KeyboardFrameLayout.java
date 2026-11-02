@@ -193,7 +193,11 @@ public class KeyboardFrameLayout extends FrameLayoutFix implements ViewTreeObser
   }
 
   private int getKeyboardHeight () {
-    return Keyboard.getSize() + extraBottomInset;
+    // The panel replaces the system keyboard: never count the IME inset into its height. Right after the panel is
+    // opened over the system keyboard, extraBottomInset still includes the IME, and the panel (with the floating
+    // composer's list padding) was twice as tall for a moment: the message list got clamped to that padding and
+    // stayed scrolled away, leaving the chat blank above the composer.
+    return Keyboard.getSize() + extraBottomInsetWithoutIme;
   }
 
   private void addContentViewToParent () {

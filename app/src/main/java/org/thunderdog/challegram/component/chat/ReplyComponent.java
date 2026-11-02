@@ -549,6 +549,7 @@ public class ReplyComponent implements Client.ResultHandler, Destroyable {
   private boolean ignoreFailures;
   private @Nullable TdApi.TextQuote quote;
   private String pollOptionId;
+  private int checklistTaskId;
   private Drawable cornerDrawable;
 
   public void load () {
@@ -571,14 +572,18 @@ public class ReplyComponent implements Client.ResultHandler, Destroyable {
           handleOrigin(replyToMessage.origin);
         }
         this.pollOptionId = replyToMessage.pollOptionId;
+        this.checklistTaskId = replyToMessage.checklistTaskId;
         if (!Td.isEmpty(replyToMessage.quote) || replyToMessage.content != null) {
           this.quote = replyToMessage.quote;
           TdApi.Message fakeMessage = TD.newFakeMessage(replyToMessage.chatId, sender, replyToMessage.content == null ? new TdApi.MessageText(replyToMessage.quote.text, null, null) : replyToMessage.content);
           fakeMessage.id = replyToMessage.messageId;
 
           ContentPreview contentPreview = ContentPreview.getChatListPreview(tdlib, fakeMessage.chatId, fakeMessage, true);
+          ContentPreview taskPreview;
           if (!Td.isEmpty(replyToMessage.quote)) {
             contentPreview = new ContentPreview(contentPreview, replyToMessage.quote.text);
+          } else if ((taskPreview = ContentPreview.getChecklistTaskPreview(replyToMessage.content, replyToMessage.checklistTaskId)) != null) {
+            contentPreview = taskPreview;
           }
           MediaPreview mediaPreview = replyToMessage.content != null ? newMediaPreview(replyToMessage.chatId, replyToMessage.content) : null;
           this.content = new ContentPreview(translatedText, contentPreview);
@@ -1015,8 +1020,11 @@ public class ReplyComponent implements Client.ResultHandler, Destroyable {
     currentMessage = msg;
     MediaPreview mediaPreview = newMediaPreview(msg.chatId, msg.content);
     ContentPreview contentPreview = ContentPreview.getChatListPreview(tdlib, msg.chatId, msg, true);
+    ContentPreview taskPreview;
     if (!Td.isEmpty(quote)) {
       contentPreview = new ContentPreview(contentPreview, quote.text);
+    } else if ((taskPreview = ContentPreview.getChecklistTaskPreview(msg.content, checklistTaskId)) != null) {
+      contentPreview = taskPreview;
     } else if (!StringUtils.isEmpty(pollOptionId) && msg.content.getConstructor() == TdApi.MessagePoll.CONSTRUCTOR) {
       TdApi.MessagePoll poll = (TdApi.MessagePoll) msg.content;
       TdApi.PollOption option = null;

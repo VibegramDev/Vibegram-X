@@ -8356,6 +8356,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
         case TdApi.MessagePoll.CONSTRUCTOR: {
           return new TGMessagePoll(context, msg, nonNull((TdApi.MessagePoll) content).poll);
         }
+        case TdApi.MessageChecklist.CONSTRUCTOR: {
+          return new TGMessageChecklist(context, msg, nonNull((TdApi.MessageChecklist) content));
+        }
         case TdApi.MessageLocation.CONSTRUCTOR: {
           return new TGMessageLocation(context, msg, (TdApi.MessageLocation) content);
         }
@@ -8568,7 +8571,6 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
         case TdApi.MessageStakeDice.CONSTRUCTOR:
 
         case TdApi.MessageGroupCall.CONSTRUCTOR: // TODO TGMessageCall
-        case TdApi.MessageChecklist.CONSTRUCTOR: // TODO TGMessagePoll
         case TdApi.MessageSuggestedPostApprovalFailed.CONSTRUCTOR:
         case TdApi.MessageSuggestedPostApproved.CONSTRUCTOR:
         case TdApi.MessageSuggestedPostDeclined.CONSTRUCTOR:
