@@ -62,6 +62,8 @@ import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
+import org.thunderdog.challegram.component.dialogs.ChatView;
+import org.thunderdog.challegram.data.TGChat;
 import org.thunderdog.challegram.data.TGFoundChat;
 import org.thunderdog.challegram.data.TGUser;
 import org.thunderdog.challegram.data.ThreadInfo;
@@ -150,6 +152,7 @@ import me.vkryl.core.lambda.FutureBool;
 import me.vkryl.core.lambda.RunnableData;
 import me.vkryl.core.lambda.RunnableLong;
 import tgx.td.ChatId;
+import tgx.td.ChatPosition;
 import tgx.td.Td;
 import tgx.td.TdConstants;
 
@@ -1721,6 +1724,39 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     // Base adapter
     baseAdapter = new SettingsAdapter(this) {
       @Override
+      protected SettingHolder initCustom (ViewGroup parent, int customViewType) {
+        if (customViewType == CUSTOM_TYPE_PERSONAL_CHANNEL) {
+          ChatView chatView = new ChatView(context, tdlib);
+          chatView.setOnClickListener(ProfileController.this);
+          return new SettingHolder(chatView);
+        }
+        return super.initCustom(parent, customViewType);
+      }
+
+      @Override
+      protected void modifyCustom (SettingHolder holder, int position, ListItem item, int customViewType, View view, boolean isUpdate) {
+        if (customViewType == CUSTOM_TYPE_PERSONAL_CHANNEL) {
+          ((ChatView) view).setChat((TGChat) item.getData());
+        }
+      }
+
+      @Override
+      public void onViewAttachedToWindow (SettingHolder holder) {
+        super.onViewAttachedToWindow(holder);
+        if (holder.itemView instanceof ChatView) {
+          ((ChatView) holder.itemView).attach();
+        }
+      }
+
+      @Override
+      public void onViewDetachedFromWindow (SettingHolder holder) {
+        super.onViewDetachedFromWindow(holder);
+        if (holder.itemView instanceof ChatView) {
+          ((ChatView) holder.itemView).detach();
+        }
+      }
+
+      @Override
       protected void setChatData (ListItem item, int position, BetterChatView chatView) {
         chatView.setEnabled(false);
         chatView.setChat((TGFoundChat) item.getData());
@@ -2533,6 +2569,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     checkBirthdate();
     checkDescription();
     checkGroupsInCommon();
+    checkPersonalChat();
 
     /*if (userFull.commonChatCount > 0) {
       int index = baseAdapter.indexOfViewById(R.id.btn_notifications);
@@ -2635,19 +2672,137 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     }
   }
 
+  // Personal channel (as in the official app: "Channel" block with the channel row and its last post above the info)
+
+  private static final int CUSTOM_TYPE_PERSONAL_CHANNEL = 1;
+  private static final int VIEW_TYPE_PERSONAL_CHANNEL = ListItem.TYPE_CUSTOM - CUSTOM_TYPE_PERSONAL_CHANNEL;
+  /** Header, channel row, shadow bottom, shadow top: the info block follows. */
+  private static final int PERSONAL_CHANNEL_BLOCK_SIZE = 4;
+
+  private long personalChatId;
+  private int personalChatRequestId;
+  private boolean hasPersonalChatBlock;
+
+  /** Index of the first item of the info block (peer id, username, bio, phone...). */
+  private int getTopItemsStart () {
+    return 1 + (hasPersonalChatBlock ? PERSONAL_CHANNEL_BLOCK_SIZE : 0);
+  }
+
+  private void checkPersonalChat () {
+    if (isEditing() || (mode != Mode.USER && mode != Mode.SECRET)) {
+      return;
+    }
+    final long chatId = userFull != null ? userFull.personalChatId : 0;
+    if (chatId == personalChatId) {
+      return;
+    }
+    personalChatId = chatId;
+    final int requestId = ++personalChatRequestId;
+    if (chatId == 0) {
+      setPersonalChat(null, null);
+      return;
+    }
+    tdlib.chat(chatId, chat -> runOnUiThreadOptional(() -> {
+      if (requestId != personalChatRequestId) {
+        return;
+      }
+      if (chat == null || !canShowPersonalChat(chat)) {
+        setPersonalChat(null, null);
+        return;
+      }
+      if (chat.lastMessage != null) {
+        setPersonalChat(chat, chat.lastMessage);
+        return;
+      }
+      // Not a member: the last post is loaded from the channel history (the first call may return only cached messages).
+      loadPersonalChatLastMessage(chat, requestId, 2);
+    }));
+  }
+
+  private void loadPersonalChatLastMessage (TdApi.Chat chat, int requestId, int attemptsLeft) {
+    tdlib.send(new TdApi.GetChatHistory(chat.id, 0, 0, 1, false), (messages, error) -> runOnUiThreadOptional(() -> {
+      if (requestId != personalChatRequestId) {
+        return;
+      }
+      TdApi.Message lastMessage = messages != null && messages.messages.length > 0 ? messages.messages[0] : null;
+      if (lastMessage == null && attemptsLeft > 1 && error == null) {
+        loadPersonalChatLastMessage(chat, requestId, attemptsLeft - 1);
+        return;
+      }
+      // Without posts the block is hidden, as in the official app.
+      setPersonalChat(lastMessage != null ? chat : null, lastMessage);
+    }));
+  }
+
+  /** Public channels, or private ones the user is a member of (as in the official app). */
+  private boolean canShowPersonalChat (TdApi.Chat chat) {
+    TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chat.id);
+    if (supergroup == null) {
+      return false;
+    }
+    return Td.hasUsername(supergroup) || TD.isMember(supergroup.status);
+  }
+
+  private String getPersonalChatHeader (TdApi.Chat chat) {
+    TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chat.id);
+    String header = Lang.getString(R.string.PersonalChannel);
+    if (supergroup != null && supergroup.memberCount > 0) {
+      header = header + " · " + Lang.plural(R.string.xSubscribers, supergroup.memberCount);
+    }
+    return header;
+  }
+
+  private void setPersonalChat (@Nullable TdApi.Chat chat, @Nullable TdApi.Message lastMessage) {
+    if (baseAdapter == null) {
+      return;
+    }
+    if (chat == null) {
+      if (hasPersonalChatBlock) {
+        hasPersonalChatBlock = false;
+        baseAdapter.getItems().subList(1, 1 + PERSONAL_CHANNEL_BLOCK_SIZE).clear();
+        baseAdapter.notifyItemRangeRemoved(1, PERSONAL_CHANNEL_BLOCK_SIZE);
+        onItemsHeightProbablyChanged();
+      }
+      return;
+    }
+    // The row is a regular chat list row (ChatView): the channel, its last post and the date.
+    TdApi.Chat displayChat = Td.copyOf(chat);
+    displayChat.lastMessage = lastMessage;
+    displayChat.positions = new TdApi.ChatPosition[0];
+    TGChat item = new TGChat(this, ChatPosition.CHAT_LIST_MAIN, displayChat, true);
+    String header = getPersonalChatHeader(chat);
+    if (hasPersonalChatBlock) {
+      ListItem headerItem = baseAdapter.getItems().get(1);
+      headerItem.setString(header);
+      baseAdapter.getItems().get(2).setData(item);
+      baseAdapter.notifyItemRangeChanged(1, 2);
+      return;
+    }
+    hasPersonalChatBlock = true;
+    List<ListItem> block = new ArrayList<>(PERSONAL_CHANNEL_BLOCK_SIZE);
+    block.add(new ListItem(ListItem.TYPE_HEADER, R.id.btn_personalChannelHeader, 0, header, false));
+    block.add(new ListItem(VIEW_TYPE_PERSONAL_CHANNEL, R.id.btn_personalChannel).setData(item).setLongId(chat.id));
+    block.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+    block.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    baseAdapter.getItems().addAll(1, block);
+    baseAdapter.notifyItemRangeInserted(1, block.size());
+    onItemsHeightProbablyChanged();
+  }
+
   private void addTopItem (ListItem item, int index) {
     index = Math.min(baseHeaderItemCount, index);
+    final int start = getTopItemsStart();
     if (baseHeaderItemCount == 0) {
-      baseAdapter.getItems().add(1, item);
-      baseAdapter.getItems().add(2, new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-      baseAdapter.getItems().add(3, new ListItem(ListItem.TYPE_SHADOW_TOP));
-      baseAdapter.notifyItemRangeInserted(1, 3);
+      baseAdapter.getItems().add(start, item);
+      baseAdapter.getItems().add(start + 1, new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+      baseAdapter.getItems().add(start + 2, new ListItem(ListItem.TYPE_SHADOW_TOP));
+      baseAdapter.notifyItemRangeInserted(start, 3);
     } else if (index == 0) {
-      baseAdapter.getItems().add(1, item);
-      baseAdapter.getItems().add(2, new ListItem(item.getViewType() == ListItem.TYPE_RADIO_SETTING ? ListItem.TYPE_SEPARATOR_FULL : ListItem.TYPE_SEPARATOR));
-      baseAdapter.notifyItemRangeInserted(1, 2);
+      baseAdapter.getItems().add(start, item);
+      baseAdapter.getItems().add(start + 1, new ListItem(item.getViewType() == ListItem.TYPE_RADIO_SETTING ? ListItem.TYPE_SEPARATOR_FULL : ListItem.TYPE_SEPARATOR));
+      baseAdapter.notifyItemRangeInserted(start, 2);
     } else {
-      int targetIndex = 1 + Math.max(0, index * 2 - 1);
+      int targetIndex = start + Math.max(0, index * 2 - 1);
       baseAdapter.getItems().add(targetIndex, new ListItem(item.getViewType() == ListItem.TYPE_RADIO_SETTING ? ListItem.TYPE_SEPARATOR_FULL : ListItem.TYPE_SEPARATOR));
       baseAdapter.getItems().add(targetIndex + 1, item);
       baseAdapter.notifyItemRangeInserted(targetIndex, 2);
@@ -4890,6 +5045,12 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   @Override
   public void onClick (View v) {
     final int viewId = v.getId();
+    if (viewId == R.id.btn_personalChannel) {
+      if (personalChatId != 0) {
+        tdlib.ui().openChat(this, personalChatId, new TdlibUi.ChatOpenParameters().keepStack());
+      }
+      return;
+    }
     if (viewId == R.id.avatar) {
       changeProfilePhoto();
     } else if (viewId == R.id.btn_done) {
@@ -5580,6 +5741,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
   private int calculateHeight (int position, int width, ListItem item) {
     final int itemId = item.getId();
+    if (item.getViewType() == VIEW_TYPE_PERSONAL_CHANNEL) {
+      return ChatView.getViewHeight(Settings.instance().getChatListMode());
+    }
     switch (item.getViewType()) {
       case ListItem.TYPE_INFO_MULTILINE: {
         if (itemId == R.id.btn_username) {
@@ -6413,6 +6577,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         checkUserButtons();
         checkGroupsInCommon();
         checkDescription();
+        checkPersonalChat();
         if (mode == Mode.EDIT_BOT_USER) {
           updateValuedItem(R.id.btn_botDescription);
         }
