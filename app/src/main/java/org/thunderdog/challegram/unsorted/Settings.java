@@ -3171,11 +3171,139 @@ public class Settings {
   }
 
   public boolean startRoundWithRear () {
-    return checkSetting(FLAG_OTHER_START_ROUND_REAR);
+    switch (getRoundStartCamera()) {
+      case ROUND_START_CAMERA_REAR:
+        return true;
+      case ROUND_START_CAMERA_LAST:
+        return getBoolean(KEY_ROUND_LAST_CAMERA_REAR, false);
+      case ROUND_START_CAMERA_FRONT:
+      default:
+        return false;
+    }
   }
 
   public void setStartRoundWithRear (boolean startWithRear) {
     setSetting(FLAG_OTHER_START_ROUND_REAR, startWithRear);
+  }
+
+  // Vibegram: round video settings (the "Video messages" settings section)
+
+  private static final String KEY_ROUND_START_CAMERA = "vg_round_start_camera";
+  private static final String KEY_ROUND_LAST_CAMERA_REAR = "vg_round_last_camera_rear";
+  private static final String KEY_ROUND_CAMERA_API = "vg_round_camera_api";
+  private static final String KEY_ROUND_CAMERA2_FAILED = "vg_round_camera2_failed";
+  private static final String KEY_ROUND_VIDEO_SIDE = "vg_round_video_side";
+  private static final String KEY_ROUND_VIDEO_FPS = "vg_round_video_fps";
+  private static final String KEY_ROUND_VIDEO_BITRATE = "vg_round_video_bitrate";
+  private static final String KEY_ROUND_DEVICE_LIMITS = "vg_round_device_limits";
+
+  public static final int ROUND_START_CAMERA_FRONT = 0;
+  public static final int ROUND_START_CAMERA_REAR = 1;
+  public static final int ROUND_START_CAMERA_LAST = 2;
+
+  /** Which camera a new round video starts with: front, rear or the one used last time. */
+  public int getRoundStartCamera () {
+    int def = checkSetting(FLAG_OTHER_START_ROUND_REAR) ? ROUND_START_CAMERA_REAR : ROUND_START_CAMERA_FRONT;
+    int mode = getInt(KEY_ROUND_START_CAMERA, def);
+    return mode >= ROUND_START_CAMERA_FRONT && mode <= ROUND_START_CAMERA_LAST ? mode : def;
+  }
+
+  public void setRoundStartCamera (int mode) {
+    putInt(KEY_ROUND_START_CAMERA, mode);
+  }
+
+  /** Called whenever the round video camera changes, so "last used" can start with it next time. */
+  public void setRoundLastCameraRear (boolean isRear) {
+    putBoolean(KEY_ROUND_LAST_CAMERA_REAR, isRear);
+  }
+
+  public static final int ROUND_CAMERA_API_CAMERA2 = 0;
+  public static final int ROUND_CAMERA_API_CAMERA1 = 1;
+
+  /** Camera API for round videos. Camera2 is the default, Camera1 is used when the device cannot run Camera2. */
+  public int getRoundCameraApi () {
+    int api = getInt(KEY_ROUND_CAMERA_API, ROUND_CAMERA_API_CAMERA2);
+    return api == ROUND_CAMERA_API_CAMERA1 ? ROUND_CAMERA_API_CAMERA1 : ROUND_CAMERA_API_CAMERA2;
+  }
+
+  public void setRoundCameraApi (int api) {
+    putInt(KEY_ROUND_CAMERA_API, api);
+    if (api == ROUND_CAMERA_API_CAMERA2) {
+      // Choosing Camera2 again gives it another try on this device
+      remove(KEY_ROUND_CAMERA2_FAILED);
+    }
+  }
+
+  private static String roundDeviceFingerprint () {
+    return android.os.Build.VERSION.SDK_INT + "|" + android.os.Build.FINGERPRINT;
+  }
+
+  /** Camera2 failed on this device and system version: round videos use Camera1 until the user picks Camera2 again or the system updates. */
+  public boolean isRoundCamera2Failed () {
+    return roundDeviceFingerprint().equals(getString(KEY_ROUND_CAMERA2_FAILED, null));
+  }
+
+  public void setRoundCamera2Failed () {
+    putString(KEY_ROUND_CAMERA2_FAILED, roundDeviceFingerprint());
+  }
+
+  /** Camera API actually used for the next round video. */
+  public boolean useRoundCamera2 () {
+    return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+      getRoundCameraApi() == ROUND_CAMERA_API_CAMERA2 &&
+      !isRoundCamera2Failed();
+  }
+
+  /** 0 = the maximum the device supports, otherwise the side of the video in px. */
+  public int getRoundVideoSide () {
+    return getInt(KEY_ROUND_VIDEO_SIDE, 0);
+  }
+
+  public void setRoundVideoSide (int side) {
+    putInt(KEY_ROUND_VIDEO_SIDE, side);
+  }
+
+  /** 0 = the maximum the device supports, otherwise frames per second. */
+  public int getRoundVideoFps () {
+    return getInt(KEY_ROUND_VIDEO_FPS, 0);
+  }
+
+  public void setRoundVideoFps (int fps) {
+    putInt(KEY_ROUND_VIDEO_FPS, fps);
+  }
+
+  /** 0 = the maximum for the chosen size and frame rate, otherwise kbit/s. */
+  public int getRoundVideoBitrate () {
+    return getInt(KEY_ROUND_VIDEO_BITRATE, 0);
+  }
+
+  public void setRoundVideoBitrate (int kbps) {
+    putInt(KEY_ROUND_VIDEO_BITRATE, kbps);
+  }
+
+  /**
+   * What the device really managed last time: "side|fps|kbps" with the same fingerprint as Camera2 failures.
+   * Lets the settings say "your phone records at most …" and the recorder warn once when it had to go lower.
+   */
+  public @Nullable int[] getRoundDeviceLimits () {
+    String value = getString(KEY_ROUND_DEVICE_LIMITS, null);
+    if (value == null) {
+      return null;
+    }
+    String[] parts = value.split("\\|");
+    String fingerprint = roundDeviceFingerprint();
+    if (parts.length != 5 || !fingerprint.equals(parts[3] + "|" + parts[4])) {
+      return null;
+    }
+    try {
+      return new int[] {Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2])};
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  public void setRoundDeviceLimits (int side, int fps, int kbps) {
+    putString(KEY_ROUND_DEVICE_LIMITS, side + "|" + fps + "|" + kbps + "|" + roundDeviceFingerprint());
   }
 
   public boolean needChatQuickShare () {

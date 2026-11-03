@@ -383,6 +383,9 @@ public class TdlibNotificationStyle implements TdlibNotificationStyleDelegate, F
     }
 
     try {
+      if (TdlibNotificationManager.areNotificationSoundsForbidden()) {
+        builder.setSilent(true);
+      }
       Notification notification = builder.build();
       manager.notify(notificationId, notification);
       return DISPLAY_STATE_OK;
@@ -846,6 +849,10 @@ public class TdlibNotificationStyle implements TdlibNotificationStyleDelegate, F
 
     int state;
     Notification notification;
+    if (TdlibNotificationManager.areNotificationSoundsForbidden()) {
+      // Recording a voice message or a round video: the channel sound of a new notification would get into it
+      builder.setSilent(true);
+    }
     try {
       notification = builder.build();
     } catch (Throwable t) {
@@ -977,6 +984,9 @@ public class TdlibNotificationStyle implements TdlibNotificationStyleDelegate, F
     NotificationCompat.Builder b = buildCommonNotification(context, helper, badgeCount, allowPreview, settings, notifications, category, isRebuild);
     if (b != null) {
       Notification notification;
+      if (TdlibNotificationManager.areNotificationSoundsForbidden()) {
+        b.setSilent(true);
+      }
       try {
         notification = b.build();
       } catch (Throwable t) {

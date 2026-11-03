@@ -15,6 +15,7 @@
 package org.thunderdog.challegram.player;
 
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.RectF;
@@ -57,6 +58,7 @@ import org.thunderdog.challegram.loader.ImageFile;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.service.AudioService;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibFilesManager;
 import org.thunderdog.challegram.telegram.TdlibManager;
@@ -67,6 +69,7 @@ import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.MessagesController;
+import org.thunderdog.challegram.unsorted.AppContext;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.v.MessagesRecyclerView;
 import org.thunderdog.challegram.widget.CircleFrameLayout;
@@ -142,6 +145,17 @@ public class RoundVideoController extends BasePlaybackController implements
     // Set playing state
     checkPlayState();
     setPipHidden(false);
+
+    if (canPlayInBackground(message) && !AudioService.isRunning()) {
+      // Round videos keep playing with the app in the background, as voice messages do: the foreground media service
+      // (with the player notification) keeps the system from freezing the app.
+      UI.startService(new Intent(AppContext.get(), AudioService.class), true, false, null);
+    }
+  }
+
+  /** View-once round videos are shown only on the screen. */
+  public static boolean canPlayInBackground (@Nullable TdApi.Message message) {
+    return message != null && message.content.getConstructor() == TdApi.MessageVideoNote.CONSTRUCTOR && message.selfDestructType == null;
   }
 
   /**
@@ -1413,7 +1427,7 @@ public class RoundVideoController extends BasePlaybackController implements
 
   @Override
   public void onActivityPause () {
-    if (isPlaying) {
+    if (isPlaying && !canPlayInBackground(object)) {
       pausedByRequest = true;
       playPause(false);
     }

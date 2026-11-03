@@ -62,6 +62,7 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.ui.camera.CameraControlButton;
 import org.thunderdog.challegram.ui.camera.CameraController;
+import org.thunderdog.challegram.ui.camera.legacy.CameraManagerLegacy;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.widget.CircleFrameLayout;
@@ -110,6 +111,9 @@ public class RecordAudioVideoController implements
   private RecordLockView lockView;
   private CameraControlButton switchCameraButton;
   private RecordControllerButton switchCameraButtonWrap;
+  private CameraControlButton torchButton;
+  private RecordControllerButton torchButtonWrap;
+  private RoundZoomBar zoomBar;
   private RecordDisposableSwitchButton disposableSwitchButton;
   private RecordDurationView durationView;
   private FrameLayoutFix inputOverlayView;
@@ -169,11 +173,14 @@ public class RecordAudioVideoController implements
     this.cancelView.setTextColor(Theme.getColor(ColorId.textNeutral));
     this.videoPlaceholderView.setBackgroundColor(Theme.fillingColor());
     this.deleteButton.setColorFilter(Theme.iconColor());
-    this.videoBackgroundView.setBackgroundColor(Theme.getColor(ColorId.previewBackground));
+    this.videoBackgroundView.setBackgroundColor(screenLightOn ? 0xffffffff : Theme.getColor(ColorId.previewBackground));
 
     this.cornerView.invalidate();
     this.switchCameraButton.invalidate();
     this.switchCameraButtonWrap.invalidate();
+    this.torchButton.invalidate();
+    this.torchButtonWrap.invalidate();
+    this.zoomBar.invalidate();
     this.disposableSwitchButton.invalidate();
     this.videoTimelineView.invalidate();
     this.durationView.invalidate();
@@ -370,6 +377,31 @@ public class RecordAudioVideoController implements
       });
       this.switchCameraButtonWrap.addView(switchCameraButton);
       this.rootLayout.addView(switchCameraButtonWrap);
+
+      this.torchButton = new CameraControlButton(context) {
+        @Override
+        public boolean onTouchEvent (MotionEvent event) {
+          return Views.isValid(this) && super.onTouchEvent(event);
+        }
+      };
+      this.torchButton.setIconRes(R.drawable.baseline_flash_off_24);
+      this.torchButton.setIsSmall();
+      this.torchButtonWrap = new RecordControllerButton(context);
+      this.torchButtonWrap.init(null);
+      this.torchButtonWrap.setOnClickListener(v -> setTorchEnabled(!torchEnabled));
+      this.torchButtonWrap.addView(torchButton);
+      this.rootLayout.addView(torchButtonWrap);
+
+      // Vibegram: zoom buttons + ruler under the round preview (positioned in updateVideoY)
+      this.zoomBar = new RoundZoomBar(context);
+      this.zoomBar.setDelegate(ratio -> {
+        if (ownedCamera != null) {
+          ownedCamera.getLegacyManager().requestZoomRatio(ratio);
+        }
+      });
+      this.zoomBar.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP));
+      this.zoomBar.setOnSizeChangedListener(this::updateVideoY);
+      this.rootLayout.addView(zoomBar);
 
       this.disposableSwitchButton = new RecordDisposableSwitchButton(context);
       this.disposableSwitchButton.init(null);
@@ -606,6 +638,8 @@ public class RecordAudioVideoController implements
   public void onCameraCompletelyReady (CameraController camera) {
     if (recordMode == RECORD_MODE_VIDEO) {
       isCameraReady = true;
+      // Vibegram: the camera a recording actually starts with counts as "last used" too
+      Settings.instance().setRoundLastCameraRear(!roundFrontFace);
       checkActualRecording(CLOSE_MODE_CANCEL);
     }
   }
@@ -688,6 +722,7 @@ public class RecordAudioVideoController implements
 
     lockView.setTranslationX(cx - lockView.getMeasuredWidth() / 2);
     switchCameraButtonWrap.setTranslationX(cx - switchCameraButtonWrap.getMeasuredWidth() / 2f);
+    torchButtonWrap.setTranslationX(cx - torchButtonWrap.getMeasuredWidth() / 2f);
     disposableSwitchButton.setTranslationX(cx - disposableSwitchButton.getMeasuredWidth() / 2f);
     updateLockY();
 
@@ -705,6 +740,10 @@ public class RecordAudioVideoController implements
     lockView.setScaleY(scale);
     switchCameraButtonWrap.setScaleX(scale);
     switchCameraButtonWrap.setScaleY(scale);
+    torchButtonWrap.setScaleX(scale);
+    torchButtonWrap.setScaleY(scale);
+    zoomBar.setScaleX(scale);
+    zoomBar.setScaleY(scale);
     disposableSwitchButton.setScaleX(scale);
     disposableSwitchButton.setScaleY(scale);
 
@@ -719,6 +758,37 @@ public class RecordAudioVideoController implements
 
     videoLayout.setTranslationY(y);
     progressView.setTranslationY(y - Screen.dp(RoundProgressView3.PADDING + 10));
+    updateZoomBarPosition(bottom, y);
+  }
+
+  // Vibegram: the zoom bar sits under the circle (outside the progress ring, above the input bar).
+  // When there is no room below (landscape phones, tablets), it goes to the left of the circle, vertically centered.
+  // The column of switch camera / torch buttons is on the right edge, so the centered bar never reaches it.
+  private void updateZoomBarPosition (int bottom, float videoY) {
+    final int width = rootLayout.getMeasuredWidth();
+    final int size = videoLayout.getMeasuredHeight();
+    if (width == 0 || size == 0) {
+      return;
+    }
+    final int barHeight = RoundZoomBar.getDesiredHeight();
+    final int ringMargin = Screen.dp(12f); // progress ring: 10dp away from the circle + half of its 4dp stroke
+    final float scale = videoLayout.getScaleY();
+    final float centerY = videoY + size / 2f;
+    final float finalCircleBottom = bottom / 2f + size / 2f;
+    final boolean fitsBelow = bottom - finalCircleBottom >= ringMargin + Screen.dp(6f) + barHeight + Screen.dp(4f);
+    final float circleLeft = (width - size) / 2f - ringMargin;
+    final int sideZone = (int) (circleLeft - Screen.dp(16f));
+    if (!fitsBelow && sideZone >= Screen.dp(120f)) {
+      zoomBar.setMaxWidth(sideZone);
+      int barWidth = Math.min(zoomBar.getMeasuredWidth() > 0 ? zoomBar.getMeasuredWidth() : sideZone, sideZone);
+      zoomBar.setTranslationX(Screen.dp(8f) + (sideZone - barWidth) / 2f);
+      zoomBar.setTranslationY(centerY - barHeight / 2f);
+    } else {
+      zoomBar.setMaxWidth(0);
+      zoomBar.setTranslationX((width - zoomBar.getMeasuredWidth()) / 2f);
+      float y = centerY + size * scale / 2f + ringMargin * scale + Screen.dp(6f);
+      zoomBar.setTranslationY(Math.min(y, bottom - barHeight - Screen.dp(2f)));
+    }
   }
 
   private void updateLockY () {
@@ -736,6 +806,15 @@ public class RecordAudioVideoController implements
     } else {
       if (Views.isValid(switchCameraButtonWrap)) {
         y -= switchCameraButtonWrap.getMeasuredHeight();
+      }
+    }
+
+    torchButtonWrap.setTranslationY(y);
+    if (recordMode == RECORD_MODE_VIDEO_EDIT) {
+      y -= torchButtonWrap.getMeasuredHeight() * torchButtonWrap.getAlpha();
+    } else {
+      if (Views.isValid(torchButtonWrap)) {
+        y -= torchButtonWrap.getMeasuredHeight();
       }
     }
 
@@ -787,6 +866,8 @@ public class RecordAudioVideoController implements
     lastDuration = 0;
     setTranslations(0f, 0f);
     switchCameraButton.setCameraIconRes(!Settings.instance().startRoundWithRear());
+    roundFrontFace = !Settings.instance().startRoundWithRear();
+    setTorchEnabled(false);
     progressView.reset();
     durationView.reset();
     lockView.setCollapseFactor(0f);
@@ -807,6 +888,90 @@ public class RecordAudioVideoController implements
   @Override
   public void onCameraSwitched (boolean isForward, boolean toFrontFace) {
     switchCameraButton.spinAround(isForward, toFrontFace);
+    roundFrontFace = toFrontFace;
+    // Vibegram: remember the camera for "last used" (Settings → Video messages)
+    Settings.instance().setRoundLastCameraRear(!toFrontFace);
+    if (torchEnabled) {
+      applyTorch();
+    }
+  }
+
+  // Vibegram: zoom of the round video camera. Capabilities arrive on the camera thread
+  // (camera opened, switched front/rear, closed); a session id drops callbacks of an old camera.
+
+  private int zoomSessionId;
+
+  private void attachZoomBar () {
+    final int sessionId = ++zoomSessionId;
+    // Every recording starts at 1× (the camera resets its ratio when it opens)
+    zoomBar.reset();
+    if (ownedCamera == null) {
+      return;
+    }
+    ownedCamera.getLegacyManager().setZoomRatioListener(new CameraManagerLegacy.ZoomRatioListener() {
+      @Override
+      public void onZoomCapabilitiesChanged (float minRatio, float maxRatio, float[] stops, float currentRatio) {
+        final float[] stopsCopy = stops != null ? stops.clone() : null;
+        UI.post(() -> {
+          if (sessionId == zoomSessionId) {
+            zoomBar.setCapabilities(minRatio, maxRatio, stopsCopy, currentRatio, true);
+          }
+        });
+      }
+
+      @Override
+      public void onZoomRatioChanged (float ratio) {
+        UI.post(() -> {
+          if (sessionId == zoomSessionId) {
+            zoomBar.setCurrentRatio(ratio);
+          }
+        });
+      }
+    });
+  }
+
+  private void detachZoomBar () {
+    zoomSessionId++;
+    if (ownedCamera != null) {
+      ownedCamera.getLegacyManager().setZoomRatioListener(null);
+    }
+    zoomBar.setTouchEnabled(false);
+    zoomBar.reset();
+  }
+
+  // Light for round videos: the torch of a rear camera, a white screen around the circle for the front one
+
+  private boolean torchEnabled, roundFrontFace = true;
+  private boolean screenLightOn;
+
+  private void setTorchEnabled (boolean enabled) {
+    if (this.torchEnabled != enabled) {
+      this.torchEnabled = enabled;
+      torchButton.changeIcon(enabled ? R.drawable.baseline_flash_on_24 : R.drawable.baseline_flash_off_24);
+    }
+    applyTorch();
+  }
+
+  private void applyTorch () {
+    boolean rearTorch = torchEnabled && !roundFrontFace;
+    if (ownedCamera != null) {
+      ownedCamera.getLegacyManager().setTorchEnabled(rearTorch);
+    }
+    setScreenLight(torchEnabled && roundFrontFace);
+  }
+
+  private void setScreenLight (boolean on) {
+    if (this.screenLightOn == on) {
+      return;
+    }
+    this.screenLightOn = on;
+    videoBackgroundView.setBackgroundColor(on ? 0xffffffff : Theme.getColor(ColorId.previewBackground));
+    android.view.Window window = context.getWindow();
+    if (window != null) {
+      android.view.WindowManager.LayoutParams params = window.getAttributes();
+      params.screenBrightness = on ? android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL : android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+      window.setAttributes(params);
+    }
   }
 
   private float translateX, translateY;
@@ -912,7 +1077,15 @@ public class RecordAudioVideoController implements
     ReferenceUtils.removeReference(recordListeners, listener);
   }
 
+  private static volatile boolean isRecordingAny;
+
+  /** Voice or round video is being recorded right now (notifications must be silent then). */
+  public static boolean isRecordingVoiceOrVideo () {
+    return isRecordingAny;
+  }
+
   private void notifyRecordStateChanged (boolean isRecording) {
+    isRecordingAny = isRecording;
     context.navigation().getStack().setIsLocked(isRecording);
 
     if (isRecording) {
@@ -1115,6 +1288,7 @@ public class RecordAudioVideoController implements
         return false;
       }
       prepareVideoRecording();
+      attachZoomBar();
     }
 
     if (sendHelper != null)
@@ -1260,6 +1434,8 @@ public class RecordAudioVideoController implements
         cleanupVideoPending = true;
         return;
       }
+      setTorchEnabled(false);
+      detachZoomBar();
       ownedCamera.onCleanAfterHide();
       ownedCamera.releaseCameraLayout();
 
@@ -1325,6 +1501,9 @@ public class RecordAudioVideoController implements
     progressView.setScaleX(videoScale);
     progressView.setScaleY(videoScale);
     switchCameraButtonWrap.setAlpha(recordingVideo ? editRange : 0);
+    torchButtonWrap.setAlpha(recordingVideo && recordMode != RECORD_MODE_VIDEO_EDIT ? editRange : 0);
+    zoomBar.setAlpha(recordingVideo && recordMode != RECORD_MODE_VIDEO_EDIT ? editRange : 0);
+    zoomBar.setTouchEnabled(recordMode == RECORD_MODE_VIDEO && ownedCamera != null);
     disposableSwitchButton.setAlpha(editRange);
 
     updateMuteAlpha();
@@ -1500,6 +1679,7 @@ public class RecordAudioVideoController implements
       isCameraReady = false;
 
       prepareVideoRecording();
+      attachZoomBar();
     }
     setRecordMode(mode, true);
   }
@@ -1590,7 +1770,14 @@ public class RecordAudioVideoController implements
 
   private void setupCamera (boolean isOwned) {
     ownedCamera.getManager().setPreferFrontFacingCamera(!Settings.instance().startRoundWithRear() && isOwned);
-    ownedCamera.getManager().setMaxResolution(isOwned ? (Settings.instance().needHqRoundVideos() ? MAX_HQ_ROUND_RESOLUTION : MAX_ROUND_RESOLUTION) : 0);
+    // Vibegram: the round quality (settings, 0 = max) decides which camera stream is needed.
+    int roundMaxResolution = 0;
+    if (isOwned) {
+      RoundVideoQuality roundQuality = RoundVideoQuality.prepareCapture(ownedCamera.getLegacyManager());
+      // Fallback for backends that only pick the preview closest by area to maxResolution²: 4/3 of the short side hits 1280×720 / 640×480.
+      roundMaxResolution = roundQuality.getCaptureMinSide() * 4 / 3;
+    }
+    ownedCamera.getManager().setMaxResolution(roundMaxResolution);
     ownedCamera.getLegacyManager().setNoPreviewBlur(false);
     ownedCamera.getLegacyManager().setUseRoundRender(isOwned);
     ownedCamera.getLegacyManager().getView().setIgnoreAspectRatio(isOwned);
@@ -1713,6 +1900,8 @@ public class RecordAudioVideoController implements
       throw new RuntimeException(releasedTrace);
     }
     ownedCamera.getLegacyManager().finishOrCancelRoundVideoCapture(roundKey, needResult);
+    // The light is needed only while recording
+    setTorchEnabled(false);
     if (cleanupVideoPending) {
       cleanupVideoPending = false;
       cleanupVideoRecording();
@@ -1811,7 +2000,10 @@ public class RecordAudioVideoController implements
     tdlib.client().send(new TdApi.FinishFileGeneration(roundGenerationId, null), tdlib.silentHandler(after));
   }
 
-  private static final int VIDEO_NOTE_LENGTH = 360;
+  // Vibegram: the real side of the recorded file (TDLib allows up to 640) instead of a fixed 360.
+  private int getVideoNoteLength () {
+    return RoundVideoQuality.getVideoNoteLength(roundKey);
+  }
 
   @Override
   public void onVideoRecordingFinished (String key, long resultFileSize, long resultFileDuration, TimeUnit resultFileDurationUnit) {
@@ -1825,7 +2017,7 @@ public class RecordAudioVideoController implements
             finishFileGeneration(resultFileSize, null);
           } else {
             finishFileGeneration(resultFileSize, () ->
-              sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(new TdApi.InputFileId(roundFile.id), null, savedRoundDurationSeconds, VIDEO_NOTE_LENGTH), obtainSelfDestructType()), Td.newSendOptions(), roundFile)
+              sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(new TdApi.InputFileId(roundFile.id), null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), Td.newSendOptions(), roundFile)
             );
           }
         } else {
@@ -1956,15 +2148,15 @@ public class RecordAudioVideoController implements
         tdlib.send(new TdApi.CancelPreliminaryUploadFile(roundFile.id), tdlib.typedOkHandler());
         double startTimeSeconds = videoPreviewView.getStartTime();
         double endTimeSeconds = videoPreviewView.getEndTime();
-        String conversion = VideoGenerationInfo.makeConversion(roundFile.id, false, 0,
+        // Vibegram: trim with the round's own size/fps/bitrate, not the general video quality setting.
+        String conversion = VideoGenerationInfo.makeRoundConversion(roundFile.id,
           (long) (startTimeSeconds * 1_000_000), (long) (endTimeSeconds * 1_000_000),
-          true, null,
-          0
+          RoundVideoQuality.getRecorded(roundKey)
         );
         TdApi.InputFileGenerated trimmedFile = new TdApi.InputFileGenerated(roundFile.local.path, conversion, 0);
-        sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(trimmedFile, null, (int) Math.round(endTimeSeconds - startTimeSeconds), VIDEO_NOTE_LENGTH), obtainSelfDestructType()), initialSendOptions, null);
+        sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(trimmedFile, null, (int) Math.round(endTimeSeconds - startTimeSeconds), getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, null);
       } else {
-        sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(new TdApi.InputFileId(roundFile.id), null, savedRoundDurationSeconds, VIDEO_NOTE_LENGTH), obtainSelfDestructType()), initialSendOptions, roundFile);
+        sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(new TdApi.InputFileId(roundFile.id), null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, roundFile);
       }
     } else {
       tdlib.client().send(new TdApi.DeleteFile(roundFile.id), tdlib.silentHandler());

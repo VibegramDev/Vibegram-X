@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: on-device transcription of voice and video messages -->
+<resources>
+  <item type="id" name="controller_vgStt" />
+  <item type="id" name="btn_vgStt" />
+  <item type="id" name="btn_vgSttModel" />
+  <item type="id" name="btn_vgSttAction" />
+  <item type="id" name="btn_vgSttCredit" />
+  <item type="id" name="btn_vgSttDownload" />
+  <item type="id" name="btn_vgSttCancel" />
+  <item type="id" name="btn_vgSttDelete" />
+
+  <string name="vg_SttTitle">Voice transcription</string>
+  <string name="vg_SttDescription">Voice messages are transcribed on this device, nothing is sent anywhere. Stars show the recognition quality of the models.</string>
+  <string name="vg_SttLangWhisper">99 languages</string>
+  <string name="vg_SttLangParakeet">25 languages</string>
+  <string name="vg_SttSizeMb">%1$d MB</string>
+  <string name="vg_SttDownloadingProgress">downloading %1$s</string>
+  <string name="vg_SttDownload">Download · %1$d MB</string>
+  <string name="vg_SttCancelDownload">Cancel download</string>
+  <string name="vg_SttDelete">Delete model · %1$d MB</string>
+  <string name="vg_SttDeleteAction">Delete model</string>
+  <string name="vg_SttDownloadAction">Download model</string>
+  <string name="vg_SttCreditsModels">Model authors</string>
+  <string name="vg_SttCreditsEngines">Recognition engines</string>
+  <string name="vg_SttDownloadFailed">Couldn\'t download the model. Check the connection and try again.</string>
+  <string name="vg_SttTranscribe">Transcribe</string>
+  <string name="vg_SttHide">Hide transcription</string>
+  <string name="vg_SttNoModel">Download a transcription model in Settings first</string>
+  <string name="vg_SttOpenSettings">Open</string>
+  <string name="vg_SttInProgress">Transcribing…</string>
+  <string name="vg_SttFailed">Couldn\'t transcribe this message</string>
+  <string name="vg_SttEmpty">No speech recognized</string>
+  <string name="vg_SttModelsHeader">Models</string>
+  <string name="vg_SttQueued">Queued…</string>
+  <string name="vg_SttProgress">Transcribing… %1$d%%</string>
+  <string name="vg_SttPreparing">Preparing…</string>
+</resources>

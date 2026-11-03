@@ -719,12 +719,53 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
   }
 
+  private static final int PENDING_INTENT_DELAY_MS = 100;
+  private static final int PENDING_INTENT_MAX_ATTEMPTS = 50;
+
+  private @Nullable Intent pendingIntent;
+  private int pendingIntentAttempts;
+  private boolean forceIntent;
+
+  private void postponeIntent (String actionRaw, Intent intent) {
+    if (pendingIntent != intent) {
+      pendingIntent = intent;
+      pendingIntentAttempts = 0;
+      android.util.Log.i("VgIntent", "navigation is busy, postponing " + actionRaw + ": " + describeNavigationBusy());
+    }
+    final boolean force = ++pendingIntentAttempts >= PENDING_INTENT_MAX_ATTEMPTS;
+    if (force) {
+      // No transition lasts this long: a flag got stuck. Showing the share sheet anyway is better than nothing.
+      android.util.Log.w("VgIntent", "navigation stays busy, handling " + actionRaw + " anyway: " + describeNavigationBusy());
+    }
+    handler.postDelayed(() -> {
+      if (pendingIntent == intent && !isFinishing()) {
+        forceIntent = force;
+        try {
+          handleIntent(actionRaw, intent, false);
+        } finally {
+          forceIntent = false;
+        }
+      }
+    }, PENDING_INTENT_DELAY_MS);
+  }
+
   private boolean handleIntent (String actionRaw, final Intent intent, boolean fromCreate) {
     final String action = Intents.getCleanAction(actionRaw);
 
-    if (StringUtils.isEmpty(action) || isNavigationBusy() || StringUtils.equalsOrBothEmpty(action, Intent.ACTION_MAIN) || TdlibManager.instance().inRecoveryMode()) {
+    if (StringUtils.isEmpty(action) || StringUtils.equalsOrBothEmpty(action, Intent.ACTION_MAIN) || TdlibManager.instance().inRecoveryMode()) {
       return false;
     }
+    if (!forceIntent && isNavigationBusy()) {
+      if (!fromCreate) {
+        // The intent came while a screen transition, a popup or the recorder was animating (for example the window
+        // resizing back from the other app on a tablet). It used to be dropped silently, and sharing to the app
+        // showed nothing; wait for the animation instead.
+        postponeIntent(actionRaw, intent);
+      }
+      return false;
+    }
+    pendingIntent = null;
+    pendingIntentAttempts = 0;
 
     intent.setAction("");
     setIntent(intent);
@@ -1087,9 +1128,22 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     if (navigation.isEmpty()) {
       initMainController(account.tdlib(), action, intent);
     } else {
-      ViewController<?> c = navigation.getStack().get(0);
-      if (c instanceof MainController) {
-        ((MainController) c).shareIntent(account.tdlib(), action, intent);
+      MainController main = null;
+      for (int i = 0; i < navigation.getStackSize(); i++) {
+        ViewController<?> c = navigation.getStack().get(i);
+        if (c instanceof MainController && !c.isDestroyed()) {
+          main = (MainController) c;
+          break;
+        }
+      }
+      if (main != null) {
+        main.shareIntent(account.tdlib(), action, intent);
+      } else {
+        // The chat list is not in the stack (it used to drop the shared content silently): bring it back first.
+        android.util.Log.w("VgIntent", "no chat list in the stack for " + action + ", stack size " + navigation.getStackSize());
+        MainController c = new MainController(this, account.tdlib());
+        c.shareIntent(account.tdlib(), action, intent);
+        navigation.setControllerAnimated(c, false, false);
       }
     }
   }

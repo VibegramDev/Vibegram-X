@@ -55,6 +55,7 @@ import android.view.Surface;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
@@ -319,7 +320,13 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   public void removeFromNavigation (View view) {
-    ((ViewGroup) navigation.getValue()).removeView(view);
+    // The view is added under the header of the navigation root view, which on tablets is the right pane inside
+    // the split layout (navigation.getValue()): removing it from getValue() did nothing there, and the round video
+    // player stayed on the screen with its last frame after the video ended
+    ViewParent parent = view != null ? view.getParent() : null;
+    if (parent instanceof ViewGroup) {
+      ((ViewGroup) parent).removeView(view);
+    }
   }
 
   public RoundVideoController getRoundVideoController () {
@@ -3035,6 +3042,11 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   public boolean isNavigationBusy () {
     return recordAudioVideoController.isOpen() || hasAnimatingWindow() || navigation.isAnimating() || navigation.getHeaderView().isAnimating();
+  }
+
+  /** For logs: which part keeps {@link #isNavigationBusy()} true. */
+  public String describeNavigationBusy () {
+    return "recorder=" + recordAudioVideoController.isOpen() + " window=" + hasAnimatingWindow() + " navigation=" + navigation.isAnimating() + " header=" + navigation.getHeaderView().isAnimating();
   }
 
   private boolean openCameraByPermissionRequest (ViewController.CameraOpenOptions options) {

@@ -9043,38 +9043,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       }
     }
 
-    final String[] quickReactions = Settings.instance().getQuickReactions(tdlib);
-    for (int a = 0; a < quickReactions.length; a++) {
-      final String reactionString = quickReactions[a];
-      TdApi.ReactionType reactionType = TD.toReactionType(reactionString);
-      final boolean canReact = canSendReaction(reactionType);
-      final TGReaction reactionObj = tdlib.getReaction(reactionType);
-      if (reactionObj != null && canReact) {
-        final TGReaction.ReactionDrawable reactionDrawable = new TGReaction.ReactionDrawable(reactionObj, Screen.dp(48), Screen.dp(48));
-        reactionDrawable.setComplexReceiver(currentComplexReceiver);
-
-        final boolean isOdd = a % 2 == 1;
-        final SwipeQuickAction quickReaction = new SwipeQuickAction(reactionObj.getTitle(), reactionDrawable, () -> {
-          boolean hasReaction = messageReactions.hasReaction(reactionType);
-          if (Config.DISABLE_ANONYMOUS_NON_OWNER_REACTIONS && !hasReaction && tdlib.isAnonymousAdminNonCreator(msg.chatId)) {
-            showContentHint(findCurrentView(), null, R.string.error_ANONYMOUS_REACTIONS_DISABLED);
-          } else if (!Config.PROTECT_ANONYMOUS_REACTIONS || hasReaction || !canGetAddedReactions() || messagesController().callNonAnonymousProtection(getId() + reactionObj.hashCode(), null)) {
-            if (messageReactions.toggleReaction(reactionType, false, false, handler(findCurrentView(), null, () -> {}))) {
-              scheduleSetReactionAnimation(new NextReactionAnimation(reactionObj, NextReactionAnimation.TYPE_QUICK));
-            }
-          }
-        }, false, true);
-
-        if (isOdd) {
-          rightQuickDefaultPosition += 1;
-          rightActions.add(0, quickReaction);
-        } else {
-          rightActions.add(quickReaction);
-        }
-      }
-    }
-
-
+    // Vibegram: no reactions on swipe, a swipe only replies, translates or shares
 
     if (canShare) {
       leftActions.add(new SwipeQuickAction(shareText, iQuickShare, () -> {

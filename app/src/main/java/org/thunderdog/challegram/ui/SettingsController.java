@@ -594,6 +594,10 @@ public class SettingsController extends ViewController<Void> implements
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_chatSettings, R.drawable.baseline_data_usage_24, R.string.DataSettings));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgStt, R.drawable.vg_speech_to_text_24, R.string.vg_SttTitle));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgRoundVideo, R.drawable.deproko_baseline_msg_video_24, R.string.vg_RoundTitle));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_privacySettings, R.drawable.baseline_lock_24, R.string.PrivacySettings));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_stickerSettingsAndEmoji, R.drawable.deproko_baseline_stickers_filled_24, R.string.StickersAndEmoji));
@@ -1240,6 +1244,10 @@ public class SettingsController extends ViewController<Void> implements
       navigateTo(c);
     } else if (viewId == R.id.btn_chatSettings) {
       navigateTo(new SettingsDataController(context, tdlib));
+    } else if (viewId == R.id.btn_vgStt) {
+      navigateTo(new SettingsVoiceTranscriptionController(context, tdlib));
+    } else if (viewId == R.id.btn_vgRoundVideo) {
+      navigateTo(new SettingsRoundVideoController(context, tdlib));
     } else if (viewId == R.id.btn_privacySettings) {
       navigateTo(new SettingsPrivacyController(context, tdlib));
     } else if (viewId == R.id.btn_help) {

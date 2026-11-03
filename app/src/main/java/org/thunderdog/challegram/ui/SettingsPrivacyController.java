@@ -476,12 +476,8 @@ public class SettingsPrivacyController extends RecyclerViewController<SettingsPr
       navigateTo(c);
     } else if (id == R.id.btn_sessions) {
       lastClickedButton = id;
-      SettingsSessionsController sessions = new SettingsSessionsController(context, tdlib);
-      SettingsWebsitesController websites = new SettingsWebsitesController(context, tdlib);
-      websites.setArguments(this);
-
-      SimpleViewPagerController c = new SimpleViewPagerController(context, tdlib, new ViewController<?>[] {sessions, websites}, new String[] {Lang.getString(R.string.Devices), Lang.getString(R.string.Websites)}, false);
-      navigateTo(c);
+      // Vibegram: connected websites are a row on the devices screen, no tabs
+      navigateTo(new SettingsSessionsController(context, tdlib));
     } else if (id == R.id.btn_passcode) {
       lastClickedButton = id;
       tdlib.ui().openPasscodeSetup(this);

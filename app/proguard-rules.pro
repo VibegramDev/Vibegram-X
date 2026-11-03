@@ -90,3 +90,8 @@
 -dontwarn org.openjsse.net.ssl.OpenJSSE
 
 -dontwarn com.google.firebase.analytics.connector.AnalyticsConnector
+# Vibegram X: voice transcription (JNI reads/writes sherpa-onnx config fields by name)
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keep class org.thunderdog.challegram.stt.WhisperNative { *; }
+-keep interface org.thunderdog.challegram.stt.WhisperNative$ProgressListener { *; }
+-keep class * implements org.thunderdog.challegram.stt.WhisperNative$ProgressListener { void onProgress(int); void onSegment(byte[]); void onLive(byte[]); }

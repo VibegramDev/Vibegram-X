@@ -664,12 +664,15 @@ public class TdlibUi extends Handler {
         }
       }
 
-      context.showOptions(null,
-        new int[] {R.id.menu_btn_delete, R.id.btn_cancel},
-        new String[] {deleteActionMsg, Lang.getString(R.string.Cancel)},
-        new int[] {ViewController.OptionColor.RED, ViewController.OptionColor.NORMAL},
-        new int[] {R.drawable.baseline_delete_24, R.drawable.baseline_cancel_24},
-        (itemView, id) -> {
+      // Vibegram: the same centered dialog as deleting with revoke in ordinary chats, not a bottom sheet
+      SpannableStringBuilder title = new SpannableStringBuilder(Lang.pluralBold(R.string.QDeleteXMessages, messages.length));
+      if (!tdlib.isSelfChat(chatId)) {
+        title.append("\n").append(deleteActionMsg);
+      }
+      context.showSettings(new SettingsWrapBuilder(R.id.menu_btn_delete)
+        .addHeaderItem(title)
+        .setRawItems(new ListItem[0])
+        .setIntDelegate((id, result) -> {
           if (id == R.id.menu_btn_delete) {
             LongSparseArray<long[]> messageIds = TdExt.toMessageIdsMap(messages);
             for (int i = 0; i < messageIds.size(); i++) {
@@ -679,9 +682,9 @@ public class TdlibUi extends Handler {
               after.run();
             }
           }
-          return true;
-        }
-      );
+        })
+        .setSaveStr(R.string.Delete)
+        .setAllowResize(false));
     }
   }
 
@@ -3829,9 +3832,8 @@ public class TdlibUi extends Handler {
               break;
             }
             case TdApi.SettingsSectionDevices.CONSTRUCTOR: {
-              SettingsSessionsController sessions = new SettingsSessionsController(context.context(), context.tdlib());
-              SettingsWebsitesController websites = new SettingsWebsitesController(context.context(), context.tdlib());
-              result = new SimpleViewPagerController(context.context(), context.tdlib(), new ViewController<?>[] {sessions, websites}, new String[] {Lang.getString(R.string.Devices), Lang.getString(R.string.Websites)}, false);
+              // Vibegram: connected websites are a row on the devices screen, no tabs
+              result = new SettingsSessionsController(context.context(), context.tdlib());
               break;
             }
             case TdApi.SettingsSectionLanguage.CONSTRUCTOR: {

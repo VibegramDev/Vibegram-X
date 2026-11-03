@@ -26,6 +26,7 @@ import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.loader.ImageGalleryFile;
 import org.thunderdog.challegram.mediaview.crop.CropState;
 import org.thunderdog.challegram.mediaview.crop.CropStateParser;
+import org.thunderdog.challegram.player.RoundVideoQuality;
 import org.thunderdog.challegram.tool.TGMimeType;
 import org.thunderdog.challegram.unsorted.Settings;
 
@@ -45,6 +46,10 @@ public class VideoGenerationInfo extends GenerationInfo implements AbstractVideo
   private boolean noTranscoding;
   private @Nullable CropState cropState;
   private Settings.VideoLimit videoLimit;
+  private boolean roundVideo;
+
+  /** Vibegram: marks a trimmed round video (video note): its own limit, square, encoder bitrate always set. */
+  static final String PREFIX_ROUND = "roundvideo";
 
   public static void parseConversion (AbstractVideoGenerationInfo out, String conversion) {
     String[] args = conversion.split(",", -1);
@@ -57,6 +62,7 @@ public class VideoGenerationInfo extends GenerationInfo implements AbstractVideo
     long bitrate = Settings.VideoLimit.BITRATE_UNKNOWN;
     int frameRate = Settings.DEFAULT_FRAME_RATE;
     CropState cropState = null;
+    boolean roundVideo = false;
     int argIndex = 0;
     for (String arg : args) {
       if (arg.startsWith(PREFIX_ROTATE)) {
@@ -79,6 +85,8 @@ public class VideoGenerationInfo extends GenerationInfo implements AbstractVideo
         sourceId = StringUtils.parseInt(arg.substring(PREFIX_SOURCE_FILE_ID.length()));
       } else if (arg.startsWith(PREFIX_NO_TRANSCODING)) {
         noTranscoding = StringUtils.parseInt(arg.substring(PREFIX_NO_TRANSCODING.length())) == 1;
+      } else if (arg.equals(PREFIX_ROUND)) {
+        roundVideo = true;
       } else if (arg.startsWith(PREFIX_CROP)) {
         String in = arg.substring(PREFIX_CROP.length());
         cropState = CropStateParser.parse(in);
@@ -95,6 +103,9 @@ public class VideoGenerationInfo extends GenerationInfo implements AbstractVideo
       noTranscoding,
       cropState
     );
+    if (out instanceof VideoGenerationInfo) {
+      ((VideoGenerationInfo) out).roundVideo = roundVideo;
+    }
   }
 
   @Override
@@ -148,6 +159,25 @@ public class VideoGenerationInfo extends GenerationInfo implements AbstractVideo
 
   public boolean disableTranscoding () {
     return noTranscoding;
+  }
+
+  public boolean isRoundVideo () {
+    return roundVideo;
+  }
+
+  /**
+   * Vibegram: trim conversion for a recorded round video. Uses the round's own side/fps/bitrate
+   * instead of {@link Settings#getPreferredVideoLimit()}, so a low general video quality does not shrink it.
+   *
+   * @param quality what the round was recorded with, null = what the current settings resolve to
+   */
+  public static String makeRoundConversion (int sourceFileId, long startTimeUs, long endTimeUs, @Nullable RoundVideoQuality quality) {
+    if (quality == null) {
+      quality = RoundVideoQuality.resolve(Settings.instance());
+    }
+    Settings.VideoLimit videoLimit = new Settings.VideoLimit(new Settings.VideoSize(quality.side), quality.fps, quality.videoBitrate);
+    String conversion = makeConversion(sourceFileId, false, videoLimit, 0, startTimeUs, endTimeUs, true, null, 0);
+    return conversion + "," + PREFIX_ROUND;
   }
 
   public static TdApi.InputFileGenerated newFile (String path, @Nullable ImageGalleryFile file, boolean noTranscoding) {

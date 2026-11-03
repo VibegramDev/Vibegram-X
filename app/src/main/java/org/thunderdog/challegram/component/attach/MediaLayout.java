@@ -20,6 +20,8 @@ import android.animation.ValueAnimator;
 import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Build;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -63,12 +65,14 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.ColorState;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Intents;
+import org.thunderdog.challegram.tool.Keyboard;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
@@ -78,6 +82,8 @@ import org.thunderdog.challegram.ui.SetSenderController;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.util.Permissions;
+import org.thunderdog.challegram.widget.EmojiEditText;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.RootFrameLayout;
@@ -91,6 +97,7 @@ import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.DeviceUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
@@ -153,6 +160,9 @@ public class MediaLayout extends FrameLayoutFix implements
       this.extraBottomInsetWithoutIme = extraBottomInsetWithoutIme;
       if (bottomBar != null) {
         bottomBar.setBottomInset(extraBottomInsetWithoutIme);
+      }
+      if (captionView != null) {
+        updateBarPosition();
       }
       for (MediaBottomBaseController<?> controller : controllers) {
         if (controller != null) {
@@ -376,6 +386,7 @@ public class MediaLayout extends FrameLayoutFix implements
   @Override
   public void onThemeColorsChanged (boolean areTemp, ColorState state) {
     themeListeners.onThemeColorsChanged(areTemp);
+    applyCaptionColors();
     if (headerView != null) {
       MediaBottomBaseController<?> c = getCurrentController();
       if (c != null) {
@@ -880,7 +891,8 @@ public class MediaLayout extends FrameLayoutFix implements
 
   private void updateBarPosition () {
     int height = getBottomBarHeight();
-    float factor = Math.max(bottomBarFactor, counterFactor);
+    // With the caption pill the bar does not stay under the selection: it goes away and the pill takes its place.
+    float factor = selectionOnTop ? bottomBarFactor * (1f - counterFactor) : Math.max(bottomBarFactor, counterFactor);
     float y = height - (int) ((float) height * factor);
     if (!inSpecificMode() || mode == MODE_AVATAR_PICKER || mode == MODE_CUSTOM_ADAPTER) {
       if (bottomBar != null) {
@@ -901,6 +913,7 @@ public class MediaLayout extends FrameLayoutFix implements
         shadowView.setTranslationY(y);
       }
     }
+    updateCaptionPosition();
   }
 
   private ValueAnimator bottomBarAnimator;
@@ -1366,6 +1379,15 @@ public class MediaLayout extends FrameLayoutFix implements
         ImageGalleryFile[] result = new ImageGalleryFile[galleryFiles.size()];
         galleryFiles.toArray(result);
         Settings.instance().setNeedGroupMedia(needGroupMedia);
+        TdApi.FormattedText caption = getCaptionText();
+        if (captionFromComposer && captionView != null && selectionOnTop) {
+          // The field replaced the composer text: what is in the field now is the caption, even if it was erased.
+          target.clearComposerTextTakenAsCaption();
+        }
+        if (caption != null && result.length > 0) {
+          // Same item as the composer text taken as a caption (MessagesController#sendPhotosAndVideosCompressed).
+          result[needGroupMedia ? result.length - 1 : 0].setCaption(caption);
+        }
         boolean showCaptionAboveMedia = false;
         boolean hasSpoiler = allowSpoiler && needSpoiler;
         target.sendPhotosAndVideosCompressed(result, needGroupMedia, options, disableMarkdown, asFiles, showCaptionAboveMedia, hasSpoiler);
@@ -1638,6 +1660,8 @@ public class MediaLayout extends FrameLayoutFix implements
 
       setCounterEnabled(false);
     }
+    prepareCaptionField();
+    placeSelectionViews(needCaptionField());
     // No need to reset, right?
     // setNeedSpoiler(false);
     setAllowSpoiler(getCurrentController().allowSpoiler());
@@ -1647,6 +1671,202 @@ public class MediaLayout extends FrameLayoutFix implements
       checkSuffix(false);
       // setNeedGroupMedia(TGSettingsManager.instance().needGroupMedia(), false);
     }
+  }
+
+  // Caption
+
+  /**
+   * Selection of photos and videos in the gallery, in the style of the chat composer: the selection row (close,
+   * counter, grouping, spoiler) becomes the top row of the sheet, and the bottom bar gives way to a floating pill with
+   * the caption field and the send button (surfaceContainerHigh, radius and margins of the main screen bar). While the
+   * field is focused, the pill goes up above the keyboard. Other tabs keep the selection row in the bottom bar.
+   */
+  private FrameLayoutFix captionPill;
+  private EmojiEditText captionView;
+  private boolean captionFromComposer;
+  private final M3.RoleShape captionBackground = new M3.RoleShape(M3.SURFACE_CONTAINER_HIGH);
+  private FrameLayoutFix selectionHeader;
+  private final M3.RoleShape selectionHeaderBackground = new M3.RoleShape(M3.SURFACE_CONTAINER_LOW);
+  private boolean selectionOnTop;
+
+  private boolean needCaptionField () {
+    return target != null && bottomBar != null && !inSpecificMode() && currentController instanceof MediaBottomGalleryController;
+  }
+
+  private void prepareCaptionField () {
+    if (captionPill != null || !needCaptionField()) {
+      return;
+    }
+    float radius = MainNavigationBar.getBarRadius();
+
+    captionPill = new FrameLayoutFix(getContext());
+    captionBackground.setRadii(radius, radius);
+    ViewUtils.setBackground(captionPill, captionBackground);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      // Floats over the grid as the dock floats over the chat list (level 2: it rests on the sheet).
+      captionPill.setOutlineProvider(new android.view.ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, android.graphics.Outline outline) {
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), Math.min(radius, view.getHeight() / 2f));
+        }
+      });
+      captionPill.setElevation(Screen.dp(M3.ELEVATION_LEVEL2));
+    }
+    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+    params.leftMargin = params.rightMargin = MainNavigationBar.getBarMargin();
+    captionPill.setLayoutParams(params);
+    captionPill.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+      if (bottom - top != oldBottom - oldTop) {
+        // Taller field (several lines): the last row of the grid stays above it.
+        currentController.updateExtraSpacingDecoration();
+        updateCaptionPosition();
+      }
+    });
+
+    captionView = new EmojiEditText(getContext());
+    captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
+    captionView.setTypeface(Fonts.getRobotoRegular());
+    captionView.setHint(Lang.getString(R.string.AddCaption));
+    captionView.setGravity(Gravity.CENTER_VERTICAL | (Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT));
+    captionView.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+    captionView.setMaxLines(5);
+    captionView.setFilters(new InputFilter[] {new InputFilter.LengthFilter(tdlib().maxCaptionLength())});
+    captionView.setMinHeight(MainNavigationBar.getBarHeight());
+    captionView.setBackground(null);
+    // Text from the pill edge as in the chat composer; the send button takes the end of the pill.
+    int sendWidth = MainNavigationBar.getBarHeight();
+    int padding = Screen.dp(20f), verticalPadding = Screen.dp(14f);
+    captionView.setPadding(Lang.rtl() ? sendWidth : padding, verticalPadding, Lang.rtl() ? padding : sendWidth, verticalPadding);
+    captionView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    captionView.setOnFocusChangeListener((v, hasFocus) -> updateBarPosition());
+    String composerText = target.getComposerTextForCaption();
+    if (composerText != null) {
+      // Text typed in the chat before opening the picker becomes the caption (as before), now visible and editable.
+      captionView.setText(composerText);
+      captionFromComposer = true;
+    }
+    captionPill.addView(captionView);
+    captionPill.setVisibility(View.GONE);
+    addView(captionPill);
+
+    selectionHeader = new FrameLayoutFix(getContext());
+    selectionHeader.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, HeaderView.getSize(false), Gravity.TOP));
+    ViewUtils.setBackground(selectionHeader, selectionHeaderBackground);
+    // Part of the sheet: taps between its buttons must not reach the photos under it.
+    selectionHeader.setClickable(true);
+    selectionHeader.setVisibility(View.GONE);
+    addView(selectionHeader);
+
+    applyCaptionColors();
+  }
+
+  /** Puts the selection row at the top of the sheet and the send button into the caption pill, or back into the bar. */
+  private void placeSelectionViews (boolean onTop) {
+    if (counterView == null || selectionHeader == null || selectionOnTop == onTop) {
+      return;
+    }
+    selectionOnTop = onTop;
+    ViewGroup rowParent = onTop ? selectionHeader : bottomBar;
+    for (View view : new View[] {counterView, counterHintView, hotMediaView, groupMediaView, closeButton}) {
+      Views.removeFromParent(view);
+      rowParent.addView(view);
+    }
+    Views.setRightMargin(hotMediaView, getSelectionRowEnd());
+    Views.setRightMargin(groupMediaView, getSelectionRowEnd() + (allowSpoiler ? Screen.dp(48f) : 0));
+    Views.removeFromParent(sendButton);
+    if (onTop) {
+      int size = MainNavigationBar.getBarHeight();
+      sendButton.setLayoutParams(FrameLayoutFix.newParams(size, size, Gravity.BOTTOM | (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT)));
+      captionPill.addView(sendButton);
+    } else {
+      sendButton.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(55f), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.RIGHT));
+      bottomBar.addView(sendButton);
+    }
+    bottomBar.setOverlayFactor(onTop ? 0f : counterFactor);
+  }
+
+  /** End inset of the grouping and spoiler buttons: room for the send button only when it is in the same row. */
+  private int getSelectionRowEnd () {
+    return selectionOnTop ? Screen.dp(4f) : Screen.dp(55f);
+  }
+
+  private void applyCaptionColors () {
+    if (captionView != null) {
+      captionView.setTextColor(M3.onSurface());
+      captionView.setHintTextColor(M3.onSurfaceVariant());
+      captionBackground.invalidateSelf();
+      selectionHeaderBackground.invalidateSelf();
+    }
+  }
+
+  /** Keyboard opened for the caption: how much the pill goes up to stay above it. */
+  private int getCaptionKeyboardLift () {
+    if (captionView == null || !captionView.hasFocus() || counterFactor == 0f) {
+      return 0;
+    }
+    return Math.max(0, extraBottomInset - extraBottomInsetWithoutIme);
+  }
+
+  private void updateCaptionPosition () {
+    if (captionPill == null) {
+      return;
+    }
+    boolean visible = counterFactor > 0f && selectionOnTop;
+    captionPill.setVisibility(visible ? View.VISIBLE : View.GONE);
+    selectionHeader.setVisibility(visible ? View.VISIBLE : View.GONE);
+    if (!visible) {
+      return;
+    }
+    // In place of the bottom bar: the bar margin above the navigation bar (or the keyboard), slides in with the selection.
+    float y = -extraBottomInsetWithoutIme - MainNavigationBar.getBarMargin() - getCaptionKeyboardLift();
+    captionPill.setTranslationY(y + Screen.dp(16f) * (1f - counterFactor));
+    captionPill.setAlpha(counterFactor);
+    selectionHeader.setAlpha(counterFactor);
+    updateSelectionHeaderPosition();
+  }
+
+  /**
+   * Keeps the selection row on top of the sheet while it is dragged, expanded or opened: the row extends the sheet
+   * upwards, so the photos do not move under the finger. On a sheet expanded to full screen it covers the app bar.
+   */
+  private void updateSelectionHeaderPosition () {
+    if (selectionHeader == null || selectionHeader.getVisibility() != View.VISIBLE || currentController == null) {
+      return;
+    }
+    float top = Math.max(0, currentController.getSheetTop() - selectionHeader.getLayoutParams().height);
+    if (selectionHeader.getTranslationY() != top) {
+      selectionHeader.setTranslationY(top);
+    }
+    float radius = M3Sheets.radius() * (1f - headerFactor);
+    selectionHeaderBackground.setRadii(radius, 0);
+  }
+
+  /** How much the top corners of the grid are straightened: by the app bar, or by the selection row above the grid. */
+  public float getSheetCornerFactor () {
+    return Math.max(headerFactor, selectionOnTop ? counterFactor : 0f);
+  }
+
+  @Override
+  protected void dispatchDraw (android.graphics.Canvas canvas) {
+    updateSelectionHeaderPosition();
+    super.dispatchDraw(canvas);
+  }
+
+  /** Space the selection takes at the bottom of the grid: the bar, or the caption pill with its margins. */
+  public int getSelectionBottomSpace () {
+    if (selectionOnTop && captionPill != null) {
+      return Math.max(captionPill.getHeight(), MainNavigationBar.getBarHeight()) + MainNavigationBar.getBarMargin() * 2;
+    }
+    return MediaBottomBar.getBarHeight();
+  }
+
+  @Nullable
+  private TdApi.FormattedText getCaptionText () {
+    if (captionView == null || !selectionOnTop) {
+      return null;
+    }
+    String text = captionView.getText().toString().trim();
+    return text.isEmpty() ? null : new TdApi.FormattedText(text, null);
   }
 
   private boolean allowSpoiler;
@@ -1669,7 +1889,7 @@ public class MediaLayout extends FrameLayoutFix implements
         hotMediaView.setAlpha(allowSpoiler ? counterFactor : 0f);
       }
       if (groupMediaView != null) {
-        Views.setRightMargin(groupMediaView, allowSpoiler ? Screen.dp(55f) + Screen.dp(48f) : Screen.dp(55f));
+        Views.setRightMargin(groupMediaView, getSelectionRowEnd() + (allowSpoiler ? Screen.dp(48f) : 0));
       }
     }
   }
@@ -1813,7 +2033,7 @@ public class MediaLayout extends FrameLayoutFix implements
 
   private void setCounterFactorInternal (float factor) {
     if (bottomBar != null) {
-      bottomBar.setOverlayFactor(factor);
+      bottomBar.setOverlayFactor(selectionOnTop ? 0f : factor);
     }
     if (counterView != null) {
       counterView.setAlpha(factor);
@@ -1826,6 +2046,10 @@ public class MediaLayout extends FrameLayoutFix implements
 
   public float getCounterFactor () {
     return counterFactor;
+  }
+
+  public boolean needSelectionSpacing () {
+    return addExtraSpacing;
   }
 
   private void __setCounterFactor (float factor) {
@@ -1850,6 +2074,9 @@ public class MediaLayout extends FrameLayoutFix implements
   private void setCounterFactor (float factor) {
     if (counterFactor != factor) {
       __setCounterFactor(factor);
+      if (selectionOnTop && currentController != null) {
+        currentController.invalidateSheetOutline();
+      }
       if (!counterAnimateOnlyPosition || bottomBarFactor != 0f) {
         setCounterFactorInternal(factor);
       }
@@ -1861,6 +2088,10 @@ public class MediaLayout extends FrameLayoutFix implements
 
   private void animateCounterFactor (final float toFactor) {
     isCounterVisible = toFactor == 1f;
+    if (toFactor == 0f && captionView != null && captionView.hasFocus()) {
+      Keyboard.hide(captionView);
+      captionView.clearFocus();
+    }
     onCurrentColorChanged();
     if (counterAnimator == null) {
       counterAnimator = new FactorAnimator(ANIMATOR_COUNTER, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 200l, this.counterFactor);
@@ -1928,6 +2159,10 @@ public class MediaLayout extends FrameLayoutFix implements
       headerView.setAlpha(0f);
       headerView.setTranslationY(-HeaderView.getSize(false) - headerView.getFilling().getExtraHeight());
       addView(headerView);
+      if (selectionHeader != null) {
+        // The selection row stays above the app bar of the expanded sheet: it takes its place while photos are selected.
+        selectionHeader.bringToFront();
+      }
       lastHeaderIndex = index;
     }
 

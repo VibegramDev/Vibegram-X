@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="vg_SttTitle">Расшифровка голосовых</string>
+  <string name="vg_SttDescription">Голосовые сообщения расшифровываются на устройстве, ничего никуда не отправляется. Звёзды показывают качество распознавания моделей.</string>
+  <string name="vg_SttLangWhisper">99 языков</string>
+  <string name="vg_SttLangParakeet">25 языков</string>
+  <string name="vg_SttSizeMb">%1$d МБ</string>
+  <string name="vg_SttDownloadingProgress">загрузка %1$s</string>
+  <string name="vg_SttDownload">Скачать · %1$d МБ</string>
+  <string name="vg_SttCancelDownload">Отменить загрузку</string>
+  <string name="vg_SttDelete">Удалить модель · %1$d МБ</string>
+  <string name="vg_SttDeleteAction">Удалить модель</string>
+  <string name="vg_SttDownloadAction">Скачать модель</string>
+  <string name="vg_SttCreditsModels">Авторы моделей</string>
+  <string name="vg_SttCreditsEngines">Движки распознавания</string>
+  <string name="vg_SttDownloadFailed">Не удалось скачать модель. Проверьте подключение и попробуйте ещё раз.</string>
+  <string name="vg_SttTranscribe">Расшифровать</string>
+  <string name="vg_SttHide">Скрыть расшифровку</string>
+  <string name="vg_SttNoModel">Сначала скачайте модель расшифровки в настройках</string>
+  <string name="vg_SttOpenSettings">Открыть</string>
+  <string name="vg_SttInProgress">Расшифровка…</string>
+  <string name="vg_SttFailed">Не удалось расшифровать сообщение</string>
+  <string name="vg_SttEmpty">Речь не распознана</string>
+  <string name="vg_SttModelsHeader">Модели</string>
+  <string name="vg_SttQueued">В очереди…</string>
+  <string name="vg_SttProgress">Распознаю… %1$d%%</string>
+  <string name="vg_SttPreparing">Подготовка…</string>
+</resources>

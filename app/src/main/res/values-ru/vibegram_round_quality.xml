@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="vg_RoundQualityFps">%1$d кадров/с</string>
+  <string name="vg_RoundQualityMbps">%1$s Мбит/с</string>
+  <string name="vg_RoundQualityKbps">%1$d кбит/с</string>
+  <string name="vg_RoundQualityMax">Максимум</string>
+  <string name="vg_RoundQualityMaxValue">Максимум (%1$s)</string>
+  <string name="vg_RoundQualitySizePerMinute">≈%1$s МБ за минуту</string>
+  <string name="vg_RoundQualityLowered">Телефон не поддерживает %1$s — кружок пишется в %2$s</string>
+  <string name="vg_RoundQualityDecimalSeparator">,</string>
+</resources>

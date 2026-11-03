@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: Settings → Video messages -->
+<resources>
+  <string name="vg_RoundTitle">Видеосообщения</string>
+  <string name="vg_RoundCameraHeader">Камера</string>
+  <string name="vg_RoundCameraApi">API камеры</string>
+  <string name="vg_RoundCameraApiCamera2">Camera2</string>
+  <string name="vg_RoundCameraApiCamera1">Camera1 (старый)</string>
+  <string name="vg_RoundCameraApiCamera1Only">Camera1 (Camera2 нужен Android 6)</string>
+  <string name="vg_RoundCameraApiCamera2Failed">Camera1 (Camera2 не заработал на этом телефоне)</string>
+  <string name="vg_RoundCameraApiHint">Camera2 даёт переключение объективов (ширик, телевик), стабилизацию и 60 кадров/с на телефонах, которые это умеют. Если Camera2 не заработает, запись сама перейдёт на Camera1.</string>
+  <string name="vg_RoundStartCamera">Начинать запись с</string>
+  <string name="vg_RoundStartFront">Фронтальной камеры</string>
+  <string name="vg_RoundStartRear">Основной камеры</string>
+  <string name="vg_RoundStartLast">Последней использованной</string>
+  <string name="vg_RoundCameraDescription">Зум во время записи: нажмите 0.6×, 1×, 2×… под кружком или зажмите и ведите пальцем для точного зума.</string>
+  <string name="vg_RoundQualityHeader">Качество</string>
+  <string name="vg_RoundSide">Разрешение</string>
+  <string name="vg_RoundFps">Частота кадров</string>
+  <string name="vg_RoundBitrate">Битрейт</string>
+  <string name="vg_RoundMax">Максимальное</string>
+  <string name="vg_RoundSideValue">%1$d×%2$d</string>
+  <string name="vg_RoundFpsValue">%1$d кадров/с</string>
+  <string name="vg_RoundMbps">%1$s Мбит/с</string>
+  <string name="vg_RoundKbps">%1$d кбит/с</string>
+  <string name="vg_RoundUnsupported">%1$s (телефон не поддерживает)</string>
+  <string name="vg_RoundQualityDescription">По умолчанию кружки пишутся в лучшем качестве, которое поддерживает телефон. Если выбранное качество телефону не по силам, берётся ближайшее ниже, и вы увидите предупреждение.</string>
+  <string name="vg_RoundDeviceMax">Этот телефон: до %1$d×%2$d, %3$d кадров/с, %4$s.</string>
+  <string name="vg_RoundCurrent">Сейчас: %1$d×%2$d, %3$d кадров/с, до %4$s.</string>
+  <string name="vg_RoundSizeLimit">Telegram принимает кружки размером до 10 МБ. Битрейт постоянный: максимум 1,2 Мбит/с — столько, чтобы минутный кружок поместился в лимит.</string>
+  <string name="vg_RoundPlaybackHeader">Звук через разговорный динамик</string>
+  <string name="vg_RoundCamera2Failed">Camera2 не работает на этом телефоне, кружки записываются через Camera1</string>
+</resources>

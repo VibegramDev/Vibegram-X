@@ -282,10 +282,12 @@ public abstract class MediaBottomBaseController<T> extends ViewController<T> {
       @Override
       public void getItemOffsets (Rect outRect, View view, RecyclerView parent, RecyclerView.State state) {
         int position = parent.getChildAdapterPosition(view);
-        if (position != RecyclerView.NO_POSITION && recyclerView.getAdapter() != null && position == recyclerView.getAdapter().getItemCount() - 1 && mediaLayout.getCounterFactor() == 1f) {
-          outRect.set(0, 0, 0, MediaBottomBar.getBarHeight());
-        } else {
-          outRect.setEmpty();
+        outRect.setEmpty();
+        if (position == RecyclerView.NO_POSITION || recyclerView.getAdapter() == null || !mediaLayout.needSelectionSpacing()) {
+          return;
+        }
+        if (position == recyclerView.getAdapter().getItemCount() - 1) {
+          outRect.bottom = mediaLayout.getSelectionBottomSpace();
         }
       }
     });
@@ -297,7 +299,7 @@ public abstract class MediaBottomBaseController<T> extends ViewController<T> {
       recyclerView.setOutlineProvider(new ViewOutlineProvider() {
         @Override
         public void getOutline (View view, Outline outline) {
-          int radius = (int) (M3Sheets.radius() * (1f - mediaLayout.getHeaderFactor()));
+          int radius = (int) (M3Sheets.radius() * (1f - mediaLayout.getSheetCornerFactor()));
           outline.setRoundRect(0, 0, view.getWidth(), view.getHeight() + radius, radius);
         }
       });
@@ -327,6 +329,14 @@ public abstract class MediaBottomBaseController<T> extends ViewController<T> {
     updateRecyclerTop();
 
     return contentView;
+  }
+
+  /** Top edge of the sheet (the grid's container) in the coordinates of MediaLayout. */
+  public float getSheetTop () {
+    if (contentView == null || recyclerView == null) {
+      return 0;
+    }
+    return contentView.getTop() + contentView.getTranslationY() + recyclerView.getTop() + recyclerView.getTranslationY();
   }
 
   public void onRecyclerFirstMovement () {

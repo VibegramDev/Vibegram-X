@@ -684,12 +684,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   /** The message menu is shown over the hidden keyboard: the list keeps its padding (see prepareToShowMessageOptions). */
   private boolean messagesInsetFrozen;
+  /** Composer height the list padding was last computed from (-1: not computed). */
+  private int composerInsetSource = -1;
+  private static final int COMPOSER_INSET_PENDING = -2;
 
   private void updateMessagesViewInset () {
     if (messagesView == null || messagesInsetFrozen) {
       return;
     }
-    int requestedInset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? getFloatingComposerInset() : extraBottomInset;
+    composerInsetSource = getFloatingComposerInset();
+    int requestedInset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? composerInsetSource : extraBottomInset;
     int listHeight = messagesView.getMeasuredHeight();
     if (listHeight > 0) {
       // Never let the padding cover the whole list. For a moment the composer with a panel can be as tall as the list
@@ -814,8 +818,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
     params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
 
     bottomWrap = new LinearLayout(context) {
-      int lastHeight;
-
       @Override
       protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
@@ -826,8 +828,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
       protected void onLayout (boolean changed, int l, int t, int r, int b) {
         super.onLayout(changed, l, t, r, b);
         updateButtonsY();
-        if (composerFloating && lastHeight != b - t) {
-          lastHeight = b - t;
+        // The list padding is taken from the measured composer height, which may be an intermediate one (e.g. a chat
+        // opened while the keyboard of the previous screen hides): follow the height it was actually laid out with.
+        if (composerFloating && composerInsetSource != b - t && composerInsetSource != COMPOSER_INSET_PENDING) {
+          composerInsetSource = COMPOSER_INSET_PENDING;
           post(MessagesController.this::updateMessagesViewInset);
         }
       }
@@ -5098,11 +5102,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
       public void onPopupDismiss (PopupLayout popup) {
         isMessageOptionsVisible = false;
         if (expandReactions[0]) {
+          // The reactions sheet doesn't go over the keyboard (it is a focusable window): hide it as for the sheet menu.
+          prepareToShowMessageOptions(false);
           showMessageOptions(sheetOptions, message, null, delegate, true);
         }
       }
     });
-    prepareToShowMessageOptions();
+    prepareToShowMessageOptions(true);
     hideCursorsForInputView();
   }
 
@@ -5141,7 +5147,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
     });
     if (!expandReactions) {
-      prepareToShowMessageOptions();
+      prepareToShowMessageOptions(false);
     }
     hideCursorsForInputView();
     return result;
@@ -5150,7 +5156,17 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private boolean needShowKeyboardAfterHideMessageOptions;
   private boolean needShowEmojiKeyboardAfterHideMessageOptions;
 
-  private void prepareToShowMessageOptions () {
+  /**
+   * @param overKeyboard the small menu at the finger: it is a non-focusable window drawn over the keyboard and the
+   *                     emoji panel, so they stay as they are (owner's choice; hiding the keyboard left a gap of its
+   *                     height under the messages while the menu was open).
+   */
+  private void prepareToShowMessageOptions (boolean overKeyboard) {
+    if (overKeyboard && composerFloating) {
+      needShowKeyboardAfterHideMessageOptions = false;
+      needShowEmojiKeyboardAfterHideMessageOptions = false;
+      return;
+    }
     needShowKeyboardAfterHideMessageOptions = getKeyboardState();
     needShowEmojiKeyboardAfterHideMessageOptions = emojiShown;
     if (needShowKeyboardAfterHideMessageOptions && composerFloating) {
@@ -10888,6 +10904,26 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   public void sendMusic (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, TdApi.MessageSendOptions initialSendOptions) {
     sendMusic(view, musicFiles, needGroupMedia, allowReply, takeComposerTextAsCaption(true), initialSendOptions);
+  }
+
+  /** Composer text shown in the caption field of the media picker; null when there is none or it has formatting. */
+  @Nullable
+  public String getComposerTextForCaption () {
+    if (inputView == null || isEditingMessage() || inputView.isEmpty() || previewMode != PREVIEW_MODE_NONE) {
+      return null;
+    }
+    TdApi.FormattedText text = inputView.getOutputText(false);
+    if (Td.isEmpty(text) || (text.entities != null && text.entities.length > 0)) {
+      return null;
+    }
+    return text.text;
+  }
+
+  /** The media picker sent the composer text as a caption (it was moved into its caption field). */
+  public void clearComposerTextTakenAsCaption () {
+    if (inputView != null) {
+      inputView.setInput("", false, true);
+    }
   }
 
   /**

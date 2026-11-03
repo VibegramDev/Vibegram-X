@@ -118,12 +118,30 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
   protected void onFlashModeChange (int newFlashMode) throws Throwable {
     if (isCameraActive) {
       Camera.Parameters params = camera.getParameters();
-      params.setFlashMode(getFlashMode(newFlashMode));
+      params.setFlashMode(mTorchRequested && hasTorch(params) ? Camera.Parameters.FLASH_MODE_TORCH : getFlashMode(newFlashMode));
       camera.setParameters(params);
     }
   }
 
+  private static boolean hasTorch (Camera.Parameters params) {
+    List<String> modes = params.getSupportedFlashModes();
+    return modes != null && modes.contains(Camera.Parameters.FLASH_MODE_TORCH);
+  }
+
+  @Override
+  protected void onTorchChange (boolean enabled) throws Throwable {
+    if (isCameraActive && camera != null) {
+      Camera.Parameters params = camera.getParameters();
+      if (hasTorch(params)) {
+        params.setFlashMode(enabled ? Camera.Parameters.FLASH_MODE_TORCH : getFlashMode(mFlashMode));
+        camera.setParameters(params);
+      }
+    }
+  }
+
   private int mCurrentZoom;
+  // Vibegram: Camera.Parameters.getZoomRatios() of the open camera (x100, one per zoom index)
+  private List<Integer> mZoomRatios;
 
   @Override
   protected void onZoomChanged (float zoom) {
@@ -145,6 +163,80 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
         camera.setParameters(parameters);
       }
       mCurrentZoom = zoomValue;
+      // Keep the ratio of the zoom buttons in sync with volume key zoom
+      float ratio = zoomIndexToRatio(zoomValue);
+      if (ratio > 0f && mZoomRatio != ratio) {
+        mZoomRatio = ratio;
+        manager.onZoomRatioChanged(ratio);
+      }
+    }
+  }
+
+  private float zoomIndexToRatio (int index) {
+    List<Integer> ratios = mZoomRatios;
+    if (ratios == null || ratios.isEmpty()) {
+      return -1f;
+    }
+    index = Math.max(0, Math.min(ratios.size() - 1, index));
+    return ratios.get(index) / 100f;
+  }
+
+  private int closestZoomIndex (float ratio) {
+    List<Integer> ratios = mZoomRatios;
+    if (ratios == null || ratios.isEmpty()) {
+      return 0;
+    }
+    int target = Math.round(ratio * 100f);
+    int bestIndex = 0, bestDiff = Integer.MAX_VALUE;
+    for (int i = 0; i < ratios.size(); i++) {
+      int diff = Math.abs(ratios.get(i) - target);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
+  }
+
+  @Override
+  protected void onZoomRatioChanged (float ratio) throws Throwable {
+    if (camera == null || mFeatures == null || !mFeatures.canZoom()) {
+      return;
+    }
+    int index = closestZoomIndex(ratio);
+    if (mFeatures.has(CameraFeatures.FEATURE_ZOOM_SMOOTH)) {
+      try {
+        camera.stopSmoothZoom();
+      } catch (Throwable ignored) { }
+    }
+    // The zoom buttons animate the ratio themselves, so a plain setZoom() is enough here
+    Camera.Parameters parameters = camera.getParameters();
+    parameters.setZoom(index);
+    camera.setParameters(parameters);
+    mCurrentZoom = index;
+    syncZoomIndex(index);
+  }
+
+  private void updateZoomCapabilities () {
+    List<Integer> ratios = mZoomRatios;
+    if (camera == null || mFeatures == null || !mFeatures.canZoom() || ratios == null || ratios.isEmpty()) {
+      setZoomCapabilities(1f, 1f, new float[] {1f});
+      return;
+    }
+    float maxRatio = Math.max(1f, ratios.get(ratios.size() - 1) / 100f);
+    float[] candidates = {1f, 2f, 4f, 10f};
+    int count = 0;
+    float[] stops = new float[candidates.length];
+    for (float stop : candidates) {
+      if (stop <= maxRatio + 0.01f) {
+        stops[count++] = Math.min(stop, maxRatio);
+      }
+    }
+    setZoomCapabilities(1f, maxRatio, Arrays.copyOf(stops, count));
+    float current = zoomIndexToRatio(mCurrentZoom);
+    if (current > 0f && current != mZoomRatio) {
+      mZoomRatio = current;
+      manager.onZoomRatioChanged(current);
     }
   }
 
@@ -152,6 +244,11 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
     CameraFeatures features = new CameraFeatures(false);
 
     Camera.Parameters params = camera.getParameters();
+    final boolean isRound = manager.useRoundRender();
+    final int[] initialFpsRange = new int[2];
+    try {
+      params.getPreviewFpsRange(initialFpsRange);
+    } catch (Throwable ignored) { }
 
     // First, detect all supported features by camera
 
@@ -193,6 +290,9 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
       if (params.isVideoStabilizationSupported()) {
         params.setVideoStabilization(true);
       }
+    } else if (isRound && params.isVideoStabilizationSupported()) {
+      // Vibegram: round videos are often recorded while walking, the rear camera needs it as well
+      params.setVideoStabilization(true);
     }
 
     List<String> focusModes = params.getSupportedFocusModes();
@@ -253,6 +353,9 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
     }
     if (zoomSupported) {
       features.setMaxZoom(params.getMaxZoom());
+      mZoomRatios = params.getZoomRatios();
+    } else {
+      mZoomRatios = null;
     }
 
     int numFocusAreas = params.getMaxNumFocusAreas();
@@ -271,7 +374,10 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
     params.setRotation(outputRotation = calculateOutputRotation());
 
     if (features.has(CameraFeatures.FEATURE_FOCUS_ANY)) {
-      if (features.has(CameraFeatures.FEATURE_FOCUS_CONTINUOUS_PICTURE)) {
+      if (isRound && features.has(CameraFeatures.FEATURE_FOCUS_CONTINUOUS_VIDEO)) {
+        // Vibegram: smoother refocusing for video, less "breathing"
+        params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
+      } else if (features.has(CameraFeatures.FEATURE_FOCUS_CONTINUOUS_PICTURE)) {
         params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
       } else if (features.has(CameraFeatures.FEATURE_FOCUS_CONTINUOUS_VIDEO)) {
         params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
@@ -280,7 +386,10 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
       }
     }
 
-    if (features.canFlash(false)) {
+    if (mTorchRequested && features.has(CameraFeatures.FEATURE_FLASH_TORCH)) {
+      // Round video light stays on after reopening or switching the camera
+      params.setFlashMode(Camera.Parameters.FLASH_MODE_TORCH);
+    } else if (features.canFlash(false)) {
       params.setFlashMode(getFlashMode(mFlashMode));
     } else if (features.has(CameraFeatures.FEATURE_FLASH_OFF)) {
       params.setFlashMode(getFlashMode(CameraFeatures.FEATURE_FLASH_OFF));
@@ -294,7 +403,55 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
     // Then, set output size
     setupCameraSizes(params);
 
-    camera.setParameters(params);
+    int[] roundFpsRange = isRound && manager.getRoundCaptureMinSide() > 0 ? setupRoundFpsRange(params) : null;
+
+    try {
+      camera.setParameters(params);
+    } catch (RuntimeException e) {
+      if (!isRound) {
+        throw e;
+      }
+      // Vibegram: some HALs reject a valid fps range together with stabilization or the chosen size
+      Log.w(Log.TAG_CAMERA, "Cannot apply round video parameters, retrying with defaults", e);
+      if (initialFpsRange[1] > 0) {
+        params.setPreviewFpsRange(initialFpsRange[0], initialFpsRange[1]);
+      }
+      if (params.isVideoStabilizationSupported()) {
+        params.setVideoStabilization(false);
+      }
+      roundFpsRange = null;
+      camera.setParameters(params);
+    }
+
+    if (isRound && previewSize != null) {
+      int maxFps = 0;
+      if (roundFpsRange != null) {
+        maxFps = roundFpsRange[1] / 1000;
+      } else {
+        try {
+          int[] range = new int[2];
+          camera.getParameters().getPreviewFpsRange(range);
+          maxFps = range[1] / 1000;
+        } catch (Throwable ignored) { }
+      }
+      Log.i(Log.TAG_ROUND, "Camera1 round stream: %dx%d, max fps: %d", previewSize.width, previewSize.height, maxFps);
+      manager.onRoundCaptureConfigured(previewSize.width, previewSize.height, maxFps);
+    }
+  }
+
+  /** Vibegram: the fps range for the round video stream, see {@link CameraApi#chooseFpsRange}. */
+  private int[] setupRoundFpsRange (Camera.Parameters params) {
+    List<int[]> ranges;
+    try {
+      ranges = params.getSupportedPreviewFpsRange();
+    } catch (Throwable t) {
+      return null;
+    }
+    int[] range = chooseFpsRange(ranges, manager.getRoundCaptureFps(), 1000);
+    if (range != null) {
+      params.setPreviewFpsRange(range[Camera.Parameters.PREVIEW_FPS_MIN_INDEX], range[Camera.Parameters.PREVIEW_FPS_MAX_INDEX]);
+    }
+    return range;
   }
 
   private static void sortOutputVideoSizes (List<Camera.Size> sizes, final float desiredRatio, final int maxResolution) {
@@ -334,12 +491,29 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
       sizes.addAll(previewSizes);
 
       int maxResolution = manager.getMaxResolution();
-      if (maxResolution != 0) {
-        sortPreviewSizes(sizes, maxResolution, maxResolution, 16f / 9f);
-      } else {
-        sortPreviewSizes(sizes, previewWidth, previewHeight, previewRatio);
+      int roundMinSide = manager.useRoundRender() ? manager.getRoundCaptureMinSide() : 0;
+      Camera.Size roundSize = null;
+      if (roundMinSide > 0) {
+        // Vibegram: the smallest stream that still covers the encoded side (no upscaling)
+        List<int[]> dimensions = new ArrayList<>(previewSizes.size());
+        for (Camera.Size size : previewSizes) {
+          dimensions.add(new int[] {size.width, size.height});
+        }
+        int[] chosen = chooseRoundPreviewSize(dimensions, roundMinSide);
+        if (chosen != null) {
+          roundSize = previewSizes.get(dimensions.indexOf(chosen));
+        }
       }
-      previewSize = sizes.get(0);
+      if (roundSize != null) {
+        previewSize = roundSize;
+      } else {
+        if (maxResolution != 0) {
+          sortPreviewSizes(sizes, maxResolution, maxResolution, 16f / 9f);
+        } else {
+          sortPreviewSizes(sizes, previewWidth, previewHeight, previewRatio);
+        }
+        previewSize = sizes.get(0);
+      }
       params.setPreviewSize(previewSize.width, previewSize.height);
 
       sizes.clear();
@@ -492,6 +666,11 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
       closeCamera();
     }
 
+    if (camera != null) {
+      mCurrentFacing = cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT ? FACING_FRONT : FACING_BACK;
+      updateZoomCapabilities();
+    }
+
     return camera != null;
   }
 
@@ -605,6 +784,8 @@ public class CameraApiLegacy extends CameraApi implements Camera.PreviewCallback
       this.camera = null;
       this.cameraId = -1;
       setCameraDeviceFeatures(null);
+      mZoomRatios = null;
+      setZoomCapabilities(1f, 1f, new float[] {1f});
     }
   }
 
