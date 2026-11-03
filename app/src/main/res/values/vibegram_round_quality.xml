@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: round video (video note) encoding quality -->
+<resources>
+  <string name="vg_RoundQualityFps">%1$d fps</string>
+  <string name="vg_RoundQualityMbps">%1$s Mbit/s</string>
+  <string name="vg_RoundQualityKbps">%1$d kbit/s</string>
+  <string name="vg_RoundQualityMax">Maximum</string>
+  <string name="vg_RoundQualityMaxValue">Maximum (%1$s)</string>
+  <string name="vg_RoundQualitySizePerMinute">≈%1$s MB per minute</string>
+  <string name="vg_RoundQualityLowered">Your phone can\'t record %1$s — round videos are recorded in %2$s</string>
+  <string name="vg_RoundQualityDecimalSeparator">.</string>
+</resources>

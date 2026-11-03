@@ -105,6 +105,7 @@ import org.thunderdog.challegram.telegram.ChatFoldersListener;
 import org.thunderdog.challegram.telegram.CounterChangeListener;
 import org.thunderdog.challegram.telegram.GlobalCountersListener;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.telegram.TdlibCounter;
 import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibManager;
@@ -181,6 +182,28 @@ import tgx.td.Td;
 import tgx.td.TdConstants;
 
 public class MainController extends ViewPagerController<Void> implements Menu, MoreDelegate, TdlibOptionListener, AppUpdater.Listener, ChatFoldersListener, GlobalCountersListener, Settings.ChatFolderSettingsListener {
+  /** Keeps the account avatars (dock, app bar) bound to the profile: it may be unknown when the screen is created. */
+  private final TdlibCache.MyUserDataChangeListener myUserListener = new TdlibCache.MyUserDataChangeListener() {
+    @Override
+    public void onMyUserUpdated (TdApi.User myUser) {
+      runOnUiThreadOptional(MainController.this::updateMyUserAvatars);
+    }
+  };
+
+  private void updateMyUserAvatars () {
+    if (navigationBar != null) {
+      navigationBar.setMyUser(tdlib);
+    }
+    TdApi.User myUser = tdlib.myUser();
+    for (AvatarView avatarView : headerAvatarViews) {
+      if (myUser != null) {
+        avatarView.setUser(tdlib, myUser, false);
+      } else {
+        avatarView.setUser(tdlib.account());
+      }
+    }
+  }
+
   private static final long MAIN_PAGER_ITEM_ID = Long.MIN_VALUE;
   private static final long ARCHIVE_PAGER_ITEM_ID = Long.MIN_VALUE + 1;
   private static final long INVALID_PAGER_ITEM_ID = Long.MAX_VALUE;
@@ -349,7 +372,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     contentView.addView(mainWrap);
 
     navigationBar = new MainNavigationBar(context, this);
-    navigationBar.setUser(tdlib, tdlib.myUserId());
+    navigationBar.setMyUser(tdlib);
+    tdlib.cache().addMyUserListener(myUserListener);
     navigationBar.setCallback(this::onNavigationItemClick);
     navigationBar.setSettingsLongClickListener(v -> showAccountSwitcher());
     navigationBar.setCollapseListener(factor -> updateHeaderDockButtons());
@@ -1060,12 +1084,14 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     popupLayout.setNeedFullScreen(true);
 
     final List<M3AccountItemView> accountViews = new ArrayList<>();
+    // Account of each row: not in the view tag, the tablet menu keeps the item width there (MenuMoreWrap#addCustomItem).
+    final java.util.Map<View, TdlibAccount> rowAccounts = new java.util.HashMap<>();
     View.OnClickListener onClick = v -> {
       if (v.getId() == R.id.btn_addAccount) {
         popupLayout.hideWindow(true);
         tdlib.ui().addAccount(context, true, false);
-      } else if (v.getTag() instanceof TdlibAccount) {
-        TdlibAccount account = (TdlibAccount) v.getTag();
+      } else if (rowAccounts.get(v) != null) {
+        TdlibAccount account = rowAccounts.get(v);
         popupLayout.hideWindow(true);
         long now = SystemClock.uptimeMillis();
         if (account.context().preferredAccountId() != account.id && (lastAccountSwitchTime == 0 || now - lastAccountSwitchTime >= 720)) {
@@ -1080,7 +1106,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       }
       M3AccountItemView view = new M3AccountItemView(context, tdlib);
       view.setId(R.id.account);
-      view.setTag(account);
+      rowAccounts.put(view, account);
       view.setAccount(account, false);
       view.attach();
       addThemeInvalidateListener(view);
@@ -1145,7 +1171,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     button.setOnLongClickListener(v -> showAccountSwitcher());
     AvatarView avatarView = new AvatarView(context);
     avatarView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(30f), Screen.dp(30f), Gravity.CENTER));
-    avatarView.setUser(tdlib, tdlib.myUserId(), false);
+    TdApi.User myUser = tdlib.myUser();
+    if (myUser != null) {
+      avatarView.setUser(tdlib, myUser, false);
+    } else {
+      avatarView.setUser(tdlib.account());
+    }
     button.addView(avatarView);
     headerAvatarViews.add(avatarView);
     return button;
@@ -1932,6 +1963,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
     overlayNavigation = null;
     hostNavigation = null;
+    tdlib.cache().removeMyUserListener(myUserListener);
     if (navigationBar != null) {
       navigationBar.performDestroy();
     }
@@ -2770,7 +2802,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       activity.addPasscodeListener(new BaseActivity.PasscodeListener() {
         @Override
         public void onPasscodeShowing (BaseActivity context, boolean isShowing) {
-          if (isShowing) {
+          // Wait for the passcode to be entered (it waited for the passcode to be shown again: the content was lost)
+          if (!isShowing) {
             activity.removePasscodeListener(this);
             shareIntentImpl();
           }

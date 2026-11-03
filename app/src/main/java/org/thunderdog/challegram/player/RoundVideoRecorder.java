@@ -39,7 +39,6 @@ import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.camera.legacy.CameraApi;
-import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.video.Mp4Output;
 import org.thunderdog.challegram.video.old.Mp4Movie;
 import org.thunderdog.challegram.video.old.Mp4OutputImpl;
@@ -404,21 +403,58 @@ public class RoundVideoRecorder {
       "uniform float scaleX;\n" +
       "uniform float scaleY;\n" +
       "uniform float alpha;\n" +
+      "uniform float zoom;\n" +
       "uniform samplerExternalOES sTexture;\n" +
       "void main() {\n" +
       "   vec2 coord = vec2((vTextureCoord.x - 0.5) * scaleX, (vTextureCoord.y - 0.5) * scaleY);\n" +
       "   float coef = ceil(clamp(0.2601 - dot(coord, coord), 0.0, 1.0));\n" +
-      "   vec3 color = texture2D(sTexture, vTextureCoord).rgb * coef + (1.0 - step(0.001, coef));\n" +
+      "   vec2 tc = 0.5 + (vTextureCoord - 0.5) / zoom;\n" +
+      "   vec3 color = texture2D(sTexture, tc).rgb * coef + (1.0 - step(0.001, coef));\n" +
       "   gl_FragColor = vec4(color * alpha, alpha);\n" +
       "}\n";
+
+  // Vibegram: same as FRAGMENT_SHADER, but for a camera frame much larger than the output
+  // (e.g. 1080 -> 640): a single sample per output pixel skips camera pixels and fine details shimmer.
+  // 3x3 bilinear taps with tent weights (1-2-1) average the whole footprint of the output pixel.
+  private static final String FRAGMENT_SHADER_DOWNSCALE =
+    "#extension GL_OES_EGL_image_external : require\n" +
+      "precision highp float;\n" +
+      "varying vec2 vTextureCoord;\n" +
+      "uniform float scaleX;\n" +
+      "uniform float scaleY;\n" +
+      "uniform float alpha;\n" +
+      "uniform vec2 texelOffset;\n" +
+      "uniform float zoom;\n" +
+      "uniform samplerExternalOES sTexture;\n" +
+      "void main() {\n" +
+      "   vec2 coord = vec2((vTextureCoord.x - 0.5) * scaleX, (vTextureCoord.y - 0.5) * scaleY);\n" +
+      "   float coef = ceil(clamp(0.2601 - dot(coord, coord), 0.0, 1.0));\n" +
+      "   vec2 tc = 0.5 + (vTextureCoord - 0.5) / zoom;\n" +
+      "   vec2 dx = vec2(texelOffset.x / zoom, 0.0);\n" +
+      "   vec2 dy = vec2(0.0, texelOffset.y / zoom);\n" +
+      "   vec3 sum = texture2D(sTexture, tc).rgb * 4.0;\n" +
+      "   sum += (texture2D(sTexture, tc - dx).rgb + texture2D(sTexture, tc + dx).rgb +\n" +
+      "           texture2D(sTexture, tc - dy).rgb + texture2D(sTexture, tc + dy).rgb) * 2.0;\n" +
+      "   sum += texture2D(sTexture, tc - dx - dy).rgb + texture2D(sTexture, tc + dx - dy).rgb +\n" +
+      "          texture2D(sTexture, tc - dx + dy).rgb + texture2D(sTexture, tc + dx + dy).rgb;\n" +
+      "   vec3 color = (sum / 16.0) * coef + (1.0 - step(0.001, coef));\n" +
+      "   gl_FragColor = vec4(color * alpha, alpha);\n" +
+      "}\n";
+
+  // Vibegram: "zoom" in the shaders is the software zoom past the camera maximum (CameraApi.getSoftwareZoom()):
+  // the frame is sampled closer to its center, the round mask stays where it is.
+
+  /** Camera pixels per output pixel above which {@link #FRAGMENT_SHADER_DOWNSCALE} is used. */
+  private static final float DOWNSCALE_RATIO_THRESHOLD = 1.3f;
 
   private static final String FRAGMENT_SCREEN_SHADER =
     "#extension GL_OES_EGL_image_external : require\n" +
       "precision lowp float;\n" +
       "varying vec2 vTextureCoord;\n" +
+      "uniform float zoom;\n" +
       "uniform samplerExternalOES sTexture;\n" +
       "void main() {\n" +
-      "   gl_FragColor = texture2D(sTexture, vTextureCoord);\n" +
+      "   gl_FragColor = texture2D(sTexture, 0.5 + (vTextureCoord - 0.5) / zoom);\n" +
       "}\n";
 
   private int[] position = new int[2];
@@ -495,6 +531,7 @@ public class RoundVideoRecorder {
   private int drawProgram;
   private int vertexMatrixHandle;
   private int textureMatrixHandle;
+  private int zoomHandle = -1;
   private int positionHandle;
   private int textureHandle;
 
@@ -620,6 +657,7 @@ public class RoundVideoRecorder {
         textureHandle = GLES20.glGetAttribLocation(drawProgram, "aTextureCoord");
         vertexMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uMVPMatrix");
         textureMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uSTMatrix");
+        zoomHandle = GLES20.glGetUniformLocation(drawProgram, "zoom");
       }
     } else {
       Log.e(Log.TAG_ROUND, "failed creating shader");
@@ -767,16 +805,9 @@ public class RoundVideoRecorder {
 
     if (isCapturing()) {
       if (!recording) {
-        int resolution;
-        int bitrate;
-        if (Settings.instance().needHqRoundVideos()) {
-          resolution = 320;
-          bitrate = 600000;
-        } else {
-          resolution = 240;
-          bitrate = 400000;
-        }
-        videoEncoder.startRecording(cameraFile, resolution, bitrate, EGL14.eglGetCurrentContext());
+        // Vibegram: settings (0 = max) capped by the encoder and by what the camera really delivers.
+        RoundVideoQuality quality = RoundVideoQuality.forEncoder(mPreviewWidth, mPreviewHeight);
+        videoEncoder.startRecording(cameraFile, quality, EGL14.eglGetCurrentContext());
         recordStartTime = SystemClock.uptimeMillis();
         recording = true;
         int orientation = rotationAngle;
@@ -805,6 +836,9 @@ public class RoundVideoRecorder {
 
     GLES20.glUniformMatrix4fv(textureMatrixHandle, 1, false, mSTMatrix, 0);
     GLES20.glUniformMatrix4fv(vertexMatrixHandle, 1, false, mMVPMatrix, 0);
+    if (zoomHandle != -1) {
+      GLES20.glUniform1f(zoomHandle, context.getSoftwareZoom());
+    }
 
     GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
 
@@ -897,13 +931,12 @@ public class RoundVideoRecorder {
 
     private static final String VIDEO_MIME_TYPE = "video/avc";
     private static final String AUDIO_MIME_TYPE = "audio/mp4a-latm";
-    private static final int FRAME_RATE = 30;
     private static final int IFRAME_INTERVAL = 1;
 
     private File videoFile;
+    private RoundVideoQuality quality;
     private int videoWidth;
     private int videoHeight;
-    private int videoBitrate;
     private boolean videoConvertFirstWrite = true;
     private boolean blendEnabled;
 
@@ -947,6 +980,8 @@ public class RoundVideoRecorder {
     private int scaleXHandle;
     private int scaleYHandle;
     private int alphaHandle;
+    private int texelOffsetHandle = -1;
+    private int encoderZoomHandle = -1;
 
     private Integer lastCameraId = 0;
 
@@ -1019,11 +1054,11 @@ public class RoundVideoRecorder {
       }
     };
 
-    public void startRecording(File outputFile, int size, int bitRate, android.opengl.EGLContext sharedContext) {
+    public void startRecording(File outputFile, RoundVideoQuality quality, android.opengl.EGLContext sharedContext) {
       videoFile = outputFile;
-      videoWidth = size;
-      videoHeight = size;
-      videoBitrate = bitRate;
+      this.quality = quality;
+      videoWidth = quality.side;
+      videoHeight = quality.side;
       sharedEglContext = sharedContext;
 
       synchronized (sync) {
@@ -1175,6 +1210,12 @@ public class RoundVideoRecorder {
       GLES20.glEnableVertexAttribArray(textureHandle);
       GLES20.glUniform1f(scaleXHandle, scaleX);
       GLES20.glUniform1f(scaleYHandle, scaleY);
+      if (texelOffsetHandle != -1) {
+        GLES20.glUniform2f(texelOffsetHandle, texelOffsetX, texelOffsetY);
+      }
+      if (encoderZoomHandle != -1) {
+        GLES20.glUniform1f(encoderZoomHandle, context.getSoftwareZoom());
+      }
       GLES20.glUniformMatrix4fv(vertexMatrixHandle, 1, false, mMVPMatrix, 0);
 
       GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
@@ -1287,8 +1328,9 @@ public class RoundVideoRecorder {
           buffers.add(new AudioBufferInfo());
         }
         AudioRecord audioRecorderFinal = null;
-        int sampleRate = SAMPLE_RATES[0];
-        for (int newSampleRate : SAMPLE_RATES) {
+        int[] sampleRates = audioSampleRates(quality.audioSampleRate);
+        int sampleRate = sampleRates[0];
+        for (int newSampleRate : sampleRates) {
           sampleRate = newSampleRate;
           int recordBufferSize = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
           if (recordBufferSize <= 0) {
@@ -1308,7 +1350,8 @@ public class RoundVideoRecorder {
               try { audioRecorderFinal.stop(); } catch (Throwable ignored) { }
               try { audioRecorderFinal.release(); } catch (Throwable ignored) { }
             }
-            if (sampleRate == SAMPLE_RATES[SAMPLE_RATES.length - 1]) {
+            audioRecorderFinal = null;
+            if (sampleRate == sampleRates[sampleRates.length - 1]) {
               throw t;
             }
           }
@@ -1321,30 +1364,27 @@ public class RoundVideoRecorder {
         audioBufferInfo = new MediaCodec.BufferInfo();
         videoBufferInfo = new MediaCodec.BufferInfo();
 
-        MediaFormat audioFormat = new MediaFormat();
-        audioFormat.setString(MediaFormat.KEY_MIME, AUDIO_MIME_TYPE);
-        audioFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-        audioFormat.setInteger(MediaFormat.KEY_SAMPLE_RATE, sampleRate);
-        audioFormat.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
-        audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, 32000);
-        audioFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 2048 * 10);
+        startAudioEncoder(sampleRate);
 
-        audioEncoder = MediaCodec.createEncoderByType(AUDIO_MIME_TYPE);
-        audioEncoder.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-        audioEncoder.start();
-
-        videoEncoder = MediaCodec.createEncoderByType(VIDEO_MIME_TYPE);
-
-        MediaFormat format = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, videoWidth, videoHeight);
-
-        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        format.setInteger(MediaFormat.KEY_BIT_RATE, videoBitrate);
-        format.setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE);
-        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, IFRAME_INTERVAL);
-
-        videoEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-        surface = videoEncoder.createInputSurface();
-        videoEncoder.start();
+        // Vibegram: if the encoder refuses the chosen quality, step down instead of losing the recording.
+        RoundVideoQuality videoQuality = quality;
+        while (true) {
+          try {
+            startVideoEncoder(videoQuality);
+            break;
+          } catch (Exception e) {
+            RoundVideoQuality lower = videoQuality.nextLower();
+            Log.w(Log.TAG_ROUND, "Video encoder failed with %s, trying %s", e, videoQuality, lower);
+            if (lower == null) {
+              throw e;
+            }
+            videoQuality = lower;
+          }
+        }
+        quality = videoQuality;
+        videoWidth = videoQuality.side;
+        videoHeight = videoQuality.side;
+        RoundVideoQuality.onEncoderStarted(workingKey, videoQuality);
 
         Mp4Movie movie = new Mp4Movie();
         movie.setCacheFile(videoFile);
@@ -1417,9 +1457,26 @@ public class RoundVideoRecorder {
         throw new RuntimeException("eglMakeCurrent failed");
       }
       GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+      GLES20.glViewport(0, 0, videoWidth, videoHeight);
+
+      // Camera pixels per output pixel: the square crop of the camera frame vs the output side.
+      int cameraSide = Math.min(mPreviewWidth, mPreviewHeight);
+      float ratio = cameraSide > 0 ? (float) cameraSide / (float) videoWidth : 1f;
+      boolean downscale = ratio > DOWNSCALE_RATIO_THRESHOLD && mPreviewWidth > 0 && mPreviewHeight > 0;
+      if (downscale) {
+        // Taps a third of the footprint apart: with bilinear filtering they cover all camera pixels of an output pixel.
+        float step = ratio / 3f;
+        texelOffsetX = step / (float) mPreviewWidth;
+        texelOffsetY = step / (float) mPreviewHeight;
+      }
+      Log.i(Log.TAG_ROUND, "Encoder draw: camera %dx%d -> %d, ratio %.2f, downscale: %b", mPreviewWidth, mPreviewHeight, videoWidth, ratio, downscale);
 
       int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER);
-      int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER);
+      int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, downscale ? FRAGMENT_SHADER_DOWNSCALE : FRAGMENT_SHADER);
+      if (downscale && fragmentShader == 0) {
+        // Some old GPUs may refuse the bigger shader: fall back to the single sample one.
+        fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER);
+      }
       if (vertexShader != 0 && fragmentShader != 0) {
         drawProgram = GLES20.glCreateProgram();
         GLES20.glAttachShader(drawProgram, vertexShader);
@@ -1436,10 +1493,125 @@ public class RoundVideoRecorder {
           scaleXHandle = GLES20.glGetUniformLocation(drawProgram, "scaleX");
           scaleYHandle = GLES20.glGetUniformLocation(drawProgram, "scaleY");
           alphaHandle = GLES20.glGetUniformLocation(drawProgram, "alpha");
+          texelOffsetHandle = GLES20.glGetUniformLocation(drawProgram, "texelOffset");
+          encoderZoomHandle = GLES20.glGetUniformLocation(drawProgram, "zoom");
           vertexMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uMVPMatrix");
           textureMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uSTMatrix");
         }
       }
+    }
+
+    private float texelOffsetX, texelOffsetY;
+
+    private void startAudioEncoder (int sampleRate) throws Exception {
+      // AAC-LC mono. Lower sample rates cannot carry high bitrates, so cap them.
+      int maxBitrate = sampleRate >= 44100 ? quality.audioBitrate : sampleRate >= 22050 ? 64000 : 32000;
+      Exception lastError = null;
+      for (int bitrate : new int[] {128000, 96000, 64000, 32000}) {
+        if (bitrate > maxBitrate) {
+          continue;
+        }
+        MediaFormat audioFormat = new MediaFormat();
+        audioFormat.setString(MediaFormat.KEY_MIME, AUDIO_MIME_TYPE);
+        audioFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
+        audioFormat.setInteger(MediaFormat.KEY_SAMPLE_RATE, sampleRate);
+        audioFormat.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
+        audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, bitrate);
+        audioFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 2048 * 10);
+        MediaCodec codec = MediaCodec.createEncoderByType(AUDIO_MIME_TYPE);
+        try {
+          codec.configure(audioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+          codec.start();
+          audioEncoder = codec;
+          Log.i(Log.TAG_ROUND, "Audio encoder: AAC-LC mono %d Hz, %d bit/s", sampleRate, bitrate);
+          return;
+        } catch (Exception e) {
+          lastError = e;
+          Log.w(Log.TAG_ROUND, "Audio encoder refused %d Hz %d bit/s", e, sampleRate, bitrate);
+          try { codec.release(); } catch (Throwable ignored) { }
+        }
+      }
+      throw lastError != null ? lastError : new IllegalStateException("No audio bitrate");
+    }
+
+    private MediaCodec createVideoCodec () throws Exception {
+      String name = RoundVideoQuality.getVideoEncoderName();
+      if (name != null) {
+        try {
+          // The encoder the capability checks were made against.
+          return MediaCodec.createByCodecName(name);
+        } catch (Exception e) {
+          Log.w(Log.TAG_ROUND, "Cannot create %s", e, name);
+        }
+      }
+      return MediaCodec.createEncoderByType(VIDEO_MIME_TYPE);
+    }
+
+    /** @param tuned with H.264 High profile and VBR when supported; null when there is nothing to tune */
+    private MediaFormat createVideoFormat (RoundVideoQuality q, boolean tuned) {
+      MediaFormat format = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, q.side, q.side);
+      format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+      format.setInteger(MediaFormat.KEY_BIT_RATE, q.getVideoBitrateBps());
+      format.setInteger(MediaFormat.KEY_FRAME_RATE, q.fps);
+      format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, IFRAME_INTERVAL);
+      if (tuned) {
+        boolean changed = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+          int level = RoundVideoQuality.getAvcLevel(q.side, q.fps);
+          if (RoundVideoQuality.supportsHighProfile(level)) {
+            format.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh);
+            format.setInteger(MediaFormat.KEY_LEVEL, level);
+            changed = true;
+          }
+        }
+        // Constant bitrate: a full minute must fit into Telegram's 10 MB at any motion,
+        // with VBR some encoders (Qualcomm) do not go below ~2 Mbit/s at 60 fps however low the target is
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && RoundVideoQuality.supportsCbr()) {
+          format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
+          changed = true;
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && RoundVideoQuality.supportsVbr()) {
+          format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR);
+          changed = true;
+        }
+        if (!changed) {
+          return null;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          // High profile may turn B-frames on; keep frames in presentation order like before (merging, live upload).
+          format.setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0);
+        }
+      }
+      return format;
+    }
+
+    /** Configures and starts the H.264 encoder; tries the tuned config first and the plain one if it is refused. */
+    private void startVideoEncoder (RoundVideoQuality q) throws Exception {
+      Exception lastError = null;
+      for (boolean tuned : new boolean[] {true, false}) {
+        MediaFormat format = createVideoFormat(q, tuned);
+        if (format == null) {
+          continue;
+        }
+        MediaCodec codec = createVideoCodec();
+        Surface inputSurface = null;
+        try {
+          codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+          inputSurface = codec.createInputSurface();
+          codec.start();
+          videoEncoder = codec;
+          surface = inputSurface;
+          Log.i(Log.TAG_ROUND, "Video encoder: %s, format: %s", q, format);
+          return;
+        } catch (Exception e) {
+          lastError = e;
+          Log.w(Log.TAG_ROUND, "Video encoder refused %s (tuned: %b)", e, q, tuned);
+          if (inputSurface != null) {
+            try { inputSurface.release(); } catch (Throwable ignored) { }
+          }
+          try { codec.release(); } catch (Throwable ignored) { }
+        }
+      }
+      throw lastError != null ? lastError : new IllegalStateException("No video format");
     }
 
     public Surface getInputSurface() {
@@ -1594,5 +1766,22 @@ public class RoundVideoRecorder {
     }
   }
 
-  private static final int[] SAMPLE_RATES = {44100, 22050, 11025, 8000};
+  private static final int[] SAMPLE_RATES = {48000, 44100, 22050, 11025, 8000};
+
+  /** AudioRecord sample rates to try: the preferred one first, then the usual fallbacks below it. */
+  private static int[] audioSampleRates (int preferred) {
+    int count = 0;
+    for (int rate : SAMPLE_RATES) {
+      if (rate <= preferred) count++;
+    }
+    if (count == 0) {
+      return SAMPLE_RATES;
+    }
+    int[] result = new int[count];
+    int index = 0;
+    for (int rate : SAMPLE_RATES) {
+      if (rate <= preferred) result[index++] = rate;
+    }
+    return result;
+  }
 }

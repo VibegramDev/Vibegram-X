@@ -996,20 +996,11 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
 
   private boolean useReactionBubblesValue;
   private boolean checkReactionBubbles () {
-    if (tdlib.isUserChat(loader.getChatId())) {
-      return false;
-    }
-
-    if (loader.isChannel() && Settings.instance().getBigReactionsInChannels()) {
-      return true;
-    }
-
-    if (!loader.isChannel() && Settings.instance().getBigReactionsInChats()) {
-      return true;
-    }
-
-    return false;
+    // Vibegram: private chats get the reaction chips of channels too, under the "Chats" option of Big Reactions (on by default)
+    return Settings.instance().getBigReactionsInChannels() && loader.isChannel() ||
+      Settings.instance().getBigReactionsInChats() && !loader.isChannel();
   }
+
 
   public boolean useReactionBubbles () {
     return useReactionBubblesValue;

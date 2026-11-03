@@ -43,6 +43,7 @@ import androidx.core.view.AccessibilityDelegateCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
+import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
@@ -445,8 +446,18 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     }
   }
 
-  public void setUser (Tdlib tdlib, long userId) {
-    avatarView.setUser(tdlib, userId, false);
+  /**
+   * Avatar of the settings item. Until TDLib has loaded the profile (my id or the user object unknown yet, e.g. a cold
+   * start or an account that is still starting up), the avatar saved for the account is shown: an AvatarView with
+   * neither draws nothing at all, leaving an empty slot in the dock. Called again on every update of the profile.
+   */
+  public void setMyUser (Tdlib tdlib) {
+    TdApi.User myUser = tdlib.myUser();
+    if (myUser != null) {
+      avatarView.setUser(tdlib, myUser, false);
+    } else {
+      avatarView.setUser(tdlib.account());
+    }
   }
 
   public void setSelectedItem (int item) {

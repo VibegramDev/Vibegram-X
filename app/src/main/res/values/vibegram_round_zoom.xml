@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: zoom controls of round video recording -->
+<resources>
+  <string name="vg_RoundZoomA11y">Zoom %1$s</string>
+</resources>

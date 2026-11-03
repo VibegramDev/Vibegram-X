@@ -24,8 +24,6 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.media.AudioDeviceCallback;
-import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.os.Build;
@@ -71,7 +69,6 @@ public class ProximityManager implements Settings.RaiseToSpeakListener, SensorEv
     boolean hasObject = playbackObject != null;
     this.playbackObject = playbackObject;
     if (hadObject != hasObject) {
-      setAudioDeviceCallbackRegistered(hasObject);
       if (hasObject) {
         Settings.instance().addRaiseToSpeakListener(this);
         uiPaused = UI.getUiState() != UI.State.RESUMED;
@@ -143,67 +140,7 @@ public class ProximityManager implements Settings.RaiseToSpeakListener, SensorEv
 
   private boolean uiPaused;
 
-  // Headphones: the state was read only while the proximity sensor was registered, so it went stale after
-  // headphones were connected once (the sensor then never turned on again until restart). Now it is
-  // read whenever it matters and followed with an AudioDeviceCallback during the whole playback.
-
-  private AudioDeviceCallback audioDeviceCallback;
-
-  private void setAudioDeviceCallbackRegistered (boolean isRegistered) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-      return;
-    }
-    AudioManager am = (AudioManager) AppContext.get().getSystemService(Context.AUDIO_SERVICE);
-    if (am == null) {
-      return;
-    }
-    try {
-      if (isRegistered && audioDeviceCallback == null) {
-        audioDeviceCallback = new AudioDeviceCallback() {
-          @Override
-          public void onAudioDevicesAdded (AudioDeviceInfo[] addedDevices) {
-            checkWiredHeadset();
-          }
-
-          @Override
-          public void onAudioDevicesRemoved (AudioDeviceInfo[] removedDevices) {
-            checkWiredHeadset();
-          }
-        };
-        am.registerAudioDeviceCallback(audioDeviceCallback, UI.getAppHandler());
-      } else if (!isRegistered && audioDeviceCallback != null) {
-        am.unregisterAudioDeviceCallback(audioDeviceCallback);
-        audioDeviceCallback = null;
-      }
-    } catch (Throwable t) {
-      Log.e("Unable to change audio device callback, registered:%b", t, isRegistered);
-    }
-  }
-
-  private static boolean hasHeadphones () {
-    AudioManager am = (AudioManager) AppContext.get().getSystemService(Context.AUDIO_SERVICE);
-    if (am == null) {
-      return false;
-    }
-    if (U.isWiredHeadsetOn(am)) {
-      return true;
-    }
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      AudioDeviceInfo[] devices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
-      if (devices != null) {
-        for (AudioDeviceInfo device : devices) {
-          int type = device.getType();
-          if (type == AudioDeviceInfo.TYPE_BLE_HEADSET || type == AudioDeviceInfo.TYPE_BLE_SPEAKER) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
   private void checkProximitySensorEnabled () {
-    isWiredHeadsetOn = hasHeadphones();
     boolean proximitySensorEnabled = needProximitySensor && (!uiPaused || inRaiseMode) && !isWiredHeadsetOn;
     if (this.proximitySensorEnabled != proximitySensorEnabled) {
       if (proximitySensorEnabled) {
@@ -257,7 +194,7 @@ public class ProximityManager implements Settings.RaiseToSpeakListener, SensorEv
 
     AudioManager am = (AudioManager) UI.getContext().getSystemService(Context.AUDIO_SERVICE);
     if (am != null) {
-      isWiredHeadsetOn = hasHeadphones();
+      isWiredHeadsetOn = U.isWiredHeadsetOn(am);
       BluetoothAdapter btAdapter = am.isBluetoothScoAvailableOffCall() ? BluetoothAdapter.getDefaultAdapter() : null;
       IntentFilter intentFilter = newIntentFilter(btAdapter);
       try {
@@ -316,37 +253,16 @@ public class ProximityManager implements Settings.RaiseToSpeakListener, SensorEv
       this.playingThroughEarpiece = playingThroughEarpiece;
       AudioManager am = (AudioManager) AppContext.get().getSystemService(Context.AUDIO_SERVICE);
       if (am != null) {
-        try {
-          if (playingThroughEarpiece) {
-            am.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            if (!setEarpieceCommunicationDevice(am)) {
-              am.setSpeakerphoneOn(false);
-            }
-          } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-              am.clearCommunicationDevice();
-            }
-            am.setMode(AudioManager.MODE_NORMAL);
-          }
-        } catch (Throwable t) {
-          Log.e("Unable to change audio route, earpiece:%b", t, playingThroughEarpiece);
+        if (playingThroughEarpiece) {
+          // TODO: rework to setCommunicationDevice(AudioDeviceInfo) or clearCommunicationDevice()
+          am.setSpeakerphoneOn(false);
+          am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        } else {
+          am.setMode(AudioManager.MODE_NORMAL);
         }
       }
       delegate.onUpdateAttributes();
     }
-  }
-
-  /** Android 12+ routes voice communication by the communication device: the deprecated speakerphone switch may be ignored. */
-  private static boolean setEarpieceCommunicationDevice (AudioManager am) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-      return false;
-    }
-    for (AudioDeviceInfo device : am.getAvailableCommunicationDevices()) {
-      if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
-        return am.setCommunicationDevice(device);
-      }
-    }
-    return false;
   }
 
   public boolean needPlayThroughEarpiece () {
@@ -359,7 +275,9 @@ public class ProximityManager implements Settings.RaiseToSpeakListener, SensorEv
       return;
     if (e.sensor == proximitySensor) {
       float value = e.values[0];
-      boolean isNearToSensor = playbackObject != null && value < 5.0f && value < proximitySensor.getMaximumRange();
+      // Vibegram: no 5 cm cap, any reading below the sensor's maximum counts as near (more sensitive on sensors
+      // that report the distance; on near/far sensors the threshold is in the firmware)
+      boolean isNearToSensor = playbackObject != null && value < proximitySensor.getMaximumRange();
       if (this.isNearToProximitySensor != isNearToSensor) {
         this.isNearToProximitySensor = isNearToSensor;
         checkRaiseMode();
@@ -368,7 +286,8 @@ public class ProximityManager implements Settings.RaiseToSpeakListener, SensorEv
   }
 
   private void checkWiredHeadset () {
-    boolean hasHeadset = hasHeadphones();
+    AudioManager am = (AudioManager) UI.getContext().getSystemService(Context.AUDIO_SERVICE);
+    boolean hasHeadset = am != null && U.isWiredHeadsetOn(am);
     if (this.isWiredHeadsetOn != hasHeadset) {
       this.isWiredHeadsetOn = hasHeadset;
       checkRaiseMode();

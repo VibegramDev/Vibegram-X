@@ -676,6 +676,19 @@ public class TGMessageFile extends TGMessage {
     return Math.round(files.getMetadata().getTotalHeight());
   }
 
+  /** Vibegram X: a voice transcription was shown or hidden. */
+  public void onFileComponentHeightChanged () {
+    boolean animated = needAnimateChanges();
+    files.measure(animated);
+    if (!animated) {
+      if (rebuildContentDimensions()) {
+        requestLayout();
+      } else {
+        invalidate();
+      }
+    }
+  }
+
   @Override
   protected void onMessageCombinedWithOtherMessage (TdApi.Message otherMessage, boolean atBottom, boolean local) {
     checkHasEditedMedia();

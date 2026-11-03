@@ -58,6 +58,11 @@ import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.util.DrawableProvider;
 import org.thunderdog.challegram.util.text.Highlight;
 import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.stt.SttManager;
+import org.thunderdog.challegram.ui.SettingsVoiceTranscriptionController;
+import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.widget.FileProgressComponent;
 
 import java.io.File;
@@ -71,7 +76,7 @@ import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.unit.ByteUnit;
 
-public class FileComponent extends BaseComponent implements FileProgressComponent.SimpleListener, TGLegacyAudioManager.PlayListener, TGPlayerController.TrackListener {
+public class FileComponent extends BaseComponent implements FileProgressComponent.SimpleListener, TGLegacyAudioManager.PlayListener, TGPlayerController.TrackListener, SttManager.TranscriptionListener {
   private @Nullable TdApi.Document doc;
   private @Nullable TdApi.Audio audio;
   private @Nullable TdApi.VoiceNote voice;
@@ -259,6 +264,11 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
       this.progress.setViewProvider(viewProvider);
     }
 
+    this.sttKey = context.getChatId() != 0 && !TD.isSelfDestructTypeImmediately(message) ? SttManager.key(voice.voice.id, voice.voice.remote != null ? voice.voice.remote.uniqueId : null) : null;
+    if (sttKey != null) {
+      SttManager.instance().addTranscriptionListener(this);
+    }
+
     if (TD.isSelfDestructTypeImmediately(message)) {
       this.progress.setDownloadedIconRes(R.drawable.baseline_hot_once_24);
       this.progress.setIgnorePlayPauseClicks(true);
@@ -358,8 +368,256 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
       buildTitles(maxWidth - (getPreviewSize() + getPreviewOffset()));
     }
     if (waveform != null) {
-      waveform.layout(Math.min(Screen.dp(420f), Math.min(TGMessage.getEstimatedContentMaxWidth(), maxWidth) - Screen.dp(FileProgressComponent.DEFAULT_FILE_RADIUS) * 2 - getPreviewOffset() - (int) sizeWidth - Screen.dp(12f)));
+      waveform.layout(Math.min(Screen.dp(420f), Math.min(TGMessage.getEstimatedContentMaxWidth(), maxWidth) - Screen.dp(FileProgressComponent.DEFAULT_FILE_RADIUS) * 2 - getPreviewOffset() - (int) sizeWidth - Screen.dp(12f) - getSttButtonSpace()));
     }
+    buildSttText();
+  }
+
+  // Vibegram X: on-device transcription of voice messages (button next to the waveform, text under it)
+
+  private static final float STT_BUTTON_WIDTH = 34f, STT_BUTTON_HEIGHT = 28f, STT_BUTTON_GAP = 8f, STT_TEXT_GAP = 6f;
+  /**
+   * While recognizing, a status row (ring with a stop square + "Transcribing… N%") goes under the text.
+   * The text grows the bubble upwards (the chat is anchored at the bottom), so the button next to the waveform
+   * keeps moving and a tap often misses it; the bottom of the bubble stays put, so the stop control there does not.
+   */
+  private static final float STT_STATUS_ROW = 24f;
+
+  private @Nullable String sttKey;
+  private @Nullable Text sttText;
+  private @Nullable String sttTextSource;
+  private boolean sttCaught;
+  private final RectF sttButtonRect = new RectF();
+  private @Nullable Text sttStatusText;
+  private @Nullable String sttStatusSource;
+
+  private int getSttButtonSpace () {
+    return sttKey != null ? Screen.dp(STT_BUTTON_GAP + STT_BUTTON_WIDTH) : 0;
+  }
+
+  private @Nullable String getSttDisplayText () {
+    if (sttKey == null) {
+      return null;
+    }
+    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
+    if (!t.expanded) {
+      return null;
+    }
+    switch (t.state) {
+      case SttManager.STATE_RUNNING:
+        // text recognized so far; the status goes into its own row
+        return StringUtils.isEmpty(t.text) ? null : t.text;
+      case SttManager.STATE_DONE:
+        return StringUtils.isEmpty(t.text) ? Lang.getString(R.string.vg_SttEmpty) : t.text;
+      case SttManager.STATE_FAILED:
+        return Lang.getString(R.string.vg_SttFailed);
+    }
+    return null;
+  }
+
+  private @Nullable String getSttStatus () {
+    if (sttKey == null) {
+      return null;
+    }
+    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
+    if (!t.expanded || t.state != SttManager.STATE_RUNNING) {
+      return null;
+    }
+    float progress = t.getDisplayProgress();
+    if (progress < 0) {
+      return Lang.getString(R.string.vg_SttQueued);
+    }
+    if (t.preparing) {
+      return Lang.getString(R.string.vg_SttPreparing);
+    }
+    return Lang.getString(R.string.vg_SttProgress, (int) (progress * 100));
+  }
+
+  private void buildSttText () {
+    int width = getWidth();
+    String text = lastMaxWidth > 0 ? getSttDisplayText() : null;
+    if (text == null) {
+      sttText = null;
+      sttTextSource = null;
+    } else if (sttText == null || !text.equals(sttTextSource) || sttText.getMaxWidth() != width) {
+      sttTextSource = text;
+      sttText = new Text.Builder(text, width, TGMessage.getTextStyleProvider(), context.getTextColorSet()).build();
+    }
+    String status = lastMaxWidth > 0 ? getSttStatus() : null;
+    int statusWidth = width;
+    if (status == null || statusWidth <= 0) {
+      sttStatusText = null;
+      sttStatusSource = null;
+    } else if (sttStatusText == null || !status.equals(sttStatusSource) || sttStatusText.getMaxWidth() != statusWidth) {
+      sttStatusSource = status;
+      sttStatusText = new Text.Builder(status, statusWidth, TGMessage.getTextStyleProvider(), context.getDecentColorSet()).singleLine().build();
+    }
+  }
+
+  private int getSttTextHeight () {
+    int height = 0;
+    if (sttText != null) {
+      height += Screen.dp(STT_TEXT_GAP) + sttText.getHeight();
+    }
+    if (sttStatusText != null) {
+      height += Screen.dp(STT_TEXT_GAP + STT_STATUS_ROW);
+    }
+    return height;
+  }
+
+  @Override
+  public void onTranscriptionStateChanged (String key) {
+    if (sttKey == null || (key != null && !sttKey.equals(key))) {
+      return;
+    }
+    int oldHeight = getHeight();
+    buildSttText();
+    if (getHeight() != oldHeight && context instanceof TGMessageFile) {
+      ((TGMessageFile) context).onFileComponentHeightChanged();
+    }
+    // always redraw: the button changes from the progress ring to the arrow even when the height stays the same
+    context.invalidate();
+  }
+
+  private long sttLastProgressUpdate;
+  private boolean sttInvalidatePending;
+
+  /** Refreshes the percentage under the waveform twice a second while the transcription is running. */
+  private void updateSttProgressText () {
+    long now = SystemClock.uptimeMillis();
+    if (now - sttLastProgressUpdate < 500) {
+      return;
+    }
+    sttLastProgressUpdate = now;
+    String status = getSttStatus();
+    if (status != null && !status.equals(sttStatusSource)) {
+      UI.post(() -> onTranscriptionStateChanged(sttKey));
+    }
+  }
+
+  private void onSttButtonClick () {
+    if (sttKey == null) {
+      return;
+    }
+    SttManager manager = SttManager.instance();
+    SttManager.Transcription t = manager.getTranscription(sttKey);
+    if (t.state == SttManager.STATE_RUNNING) {
+      manager.cancelTranscription(sttKey);
+      return;
+    }
+    if (t.state == SttManager.STATE_DONE || t.state == SttManager.STATE_FAILED) {
+      if (t.state == SttManager.STATE_FAILED && !t.expanded) {
+        startTranscription();
+      } else {
+        if (t.state == SttManager.STATE_DONE && !t.expanded) {
+          markListened(context);
+        }
+        manager.setExpanded(sttKey, !t.expanded);
+      }
+      return;
+    }
+    startTranscription();
+  }
+
+  /**
+   * Reading the transcription counts as listening: the voice message gets marked as listened,
+   * for the sender too, the same as after playing it.
+   */
+  private static void markListened (TGMessage message) {
+    if (!message.isOutgoing() && !message.isContentRead() && !TD.isSelfDestructTypeImmediately(message.getMessage())) {
+      message.readContent();
+    }
+  }
+
+  private void startTranscription () {
+    final TdApi.VoiceNote voice = this.voice;
+    if (voice == null || sttKey == null) {
+      return;
+    }
+    final Tdlib tdlib = context.tdlib();
+    // the message object outlives this component's binding, so the mark is applied even after scrolling away
+    final TGMessage message = context;
+    boolean started = SttManager.instance().transcribe(sttKey, () -> {
+      TdApi.File file = voice.voice;
+      if (file.local != null && file.local.isDownloadingCompleted && new File(file.local.path).exists()) {
+        return file.local.path;
+      }
+      final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+      final String[] path = new String[1];
+      tdlib.send(new TdApi.DownloadFile(file.id, 32, 0, 0, true), (result, error) -> {
+        if (result != null && result.local != null && result.local.isDownloadingCompleted) {
+          path[0] = result.local.path;
+        }
+        latch.countDown();
+      });
+      latch.await(2, java.util.concurrent.TimeUnit.MINUTES);
+      return path[0];
+    }, () -> markListened(message));
+    if (!started) {
+      UI.showToast(R.string.vg_SttNoModel, android.widget.Toast.LENGTH_SHORT);
+      context.controller().navigateTo(new SettingsVoiceTranscriptionController(context.controller().context(), tdlib));
+    }
+  }
+
+  private void drawSttButton (Canvas c, int x, int cy) {
+    if (sttKey == null) {
+      return;
+    }
+    boolean outgoing = context.isOutgoingBubble();
+    int activeColor = Theme.getColor(outgoing ? ColorId.bubbleOut_waveformActive : ColorId.waveformActive);
+    float width = Screen.dp(STT_BUTTON_WIDTH), height = Screen.dp(STT_BUTTON_HEIGHT);
+    sttButtonRect.set(x, cy - height / 2f, x + width, cy + height / 2f);
+    float radius = Screen.dp(8f);
+    c.drawRoundRect(sttButtonRect, radius, radius, Paints.fillingPaint(ColorUtils.alphaColor(.16f, activeColor)));
+    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
+    float cx = sttButtonRect.centerX();
+    if (t.state == SttManager.STATE_RUNNING) {
+      drawSttRing(c, t, cx, cy, activeColor);
+      updateSttProgressText();
+      if (!sttInvalidatePending) {
+        // 30 frames per second are enough for the ring and leave the CPU to the recognition
+        sttInvalidatePending = true;
+        UI.post(() -> {
+          sttInvalidatePending = false;
+          context.invalidate();
+        }, 33);
+      }
+    } else {
+      boolean expanded = t.expanded && (t.state == SttManager.STATE_DONE || t.state == SttManager.STATE_FAILED);
+      Drawable icon = Drawables.get(expanded ? R.drawable.baseline_keyboard_arrow_up_24 : R.drawable.vg_speech_to_text_24);
+      c.save();
+      float scale = expanded ? 1f : .8f;
+      c.scale(scale, scale, cx, cy);
+      Drawables.drawCentered(c, icon, cx, cy, Paints.getPorterDuffPaint(activeColor));
+      c.restore();
+    }
+  }
+
+  /** Progress ring with a stop square: a tap cancels. */
+  private static void drawSttRing (Canvas c, SttManager.Transcription t, float cx, float cy, int activeColor) {
+    float r = Screen.dp(8f);
+    RectF arc = Paints.getRectF(cx - r, cy - r, cx + r, cy + r);
+    float progress = t.getDisplayProgress();
+    // the arc always turns, so the work is visibly going on even when the progress moves slowly
+    float angle = (SystemClock.uptimeMillis() % 1500L) / 1500f * 360f;
+    if (progress < 0) {
+      // queued: indeterminate spinner
+      c.drawArc(arc, angle, 270f, false, Paints.getProgressPaint(activeColor, Screen.dp(2f)));
+    } else {
+      c.drawArc(arc, 0, 360f, false, Paints.getProgressPaint(ColorUtils.alphaColor(.25f, activeColor), Screen.dp(2f)));
+      c.drawArc(arc, angle - 90f, Math.max(36f, 360f * progress), false, Paints.getProgressPaint(activeColor, Screen.dp(2f)));
+    }
+    float half = Screen.dp(3f);
+    c.drawRect(cx - half, cy - half, cx + half, cy + half, Paints.fillingPaint(activeColor));
+  }
+
+  private void drawSttStatus (Canvas c, int startX, int top, float alpha) {
+    if (sttKey == null || sttStatusText == null) {
+      return;
+    }
+    // Text only: progress and stop are already shown by the transcription button
+    float cy = top + Screen.dp(STT_STATUS_ROW) / 2f;
+    sttStatusText.draw(c, startX, startX + sttStatusText.getWidth(), 0, (int) (cy - sttStatusText.getHeight() / 2f), null, alpha);
   }
 
   private void buildTitles (int maxWidth) {
@@ -521,7 +779,7 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
   public int getWidth () {
     int contentWidth = getPreviewSize() + getPreviewOffset();
     if (waveform != null) {
-      contentWidth += waveform.getWidth() + sizeWidth + Screen.dp(12f);
+      contentWidth += waveform.getWidth() + sizeWidth + Screen.dp(12f) + getSttButtonSpace();
     } else {
       contentWidth += Math.max(getTitleWidth(), sizeWidth) + Screen.dp(6f);
     }
@@ -529,7 +787,7 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
   }
 
   public int getHeight () {
-    return getDocHeight();
+    return getDocHeight() + getSttTextHeight();
   }
 
   private boolean loadCaught;
@@ -565,6 +823,26 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
 
     float x = event.getX();
     float y = event.getY();
+
+    if (sttKey != null) {
+      int action = event.getAction();
+      if (action == MotionEvent.ACTION_DOWN) {
+        float slop = Screen.dp(6f);
+        sttCaught = x >= sttButtonRect.left - slop && x <= sttButtonRect.right + slop && y >= sttButtonRect.top - slop && y <= sttButtonRect.bottom + slop;
+        if (sttCaught) {
+          return true;
+        }
+      } else if (sttCaught) {
+        if (action == MotionEvent.ACTION_UP) {
+          sttCaught = false;
+          onSttButtonClick();
+          context.performClickSoundFeedback();
+        } else if (action == MotionEvent.ACTION_CANCEL) {
+          sttCaught = false;
+        }
+        return true;
+      }
+    }
 
     switch (event.getAction()) {
       case MotionEvent.ACTION_DOWN: {
@@ -771,6 +1049,16 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
         int textX = startX + previewSize + getPreviewOffset() + waveform.getWidth() + Screen.dp(12f);
         trimmedSubtitle.draw(c, textX, textX + trimmedSubtitle.getWidth(), 0, startY + Screen.dp(18f), null, alpha);
       }
+      if (sttKey != null) {
+        int buttonX = startX + previewSize + getPreviewOffset() + waveform.getWidth() + Screen.dp(12f) + (int) sizeWidth + Screen.dp(STT_BUTTON_GAP);
+        drawSttButton(c, buttonX, cy);
+        int textTop = startY + getDocHeight();
+        if (sttText != null) {
+          sttText.draw(c, startX, startX + sttText.getWidth(), 0, textTop + Screen.dp(STT_TEXT_GAP), null, alpha);
+          textTop += Screen.dp(STT_TEXT_GAP) + sttText.getHeight();
+        }
+        drawSttStatus(c, startX, textTop + Screen.dp(STT_TEXT_GAP), alpha);
+      }
     }
   }
 
@@ -787,6 +1075,12 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
   }
 
   public int getLastLineWidth () {
+    if (waveform != null && sttStatusText != null) {
+      return sttStatusText.getWidth();
+    }
+    if (waveform != null && sttText != null) {
+      return sttText.getLastLineWidth();
+    }
     return waveform != null ? TGMessage.BOTTOM_LINE_KEEP_WIDTH : (int) sizeWidth + getPreviewSize() + getPreviewOffset();
   }
 
@@ -910,6 +1204,9 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
   public void performDestroy () {
     if (progress != null) {
       progress.performDestroy();
+    }
+    if (sttKey != null) {
+      SttManager.instance().removeTranscriptionListener(this);
     }
   }
 }

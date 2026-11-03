@@ -486,7 +486,8 @@ public class VideoGen {
     if (!editedMediaItem.removeAudio) {
       transformerBuilder.setAudioMimeType(MimeTypes.AUDIO_AAC);
     }
-    if (inputVideoBitrate > outputVideoBitrate) {
+    // Vibegram: a trimmed round video keeps its own bitrate; without it Transformer picks its own (lower) default.
+    if (inputVideoBitrate > outputVideoBitrate || (info.isRoundVideo() && outputVideoBitrate > 0)) {
       VideoEncoderSettings videoEncoderSettings = new VideoEncoderSettings.Builder()
         .setBitrate((int) outputVideoBitrate)
         .build();

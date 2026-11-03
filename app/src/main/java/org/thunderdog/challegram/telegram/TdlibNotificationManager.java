@@ -47,6 +47,7 @@ import org.thunderdog.challegram.core.BaseThread;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.helper.Recorder;
+import org.thunderdog.challegram.player.RecordAudioVideoController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.service.FetchNotificationService;
 import org.thunderdog.challegram.service.PushProcessor;
@@ -1952,7 +1953,7 @@ public class TdlibNotificationManager implements UI.StateListener, Passcode.Lock
 
   @SuppressWarnings("deprecation")
   private void playSound (@RawRes int soundResource, int delayAfter) {
-    if (audioManager() == null || Recorder.instance().isRecording()) {
+    if (audioManager() == null || areNotificationSoundsForbidden()) {
       return;
     }
     if (Thread.currentThread() != queue) {
@@ -2075,9 +2076,10 @@ public class TdlibNotificationManager implements UI.StateListener, Passcode.Lock
   private static final long NOTIFICATION_LIMIT = 800l;
   private long lastNotificationTimeMs, lastNotificationActualTimeMs;
 
-  private static boolean areNotificationSoundsForbidden () {
+  /** Notifications must not make sounds or vibrate while a voice message or a round video is being recorded. */
+  public static boolean areNotificationSoundsForbidden () {
     // TODO check for pending call?
-    return Recorder.instance().isRecording();
+    return Recorder.instance().isRecording() || RecordAudioVideoController.isRecordingVoiceOrVideo();
   }
 
   /**

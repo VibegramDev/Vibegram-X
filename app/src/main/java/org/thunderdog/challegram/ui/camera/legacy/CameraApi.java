@@ -14,12 +14,14 @@
  */
 package org.thunderdog.challegram.ui.camera.legacy;
 
+import java.util.Arrays;
 import android.content.Context;
 import android.graphics.SurfaceTexture;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
 
 import org.thunderdog.challegram.Log;
@@ -27,8 +29,11 @@ import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.BaseThread;
 import org.thunderdog.challegram.loader.ImageGalleryFile;
 import org.thunderdog.challegram.player.RoundVideoRecorder;
+import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.camera.CameraFeatures;
 import org.thunderdog.challegram.ui.camera.CameraManager;
+
+import java.util.List;
 
 import me.vkryl.core.lambda.RunnableData;
 
@@ -189,6 +194,258 @@ public abstract class CameraApi {
     }
   }
   protected abstract void onFlashModeChange (int newFlashMode) throws Throwable;
+
+  // Torch: a steady light for round videos, kept across camera switches and reopenings
+
+  protected boolean mTorchRequested;
+
+  public final void setTorchEnabled (boolean enabled) {
+    if (!checkCameraThread()) {
+      cameraThread.getHandler().removeMessages(ACTION_SET_TORCH);
+      sendMessage(ACTION_SET_TORCH, enabled ? 1 : 0, 0);
+      return;
+    }
+    if (mTorchRequested != enabled) {
+      mTorchRequested = enabled;
+      if (isCameraActive) {
+        try {
+          onTorchChange(enabled);
+        } catch (Throwable t) {
+          Log.w(Log.TAG_CAMERA, "Cannot change torch state", t);
+        }
+      }
+    }
+  }
+
+  /** Applies {@link #mTorchRequested} to the open camera; cameras without a torch ignore it. */
+  protected void onTorchChange (boolean enabled) throws Throwable { }
+
+  // Vibegram: zoom as a ratio for round videos, the way camera apps show it
+  // (1 = main lens, below 1 = ultra-wide, the telephoto lens at its native factor).
+  // The backend reports what the open camera can do with setZoomCapabilities()
+  // and applies a requested ratio in onZoomRatioChanged().
+
+  protected volatile float mZoomRatio = 1f;
+  protected volatile float mMinZoomRatio = 1f, mMaxZoomRatio = 1f;
+  protected volatile float[] mZoomStops = new float[] {1f};
+
+  // Beyond the camera's own maximum the zoom goes on in software: the round recorder crops
+  // the center of every frame (preview and video) by mSoftwareZoom, like camera apps do past their digital limit.
+  // Samsung opens 0.6–10× to other apps, its camera app goes up to 30× (3× lens, then crop with processing).
+  // Camera apps do not publish their limit, so ours is the same for every phone: the longest lens ×10, at most 100×
+  // (3× lens: 30× like Galaxy S24, 5× lens: 50×, no telephoto: 10×).
+  /** The zoom goes up to this many times the longest lens... */
+  public static final float SOFTWARE_ZOOM_LENS_FACTOR = 10f;
+  /** ...and never past this ratio in total. */
+  public static final float SOFTWARE_ZOOM_MAX_RATIO = 100f;
+  protected volatile float mHardwareMaxZoomRatio = 1f;
+  private volatile float mSoftwareZoom = 1f;
+
+  /** Extra center crop on top of the camera zoom, 1 when the camera zoom alone is enough. Any thread. */
+  public final float getSoftwareZoom () {
+    return mSoftwareZoom;
+  }
+
+  /** Camera thread. The ratio was set by a hardware-only path (volume keys): no software crop. */
+  protected final void resetSoftwareZoom () {
+    mSoftwareZoom = 1f;
+  }
+
+  public final float getZoomRatio () {
+    return mZoomRatio;
+  }
+
+  public final float getMinZoomRatio () {
+    return mMinZoomRatio;
+  }
+
+  public final float getMaxZoomRatio () {
+    return mMaxZoomRatio;
+  }
+
+  /** Ratios of the zoom buttons: ultra-wide (if any), 1, 2, native telephoto factors, all within min..max. */
+  public final float[] getZoomStops () {
+    return mZoomStops;
+  }
+
+  /** Any thread. Requests are coalesced: only the latest ratio is applied. */
+  public final void requestZoomRatio (float ratio) {
+    if (!checkCameraThread()) {
+      cameraThread.getHandler().removeMessages(ACTION_REQUEST_ZOOM_RATIO);
+      sendMessage(ACTION_REQUEST_ZOOM_RATIO, Float.floatToIntBits(ratio), 0);
+      return;
+    }
+    ratio = Math.max(mMinZoomRatio, Math.min(mMaxZoomRatio, ratio));
+    if (!isCameraActive || mZoomRatio == ratio) {
+      return;
+    }
+    try {
+      float hardwareRatio = Math.min(ratio, mHardwareMaxZoomRatio);
+      if (Math.min(mZoomRatio, mHardwareMaxZoomRatio) != hardwareRatio) {
+        onZoomRatioChanged(hardwareRatio);
+      }
+      mSoftwareZoom = Math.max(1f, ratio / hardwareRatio);
+      mZoomRatio = ratio;
+      manager.onZoomRatioChanged(ratio);
+    } catch (Throwable t) {
+      Log.w(Log.TAG_CAMERA, "Cannot change zoom ratio", t);
+    }
+  }
+
+  /** Camera thread. Applies the ratio to the open camera. */
+  protected void onZoomRatioChanged (float ratio) throws Throwable { }
+
+  /** Camera thread. Called by the backend when a camera has been opened (or closed: 1, 1, {1}). */
+  protected final void setZoomCapabilities (float minRatio, float maxRatio, float[] stops) {
+    setZoomCapabilities(minRatio, maxRatio, stops, 0f);
+  }
+
+  /**
+   * @param longestLens ratio of the longest lens (1 without a telephoto lens), or 0 for no software zoom.
+   * The zoom then goes past maxRatio by cropping frames, up to the longest lens × {@link #SOFTWARE_ZOOM_LENS_FACTOR}
+   * (at most {@link #SOFTWARE_ZOOM_MAX_RATIO}), and this last ratio is added to the stops.
+   */
+  protected final void setZoomCapabilities (float minRatio, float maxRatio, float[] stops, float longestLens) {
+    mHardwareMaxZoomRatio = maxRatio;
+    mSoftwareZoom = 1f;
+    if (longestLens > 0f && maxRatio > 1f) {
+      float extended = Math.min(SOFTWARE_ZOOM_MAX_RATIO, Math.max(1f, longestLens) * SOFTWARE_ZOOM_LENS_FACTOR);
+      // Whole numbers only: 30×, not 26.4×
+      extended = (float) Math.floor(extended);
+      if (extended > maxRatio + 0.5f) {
+        maxRatio = extended;
+        stops = Arrays.copyOf(stops, stops.length + 1);
+        stops[stops.length - 1] = extended;
+      }
+    }
+    mMinZoomRatio = minRatio;
+    mMaxZoomRatio = maxRatio;
+    mZoomStops = stops;
+    mZoomRatio = Math.max(minRatio, Math.min(maxRatio, 1f));
+    manager.onZoomCapabilitiesChanged(minRatio, maxRatio, stops, mZoomRatio);
+  }
+
+  /** Whether this backend is Camera2 (used for settings and diagnostics). */
+  public boolean isCamera2 () {
+    return false;
+  }
+
+  /**
+   * Camera thread. The zoom was changed by ratio: keeps the legacy zoom index
+   * (volume keys, {@link #getZoom()}) in sync without applying it again.
+   */
+  protected final void syncZoomIndex (float zoom) {
+    if (this.mZoom != zoom) {
+      this.mZoom = zoom;
+      manager.onZoomChanged(zoom);
+    }
+  }
+
+  protected final boolean hasRoundRecorder () {
+    return roundRecorder != null;
+  }
+
+  public static final int FACING_UNKNOWN = -1, FACING_BACK = 0, FACING_FRONT = 1;
+
+  /** Facing of the camera opened last, so a replacement backend can continue with the same one. */
+  protected volatile int mCurrentFacing = FACING_UNKNOWN;
+
+  public final int getCurrentFacing () {
+    return mCurrentFacing;
+  }
+
+  // Vibegram: round video stream selection shared by both backends
+
+  /**
+   * The smallest size whose short side is at least {@code minSide}: 16:9 first, then 4:3, then any ratio.
+   * Sizes with a long side above 1920 are only used when nothing smaller fits.
+   * When no size is big enough, the largest one is returned.
+   *
+   * @param sizes {width, height} pairs
+   */
+  protected static int[] chooseRoundPreviewSize (List<int[]> sizes, int minSide) {
+    if (sizes == null || sizes.isEmpty()) {
+      return null;
+    }
+    final int maxLongSide = Math.max(1920, minSide * 16 / 9 + 1);
+    int[] best169 = null, best43 = null, bestAny = null, largest = null;
+    for (int[] size : sizes) {
+      int w = size[0], h = size[1];
+      if (w <= 0 || h <= 0) {
+        continue;
+      }
+      if (largest == null || (long) w * h > (long) largest[0] * largest[1]) {
+        largest = size;
+      }
+      int shortSide = Math.min(w, h), longSide = Math.max(w, h);
+      if (shortSide < minSide || longSide > maxLongSide) {
+        continue;
+      }
+      float ratio = (float) longSide / (float) shortSide;
+      if (Math.abs(ratio - 16f / 9f) < 0.02f) {
+        best169 = smallerSize(best169, size);
+      } else if (Math.abs(ratio - 4f / 3f) < 0.02f) {
+        best43 = smallerSize(best43, size);
+      } else {
+        bestAny = smallerSize(bestAny, size);
+      }
+    }
+    if (best169 != null) {
+      return best169;
+    }
+    if (best43 != null) {
+      return best43;
+    }
+    if (bestAny != null) {
+      return bestAny;
+    }
+    // Nothing fits under the cap: the smallest one above it, or the largest when none is big enough
+    int[] bigEnough = null;
+    for (int[] size : sizes) {
+      if (size[0] > 0 && size[1] > 0 && Math.min(size[0], size[1]) >= minSide) {
+        bigEnough = smallerSize(bigEnough, size);
+      }
+    }
+    return bigEnough != null ? bigEnough : largest;
+  }
+
+  private static int[] smallerSize (int[] current, int[] candidate) {
+    if (current == null) {
+      return candidate;
+    }
+    long a = (long) current[0] * current[1], b = (long) candidate[0] * candidate[1];
+    return b < a ? candidate : current;
+  }
+
+  /**
+   * The best fps range for {@code fps}: the highest upper bound not above {@code fps},
+   * a fixed range first, then the highest lower bound. Falls back to the range with the lowest upper bound.
+   *
+   * @param ranges {min, max} pairs, multiplied by {@code scale} (1000 for Camera1, 1 for Camera2)
+   */
+  protected static int[] chooseFpsRange (List<int[]> ranges, int fps, int scale) {
+    if (ranges == null || ranges.isEmpty() || fps <= 0) {
+      return null;
+    }
+    // Some HALs report 29.97 fps as 29970 or 30 as 30010
+    final int limit = fps * scale + (scale >= 1000 ? 100 : 0);
+    int[] best = null, lowest = null;
+    for (int[] range : ranges) {
+      if (range == null || range.length < 2 || range[1] <= 0) {
+        continue;
+      }
+      if (lowest == null || range[1] < lowest[1] || (range[1] == lowest[1] && range[0] > lowest[0])) {
+        lowest = range;
+      }
+      if (range[1] > limit) {
+        continue;
+      }
+      if (best == null || range[1] > best[1] || (range[1] == best[1] && range[0] > best[0])) {
+        best = range;
+      }
+    }
+    return best != null ? best : lowest;
+  }
 
   protected final void setRequestedCameraIndex (int index) {
     if (index >= mNumberOfCameras) {
@@ -638,6 +895,8 @@ public abstract class CameraApi {
   private static final int ACTION_FINISH_ROUND_CAPTURE = -15;
   private static final int ACTION_OPEN_CAMERA_IF_NEEDED = -16;
   private static final int ACTION_DESTROY_ROUND_RENDERER = -17;
+  private static final int ACTION_SET_TORCH = -18;
+  private static final int ACTION_REQUEST_ZOOM_RATIO = -19;
 
   private void handleInternalMessage (Message msg) {
     switch (msg.what) {
@@ -694,6 +953,12 @@ public abstract class CameraApi {
       case ACTION_DESTROY_ROUND_RENDERER:
         destroyRoundRenderer();
         break;
+      case ACTION_SET_TORCH:
+        setTorchEnabled(msg.arg1 == 1);
+        break;
+      case ACTION_REQUEST_ZOOM_RATIO:
+        requestZoomRatio(Float.intBitsToFloat(msg.arg1));
+        break;
     }
   }
 
@@ -715,12 +980,20 @@ public abstract class CameraApi {
       return;
     }
     if (this.roundRecorder == recorder && isCameraActive && !cameraOpened) {
+      boolean opened = false;
       try {
-        openCamera(recorder.getCameraTexture());
-        cameraOpened = true;
+        opened = openCamera(recorder.getCameraTexture());
       } catch (Throwable t) {
-        Log.w(Log.TAG_CAMERA, "Cannot open camera lately");
+        Log.w(Log.TAG_CAMERA, "Cannot open camera lately", t);
+      }
+      if (opened) {
+        cameraOpened = true;
+      } else {
         setCameraActive(false);
+        if (isCamera2()) {
+          // Vibegram: the capture session could not be configured, continue with Camera1
+          manager.switchToLegacyApi(this);
+        }
       }
     }
   }
@@ -744,6 +1017,37 @@ public abstract class CameraApi {
       manager.setAvailableCameraCount(num);
     }
   }
+
+  /**
+   * Any thread. Closes the camera, destroys the round renderer (so another backend can draw
+   * into the same TextureView), releases backend resources and quits both threads.
+   * {@code onReleased} runs on the UI thread once all of that is done.
+   */
+  public final void release (@Nullable Runnable onReleased) {
+    if (!checkCameraThread()) {
+      post(() -> release(onReleased), 0);
+      return;
+    }
+    cameraPreviewRequested = false;
+    setCameraActive(false);
+    destroyRoundRenderer();
+    try {
+      onRelease();
+    } catch (Throwable t) {
+      Log.w(Log.TAG_CAMERA, "Cannot release camera backend", t);
+    }
+    // The renderer is destroyed on the background thread: wait for it before reporting
+    backgroundThread.post(() -> {
+      if (onReleased != null) {
+        UI.post(onReleased);
+      }
+      cameraThread.post(() -> cameraThread.quitLooper(true), 0);
+      backgroundThread.quitLooper(true);
+    }, 0);
+  }
+
+  /** Camera thread, the camera is already closed. Releases what the backend keeps across openings. */
+  protected void onRelease () throws Throwable { }
 
   public final void destroyRoundRenderer () {
     if (!checkCameraThread()) {
@@ -810,7 +1114,7 @@ public abstract class CameraApi {
       if (success) {
         this.isCameraActive = isActive;
       } else if (isActive) {
-        manager.switchToLegacyApi();
+        manager.switchToLegacyApi(this);
       }
     }
   }
@@ -825,7 +1129,13 @@ public abstract class CameraApi {
       return;
     }
 
-    roundRecorder.startCapture(delegate, key, outputPath);
+    if (roundRecorder != null) {
+      roundRecorder.startCapture(delegate, key, outputPath);
+    } else {
+      // Vibegram: the renderer is gone (camera failed or the backend is being replaced)
+      Log.w(Log.TAG_ROUND, "startRoundVideoCapture without a renderer, key: %s", key);
+      manager.onRoundCaptureNotStarted(this, key);
+    }
   }
 
   public final void finishOrCancelRoundVideoCapture (String key, boolean saveResult) {
@@ -834,6 +1144,11 @@ public abstract class CameraApi {
       return;
     }
 
-    roundRecorder.finishCapture(key, saveResult);
+    if (roundRecorder != null) {
+      roundRecorder.finishCapture(key, saveResult);
+    } else {
+      Log.w(Log.TAG_ROUND, "finishOrCancelRoundVideoCapture without a renderer, key: %s", key);
+      manager.onRoundCaptureNotFinished(this, key);
+    }
   }
 }

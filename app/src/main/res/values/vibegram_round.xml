@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: Settings → Video messages -->
+<resources>
+  <item type="id" name="controller_vgRoundVideo" />
+  <item type="id" name="btn_vgRoundVideo" />
+  <item type="id" name="btn_vgRoundCameraApi" />
+  <item type="id" name="btn_vgRoundCameraApi1" />
+  <item type="id" name="btn_vgRoundCameraApi2" />
+  <item type="id" name="btn_vgRoundStartCamera" />
+  <item type="id" name="btn_vgRoundStartFront" />
+  <item type="id" name="btn_vgRoundStartRear" />
+  <item type="id" name="btn_vgRoundStartLast" />
+  <item type="id" name="btn_vgRoundSide" />
+  <item type="id" name="btn_vgRoundFps" />
+  <item type="id" name="btn_vgRoundBitrate" />
+  <item type="id" name="btn_vgRoundEarpiece" />
+  <item type="id" name="btn_vgRoundEarpieceVoice" />
+  <item type="id" name="btn_vgRoundQualityInfo" />
+  <item type="id" name="btn_vgRoundOption0" />
+  <item type="id" name="btn_vgRoundOption1" />
+  <item type="id" name="btn_vgRoundOption2" />
+  <item type="id" name="btn_vgRoundOption3" />
+  <item type="id" name="btn_vgRoundOption4" />
+  <item type="id" name="btn_vgRoundOption5" />
+  <item type="id" name="btn_vgRoundOption6" />
+  <item type="id" name="btn_vgRoundOption7" />
+  <item type="id" name="btn_vgRoundOption8" />
+  <item type="id" name="btn_vgRoundOption9" />
+  <string name="vg_RoundTitle">Video messages</string>
+  <string name="vg_RoundCameraHeader">Camera</string>
+  <string name="vg_RoundCameraApi">Camera API</string>
+  <string name="vg_RoundCameraApiCamera2">Camera2</string>
+  <string name="vg_RoundCameraApiCamera1">Camera1 (legacy)</string>
+  <string name="vg_RoundCameraApiCamera1Only">Camera1 (Camera2 needs Android 6)</string>
+  <string name="vg_RoundCameraApiCamera2Failed">Camera1 (Camera2 did not work on this phone)</string>
+  <string name="vg_RoundCameraApiHint">Camera2 gives lens switching (ultra-wide, telephoto), stabilization and 60 fps on phones that support them. If it fails, recording switches to Camera1 by itself.</string>
+  <string name="vg_RoundStartCamera">Start recording with</string>
+  <string name="vg_RoundStartFront">Front camera</string>
+  <string name="vg_RoundStartRear">Rear camera</string>
+  <string name="vg_RoundStartLast">Last used camera</string>
+  <string name="vg_RoundCameraDescription">Zoom while recording: tap 0.6×, 1×, 2×… under the video or hold and slide for precise zoom.</string>
+  <string name="vg_RoundQualityHeader">Quality</string>
+  <string name="vg_RoundSide">Resolution</string>
+  <string name="vg_RoundFps">Frame rate</string>
+  <string name="vg_RoundBitrate">Bitrate</string>
+  <string name="vg_RoundMax">Maximum</string>
+  <string name="vg_RoundSideValue">%1$d×%2$d</string>
+  <string name="vg_RoundFpsValue">%1$d fps</string>
+  <string name="vg_RoundMbps">%1$s Mbit/s</string>
+  <string name="vg_RoundKbps">%1$d kbit/s</string>
+  <string name="vg_RoundUnsupported">%1$s (not supported by this phone)</string>
+  <string name="vg_RoundQualityDescription">By default video messages are recorded at the best quality this phone supports. If the phone cannot record the chosen quality, the next lower one is used and you get a notice.</string>
+  <string name="vg_RoundDeviceMax">This phone: up to %1$d×%2$d, %3$d fps, %4$s.</string>
+  <string name="vg_RoundCurrent">Now: %1$d×%2$d, %3$d fps, up to %4$s.</string>
+  <string name="vg_RoundSizeLimit">Telegram accepts video messages up to 10 MB. The bitrate is constant: at most 1.2 Mbit/s, so that a one-minute video fits the limit.</string>
+  <string name="vg_RoundPlaybackHeader">Playback through the earpiece</string>
+  <string name="vg_RoundCamera2Failed">Camera2 does not work on this phone, video messages are recorded with Camera1</string>
+</resources>

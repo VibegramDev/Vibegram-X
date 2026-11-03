@@ -109,6 +109,7 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
   @Override
   public void onDestroy () {
     super.onDestroy();
+    isRunning = false;
     Log.i(Log.TAG_PLAYER, "[service] onDestroy");
     U.stopForeground(this, true, TdlibNotificationManager.ID_FOREGROUND_MUSIC);
     TdlibManager.instance().player().removeTrackListChangeListener(this);
@@ -126,7 +127,15 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
   private static boolean isSupportedTrack (TdApi.Message message) {
     // Voice messages need the foreground media service too, as in the official app:
     // otherwise the system freezes the app and stops them once it goes to the background
-    return message != null && (Td.isAudio(message.content) || (Td.isVoiceNote(message.content) && message.selfDestructType == null));
+    // Round videos too: they keep playing in the background like voice messages (not view-once ones)
+    return message != null && (Td.isAudio(message.content) || ((Td.isVoiceNote(message.content) || message.content.getConstructor() == TdApi.MessageVideoNote.CONSTRUCTOR) && message.selfDestructType == null));
+  }
+
+  private static volatile boolean isRunning;
+
+  /** The service shows the player notification; starting it again is not needed. */
+  public static boolean isRunning () {
+    return isRunning;
   }
 
   private String getTrackTitle () {
@@ -141,7 +150,7 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
     if (currentTrack.content.getConstructor() == TdApi.MessageAudio.CONSTRUCTOR) {
       return TD.getSubtitle(((TdApi.MessageAudio) currentTrack.content).audio);
     }
-    return Lang.getString(R.string.AttachAudio);
+    return Lang.getString(currentTrack.content.getConstructor() == TdApi.MessageVideoNote.CONSTRUCTOR ? R.string.AttachRound : R.string.AttachAudio);
   }
 
   private boolean isInitialized () {
@@ -395,6 +404,7 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
     this.playDuration = this.playPosition = -1;
 
     if (!hasTrack) {
+      isRunning = false;
       U.stopForeground(this, true, TdlibNotificationManager.ID_FOREGROUND_MUSIC);
       destroyResources();
       stopSelf();
@@ -420,6 +430,7 @@ public class AudioService extends Service implements TGPlayerController.TrackLis
 
     if (!hadTrack) {
       U.startForeground(this, TdlibNotificationManager.ID_FOREGROUND_MUSIC, buildNotification());
+      isRunning = true;
     } else {
       updateNotification();
     }

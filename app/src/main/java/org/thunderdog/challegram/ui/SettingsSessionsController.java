@@ -23,6 +23,7 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.Nullable;
 import androidx.collection.LongSparseArray;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -90,6 +91,11 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
     }
 
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_sessionTtl, 0, R.string.SessionTerminateTtl));
+    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+
+    // Websites and bots the account logged in to with Telegram
+    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_loggedWebsites, R.drawable.baseline_language_24, R.string.WebSessionsTitle));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(items.isEmpty() ? ListItem.TYPE_HEADER_PADDED : ListItem.TYPE_HEADER, 0, 0, R.string.ThisDevice));
@@ -263,6 +269,14 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
           view.setData(Lang.getStringSecure(R.string.ScanQRLogInInfo));
         } else if (itemId == R.id.btn_sessionTtl) {
           view.setData(Lang.getDuration((int) TimeUnit.DAYS.toSeconds(inactiveSessionTtlDays)));
+        } else if (itemId == R.id.btn_loggedWebsites) {
+          if (connectedWebsites == null) {
+            view.setData(R.string.LoadingInformation);
+          } else if (connectedWebsites.websites.length == 0) {
+            view.setData(R.string.ClearOtherWebSessionsHelp);
+          } else {
+            view.setData(Lang.plural(R.string.xWebsites, connectedWebsites.websites.length));
+          }
         }
       }
 
@@ -340,6 +354,7 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
     if (getArguments() == null) {
       requestActiveSessions();
     }
+    requestConnectedWebsites();
 
     adapter.setSegmented();
 
@@ -402,6 +417,28 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
         });
       }
     });
+  }
+
+  private @Nullable TdApi.ConnectedWebsites connectedWebsites;
+
+  private void requestConnectedWebsites () {
+    tdlib.send(new TdApi.GetConnectedWebsites(), (websites, error) -> {
+      if (websites != null) {
+        runOnUiThreadOptional(() -> {
+          this.connectedWebsites = websites;
+          if (adapter != null) {
+            adapter.updateValuedSettingById(R.id.btn_loggedWebsites);
+          }
+        });
+      }
+    });
+  }
+
+  @Override
+  public void onFocus () {
+    super.onFocus();
+    // The count changes after disconnecting websites on their screen
+    requestConnectedWebsites();
   }
 
   private boolean terminatingAll;
@@ -568,6 +605,8 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
         }
         return true;
       });
+    } else if (viewId == R.id.btn_loggedWebsites) {
+      navigateTo(new SettingsWebsitesController(context, tdlib));
     } else if (viewId == R.id.btn_qrLogin) {
       openInAppCamera(new CameraOpenOptions().anchor(v).noTrace(true).allowSystem(false).optionalMicrophone(true).mode(CameraController.MODE_QR).qrCodeListener(this));
     } else if (viewId == R.id.btn_sessionTtl) {
