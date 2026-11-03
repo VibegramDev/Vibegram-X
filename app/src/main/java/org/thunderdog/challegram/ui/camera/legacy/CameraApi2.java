@@ -573,6 +573,9 @@ public class CameraApi2 extends CameraApi {
 
   // === Zoom ===
 
+  /** Ratio of the longest physical lens of the open back camera, 1 without a telephoto lens (or when unknown). */
+  private float longestLensRatio = 1f;
+
   private void setupZoom (CameraCharacteristics c) {
     float minRatio = 1f, maxRatio = 1f;
     useZoomRatioControl = false;
@@ -597,7 +600,8 @@ public class CameraApi2 extends CameraApi {
     }
 
     float[] stops = isFrontFacing ? computeFrontStops(minRatio, maxRatio) : computeBackStops(c, minRatio, maxRatio);
-    setZoomCapabilities(minRatio, maxRatio, stops);
+    // Past the camera maximum the round recorder crops frames: back cameras only, a selfie needs no 30×
+    setZoomCapabilities(minRatio, maxRatio, stops, isFrontFacing ? 0f : longestLensRatio);
     syncZoomIndex(0f);
   }
 
@@ -619,6 +623,7 @@ public class CameraApi2 extends CameraApi {
 
   /** Ultra-wide (min ratio below 1), 1, 2 and the native factors of the telephoto lenses. */
   private float[] computeBackStops (CameraCharacteristics c, float minRatio, float maxRatio) {
+    longestLensRatio = 1f;
     List<Float> stops = new ArrayList<>();
     if (minRatio < 0.99f) {
       stops.add(Math.round(minRatio * 10f) / 10f);
@@ -653,7 +658,7 @@ public class CameraApi2 extends CameraApi {
         stops.add(step);
       }
     }
-    Log.i(Log.TAG_CAMERA, "Camera2 zoom range %.2f..%.2f, physical lenses: %b, stops: %s", minRatio, maxRatio, hasPhysicalInfo, stops);
+    Log.i(Log.TAG_CAMERA, "Camera2 zoom range %.2f..%.2f, physical lenses: %b, longest: %.1f, stops: %s", minRatio, maxRatio, hasPhysicalInfo, longestLensRatio, stops);
     return finishStops(stops, minRatio, maxRatio);
   }
 
@@ -700,6 +705,7 @@ public class CameraApi2 extends CameraApi {
     Log.i(Log.TAG_CAMERA, "Camera2 lenses (35mm equivalent): %s, main: %.1f", focals, mainFocal);
     for (float focal : focals) {
       float factor = Math.round(focal / mainFocal * 2f) / 2f;
+      longestLensRatio = Math.max(longestLensRatio, factor);
       if (factor > 2f && factor <= maxRatio + 0.01f) {
         stops.add(factor);
       }
@@ -750,15 +756,16 @@ public class CameraApi2 extends CameraApi {
       return 1f;
     }
     float fraction = Math.max(0f, Math.min(1f, index / steps));
-    return 1f + (mMaxZoomRatio - 1f) * fraction;
+    return 1f + (mHardwareMaxZoomRatio - 1f) * fraction;
   }
 
   private float zoomRatioToIndex (float ratio) {
     int steps = mFeatures != null ? mFeatures.getMaxZoom() : 0;
-    if (steps <= 0 || mMaxZoomRatio <= 1f || ratio <= 1f) {
+    if (steps <= 0 || mHardwareMaxZoomRatio <= 1f || ratio <= 1f) {
       return 0f;
     }
-    return Math.round((ratio - 1f) / (mMaxZoomRatio - 1f) * steps);
+    ratio = Math.min(ratio, mHardwareMaxZoomRatio);
+    return Math.round((ratio - 1f) / (mHardwareMaxZoomRatio - 1f) * steps);
   }
 
   @Override
@@ -774,6 +781,7 @@ public class CameraApi2 extends CameraApi {
       Log.w(Log.TAG_CAMERA, "Cannot change Camera2 zoom", t);
       return;
     }
+    resetSoftwareZoom();
     if (mZoomRatio != ratio) {
       mZoomRatio = ratio;
       manager.onZoomRatioChanged(ratio);

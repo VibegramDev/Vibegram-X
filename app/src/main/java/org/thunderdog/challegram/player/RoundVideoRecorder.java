@@ -403,11 +403,13 @@ public class RoundVideoRecorder {
       "uniform float scaleX;\n" +
       "uniform float scaleY;\n" +
       "uniform float alpha;\n" +
+      "uniform float zoom;\n" +
       "uniform samplerExternalOES sTexture;\n" +
       "void main() {\n" +
       "   vec2 coord = vec2((vTextureCoord.x - 0.5) * scaleX, (vTextureCoord.y - 0.5) * scaleY);\n" +
       "   float coef = ceil(clamp(0.2601 - dot(coord, coord), 0.0, 1.0));\n" +
-      "   vec3 color = texture2D(sTexture, vTextureCoord).rgb * coef + (1.0 - step(0.001, coef));\n" +
+      "   vec2 tc = 0.5 + (vTextureCoord - 0.5) / zoom;\n" +
+      "   vec3 color = texture2D(sTexture, tc).rgb * coef + (1.0 - step(0.001, coef));\n" +
       "   gl_FragColor = vec4(color * alpha, alpha);\n" +
       "}\n";
 
@@ -422,20 +424,25 @@ public class RoundVideoRecorder {
       "uniform float scaleY;\n" +
       "uniform float alpha;\n" +
       "uniform vec2 texelOffset;\n" +
+      "uniform float zoom;\n" +
       "uniform samplerExternalOES sTexture;\n" +
       "void main() {\n" +
       "   vec2 coord = vec2((vTextureCoord.x - 0.5) * scaleX, (vTextureCoord.y - 0.5) * scaleY);\n" +
       "   float coef = ceil(clamp(0.2601 - dot(coord, coord), 0.0, 1.0));\n" +
-      "   vec2 dx = vec2(texelOffset.x, 0.0);\n" +
-      "   vec2 dy = vec2(0.0, texelOffset.y);\n" +
-      "   vec3 sum = texture2D(sTexture, vTextureCoord).rgb * 4.0;\n" +
-      "   sum += (texture2D(sTexture, vTextureCoord - dx).rgb + texture2D(sTexture, vTextureCoord + dx).rgb +\n" +
-      "           texture2D(sTexture, vTextureCoord - dy).rgb + texture2D(sTexture, vTextureCoord + dy).rgb) * 2.0;\n" +
-      "   sum += texture2D(sTexture, vTextureCoord - dx - dy).rgb + texture2D(sTexture, vTextureCoord + dx - dy).rgb +\n" +
-      "          texture2D(sTexture, vTextureCoord - dx + dy).rgb + texture2D(sTexture, vTextureCoord + dx + dy).rgb;\n" +
+      "   vec2 tc = 0.5 + (vTextureCoord - 0.5) / zoom;\n" +
+      "   vec2 dx = vec2(texelOffset.x / zoom, 0.0);\n" +
+      "   vec2 dy = vec2(0.0, texelOffset.y / zoom);\n" +
+      "   vec3 sum = texture2D(sTexture, tc).rgb * 4.0;\n" +
+      "   sum += (texture2D(sTexture, tc - dx).rgb + texture2D(sTexture, tc + dx).rgb +\n" +
+      "           texture2D(sTexture, tc - dy).rgb + texture2D(sTexture, tc + dy).rgb) * 2.0;\n" +
+      "   sum += texture2D(sTexture, tc - dx - dy).rgb + texture2D(sTexture, tc + dx - dy).rgb +\n" +
+      "          texture2D(sTexture, tc - dx + dy).rgb + texture2D(sTexture, tc + dx + dy).rgb;\n" +
       "   vec3 color = (sum / 16.0) * coef + (1.0 - step(0.001, coef));\n" +
       "   gl_FragColor = vec4(color * alpha, alpha);\n" +
       "}\n";
+
+  // Vibegram: "zoom" in the shaders is the software zoom past the camera maximum (CameraApi.getSoftwareZoom()):
+  // the frame is sampled closer to its center, the round mask stays where it is.
 
   /** Camera pixels per output pixel above which {@link #FRAGMENT_SHADER_DOWNSCALE} is used. */
   private static final float DOWNSCALE_RATIO_THRESHOLD = 1.3f;
@@ -444,9 +451,10 @@ public class RoundVideoRecorder {
     "#extension GL_OES_EGL_image_external : require\n" +
       "precision lowp float;\n" +
       "varying vec2 vTextureCoord;\n" +
+      "uniform float zoom;\n" +
       "uniform samplerExternalOES sTexture;\n" +
       "void main() {\n" +
-      "   gl_FragColor = texture2D(sTexture, vTextureCoord);\n" +
+      "   gl_FragColor = texture2D(sTexture, 0.5 + (vTextureCoord - 0.5) / zoom);\n" +
       "}\n";
 
   private int[] position = new int[2];
@@ -523,6 +531,7 @@ public class RoundVideoRecorder {
   private int drawProgram;
   private int vertexMatrixHandle;
   private int textureMatrixHandle;
+  private int zoomHandle = -1;
   private int positionHandle;
   private int textureHandle;
 
@@ -648,6 +657,7 @@ public class RoundVideoRecorder {
         textureHandle = GLES20.glGetAttribLocation(drawProgram, "aTextureCoord");
         vertexMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uMVPMatrix");
         textureMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uSTMatrix");
+        zoomHandle = GLES20.glGetUniformLocation(drawProgram, "zoom");
       }
     } else {
       Log.e(Log.TAG_ROUND, "failed creating shader");
@@ -826,6 +836,9 @@ public class RoundVideoRecorder {
 
     GLES20.glUniformMatrix4fv(textureMatrixHandle, 1, false, mSTMatrix, 0);
     GLES20.glUniformMatrix4fv(vertexMatrixHandle, 1, false, mMVPMatrix, 0);
+    if (zoomHandle != -1) {
+      GLES20.glUniform1f(zoomHandle, context.getSoftwareZoom());
+    }
 
     GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
 
@@ -968,6 +981,7 @@ public class RoundVideoRecorder {
     private int scaleYHandle;
     private int alphaHandle;
     private int texelOffsetHandle = -1;
+    private int encoderZoomHandle = -1;
 
     private Integer lastCameraId = 0;
 
@@ -1198,6 +1212,9 @@ public class RoundVideoRecorder {
       GLES20.glUniform1f(scaleYHandle, scaleY);
       if (texelOffsetHandle != -1) {
         GLES20.glUniform2f(texelOffsetHandle, texelOffsetX, texelOffsetY);
+      }
+      if (encoderZoomHandle != -1) {
+        GLES20.glUniform1f(encoderZoomHandle, context.getSoftwareZoom());
       }
       GLES20.glUniformMatrix4fv(vertexMatrixHandle, 1, false, mMVPMatrix, 0);
 
@@ -1477,6 +1494,7 @@ public class RoundVideoRecorder {
           scaleYHandle = GLES20.glGetUniformLocation(drawProgram, "scaleY");
           alphaHandle = GLES20.glGetUniformLocation(drawProgram, "alpha");
           texelOffsetHandle = GLES20.glGetUniformLocation(drawProgram, "texelOffset");
+          encoderZoomHandle = GLES20.glGetUniformLocation(drawProgram, "zoom");
           vertexMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uMVPMatrix");
           textureMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uSTMatrix");
         }

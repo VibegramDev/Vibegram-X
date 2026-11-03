@@ -14,6 +14,7 @@
  */
 package org.thunderdog.challegram.ui.camera.legacy;
 
+import java.util.Arrays;
 import android.content.Context;
 import android.graphics.SurfaceTexture;
 import android.os.Handler;
@@ -228,6 +229,28 @@ public abstract class CameraApi {
   protected volatile float mMinZoomRatio = 1f, mMaxZoomRatio = 1f;
   protected volatile float[] mZoomStops = new float[] {1f};
 
+  // Beyond the camera's own maximum the zoom goes on in software: the round recorder crops
+  // the center of every frame (preview and video) by mSoftwareZoom, like camera apps do past their digital limit.
+  // Samsung opens 0.6–10× to other apps, its camera app goes up to 30× (3× lens, then crop with processing).
+  // Camera apps do not publish their limit, so ours is the same for every phone: the longest lens ×10, at most 100×
+  // (3× lens: 30× like Galaxy S24, 5× lens: 50×, no telephoto: 10×).
+  /** The zoom goes up to this many times the longest lens... */
+  public static final float SOFTWARE_ZOOM_LENS_FACTOR = 10f;
+  /** ...and never past this ratio in total. */
+  public static final float SOFTWARE_ZOOM_MAX_RATIO = 100f;
+  protected volatile float mHardwareMaxZoomRatio = 1f;
+  private volatile float mSoftwareZoom = 1f;
+
+  /** Extra center crop on top of the camera zoom, 1 when the camera zoom alone is enough. Any thread. */
+  public final float getSoftwareZoom () {
+    return mSoftwareZoom;
+  }
+
+  /** Camera thread. The ratio was set by a hardware-only path (volume keys): no software crop. */
+  protected final void resetSoftwareZoom () {
+    mSoftwareZoom = 1f;
+  }
+
   public final float getZoomRatio () {
     return mZoomRatio;
   }
@@ -257,7 +280,11 @@ public abstract class CameraApi {
       return;
     }
     try {
-      onZoomRatioChanged(ratio);
+      float hardwareRatio = Math.min(ratio, mHardwareMaxZoomRatio);
+      if (Math.min(mZoomRatio, mHardwareMaxZoomRatio) != hardwareRatio) {
+        onZoomRatioChanged(hardwareRatio);
+      }
+      mSoftwareZoom = Math.max(1f, ratio / hardwareRatio);
       mZoomRatio = ratio;
       manager.onZoomRatioChanged(ratio);
     } catch (Throwable t) {
@@ -270,6 +297,27 @@ public abstract class CameraApi {
 
   /** Camera thread. Called by the backend when a camera has been opened (or closed: 1, 1, {1}). */
   protected final void setZoomCapabilities (float minRatio, float maxRatio, float[] stops) {
+    setZoomCapabilities(minRatio, maxRatio, stops, 0f);
+  }
+
+  /**
+   * @param longestLens ratio of the longest lens (1 without a telephoto lens), or 0 for no software zoom.
+   * The zoom then goes past maxRatio by cropping frames, up to the longest lens × {@link #SOFTWARE_ZOOM_LENS_FACTOR}
+   * (at most {@link #SOFTWARE_ZOOM_MAX_RATIO}), and this last ratio is added to the stops.
+   */
+  protected final void setZoomCapabilities (float minRatio, float maxRatio, float[] stops, float longestLens) {
+    mHardwareMaxZoomRatio = maxRatio;
+    mSoftwareZoom = 1f;
+    if (longestLens > 0f && maxRatio > 1f) {
+      float extended = Math.min(SOFTWARE_ZOOM_MAX_RATIO, Math.max(1f, longestLens) * SOFTWARE_ZOOM_LENS_FACTOR);
+      // Whole numbers only: 30×, not 26.4×
+      extended = (float) Math.floor(extended);
+      if (extended > maxRatio + 0.5f) {
+        maxRatio = extended;
+        stops = Arrays.copyOf(stops, stops.length + 1);
+        stops[stops.length - 1] = extended;
+      }
+    }
     mMinZoomRatio = minRatio;
     mMaxZoomRatio = maxRatio;
     mZoomStops = stops;
