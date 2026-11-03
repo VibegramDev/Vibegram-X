@@ -4218,6 +4218,13 @@
   <string name="Attach">Attach</string>
   <string name="SelectText">Select Text</string>
   <string name="PersonalChannel">Channel</string>
+  <string name="PersonalChannelTitle">Personal channel</string>
+  <string name="PersonalChannelAdd">Add</string>
+  <string name="PersonalChannelHide">Don\'t show channel</string>
+  <string name="PersonalChannelSelect">Select a channel</string>
+  <string name="PersonalChannelCreate">Start a new channel</string>
+  <string name="PersonalChannelSet">Channel added to your profile</string>
+  <string name="PersonalChannelRemoved">Channel removed from your profile</string>
   <string name="QuoteSelection">Quote</string>
   <string name="NavigationStyle">Navigation</string>
   <string name="NavigationStyleRail">Side rail</string>

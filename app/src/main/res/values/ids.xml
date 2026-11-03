@@ -417,6 +417,9 @@
   <item type="id" name="btn_peer_id" />
   <item type="id" name="btn_personalChannel" />
   <item type="id" name="btn_personalChannelHeader" />
+  <item type="id" name="btn_personalChannelHide" />
+  <item type="id" name="btn_personalChannelCreate" />
+  <item type="id" name="controller_personalChannel" />
   <item type="id" name="btn_peer_id_copy" />
   <item type="id" name="btn_contactsRegistered" />
   <item type="id" name="btn_contactsUnregistered" />

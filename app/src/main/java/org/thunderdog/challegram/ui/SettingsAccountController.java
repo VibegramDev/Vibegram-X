@@ -134,6 +134,17 @@ public class SettingsAccountController extends ViewController<Void> implements
             int collectibleCount = Td.secondaryUsernamesCount(myUsernames);
             view.setData("@" + myUsernames.editableUsername + (collectibleCount != 0 ? " + " + Lang.pluralBold(R.string.xOtherUsernames, collectibleCount) : ""));
           }
+        } else if (itemId == R.id.btn_personalChannel) {
+          if (userFull == null) {
+            view.setData(R.string.LoadingInformation);
+          } else {
+            TdApi.Chat chat = userFull.personalChatId != 0 ? tdlib.chat(userFull.personalChatId) : null;
+            if (chat != null) {
+              view.setData(chat.title);
+            } else {
+              view.setData(R.string.PersonalChannelAdd);
+            }
+          }
         } else if (itemId == R.id.btn_peer_id) {
           view.setData(Strings.buildCounter(tdlib.myUserId(true)));
         } else if (itemId == R.id.btn_phone) {
@@ -178,6 +189,8 @@ public class SettingsAccountController extends ViewController<Void> implements
     items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_username, R.drawable.baseline_alternate_email_24, R.string.Username).setContentStrings(R.string.LoadingUsername, R.string.SetUpUsername));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_birthdate, R.drawable.baseline_cake_variant_24, R.string.Birthdate).setContentStrings(R.string.LoadingInformation, R.string.SetBirthdate));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
+    items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_personalChannel, R.drawable.baseline_bullhorn_24, R.string.PersonalChannelTitle));
     if (Settings.instance().showPeerIds()) {
       items.add(new ListItem(ListItem.TYPE_SEPARATOR));
       items.add(new ListItem(ListItem.TYPE_INFO_SETTING, R.id.btn_peer_id, R.drawable.baseline_identifier_24, R.string.UserId).setContentStrings(R.string.LoadingInformation, R.string.LoadingInformation));
@@ -313,6 +326,7 @@ public class SettingsAccountController extends ViewController<Void> implements
       if (myUserId == userId && userFull != null) {
         this.userFull = userFull;
         adapter.updateValuedSettingById(R.id.btn_birthdate);
+        adapter.updateValuedSettingById(R.id.btn_personalChannel);
         setBio(userFull.bio);
       }
     });
@@ -334,6 +348,10 @@ public class SettingsAccountController extends ViewController<Void> implements
       openProfileEditor(viewId);
     } else if (viewId == R.id.btn_birthdate) {
       tdlib.ui().openBirthdateEditor(this, v, TdlibUi.BirthdateOpenOrigin.PROFILE);
+    } else if (viewId == R.id.btn_personalChannel) {
+      PersonalChannelController c = new PersonalChannelController(context, tdlib);
+      c.setArguments(new PersonalChannelController.Arguments(userFull != null ? userFull.personalChatId : 0));
+      navigateTo(c);
     } else if (viewId == R.id.btn_peer_id) {
       long selfId = tdlib.myUserId(true);
       if (selfId == 0) return;
