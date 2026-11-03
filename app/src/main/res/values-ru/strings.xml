@@ -20,6 +20,7 @@
   <string name="PersonalChannelCreate">Создать новый канал</string>
   <string name="PersonalChannelSet">Канал добавлен в профиль</string>
   <string name="PersonalChannelRemoved">Канал убран из профиля</string>
+  <string name="DirectMessagesAll">Все</string>
   <string name="QuoteSelection">Цитировать</string>
   <string name="NavigationStyle">Навигация</string>
   <string name="NavigationStyleRail">Боковая панель</string>

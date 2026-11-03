@@ -49,6 +49,8 @@ import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 import androidx.core.view.ViewCompat;
 
+import tgx.td.Td;
+import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.U;
 import org.drinkless.tdlib.TdApi;
@@ -150,6 +152,25 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     public Item () {
       this(null, 0, null, null, true);
+    }
+
+    /** Label with the avatar of a user or chat in place of the icon (topics of channel direct messages). */
+    public Item (CharSequence string, Tdlib avatarTdlib, TdApi.MessageSender avatarSender, @Nullable Counter counter) {
+      this(string, 0, counter, null, false);
+      this.avatarTdlib = avatarTdlib;
+      this.avatarSender = avatarSender;
+    }
+
+    private @Nullable Tdlib avatarTdlib;
+    private @Nullable TdApi.MessageSender avatarSender;
+    private @Nullable AvatarReceiver avatarReceiver;
+
+    public boolean hasAvatar () {
+      return avatarSender != null;
+    }
+
+    private boolean hasLeadingIcon () {
+      return iconRes != 0 || avatarSender != null;
     }
 
     private Item (CharSequence string, @DrawableRes int iconRes, Counter counter, DrawableProvider provider, boolean hidden) {
@@ -302,7 +323,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     @Override
     public boolean equals (Object obj) {
-      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && ((Item) obj).trailingIconRes == trailingIconRes && customEmojiEquals(((Item) obj).formattedString, formattedString);
+      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && ((Item) obj).trailingIconRes == trailingIconRes && customEmojiEquals(((Item) obj).formattedString, formattedString) && Td.equalsTo(((Item) obj).avatarSender, avatarSender);
     }
 
     private int width, contentWidth;
@@ -383,8 +404,8 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       final int width;
       final float labelWidth = string != null ? measureLabel(paint) * labelFactor : 0f;
       final float counterWidthWithSpacing = counter != null ? counter.getScaledWidth(horizontalSpacing) : 0f;
-      final float iconWidth = iconRes != 0 ? Screen.dp(ICON_SIZE) : 0;
-      final float iconWidthWithLabelSpacing = iconRes != 0 ? (iconWidth + horizontalSpacing * labelFactor) : 0;
+      final float iconWidth = hasLeadingIcon() ? Screen.dp(ICON_SIZE) : 0;
+      final float iconWidthWithLabelSpacing = hasLeadingIcon() ? (iconWidth + horizontalSpacing * labelFactor) : 0;
       if (staticWidth != -1) {
         width = staticWidth;
       } else if (counter != null) {
@@ -1042,6 +1063,11 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
   private void onUpdateItems () {
     for (Item item : items) {
+      if (item.avatarSender != null) {
+        long key = Td.getSenderId(item.avatarSender);
+        item.avatarReceiver = complexReceiver.getAvatarReceiver(key);
+        item.avatarReceiver.requestMessageSender(item.avatarTdlib, item.avatarSender, AvatarReceiver.Options.NONE);
+      }
       if (item.reaction != null) {
         TGReaction reaction = item.reaction;
         TGStickerObj stickerObj = reaction.centerAnimationSicker();
@@ -1051,6 +1077,20 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
         item.imageReceiverSize = Screen.dp(34);
       }
     }
+  }
+
+  private static void drawItemAvatar (Canvas c, Item item, int left, int viewHeight) {
+    AvatarReceiver receiver = item.avatarReceiver;
+    if (receiver == null) {
+      return;
+    }
+    int size = Screen.dp(ICON_SIZE);
+    int top = viewHeight / 2 - size / 2;
+    receiver.setBounds(left, top, left + size, top + size);
+    if (receiver.needPlaceholder()) {
+      receiver.drawPlaceholder(c);
+    }
+    receiver.draw(c);
   }
 
   public void requestItemLayoutAt (int index) {
@@ -1433,7 +1473,10 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
             float backgroundAlpha = counterAlphaProvider.getBackgroundAlpha(item.counter, alphaFactor);
             if (item.hasLabel()) {
               int stringX;
-              if (item.iconRes != 0) {
+              if (item.avatarReceiver != null) {
+                drawItemAvatar(c, item, cx + horizontalPadding, viewHeight);
+                stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
+              } else if (item.iconRes != 0) {
                 Drawable drawable = item.getIcon();
                 Drawables.draw(c, drawable, cx + horizontalPadding, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
                 stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
@@ -1466,7 +1509,10 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
             }
           } else if (item.hasLabel()) {
             int stringX;
-            if (item.iconRes != 0) {
+            if (item.avatarReceiver != null) {
+              drawItemAvatar(c, item, cx + horizontalPadding, viewHeight);
+              stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
+            } else if (item.iconRes != 0) {
               Drawable drawable = item.getIcon();
               Drawables.draw(c, drawable, cx + horizontalPadding, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
               stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;

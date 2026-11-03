@@ -1973,6 +1973,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
       // Topic-scoped controller whose ForumTopic is not yet loaded — do not apply the chat-level draft.
       return null;
     }
+    if (topicId != null && topicId.getConstructor() == TdApi.MessageTopicDirectMessages.CONSTRUCTOR) {
+      TdApi.DirectMessagesChatTopic topic = tdlib.directMessagesChatTopic(getChatId(), ((TdApi.MessageTopicDirectMessages) topicId).directMessagesChatTopicId);
+      return topic != null ? topic.draftMessage : null;
+    }
     return chat != null ? chat.draftMessage : null;
   }
 
@@ -2993,6 +2997,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     TdApi.Chat headerChat = messageThread != null ? tdlib.chatSync(messageThread.getContextChatId()) : null;
     headerCell.setChat(tdlib, headerChat != null ? headerChat : chat, messageThread, forumTopic);
+    checkDirectMessagesTopicHeader();
 
     if (inPreviewMode) {
       switch (previewMode) {
@@ -3337,12 +3342,37 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  /** Topic of a channel direct messages chat (one per sender), 0 for the whole chat. */
+  public long getDirectMessagesTopicId () {
+    TdApi.MessageTopic topicId = getMessageTopicId();
+    return topicId != null && topicId.getConstructor() == TdApi.MessageTopicDirectMessages.CONSTRUCTOR ? ((TdApi.MessageTopicDirectMessages) topicId).directMessagesChatTopicId : 0;
+  }
+
+  private void checkDirectMessagesTopicHeader () {
+    final long topicId = getDirectMessagesTopicId();
+    if (topicId == 0 || chat == null || headerCell == null) {
+      return;
+    }
+    TdApi.DirectMessagesChatTopic topic = tdlib.directMessagesChatTopic(chat.id, topicId);
+    if (topic != null) {
+      headerCell.setDirectMessagesTopic(tdlib, chat, topic);
+    } else {
+      final long chatId = chat.id;
+      tdlib.send(new TdApi.GetDirectMessagesChatTopic(chatId, topicId), (result, error) -> runOnUiThreadOptional(() -> {
+        if (result != null && chat != null && chat.id == chatId && headerCell != null) {
+          headerCell.setDirectMessagesTopic(tdlib, chat, result);
+        }
+      }));
+    }
+  }
+
   private boolean isReplyRequired () {
     if (reply != null) {
       return false;
     }
     TdApi.Supergroup supergroup = tdlib.chatToSupergroup(getChatId());
-    if (supergroup != null && supergroup.isAdministeredDirectMessagesGroup) {
+    if (supergroup != null && supergroup.isAdministeredDirectMessagesGroup && getDirectMessagesTopicId() == 0) {
+      // In a topic the recipient is the topic itself.
       return true;
     }
 
@@ -12301,6 +12331,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       manager.rebuildLayouts();
       if (headerCell != null) {
         headerCell.setChat(tdlib, chat, messageThread, forumTopic);
+        checkDirectMessagesTopicHeader();
         if (messageThread != null) {
           updateMessageThreadSubtitle();
         }
@@ -12773,6 +12804,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (chat != null) {
       if (headerCell != null) {
         headerCell.setChat(tdlib, chat);
+        checkDirectMessagesTopicHeader();
       }
     }
     if (manager != null) {

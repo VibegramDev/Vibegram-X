@@ -4225,6 +4225,7 @@
   <string name="PersonalChannelCreate">Start a new channel</string>
   <string name="PersonalChannelSet">Channel added to your profile</string>
   <string name="PersonalChannelRemoved">Channel removed from your profile</string>
+  <string name="DirectMessagesAll">All</string>
   <string name="QuoteSelection">Quote</string>
   <string name="NavigationStyle">Navigation</string>
   <string name="NavigationStyleRail">Side rail</string>

@@ -102,6 +102,8 @@ import org.thunderdog.challegram.ui.EditNameController;
 import org.thunderdog.challegram.ui.EditProxyController;
 import org.thunderdog.challegram.ui.EditRightsController;
 import org.thunderdog.challegram.ui.EditUsernameController;
+import org.thunderdog.challegram.ui.DirectMessagesTabsController;
+import org.thunderdog.challegram.ui.DirectMessagesTopicsController;
 import org.thunderdog.challegram.ui.ForumTopicTabsController;
 import org.thunderdog.challegram.ui.ForumTopicsController;
 import org.thunderdog.challegram.ui.InstantViewController;
@@ -2198,6 +2200,35 @@ public class TdlibUi extends Handler {
         return;
       }
       // If not hasForumTabs and not viewAsTopics, fall through to open as unified chat
+    }
+
+    // Channel direct messages administered by the user: one conversation per sender, as tabs or as a list
+    // (as forum topics; the choice is kept per chat). A message to highlight opens the whole chat.
+    if (messageThread == null && messageTopicId == null && (params == null || params.highlightMessageId == null) &&
+      !onlyScheduled && (options & CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT) == 0 && tdlib.isAdministeredDirectMessagesChat(chat.id)) {
+      ViewController<?> topicsController;
+      if (tdlib.settings().getForumViewPreference(chat.id) == TdlibSettingsManager.FORUM_VIEW_TOPICS) {
+        DirectMessagesTopicsController c = new DirectMessagesTopicsController(context.context(), context.tdlib());
+        c.setArguments(new DirectMessagesTopicsController.Arguments(chat));
+        topicsController = c;
+      } else {
+        DirectMessagesTabsController c = new DirectMessagesTabsController(context.context(), context.tdlib());
+        c.setArguments(new DirectMessagesTabsController.Arguments(chat));
+        topicsController = c;
+      }
+      NavigationController nav = context.context().navigation();
+      if (nav.isEmpty()) {
+        nav.initController(topicsController);
+        MainController c = new MainController(context.context(), context.tdlib());
+        c.getValue();
+        nav.getStack().insert(c, 0);
+      } else {
+        nav.navigateTo(topicsController);
+      }
+      if (params != null) {
+        params.onDone();
+      }
+      return;
     }
 
     if ((options & CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT) != 0) {
