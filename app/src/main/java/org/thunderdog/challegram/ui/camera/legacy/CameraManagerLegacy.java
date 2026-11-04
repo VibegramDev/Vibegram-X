@@ -134,6 +134,11 @@ public class CameraManagerLegacy extends CameraManagerTexture {
     api.requestZoomRatio(ratio);
   }
 
+  /** @param target where a zoom animation is going: see {@link CameraApi#requestZoomRatio(float, float)} */
+  public void requestZoomRatio (float ratio, float target) {
+    api.requestZoomRatio(ratio, target);
+  }
+
   public float getZoomRatio () {
     return api.getZoomRatio();
   }

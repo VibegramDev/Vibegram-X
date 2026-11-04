@@ -56,6 +56,10 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
           view.setData(getFpsName(Settings.instance().getRoundVideoFps()));
         } else if (id == R.id.btn_vgRoundBitrate) {
           view.setData(getBitrateName(Settings.instance().getRoundVideoBitrate()));
+        } else if (id == R.id.btn_vgRoundLockLens) {
+          view.getToggler().setRadioEnabled(Settings.instance().isRoundLensLocked(), isUpdate);
+        } else if (id == R.id.btn_vgRoundShowQualityInfo) {
+          view.getToggler().setRadioEnabled(Settings.instance().showRoundQualityInfo(), isUpdate);
         } else if (id == R.id.btn_vgRoundEarpiece || id == R.id.btn_vgRoundEarpieceVoice) {
           switch (Settings.instance().getEarpieceMode(id == R.id.btn_vgRoundEarpiece)) {
             case Settings.EARPIECE_MODE_ALWAYS:
@@ -79,8 +83,14 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgRoundCameraApi, 0, R.string.vg_RoundCameraApi));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgRoundStartCamera, 0, R.string.vg_RoundStartCamera));
+    if (isLensLockAvailable()) {
+      items.add(newLensLockSeparator());
+      items.add(newLensLockItem());
+    }
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-    items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_RoundCameraDescription));
+    if (isLensLockAvailable()) {
+      items.add(newLensLockDescription());
+    }
 
     items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_RoundQualityHeader));
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
@@ -99,6 +109,14 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgRoundEarpiece, 0, R.string.VideoMessages));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
+    items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_RoundDiagHeader));
+    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgRoundShowQualityInfo, 0, R.string.vg_RoundShowQualityInfo));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgRoundDiagnostics, R.drawable.baseline_bug_report_24, R.string.vg_RoundDiagTitle));
+    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+    items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_RoundDiagHint));
+
     adapter.setItems(items, false);
     adapter.setSegmented();
     recyclerView.setAdapter(adapter);
@@ -108,6 +126,42 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
 
   private static boolean isCamera2Available () {
     return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M;
+  }
+
+  // Lens lock: Camera2 only (Camera1 has no separate lenses), so hidden while Camera1 records
+
+  private static boolean isLensLockAvailable () {
+    Settings settings = Settings.instance();
+    return isCamera2Available() && settings.getRoundCameraApi() == Settings.ROUND_CAMERA_API_CAMERA2 && !settings.isRoundCamera2Failed();
+  }
+
+  private static ListItem newLensLockSeparator () {
+    return new ListItem(ListItem.TYPE_SEPARATOR_FULL, R.id.btn_vgRoundLockLensSeparator);
+  }
+
+  private static ListItem newLensLockItem () {
+    return new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgRoundLockLens, 0, R.string.vg_RoundLockLens);
+  }
+
+  private static ListItem newLensLockDescription () {
+    return new ListItem(ListItem.TYPE_DESCRIPTION, R.id.btn_vgRoundLockLensDescription, 0, R.string.vg_RoundLockLensDescription);
+  }
+
+  private void updateLensLockVisibility () {
+    boolean available = isLensLockAvailable();
+    int index = adapter.indexOfViewById(R.id.btn_vgRoundLockLens);
+    if (available == (index != -1)) {
+      return;
+    }
+    if (available) {
+      int startIndex = adapter.indexOfViewById(R.id.btn_vgRoundStartCamera);
+      // start camera, separator, lens lock, shadow, description
+      adapter.addItems(startIndex + 1, newLensLockSeparator(), newLensLockItem());
+      adapter.addItem(startIndex + 4, newLensLockDescription());
+    } else {
+      adapter.removeItemById(R.id.btn_vgRoundLockLensDescription);
+      adapter.removeRange(index - 1, 2);
+    }
   }
 
   private static String getCameraApiValue () {
@@ -152,15 +206,16 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
 
   private static String getBitrateName (int kbps) {
     if (kbps == 0) {
-      return Lang.getString(R.string.vg_RoundMax);
+      return Lang.getString(R.string.vg_RoundBitrateMax);
     }
     return formatBitrate(kbps);
   }
 
-  private static String formatBitrate (int kbps) {
+  public static String formatBitrate (int kbps) {
     if (kbps >= 1000) {
       float mbps = kbps / 1000f;
-      String value = mbps == Math.round(mbps) ? String.valueOf(Math.round(mbps)) : String.valueOf(Math.round(mbps * 10f) / 10f);
+      String value = mbps == Math.round(mbps) ? String.valueOf(Math.round(mbps)) :
+        String.valueOf(Math.round(mbps * 10f) / 10f).replace('.', java.text.DecimalFormatSymbols.getInstance(Lang.locale()).getDecimalSeparator());
       return Lang.getString(R.string.vg_RoundMbps, value);
     }
     return Lang.getString(R.string.vg_RoundKbps, kbps);
@@ -200,15 +255,21 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
       showStartCameraOptions();
     } else if (id == R.id.btn_vgRoundSide) {
       int[] values = RoundVideoQuality.SIDE_OPTIONS;
-      showIntOptions(R.id.btn_vgRoundSide, values, Settings.instance().getRoundVideoSide(), side -> getSideName(side), value -> Settings.instance().setRoundVideoSide(value));
+      showIntOptions(R.id.btn_vgRoundSide, values, false, Settings.instance().getRoundVideoSide(), side -> getSideName(side), value -> Settings.instance().setRoundVideoSide(value));
     } else if (id == R.id.btn_vgRoundFps) {
-      showIntOptions(R.id.btn_vgRoundFps, RoundVideoQuality.FPS_OPTIONS, Settings.instance().getRoundVideoFps(), fps -> getFpsName(fps), value -> Settings.instance().setRoundVideoFps(value));
+      showIntOptions(R.id.btn_vgRoundFps, RoundVideoQuality.FPS_OPTIONS, false, Settings.instance().getRoundVideoFps(), fps -> getFpsName(fps), value -> Settings.instance().setRoundVideoFps(value));
     } else if (id == R.id.btn_vgRoundBitrate) {
-      showIntOptions(R.id.btn_vgRoundBitrate, RoundVideoQuality.BITRATE_OPTIONS_KBPS, Settings.instance().getRoundVideoBitrate(), kbps -> getBitrateName(kbps), value -> Settings.instance().setRoundVideoBitrate(value));
+      showIntOptions(R.id.btn_vgRoundBitrate, RoundVideoQuality.SETTINGS_BITRATE_OPTIONS_KBPS, true, Settings.instance().getRoundVideoBitrate(), kbps -> getBitrateName(kbps), value -> Settings.instance().setRoundVideoBitrate(value));
     } else if (id == R.id.btn_vgRoundEarpiece) {
       showEarpieceOptions(true);
     } else if (id == R.id.btn_vgRoundEarpieceVoice) {
       showEarpieceOptions(false);
+    } else if (id == R.id.btn_vgRoundLockLens) {
+      Settings.instance().setRoundLensLocked(adapter.toggleView(v));
+    } else if (id == R.id.btn_vgRoundShowQualityInfo) {
+      Settings.instance().setShowRoundQualityInfo(adapter.toggleView(v));
+    } else if (id == R.id.btn_vgRoundDiagnostics) {
+      navigateTo(new SettingsRoundDiagnosticsController(context, tdlib));
     }
   }
 
@@ -227,14 +288,15 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
     R.id.btn_vgRoundOption8, R.id.btn_vgRoundOption9
   };
 
-  /** Radio list with "Maximum" (0) first and then the given values; values above what the phone can do are marked. */
-  private void showIntOptions (int settingId, int[] values, int current, IntName name, IntSetter setter) {
-    int count = Math.min(values.length + 1, OPTION_IDS.length);
+  /** Radio list with "Maximum" (0) first if withMax and then the given values; values above what the phone can do are marked. */
+  private void showIntOptions (int settingId, int[] values, boolean withMax, int current, IntName name, IntSetter setter) {
+    final int offset = withMax ? 1 : 0;
+    int count = Math.min(values.length + offset, OPTION_IDS.length);
     int[] optionValues = new int[count];
     ListItem[] items = new ListItem[count];
     RoundVideoQuality max = RoundVideoQuality.getMaxSupported();
     for (int i = 0; i < count; i++) {
-      int value = i == 0 ? 0 : values[i - 1];
+      int value = withMax && i == 0 ? 0 : values[i - offset];
       optionValues[i] = value;
       String text = name.getName(value);
       if (value != 0 && max != null && !isSupported(settingId, value, max)) {
@@ -278,6 +340,7 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
       int resultId = result.get(R.id.btn_vgRoundCameraApi);
       settings.setRoundCameraApi(resultId == R.id.btn_vgRoundCameraApi1 ? Settings.ROUND_CAMERA_API_CAMERA1 : Settings.ROUND_CAMERA_API_CAMERA2);
       adapter.updateValuedSettingById(R.id.btn_vgRoundCameraApi);
+      updateLensLockVisibility();
     }));
   }
 

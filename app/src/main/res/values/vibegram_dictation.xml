@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: dictation, the third mode of the record button (voice → round video → dictation). -->
+<resources>
+  <string name="vg_HoldToVideoNext">Hold to record video. Tap to switch to dictation.</string>
+  <string name="vg_HoldToDictation">Hold to dictate text. Tap to switch to audio.</string>
+  <string name="vg_DictationNoModel">Download a speech recognition model to dictate</string>
+  <string name="vg_DictationRecognizing">Recognizing speech…</string>
+  <string name="vg_DictationEmpty">No speech recognized</string>
+  <string name="vg_DictationFailed">Could not recognize speech</string>
+  <string name="vg_DictationCopied">Recognized text copied to the clipboard</string>
+</resources>

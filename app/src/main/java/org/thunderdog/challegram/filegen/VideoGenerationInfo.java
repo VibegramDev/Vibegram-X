@@ -169,13 +169,18 @@ public class VideoGenerationInfo extends GenerationInfo implements AbstractVideo
    * Vibegram: trim conversion for a recorded round video. Uses the round's own side/fps/bitrate
    * instead of {@link Settings#getPreferredVideoLimit()}, so a low general video quality does not shrink it.
    *
+   * The bitrate is lowered to what fits Telegram's 10 MB for this length ({@link RoundVideoQuality#getFitVideoBitrate}):
+   * rounds are recorded at a high bitrate and re-encoded through this conversion when the file is too big.
+   *
    * @param quality what the round was recorded with, null = what the current settings resolve to
+   * @param durationMs length of the result
    */
-  public static String makeRoundConversion (int sourceFileId, long startTimeUs, long endTimeUs, @Nullable RoundVideoQuality quality) {
+  public static String makeRoundConversion (int sourceFileId, long startTimeUs, long endTimeUs, long durationMs, @Nullable RoundVideoQuality quality) {
     if (quality == null) {
       quality = RoundVideoQuality.resolve(Settings.instance());
     }
-    Settings.VideoLimit videoLimit = new Settings.VideoLimit(new Settings.VideoSize(quality.side), quality.fps, quality.videoBitrate);
+    int bitrate = Math.min(quality.videoBitrate, RoundVideoQuality.getFitVideoBitrate(durationMs, quality.audioBitrate));
+    Settings.VideoLimit videoLimit = new Settings.VideoLimit(new Settings.VideoSize(quality.side), quality.fps, bitrate);
     String conversion = makeConversion(sourceFileId, false, videoLimit, 0, startTimeUs, endTimeUs, true, null, 0);
     return conversion + "," + PREFIX_ROUND;
   }

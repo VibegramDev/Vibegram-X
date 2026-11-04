@@ -22,9 +22,12 @@ import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.OutputConfiguration;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.os.Build;
+import android.os.SystemClock;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Range;
@@ -33,9 +36,15 @@ import android.util.SizeF;
 import android.view.Surface;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
+import androidx.annotation.StringRes;
 
+import org.thunderdog.challegram.player.RoundRecordStats;
 import org.thunderdog.challegram.Log;
+import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.loader.ImageGalleryFile;
 import org.thunderdog.challegram.ui.camera.CameraFeatures;
@@ -427,6 +436,8 @@ public class CameraApi2 extends CameraApi {
     this.mCurrentFacing = isFrontFacing ? FACING_FRONT : FACING_BACK;
 
     setupFeatures(c);
+    // Lenses first: the zoom kept over a lens switch is split between the lens and the software crop by them
+    setupLensLock(c);
     setupZoom(c);
 
     int width = previewSize.getWidth(), height = previewSize.getHeight();
@@ -774,9 +785,12 @@ public class CameraApi2 extends CameraApi {
     if (device == null) {
       return;
     }
+    mZoomTarget = 0f;
     try {
-      applyZoom(ratio);
-      updateRepeatingRequest();
+      if (!switchLensIfNeeded(ratio)) {
+        applyZoom(ratio);
+        updateRepeatingRequest();
+      }
     } catch (Throwable t) {
       Log.w(Log.TAG_CAMERA, "Cannot change Camera2 zoom", t);
       return;
@@ -793,14 +807,22 @@ public class CameraApi2 extends CameraApi {
     if (device == null) {
       return;
     }
-    applyZoom(ratio);
-    updateRepeatingRequest();
+    if (!switchLensIfNeeded(ratio)) {
+      applyZoom(ratio);
+      updateRepeatingRequest();
+    }
     syncZoomIndex(zoomRatioToIndex(ratio));
   }
 
   private void applyZoom (float ratio) {
     CaptureRequest.Builder builder = requestBuilder;
     if (builder == null) {
+      return;
+    }
+    Lens lens = sessionLens;
+    if (lens != null) {
+      // A physical lens stream: the logical zoom does not apply to it, the lens crops by itself
+      applyLensZoom(builder, lens, ratio);
       return;
     }
     if (useZoomRatioControl && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -857,6 +879,11 @@ public class CameraApi2 extends CameraApi {
   }
 
   private boolean openCameraImpl (SurfaceTexture texture) throws Throwable {
+    return openSession(texture, getHardwareZoomRatio(mZoomRatio));
+  }
+
+  /** Configures the capture session on the texture; with the lens lock, on the physical lens for this zoom ratio. */
+  private boolean openSession (SurfaceTexture texture, float zoomRatio) throws Throwable {
     final CameraDevice device = this.device;
     if (device == null || texture == null) {
       throw new IllegalStateException("device: " + device + ", texture: " + texture);
@@ -866,27 +893,34 @@ public class CameraApi2 extends CameraApi {
     Surface surface = new Surface(texture);
     this.outputSurface = surface;
 
-    SessionCallback callback = new SessionCallback();
-    //noinspection deprecation: the List<Surface> variant is the only one on API 23-27
-    device.createCaptureSession(Collections.singletonList(surface), callback, getCallbackHandler());
-    boolean signalled = callback.latch.await(CONFIGURE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    this.sessionTexture = texture;
+    Lens lens = lenses.isEmpty() || lensLockFailed ? null : chooseLens(lensRatio(mZoomRatio));
     CameraCaptureSession session;
-    synchronized (callback) {
-      session = callback.configuredSession;
-      if (!signalled) {
-        callback.abandoned = true;
+    try {
+      session = configureSession(device, surface, lens);
+    } catch (Camera2Failure e) {
+      if (lens == null) {
+        throw e;
       }
-    }
-    if (!signalled) {
-      throw new Camera2Failure("configure timeout, camera " + cameraId, true);
-    }
-    if (session == null || callback.failed) {
-      throw new Camera2Failure("configure failed, camera " + cameraId + ", size: " + previewSize, true);
+      // The phone lists the lens but cannot stream from it alone: record with the logical camera
+      Log.w(Log.TAG_CAMERA, "Camera2 cannot stream from lens %s, lens lock disabled", e, lens.id);
+      lensLockFailed = true;
+      lensLockFailedCamera = cameraId;
+      lensLockProblem = R.string.vg_RoundDiagLensFailed;
+      lens = null;
+      surface.release();
+      surface = new Surface(texture);
+      this.outputSurface = surface;
+      session = configureSession(device, surface, null);
     }
     this.session = session;
+    this.sessionLens = lens;
 
     final boolean isRound = manager.useRoundRender();
-    CaptureRequest.Builder builder = device.createCaptureRequest(isRound ? CameraDevice.TEMPLATE_RECORD : CameraDevice.TEMPLATE_PREVIEW);
+    final int template = isRound ? CameraDevice.TEMPLATE_RECORD : CameraDevice.TEMPLATE_PREVIEW;
+    CaptureRequest.Builder builder = lens != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ?
+      device.createCaptureRequest(template, Collections.singleton(lens.id)) :
+      device.createCaptureRequest(template);
     builder.addTarget(surface);
     builder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
     if (mFeatures != null) {
@@ -909,8 +943,11 @@ public class CameraApi2 extends CameraApi {
     }
     this.requestBuilder = builder;
     applyTorch(mTorchRequested);
-    applyZoom(mZoomRatio);
+    applyZoom(zoomRatio);
 
+    if (isRound) {
+      reportRoundDiagnostics();
+    }
     firstFrameReceived = false;
     final int generation = ++sessionGeneration;
     session.setRepeatingRequest(builder.build(), captureCallback, getCallbackHandler());
@@ -918,19 +955,83 @@ public class CameraApi2 extends CameraApi {
     // Vibegram: some HALs configure fine and then never deliver a frame
     post(() -> {
       if (generation == sessionGeneration && this.session != null && isCameraActive && !firstFrameReceived) {
+        if (sessionLens != null && sessionTexture != null) {
+          // Vibegram: the lens is listed but gives no frames alone, go on with the logical camera
+          Log.w(Log.TAG_CAMERA, "Camera2 lens %s gives no frames, lens lock disabled", sessionLens.id);
+          lensLockFailed = true;
+          lensLockFailedCamera = cameraId;
+          lensLockProblem = R.string.vg_RoundDiagLensFailed;
+          try {
+            openSession(sessionTexture, getHardwareZoomRatio(mZoomRatio));
+            return;
+          } catch (Throwable t) {
+            Log.w(Log.TAG_CAMERA, "Cannot reopen Camera2 session without the lens lock", t);
+          }
+        }
         reportFailure("no frames in " + FIRST_FRAME_TIMEOUT_MS + "ms, camera " + cameraId, true);
       }
     }, (int) FIRST_FRAME_TIMEOUT_MS);
     return true;
   }
 
+  /** Vibegram: the session config for the round video diagnostics (see RoundRecordStats). */
+  private void reportRoundDiagnostics () {
+    StringBuilder ranges = new StringBuilder();
+    Range<Integer>[] available = characteristics != null ? characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES) : null;
+    if (available != null) {
+      for (Range<Integer> range : available) {
+        if (ranges.length() > 0) {
+          ranges.append(' ');
+        }
+        ranges.append(range);
+      }
+    }
+    int[] capabilities = characteristics != null ? characteristics.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) : null;
+    boolean logical = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && contains(capabilities, CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA);
+    int stabilization;
+    if (stabilizationMode == CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_PREVIEW_STABILIZATION) {
+      stabilization = RoundRecordStats.STABILIZATION_PREVIEW;
+    } else if (stabilizationMode == CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_ON) {
+      stabilization = RoundRecordStats.STABILIZATION_ON;
+    } else {
+      stabilization = RoundRecordStats.STABILIZATION_OFF;
+    }
+    RoundRecordStats.setCameraConfig(
+      "Camera2, " + cameraId, logical,
+      previewSize != null ? previewSize.getWidth() + "×" + previewSize.getHeight() : null,
+      fpsRange != null ? fpsRange.toString() : null,
+      ranges.length() > 0 ? ranges.toString() : null,
+      stabilization,
+      opticalStabilizationMode == CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON,
+      getLensLockState()
+    );
+  }
+
   private final CameraCaptureSession.CaptureCallback captureCallback = new CameraCaptureSession.CaptureCallback() {
     @Override
     public void onCaptureCompleted (@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+      RoundRecordStats.onCameraFrame(result.get(CaptureResult.SENSOR_FRAME_DURATION), result.get(CaptureResult.SENSOR_EXPOSURE_TIME));
       if (!firstFrameReceived) {
         firstFrameReceived = true;
         Log.i(Log.TAG_CAMERA, "Camera2 first frame, camera %s", cameraId);
-        manager.onRenderedFirstFrame();
+        if (lensSettling) {
+          lensSettleStart = SystemClock.uptimeMillis();
+        } else {
+          manager.onRenderedFirstFrame();
+        }
+      }
+      if (lensSettling) {
+        lensSettleFrames++;
+        Integer ae = result.get(CaptureResult.CONTROL_AE_STATE);
+        Integer awb = result.get(CaptureResult.CONTROL_AWB_STATE);
+        boolean aeSettled = ae == null || ae == CameraMetadata.CONTROL_AE_STATE_CONVERGED || ae == CameraMetadata.CONTROL_AE_STATE_LOCKED || ae == CameraMetadata.CONTROL_AE_STATE_FLASH_REQUIRED;
+        boolean awbSettled = awb == null || awb == CameraMetadata.CONTROL_AWB_STATE_CONVERGED || awb == CameraMetadata.CONTROL_AWB_STATE_LOCKED;
+        long waited = SystemClock.uptimeMillis() - lensSettleStart;
+        if ((aeSettled && awbSettled && lensSettleFrames >= 3) || waited >= LENS_SETTLE_MAX_MS) {
+          Log.i(Log.TAG_CAMERA, "Camera2 lens settled in %d ms, %d frames, ae %s, awb %s", waited, lensSettleFrames, ae, awb);
+          lensSettling = false;
+          manager.onRenderedFirstFrame();
+        }
       }
     }
   };
@@ -963,6 +1064,394 @@ public class CameraApi2 extends CameraApi {
     // Photo flash modes don't apply to round videos: only the torch (and the fake front flash drawn by the UI)
   }
 
+  private CameraCaptureSession configureSession (CameraDevice device, Surface surface, @Nullable Lens lens) throws Throwable {
+    SessionCallback callback = new SessionCallback();
+    if (lens != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      OutputConfiguration config = new OutputConfiguration(surface);
+      config.setPhysicalCameraId(lens.id);
+      device.createCaptureSessionByOutputConfigurations(Collections.singletonList(config), callback, getCallbackHandler());
+    } else {
+      //noinspection deprecation: the List<Surface> variant is the only one on API 23-27
+      device.createCaptureSession(Collections.singletonList(surface), callback, getCallbackHandler());
+    }
+    boolean signalled = callback.latch.await(CONFIGURE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    CameraCaptureSession session;
+    synchronized (callback) {
+      session = callback.configuredSession;
+      if (!signalled) {
+        callback.abandoned = true;
+      }
+    }
+    String target = "camera " + cameraId + (lens != null ? ", lens " + lens.id : "");
+    if (!signalled) {
+      throw new Camera2Failure("configure timeout, " + target, true);
+    }
+    if (session == null || callback.failed) {
+      throw new Camera2Failure("configure failed, " + target + ", size: " + previewSize, true);
+    }
+    return session;
+  }
+
+  // === Vibegram: lens lock (Settings → Video messages → Lock the camera lens) ===
+
+  /**
+   * A physical lens of a logical multi-camera. Without the lock the phone streams the logical camera and picks the
+   * lens itself (by zoom, focus distance and light). With it the session streams one physical lens
+   * ({@link OutputConfiguration#setPhysicalCameraId}): the lens of the zoom stop, digital zoom on it in between.
+   */
+  private static final class Lens {
+    final String id;
+    /** Field of view relative to the main lens: 1 main, below 1 ultra-wide, above 1 telephoto. */
+    final float factor;
+    /** The zoom stop of the lens: from this zoom ratio on, this lens is used. */
+    final float stop;
+    final long pixels;
+    final Rect activeArray;
+    final float maxDigitalZoom;
+    final boolean canCrop;
+
+    Lens (String id, float factor, float stop, long pixels, Rect activeArray, float maxDigitalZoom, boolean canCrop) {
+      this.id = id;
+      this.factor = factor;
+      this.stop = stop;
+      this.pixels = pixels;
+      this.activeArray = activeArray;
+      this.maxDigitalZoom = maxDigitalZoom;
+      this.canCrop = canCrop;
+    }
+  }
+
+  /** Lenses the lock can use, sorted by factor; empty: no lock (off, front camera, not available). */
+  private List<Lens> lenses = Collections.emptyList();
+  @Nullable
+  private volatile Lens sessionLens;
+  private SurfaceTexture sessionTexture;
+  private boolean lensLockFailed;
+  /** Camera that could not stream from a separate lens: no more attempts on it until the app restarts. */
+  private static String lensLockFailedCamera;
+  /** A lens switch (camera reopen) is scheduled. */
+  private boolean lensSwitchPending;
+  /**
+   * The camera was reopened on another lens and its exposure and white balance are not settled yet:
+   * its first frames are darker or brighter, the video and the screen keep the blurred previous frame.
+   */
+  private volatile boolean lensSettling;
+  private int lensSettleFrames;
+  private long lensSettleStart;
+  /** Longest wait for the exposure of a new lens, from its first frame. */
+  private static final long LENS_SETTLE_MAX_MS = 300;
+
+  /** The camera is being reopened on another lens: the zoom bar keeps its state. */
+  private boolean lensReopening;
+  private @StringRes int lensLockProblem;
+
+  private void setupLensLock (CameraCharacteristics c) {
+    lenses = Collections.emptyList();
+    sessionLens = null;
+    lensLockFailed = false;
+    lensLockProblem = 0;
+    lensSwitchPending = false;
+    if (!manager.useRoundRender() || !Settings.instance().isRoundLensLocked()) {
+      return;
+    }
+    if (cameraId != null && cameraId.equals(lensLockFailedCamera)) {
+      lensLockFailed = true;
+      lensLockProblem = R.string.vg_RoundDiagLensFailed;
+      return;
+    }
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+      lensLockProblem = R.string.vg_RoundDiagLensOldAndroid;
+      return;
+    }
+    try {
+      setupLenses(c);
+    } catch (Throwable t) {
+      Log.w(Log.TAG_CAMERA, "Cannot read the lenses for the lens lock", t);
+      lenses = Collections.emptyList();
+      lensLockProblem = R.string.vg_RoundDiagLensHidden;
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.P)
+  private void setupLenses (CameraCharacteristics logical) throws CameraAccessException {
+    int[] capabilities = logical.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
+    if (!contains(capabilities, CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA)) {
+      lensLockProblem = R.string.vg_RoundDiagLensSingle;
+      return;
+    }
+    Set<String> physicalIds = logical.getPhysicalCameraIds();
+    if (physicalIds == null || physicalIds.size() < 2) {
+      lensLockProblem = R.string.vg_RoundDiagLensHidden;
+      return;
+    }
+    List<CaptureRequest.Key<?>> physicalKeys = logical.getAvailablePhysicalCameraRequestKeys();
+    boolean canCrop = physicalKeys != null && physicalKeys.contains(CaptureRequest.SCALER_CROP_REGION);
+    float logicalFocal = equivalentFocalLength(logical);
+    List<String> ids = new ArrayList<>();
+    List<Float> focals = new ArrayList<>();
+    List<CameraCharacteristics> chars = new ArrayList<>();
+    boolean sizeMissing = false;
+    for (String id : physicalIds) {
+      CameraCharacteristics c = cameraManager.getCameraCharacteristics(id);
+      float focal = equivalentFocalLength(c);
+      Rect activeArray = c.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+      if (focal <= 0f || activeArray == null) {
+        continue;
+      }
+      StreamConfigurationMap map = c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+      if (map == null || !hasOutputSize(map, previewSize)) {
+        // The lens cannot give the stream size the round video uses
+        sizeMissing = true;
+        continue;
+      }
+      ids.add(id);
+      focals.add(focal);
+      chars.add(c);
+    }
+    if (ids.size() < 2) {
+      lensLockProblem = sizeMissing ? R.string.vg_RoundDiagLensSize : R.string.vg_RoundDiagLensHidden;
+      return;
+    }
+    // The main lens: the focal length closest to the logical camera's, the biggest sensor among near ones (not macro)
+    int main = -1;
+    for (int i = 0; i < ids.size(); i++) {
+      if (main == -1) {
+        main = i;
+        continue;
+      }
+      if (logicalFocal > 0f) {
+        float diff = Math.abs(focals.get(i) - logicalFocal) / logicalFocal;
+        float mainDiff = Math.abs(focals.get(main) - logicalFocal) / logicalFocal;
+        if (diff < 0.15f && mainDiff < 0.15f ? pixels(chars.get(i)) > pixels(chars.get(main)) : diff < mainDiff) {
+          main = i;
+        }
+      } else if (pixels(chars.get(i)) > pixels(chars.get(main))) {
+        main = i;
+      }
+    }
+    float mainFocal = focals.get(main);
+    List<Lens> result = new ArrayList<>();
+    for (int i = 0; i < ids.size(); i++) {
+      CameraCharacteristics c = chars.get(i);
+      float factor = focals.get(i) / mainFocal;
+      float stop = i == main ? 1f : factor < 1f ? Math.round(factor * 10f) / 10f : Math.round(factor * 2f) / 2f;
+      if (i != main && Math.abs(stop - 1f) < 0.05f) {
+        // Next to the main lens (macro, depth, mono): never chosen
+        continue;
+      }
+      Float maxDigitalZoom = c.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
+      Lens lens = new Lens(ids.get(i), factor, stop, pixels(c), c.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE),
+        maxDigitalZoom != null ? Math.max(1f, maxDigitalZoom) : 1f, canCrop);
+      // One lens per stop: the biggest sensor
+      boolean sameStop = false;
+      for (int j = 0; j < result.size(); j++) {
+        if (Math.abs(result.get(j).stop - stop) < 0.05f) {
+          if (lens.pixels > result.get(j).pixels) {
+            result.set(j, lens);
+          }
+          sameStop = true;
+          break;
+        }
+      }
+      if (!sameStop) {
+        result.add(lens);
+      }
+    }
+    if (result.size() < 2) {
+      lensLockProblem = R.string.vg_RoundDiagLensSingle;
+      return;
+    }
+    Collections.sort(result, (a, b) -> Float.compare(a.factor, b.factor));
+    StringBuilder log = new StringBuilder();
+    for (Lens lens : result) {
+      log.append(' ').append(lens.id).append('=').append(lens.stop).append('x');
+    }
+    Log.i(Log.TAG_CAMERA, "Camera2 lens lock, lenses:%s, crop: %b", log, canCrop);
+    lenses = result;
+  }
+
+  private static long pixels (CameraCharacteristics c) {
+    Rect activeArray = c.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+    return activeArray != null ? (long) activeArray.width() * activeArray.height() : 0;
+  }
+
+  private static boolean hasOutputSize (StreamConfigurationMap map, Size size) {
+    Size[] sizes = map.getOutputSizes(SurfaceTexture.class);
+    if (sizes == null || size == null) {
+      return false;
+    }
+    for (Size s : sizes) {
+      if (s.equals(size)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** The ratio that picks the lens: the target of the zoom animation (the lens switches once, at its start), else the ratio. */
+  private float lensRatio (float ratio) {
+    float target = mZoomTarget;
+    return super.getHardwareZoomRatio(target > 0f ? target : ratio);
+  }
+
+  /** The lens for a zoom ratio: the last one whose stop the ratio has reached (the shortest one below every stop). */
+  private Lens chooseLens (float ratio) {
+    Lens best = null;
+    for (Lens lens : lenses) {
+      if (best == null || ratio + 0.01f >= (lens.factor < 0.95f ? 0f : lens.stop)) {
+        best = lens;
+      }
+    }
+    return best;
+  }
+
+  /** Lens lock: schedules reopening on another lens when the zoom crossed its stop. True when scheduled (zoom not applied here). */
+  private boolean switchLensIfNeeded (float ratio) throws Throwable {
+    Lens current = sessionLens;
+    if (current == null || sessionTexture == null || lensLockFailed) {
+      return false;
+    }
+    if (lensSwitchPending) {
+      return true;
+    }
+    Lens lens = chooseLens(lensRatio(ratio));
+    if (lens == null || lens == current) {
+      return false;
+    }
+    if (!canSwitchRoundCamera()) {
+      // The recorder is still taking the previous camera: stay on this lens for now
+      return false;
+    }
+    Log.i(Log.TAG_CAMERA, "Camera2 lens lock: lens %s -> %s at %.2fx", current.id, lens.id, ratio);
+    lensSwitchPending = true;
+    // After requestZoomRatio has stored the new ratio
+    post(this::switchLens, 0);
+    return true;
+  }
+
+  /**
+   * Reopens the camera on the lens of the current zoom, the same way as switching between the front and back cameras:
+   * the picture blurs and fades from the last frame of the previous lens, the recording goes on.
+   */
+  private void switchLens () {
+    lensSwitchPending = false;
+    Lens current = sessionLens;
+    if (!isCameraActive || current == null) {
+      return;
+    }
+    float hardwareRatio = getHardwareZoomRatio(mZoomRatio);
+    Lens lens = chooseLens(lensRatio(mZoomRatio));
+    if (lens == null || lens == current || !canSwitchRoundCamera()) {
+      try {
+        applyZoom(hardwareRatio);
+        updateRepeatingRequest();
+      } catch (Throwable t) {
+        Log.w(Log.TAG_CAMERA, "Cannot apply zoom", t);
+      }
+      return;
+    }
+    mKeepZoomRatio = mZoomRatio;
+    lensSettling = true;
+    lensSettleFrames = 0;
+    lensReopening = true;
+    try {
+      manager.resetRenderState(true);
+      setCameraActive(false);
+      setCameraActive(true);
+    } finally {
+      lensReopening = false;
+      mKeepZoomRatio = 0f;
+    }
+  }
+
+  @Override
+  protected float resolveZoomRatio (float ratio, float target) {
+    if (sessionLens == null || lensLockFailed || lenses.isEmpty()) {
+      return ratio;
+    }
+    // A tap to a stop on another lens: straight to it, the lens switch blurs over the jump
+    // (no zoom on the previous lens first, no zoom on the new one after)
+    if (chooseLens(super.getHardwareZoomRatio(ratio)) != chooseLens(super.getHardwareZoomRatio(target))) {
+      return target;
+    }
+    return ratio;
+  }
+
+  @Override
+  protected float computeSoftwareZoom (float ratio) {
+    Lens current = sessionLens;
+    if (current != null && !lensLockFailed && !lenses.isEmpty() && chooseLens(lensRatio(ratio)) != current) {
+      // The ratio is for the next lens: the current one keeps its picture until the switch
+      return getSoftwareZoom();
+    }
+    return super.computeSoftwareZoom(ratio);
+  }
+
+  @Override
+  public boolean isCameraSettled () {
+    return !lensSettling;
+  }
+
+  @Override
+  protected boolean needsZoomUpdate (float fromRatio, float toRatio) {
+    Lens current = sessionLens;
+    if (current != null && !lensLockFailed) {
+      if (lensSwitchPending) {
+        // The camera is about to reopen on the new lens: the software crop alone follows the zoom
+        return false;
+      }
+      if (chooseLens(lensRatio(toRatio)) != current) {
+        // The zoom goes to another lens: compared by the lens, not by the ratio
+        // (both ratios split by the target lens can be equal, e.g. 1× and 0.97× on the way to 0.6×)
+        return true;
+      }
+    }
+    return super.needsZoomUpdate(fromRatio, toRatio);
+  }
+
+  @Override
+  protected float getHardwareZoomRatio (float ratio) {
+    float hardware = super.getHardwareZoomRatio(ratio);
+    if (lenses.isEmpty() || lensLockFailed) {
+      return hardware;
+    }
+    // A locked lens crops itself up to its own digital zoom limit, the rest is the software crop
+    Lens lens = sessionLens != null ? sessionLens : chooseLens(lensRatio(ratio));
+    float limit = lens.factor * (lens.canCrop ? lens.maxDigitalZoom : 1f);
+    return Math.min(hardware, limit);
+  }
+
+  /** Digital zoom on the locked lens: crops it to ratio / lens factor (the zoom stop of the lens is its full frame). */
+  private static void applyLensZoom (CaptureRequest.Builder builder, Lens lens, float ratio) {
+    if (!lens.canCrop || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+      return;
+    }
+    float zoom = Math.max(1f, Math.min(lens.maxDigitalZoom, ratio / lens.factor));
+    Rect a = lens.activeArray;
+    int width = Math.round(a.width() / zoom);
+    int height = Math.round(a.height() / zoom);
+    // Crop coordinates start at the top-left corner of the active array
+    int left = (a.width() - width) / 2;
+    int top = (a.height() - height) / 2;
+    builder.setPhysicalCameraKey(CaptureRequest.SCALER_CROP_REGION, new Rect(left, top, left + width, top + height), lens.id);
+  }
+
+  private static String formatStop (float stop) {
+    return stop == Math.round(stop) ? String.valueOf(Math.round(stop)) : String.valueOf(Math.round(stop * 10f) / 10f);
+  }
+
+  private String getLensLockState () {
+    if (!Settings.instance().isRoundLensLocked()) {
+      return Lang.getString(R.string.vg_RoundDiagLensOff);
+    }
+    Lens lens = sessionLens;
+    if (lens != null) {
+      String state = Lang.getString(R.string.vg_RoundDiagLensLocked, formatStop(lens.stop), lens.id);
+      return state + ", " + (lens.canCrop ? Lang.getString(R.string.vg_RoundDiagLensCrop, formatStop(lens.maxDigitalZoom)) : Lang.getString(R.string.vg_RoundDiagLensNoCrop));
+    }
+    return Lang.getString(R.string.vg_RoundDiagLensUnavailable, Lang.getString(lensLockProblem != 0 ? lensLockProblem : R.string.vg_RoundDiagLensHidden));
+  }
+
   private void closeSession () {
     sessionGeneration++;
     if (session != null) {
@@ -984,6 +1473,8 @@ public class CameraApi2 extends CameraApi {
   protected void closeCamera () throws Throwable {
     manager.resetRenderState(false);
     closeSession();
+    sessionTexture = null;
+    sessionLens = null;
     firstFrameReceived = false;
     DeviceCallback callback = this.deviceCallback;
     CameraDevice device = this.device;
@@ -1000,10 +1491,15 @@ public class CameraApi2 extends CameraApi {
         Log.w(Log.TAG_CAMERA, "Camera2 device %s did not report closing in time", cameraId);
       }
     }
+    if (!lensReopening) {
+      lensSettling = false;
+    }
     if (characteristics != null) {
       characteristics = null;
       setCameraDeviceFeatures(null);
-      setZoomCapabilities(1f, 1f, new float[] {1f});
+      if (!lensReopening) {
+        setZoomCapabilities(1f, 1f, new float[] {1f});
+      }
     }
   }
 
@@ -1015,6 +1511,8 @@ public class CameraApi2 extends CameraApi {
     if (mNumberOfCameras > 1 && cameraIds != null) {
       resetFlashMode();
       resetZoom();
+      mKeepZoomRatio = 0f;
+      lensSettling = false;
       manager.resetRenderState(true);
       int nextCameraIndex = getNextCameraIndex();
       List<String> ids = cameraIds.asList(manager.preferFrontFacingCamera());

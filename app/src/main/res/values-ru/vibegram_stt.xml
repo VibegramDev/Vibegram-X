@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="vg_SttTitle">Расшифровка голосовых</string>
-  <string name="vg_SttDescription">Голосовые сообщения расшифровываются на устройстве, ничего никуда не отправляется. Звёзды показывают качество распознавания моделей.</string>
+  <string name="vg_SttTitle">Расшифровка и диктовка</string>
+  <string name="vg_SttDescription">Эти модели расшифровывают голосовые и кружки, а также распознают речь в режиме диктовки на кнопке записи. Всё работает на устройстве, ничего никуда не отправляется. Звёзды показывают качество распознавания моделей.</string>
   <string name="vg_SttLangWhisper">99 языков</string>
   <string name="vg_SttLangGigaAm">Только русский</string>
   <string name="vg_SttLangParakeet">25 языков</string>

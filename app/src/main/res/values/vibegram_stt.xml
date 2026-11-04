@@ -10,8 +10,8 @@
   <item type="id" name="btn_vgSttCancel" />
   <item type="id" name="btn_vgSttDelete" />
 
-  <string name="vg_SttTitle">Voice transcription</string>
-  <string name="vg_SttDescription">Voice messages are transcribed on this device, nothing is sent anywhere. Stars show the recognition quality of the models.</string>
+  <string name="vg_SttTitle">Transcription &amp; dictation</string>
+  <string name="vg_SttDescription">These models transcribe voice and video messages and recognize your speech in dictation mode of the record button. Everything runs on this device, nothing is sent anywhere. Stars show the recognition quality of the models.</string>
   <string name="vg_SttLangWhisper">99 languages</string>
   <string name="vg_SttLangGigaAm">Russian only</string>
   <string name="vg_SttLangParakeet">25 languages</string>

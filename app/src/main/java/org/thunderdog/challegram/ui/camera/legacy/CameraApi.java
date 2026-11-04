@@ -270,21 +270,32 @@ public abstract class CameraApi {
 
   /** Any thread. Requests are coalesced: only the latest ratio is applied. */
   public final void requestZoomRatio (float ratio) {
+    requestZoomRatio(ratio, ratio);
+  }
+
+  /**
+   * Any thread. Requests are coalesced: only the latest ratio is applied.
+   * @param target where the zoom is going (the stop of a zoom animation), the ratio itself otherwise:
+   * the Camera2 lens lock picks the lens by it, so the lens switches at the start of the animation.
+   */
+  public final void requestZoomRatio (float ratio, float target) {
     if (!checkCameraThread()) {
       cameraThread.getHandler().removeMessages(ACTION_REQUEST_ZOOM_RATIO);
-      sendMessage(ACTION_REQUEST_ZOOM_RATIO, Float.floatToIntBits(ratio), 0);
+      sendMessage(ACTION_REQUEST_ZOOM_RATIO, Float.floatToIntBits(ratio), Float.floatToIntBits(target));
       return;
     }
     ratio = Math.max(mMinZoomRatio, Math.min(mMaxZoomRatio, ratio));
+    mZoomTarget = Math.max(mMinZoomRatio, Math.min(mMaxZoomRatio, target));
+    ratio = resolveZoomRatio(ratio, mZoomTarget);
     if (!isCameraActive || mZoomRatio == ratio) {
       return;
     }
     try {
-      float hardwareRatio = Math.min(ratio, mHardwareMaxZoomRatio);
-      if (Math.min(mZoomRatio, mHardwareMaxZoomRatio) != hardwareRatio) {
+      float hardwareRatio = getHardwareZoomRatio(ratio);
+      if (needsZoomUpdate(mZoomRatio, ratio)) {
         onZoomRatioChanged(hardwareRatio);
       }
-      mSoftwareZoom = Math.max(1f, ratio / hardwareRatio);
+      mSoftwareZoom = computeSoftwareZoom(ratio);
       mZoomRatio = ratio;
       manager.onZoomRatioChanged(ratio);
     } catch (Throwable t) {
@@ -294,6 +305,44 @@ public abstract class CameraApi {
 
   /** Camera thread. Applies the ratio to the open camera. */
   protected void onZoomRatioChanged (float ratio) throws Throwable { }
+
+  /** Where the zoom is going: see {@link #requestZoomRatio(float, float)}; 0 = the current ratio. */
+  protected volatile float mZoomTarget;
+  /** Set before reopening the same camera (lens lock): {@link #setZoomCapabilities} keeps this ratio instead of 1×. */
+  protected float mKeepZoomRatio;
+
+  /** Camera thread: the ratio to apply for a requested one (Camera2 lens lock: the target when it is on another lens). */
+  protected float resolveZoomRatio (float ratio, float target) {
+    return ratio;
+  }
+
+  /** Camera thread: the software crop for a ratio. */
+  protected float computeSoftwareZoom (float ratio) {
+    return Math.max(1f, ratio / getHardwareZoomRatio(ratio));
+  }
+
+  /**
+   * Any thread: false while a camera reopened on another lens (Camera2 lens lock) settles its exposure:
+   * the round recorder keeps the blurred previous frame meanwhile.
+   */
+  public boolean isCameraSettled () {
+    return true;
+  }
+
+  /** Camera thread: whether going from one ratio to another changes what the camera does (not only the software crop). */
+  protected boolean needsZoomUpdate (float fromRatio, float toRatio) {
+    return getHardwareZoomRatio(fromRatio) != getHardwareZoomRatio(toRatio);
+  }
+
+  /** The part of the zoom ratio the camera does itself, the rest is the software crop. */
+  protected float getHardwareZoomRatio (float ratio) {
+    return Math.min(ratio, mHardwareMaxZoomRatio);
+  }
+
+  /** Whether the round recorder (if any) can take frames of a reopened camera now. */
+  protected final boolean canSwitchRoundCamera () {
+    return roundRecorder == null || roundRecorder.canSwitchToNewCamera();
+  }
 
   /** Camera thread. Called by the backend when a camera has been opened (or closed: 1, 1, {1}). */
   protected final void setZoomCapabilities (float minRatio, float maxRatio, float[] stops) {
@@ -321,7 +370,16 @@ public abstract class CameraApi {
     mMinZoomRatio = minRatio;
     mMaxZoomRatio = maxRatio;
     mZoomStops = stops;
-    mZoomRatio = Math.max(minRatio, Math.min(maxRatio, 1f));
+    float keep = mKeepZoomRatio;
+    mKeepZoomRatio = 0f;
+    if (keep > 0f) {
+      // The same camera reopened on another lens: the zoom stays, no jump to 1× and back
+      mZoomRatio = Math.max(minRatio, Math.min(maxRatio, keep));
+      mSoftwareZoom = Math.max(1f, mZoomRatio / getHardwareZoomRatio(mZoomRatio));
+    } else {
+      mZoomRatio = Math.max(minRatio, Math.min(maxRatio, 1f));
+      mZoomTarget = 0f;
+    }
     manager.onZoomCapabilitiesChanged(minRatio, maxRatio, stops, mZoomRatio);
   }
 
@@ -957,7 +1015,7 @@ public abstract class CameraApi {
         setTorchEnabled(msg.arg1 == 1);
         break;
       case ACTION_REQUEST_ZOOM_RATIO:
-        requestZoomRatio(Float.intBitsToFloat(msg.arg1));
+        requestZoomRatio(Float.intBitsToFloat(msg.arg1), Float.intBitsToFloat(msg.arg2));
         break;
     }
   }

@@ -3114,21 +3114,64 @@ public class Settings {
     void onPreferVideoModeChanged (boolean preferVideoMode);
 
     default void onRecordAudioVideoError (boolean preferVideoMode) {}
+
+    /** Vibegram: the record button switched between voice, round video and dictation ({@link #RECORD_MODE_VOICE} etc). */
+    default void onPreferRecordModeChanged (int recordMode) {
+      onPreferVideoModeChanged(recordMode == RECORD_MODE_ROUND);
+    }
   }
 
-  private final List<Reference<VideoModePreferenceListener>> videoPreferenceChangeListeners = new ArrayList<>();
+  // Vibegram: the record button cycles voice → round video → dictation on tap.
+  public static final int RECORD_MODE_VOICE = 0, RECORD_MODE_ROUND = 1, RECORD_MODE_DICTATION = 2;
+  private static final String KEY_PREFER_DICTATION = "vg_prefer_dictation";
 
-  private void notifyVideoPreferenceListeners (boolean preferVideoMode) {
-    final int size = videoPreferenceChangeListeners.size();
-    for (int i = size - 1; i >= 0; i--) {
+  public int getPreferredRecordMode () {
+    if (getBoolean(KEY_PREFER_DICTATION, false)) {
+      return RECORD_MODE_DICTATION;
+    }
+    return preferVideoMode() ? RECORD_MODE_ROUND : RECORD_MODE_VOICE;
+  }
+
+  public void setPreferredRecordMode (int recordMode) {
+    boolean dictation = recordMode == RECORD_MODE_DICTATION;
+    boolean changed = getBoolean(KEY_PREFER_DICTATION, false) != dictation;
+    if (changed) {
+      putBoolean(KEY_PREFER_DICTATION, dictation);
+    }
+    if (!dictation) {
+      // Dictation keeps the round video flag as is: only the explicit voice / round choice changes it.
+      changed |= setSetting(FLAG_OTHER_PREFER_VIDEO_MODE, Config.ROUND_VIDEOS_RECORD_SUPPORTED && recordMode == RECORD_MODE_ROUND);
+    }
+    if (changed) {
+      notifyRecordModeListeners(getPreferredRecordMode());
+    }
+  }
+
+  /** The mode the record button switches to on tap. */
+  public int getNextRecordMode () {
+    switch (getPreferredRecordMode()) {
+      case RECORD_MODE_VOICE:
+        return Config.ROUND_VIDEOS_RECORD_SUPPORTED ? RECORD_MODE_ROUND : RECORD_MODE_DICTATION;
+      case RECORD_MODE_ROUND:
+        return RECORD_MODE_DICTATION;
+      case RECORD_MODE_DICTATION:
+      default:
+        return RECORD_MODE_VOICE;
+    }
+  }
+
+  private void notifyRecordModeListeners (int recordMode) {
+    for (int i = videoPreferenceChangeListeners.size() - 1; i >= 0; i--) {
       VideoModePreferenceListener listener = videoPreferenceChangeListeners.get(i).get();
       if (listener != null) {
-        listener.onPreferVideoModeChanged(preferVideoMode);
+        listener.onPreferRecordModeChanged(recordMode);
       } else {
         videoPreferenceChangeListeners.remove(i);
       }
     }
   }
+
+  private final List<Reference<VideoModePreferenceListener>> videoPreferenceChangeListeners = new ArrayList<>();
 
   public void notifyRecordAudioVideoError () {
     boolean preferVideoMode = preferVideoMode();
@@ -3152,14 +3195,11 @@ public class Settings {
   }
 
   public boolean preferVideoMode () {
-    return Config.ROUND_VIDEOS_RECORD_SUPPORTED && checkSetting(FLAG_OTHER_PREFER_VIDEO_MODE);
+    return Config.ROUND_VIDEOS_RECORD_SUPPORTED && checkSetting(FLAG_OTHER_PREFER_VIDEO_MODE) && !getBoolean(KEY_PREFER_DICTATION, false);
   }
 
   public void setPreferVideoMode (boolean preferVideoMode) {
-    preferVideoMode = Config.ROUND_VIDEOS_RECORD_SUPPORTED && preferVideoMode;
-    if (setSetting(FLAG_OTHER_PREFER_VIDEO_MODE, preferVideoMode)) {
-      notifyVideoPreferenceListeners(preferVideoMode);
-    }
+    setPreferredRecordMode(preferVideoMode ? RECORD_MODE_ROUND : RECORD_MODE_VOICE);
   }
 
   public boolean needHqRoundVideos () {
@@ -3196,6 +3236,26 @@ public class Settings {
   private static final String KEY_ROUND_VIDEO_FPS = "vg_round_video_fps";
   private static final String KEY_ROUND_VIDEO_BITRATE = "vg_round_video_bitrate";
   private static final String KEY_ROUND_DEVICE_LIMITS = "vg_round_device_limits";
+  private static final String KEY_ROUND_LOCK_LENS = "vg_round_lock_lens";
+  private static final String KEY_ROUND_SHOW_QUALITY_INFO = "vg_round_show_quality_info";
+
+  /** Camera2: stream only the physical lens of the chosen zoom stop instead of the logical camera. Off by default. */
+  public boolean isRoundLensLocked () {
+    return getBoolean(KEY_ROUND_LOCK_LENS, false);
+  }
+
+  public void setRoundLensLocked (boolean locked) {
+    putBoolean(KEY_ROUND_LOCK_LENS, locked);
+  }
+
+  /** Bitrate and frame rate of own video messages in their message menu. Off by default. */
+  public boolean showRoundQualityInfo () {
+    return getBoolean(KEY_ROUND_SHOW_QUALITY_INFO, false);
+  }
+
+  public void setShowRoundQualityInfo (boolean show) {
+    putBoolean(KEY_ROUND_SHOW_QUALITY_INFO, show);
+  }
 
   public static final int ROUND_START_CAMERA_FRONT = 0;
   public static final int ROUND_START_CAMERA_REAR = 1;
@@ -3255,26 +3315,38 @@ public class Settings {
   }
 
   /** 0 = the maximum the device supports, otherwise the side of the video in px. */
+  /** Side in pixels; by default (and for "maximum" of older builds, 0) the largest this phone can record. */
   public int getRoundVideoSide () {
-    return getInt(KEY_ROUND_VIDEO_SIDE, 0);
+    int side = getInt(KEY_ROUND_VIDEO_SIDE, 0);
+    return side > 0 ? side : org.thunderdog.challegram.player.RoundVideoQuality.getMaxSupported().side;
   }
 
   public void setRoundVideoSide (int side) {
     putInt(KEY_ROUND_VIDEO_SIDE, side);
   }
 
-  /** 0 = the maximum the device supports, otherwise frames per second. */
+  /** Frames per second: 60 (default) or 30. Older builds stored 0 for "maximum": it is 60 now. */
   public int getRoundVideoFps () {
-    return getInt(KEY_ROUND_VIDEO_FPS, 0);
+    return getInt(KEY_ROUND_VIDEO_FPS, 60) == 30 ? 30 : 60;
   }
 
   public void setRoundVideoFps (int fps) {
     putInt(KEY_ROUND_VIDEO_FPS, fps);
   }
 
-  /** 0 = the maximum for the chosen size and frame rate, otherwise kbit/s. */
+  /**
+   * 0 = maximum (record high, re-encode before sending if the file does not fit), otherwise kbit/s from
+   * {@link org.thunderdog.challegram.player.RoundVideoQuality#SETTINGS_BITRATE_OPTIONS_KBPS}.
+   * Values older builds offered (8, 6, 4, 2.5 Mbit/s) are "maximum" now.
+   */
   public int getRoundVideoBitrate () {
-    return getInt(KEY_ROUND_VIDEO_BITRATE, 0);
+    int kbps = getInt(KEY_ROUND_VIDEO_BITRATE, 0);
+    for (int option : org.thunderdog.challegram.player.RoundVideoQuality.SETTINGS_BITRATE_OPTIONS_KBPS) {
+      if (option == kbps) {
+        return kbps;
+      }
+    }
+    return 0;
   }
 
   public void setRoundVideoBitrate (int kbps) {

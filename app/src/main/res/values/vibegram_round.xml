@@ -33,12 +33,11 @@
   <string name="vg_RoundCameraApiCamera1">Camera1 (legacy)</string>
   <string name="vg_RoundCameraApiCamera1Only">Camera1 (Camera2 needs Android 6)</string>
   <string name="vg_RoundCameraApiCamera2Failed">Camera1 (Camera2 did not work on this phone)</string>
-  <string name="vg_RoundCameraApiHint">Camera2 gives lens switching (ultra-wide, telephoto), stabilization and 60 fps on phones that support them. If it fails, recording switches to Camera1 by itself.</string>
+  <string name="vg_RoundCameraApiHint">Camera2: lens switching, stabilization, 60 fps. If it fails, Camera1 is used.</string>
   <string name="vg_RoundStartCamera">Start recording with</string>
   <string name="vg_RoundStartFront">Front camera</string>
   <string name="vg_RoundStartRear">Rear camera</string>
   <string name="vg_RoundStartLast">Last used camera</string>
-  <string name="vg_RoundCameraDescription">Zoom while recording: tap 0.6×, 1×, 2×… under the video or hold and slide for precise zoom.</string>
   <string name="vg_RoundQualityHeader">Quality</string>
   <string name="vg_RoundSide">Resolution</string>
   <string name="vg_RoundFps">Frame rate</string>
@@ -47,12 +46,81 @@
   <string name="vg_RoundSideValue">%1$d×%2$d</string>
   <string name="vg_RoundFpsValue">%1$d fps</string>
   <string name="vg_RoundMbps">%1$s Mbit/s</string>
+  <string name="vg_RoundBitrateInfo">Bitrate: %1$s</string>
   <string name="vg_RoundKbps">%1$d kbit/s</string>
   <string name="vg_RoundUnsupported">%1$s (not supported by this phone)</string>
-  <string name="vg_RoundQualityDescription">By default video messages are recorded at the best quality this phone supports. If the phone cannot record the chosen quality, the next lower one is used and you get a notice.</string>
+  <string name="vg_RoundQualityDescription">If the phone cannot handle the chosen quality, the next lower one is used.</string>
   <string name="vg_RoundDeviceMax">This phone: up to %1$d×%2$d, %3$d fps, %4$s.</string>
   <string name="vg_RoundCurrent">Now: %1$d×%2$d, %3$d fps, up to %4$s.</string>
-  <string name="vg_RoundSizeLimit">Telegram accepts video messages up to 10 MB. The bitrate is constant: at most 1.2 Mbit/s, so that a one-minute video fits the limit.</string>
   <string name="vg_RoundPlaybackHeader">Playback through the earpiece</string>
   <string name="vg_RoundCamera2Failed">Camera2 does not work on this phone, video messages are recorded with Camera1</string>
+  <item type="id" name="controller_vgRoundDiagnostics" />
+  <item type="id" name="btn_vgRoundDiagnostics" />
+  <item type="id" name="btn_vgRoundDiagCopy" />
+  <item type="id" name="btn_vgRoundDiagRow" />
+  <string name="vg_RoundDiagTitle">Recording diagnostics</string>
+  <string name="vg_RoundDiagHint">Frame rate at every stage of the last recording: where frames are lost.</string>
+  <string name="vg_RoundDiagEmpty">Record a video message: its diagnostics will be shown here until the app is closed.</string>
+  <string name="vg_RoundDiagCopy">Copy all</string>
+  <string name="vg_RoundDiagDescription">Recording of %1$s. Tap a row to copy it.</string>
+  <string name="vg_RoundDiagFps">%1$s fps</string>
+  <string name="vg_RoundDiagMs">%1$s ms</string>
+  <string name="vg_RoundDiagSeconds">%1$s s</string>
+  <string name="vg_RoundDiagMsPerSecond">%1$s ms per second</string>
+  <string name="vg_RoundDiagRecording">Recording</string>
+  <string name="vg_RoundDiagDuration">Duration</string>
+  <string name="vg_RoundDiagVideo">Video</string>
+  <string name="vg_RoundDiagEncoder">Encoder</string>
+  <string name="vg_RoundDiagCamera">Camera</string>
+  <string name="vg_RoundDiagCameraId">Camera</string>
+  <string name="vg_RoundDiagCameraSize">Frame size</string>
+  <string name="vg_RoundDiagFpsRange">Frame rate range (AE)</string>
+  <string name="vg_RoundDiagFpsRanges">Available ranges</string>
+  <string name="vg_RoundDiagStabilization">Stabilization</string>
+  <string name="vg_RoundDiagCameraFrames">Delivered by the camera</string>
+  <string name="vg_RoundDiagFrameDuration">Frame duration, average</string>
+  <string name="vg_RoundDiagExposure">Exposure, average / max</string>
+  <string name="vg_RoundDiagRender">Rendering</string>
+  <string name="vg_RoundDiagRendered">Rendered</string>
+  <string name="vg_RoundDiagQueued">Passed to the encoder</string>
+  <string name="vg_RoundDiagDropped">Dropped</string>
+  <string name="vg_RoundDiagEncoding">Encoder</string>
+  <string name="vg_RoundDiagHandled">Handled</string>
+  <string name="vg_RoundDiagDrawn">Drawn</string>
+  <string name="vg_RoundDiagLongestFrame">Longest frame</string>
+  <string name="vg_RoundDiagLongestSwap">Longest swap</string>
+  <string name="vg_RoundDiagWaits">Waited for the encoder</string>
+  <string name="vg_RoundDiagWaitsValue">%1$s times, average %2$s, max %3$s, gave up %4$s</string>
+  <string name="vg_RoundDiagNever">Never</string>
+  <string name="vg_RoundDiagDrain">Encoder output</string>
+  <string name="vg_RoundDiagDrainValue">%1$s times, average %2$s, total %3$s</string>
+  <string name="vg_RoundDiagSync">Synchronization</string>
+  <string name="vg_RoundDiagSyncValue">%1$s, queue of %2$s frames</string>
+  <string name="vg_RoundDiagLogical">%1$s (logical: switches lenses itself)</string>
+  <string name="vg_RoundDiagStabValue">%1$s, OIS: %2$s</string>
+  <string name="vg_RoundDiagStabOff">off</string>
+  <string name="vg_RoundDiagStabOn">on</string>
+  <string name="vg_RoundDiagStabPreview">preview and video</string>
+  <string name="vg_RoundDiagOisDefault">phone default</string>
+  <item type="id" name="btn_vgRoundLockLens" />
+  <item type="id" name="btn_vgRoundShowQualityInfo" />
+  <string name="vg_RoundBitrateMax">Maximum</string>
+  <string name="vg_RoundSizeLimit">Maximum bitrate: best quality, but videos longer than ~15 s are re-encoded before sending. Others: the video is sent right after recording.</string>
+  <string name="vg_RoundLockLens">Lock the camera lens</string>
+  <string name="vg_RoundLockLensDescription">Without the lock the phone may switch the lens mid-recording and the picture jumps. With it the lens changes only with the 0.6×, 1×, 2× zoom buttons. Back camera only, not supported on every phone.</string>
+  <string name="vg_RoundShowQualityInfo">Bitrate and FPS in the video message menu</string>
+  <string name="vg_RoundDiagHeader">Diagnostics</string>
+  <string name="vg_RoundDiagLens">Lens lock</string>
+  <string name="vg_RoundDiagLensOff">off</string>
+  <string name="vg_RoundDiagLensLocked">%1$s× lens (camera %2$s)</string>
+  <string name="vg_RoundDiagLensNoCrop">no digital zoom</string>
+  <string name="vg_RoundDiagLensUnavailable">not available: %1$s</string>
+  <string name="vg_RoundDiagLensOldAndroid">needs Android 9</string>
+  <string name="vg_RoundDiagLensSingle">the camera has one lens</string>
+  <string name="vg_RoundDiagLensHidden">the phone hides the lenses</string>
+  <string name="vg_RoundDiagLensSize">the lenses do not give the needed frame size</string>
+  <string name="vg_RoundDiagLensFailed">the phone could not record from a separate lens</string>
+  <item type="id" name="btn_vgRoundLockLensSeparator" />
+  <item type="id" name="btn_vgRoundLockLensDescription" />
+  <string name="vg_RoundDiagLensCrop">digital zoom of the lens up to %1$s×</string>
 </resources>

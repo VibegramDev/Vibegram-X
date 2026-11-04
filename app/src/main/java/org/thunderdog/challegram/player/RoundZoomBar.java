@@ -57,8 +57,11 @@ import me.vkryl.core.MathUtils;
  */
 public class RoundZoomBar extends View implements FactorAnimator.Target {
   public interface Delegate {
-    /** UI thread, may be called every frame: apply the ratio to the camera. */
-    void onZoomRatioRequested (float ratio);
+    /**
+     * UI thread, may be called every frame: apply the ratio to the camera.
+     * @param target the stop a tap is animating to, the ratio itself otherwise
+     */
+    void onZoomRatioRequested (float ratio, float target);
   }
 
   private static final float VIEW_HEIGHT = 48f;
@@ -292,7 +295,8 @@ public class RoundZoomBar extends View implements FactorAnimator.Target {
     setRatioImpl(ratio, animateSelection);
     lastLocalRequestTime = SystemClock.uptimeMillis();
     if (delegate != null) {
-      delegate.onZoomRatioRequested(ratio);
+      float target = zoomAnimator != null && zoomTargetIndex >= 0 && zoomTargetIndex < stops.length ? clampRatio(stops[zoomTargetIndex]) : ratio;
+      delegate.onZoomRatioRequested(ratio, target);
     }
   }
 
