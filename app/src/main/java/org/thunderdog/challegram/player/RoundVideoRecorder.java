@@ -25,6 +25,7 @@ import android.opengl.EGL14;
 import android.opengl.EGLExt;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
+import android.opengl.GLES30;
 import android.opengl.GLUtils;
 import android.os.Build;
 import android.os.Handler;
@@ -116,6 +117,10 @@ public class RoundVideoRecorder {
   private String outputPath;
   private volatile boolean isCapturing; // Whether capture should be in progress
   private volatile boolean finishCapture; // Whether capture result should be saved
+  // Vibegram: the camera was closed while recording (the stop closes it before the encoder stops).
+  // Frames drawn after that come from the new, still empty texture or from the camera starting up again:
+  // fed to the encoder they ended the video with a fade to green and black frames.
+  private volatile boolean cameraDetachedFromEncoder;
 
   public RoundVideoRecorder (CameraApi context, SurfaceTexture surfaceTexture, int surfaceWidth, int surfaceHeight) {
     this.context = context;
@@ -146,6 +151,7 @@ public class RoundVideoRecorder {
       backgroundHandler.sendMessage(Message.obtain(backgroundHandler, BG_ACTION_INIT));
       return;
     }
+    cameraDetachedFromEncoder = false;
     prepareGL();
   }
 
@@ -157,6 +163,8 @@ public class RoundVideoRecorder {
 
   public void switchToNewCamera () {
     isSwitchingToNewCamera = true;
+    // A new camera device is open (switch during recording): its frames go to the encoder again.
+    cameraDetachedFromEncoder = false;
     if (!checkBackgroundThread()) {
       backgroundHandler.sendMessage(Message.obtain(backgroundHandler, BG_ACTION_REINIT));
       return;
@@ -165,6 +173,9 @@ public class RoundVideoRecorder {
   }
 
   public void onCameraClose () {
+    if (isCapturing()) {
+      cameraDetachedFromEncoder = true;
+    }
     if (!checkBackgroundThread()) {
       backgroundHandler.sendMessage(Message.obtain(backgroundHandler, BG_ACTION_CLOSE));
       return;
@@ -196,6 +207,7 @@ public class RoundVideoRecorder {
   public void startCapture (Delegate delegate, String key, String outputPath) {
     Log.i(Log.TAG_ROUND, "startCapture: %s, path: %s, isCapturing: %b", key, outputPath, isCapturing);
     if (!isCapturing) {
+      this.cameraDetachedFromEncoder = false;
       this.isCapturing = true;
       this.mDelegate = delegate;
       this.workingKey = key;
@@ -217,6 +229,7 @@ public class RoundVideoRecorder {
     if (isCapturing) {
       this.finishCapture = saveResult;
       this.isCapturing = false;
+      RoundRecordStats.finish();
       stopCaptureImpl();
     }
   }
@@ -441,11 +454,51 @@ public class RoundVideoRecorder {
       "   gl_FragColor = vec4(color * alpha, alpha);\n" +
       "}\n";
 
+  // Vibegram: the blur of a lens switch in the video itself (the screen blurs it in the UI): the last frame of the
+  // previous lens blurs while the camera reopens, then the new lens fades in from blurred to sharp.
+  // A disk of 24 taps (Vogel spiral), "radius" in texture coordinates, 2D copies of the frames only.
+  private static final String FRAGMENT_SHADER_BLUR =
+    "precision highp float;\n" +
+      "varying vec2 vTextureCoord;\n" +
+      "uniform float scaleX;\n" +
+      "uniform float scaleY;\n" +
+      "uniform float alpha;\n" +
+      "uniform float zoom;\n" +
+      "uniform vec2 radius;\n" +
+      "uniform sampler2D sTexture;\n" +
+      "void main() {\n" +
+      "   vec2 coord = vec2((vTextureCoord.x - 0.5) * scaleX, (vTextureCoord.y - 0.5) * scaleY);\n" +
+      "   float coef = ceil(clamp(0.2601 - dot(coord, coord), 0.0, 1.0));\n" +
+      "   vec2 tc = 0.5 + (vTextureCoord - 0.5) / zoom;\n" +
+      "   vec2 r = radius / zoom;\n" +
+      "   vec3 sum = vec3(0.0);\n" +
+      "   for (int i = 0; i < 24; i++) {\n" +
+      "     float f = float(i);\n" +
+      "     float d = sqrt((f + 0.5) / 24.0);\n" +
+      "     float a = f * 2.39996323;\n" +
+      "     sum += texture2D(sTexture, tc + vec2(cos(a), sin(a)) * d * r).rgb;\n" +
+      "   }\n" +
+      "   vec3 color = (sum / 24.0) * coef + (1.0 - step(0.001, coef));\n" +
+      // Not premultiplied: blending is SRC_ALPHA, ONE_MINUS_SRC_ALPHA (premultiplied, the white outside the circle grays mid-fade)
+      "   gl_FragColor = vec4(color, alpha);\n" +
+      "}\n";
+
+  /** Blur radius of a lens switch, part of the video side. */
+  private static final float SWITCH_BLUR_RADIUS = 0.04f;
+  /** The last frame of the previous camera blurs in this time. */
+  private static final long SWITCH_BLUR_IN_NS = 150_000_000L;
+  /** The new camera fades in from blurred to sharp in this time. */
+  private static final float SWITCH_FADE_NS = 250_000_000f;
+
   // Vibegram: "zoom" in the shaders is the software zoom past the camera maximum (CameraApi.getSoftwareZoom()):
   // the frame is sampled closer to its center, the round mask stays where it is.
 
   /** Camera pixels per output pixel above which {@link #FRAGMENT_SHADER_DOWNSCALE} is used. */
   private static final float DOWNSCALE_RATIO_THRESHOLD = 1.3f;
+
+  private static String toTexture2D (String shader) {
+    return shader.replace("#extension GL_OES_EGL_image_external : require\n", "").replace("samplerExternalOES", "sampler2D");
+  }
 
   private static final String FRAGMENT_SCREEN_SHADER =
     "#extension GL_OES_EGL_image_external : require\n" +
@@ -460,6 +513,8 @@ public class RoundVideoRecorder {
   private int[] position = new int[2];
   private int[] cameraTexture = new int[1];
   private int[] oldCameraTexture = new int[1];
+  /** Software zoom of the last encoded frame, and of the previous camera's last frame during a switch. */
+  private volatile float lastEncodedZoom = 1f, oldCameraZoom = 1f;
   private float cameraTextureAlpha = 1.0f;
 
   private float scaleX, scaleY;
@@ -547,6 +602,10 @@ public class RoundVideoRecorder {
 
   private boolean initGL () {
     Log.i(Log.TAG_ROUND, "start init gl");
+    resetFrameCopies();
+    // Camera2 fills it in when its session starts; Camera1 leaves it empty.
+    RoundRecordStats.setCameraConfig(null, false, null, null, null, RoundRecordStats.STABILIZATION_OFF, false, null);
+    cameraGles3 = false;
     egl10 = (EGL10) EGLContext.getEGL();
 
     eglDisplay = egl10.eglGetDisplay(EGL10.EGL_DEFAULT_DISPLAY);
@@ -613,6 +672,7 @@ public class RoundVideoRecorder {
       return false;
     }
     gl = eglContext.getGL();
+    cameraGles3 = isGles3();
 
     float tX = 1.0f / scaleX / 2.0f;
     float tY = 1.0f / scaleY / 2.0f;
@@ -759,10 +819,25 @@ public class RoundVideoRecorder {
     if (cameraSurface != null) {
       cameraSurface.getTransformMatrix(moldSTMatrix);
       cameraSurface.setOnFrameAvailableListener(null);
+      // Vibegram: the encoder fades from the last frame of this camera: a 2D copy of it, like all its frames.
+      int width = copyWidth(), height = copyHeight();
+      int oldCopy = width > 0 && height > 0 ? createFrameTexture(width, height) : 0;
+      if (oldCopy != 0 && !copyToTexture(cameraTexture[0], oldCopy, width, height, true)) {
+        GLES20.glDeleteTextures(1, new int[] {oldCopy}, 0);
+        oldCopy = 0;
+      }
       cameraSurface.release();
-      oldCameraTexture[0] = cameraTexture[0];
+      GLES20.glDeleteTextures(1, cameraTexture, 0);
+      // The previous frame keeps its own zoom: the new lens may need another software crop
+      oldCameraZoom = lastEncodedZoom;
+      oldCameraTexture[0] = oldCopy;
       cameraTextureAlpha = 0.0f;
       cameraTexture[0] = 0;
+      VideoRecorder encoder = videoEncoder;
+      if (oldCopy != 0 && encoder != null) {
+        // The camera is closed until the new one gives frames: the video goes on with the blurring previous frame
+        encoder.startTransitionFrames(cameraId + 1);
+      }
     }
     cameraId++;
     cameraReady = false;
@@ -802,6 +877,10 @@ public class RoundVideoRecorder {
       }
     }
     cameraSurface.updateTexImage();
+    cameraSurface.getTransformMatrix(mSTMatrix);
+    if (RoundRecordStats.active) {
+      RoundRecordStats.renders.incrementAndGet();
+    }
 
     if (isCapturing()) {
       if (!recording) {
@@ -810,6 +889,7 @@ public class RoundVideoRecorder {
         videoEncoder.startRecording(cameraFile, quality, EGL14.eglGetCurrentContext());
         recordStartTime = SystemClock.uptimeMillis();
         recording = true;
+        RoundRecordStats.start();
         int orientation = rotationAngle;
         if (orientation == 90 || orientation == 270) {
           float temp = scaleX;
@@ -819,10 +899,17 @@ public class RoundVideoRecorder {
         dispatchVideoRecordStarted(workingKey, recordStartTime);
       }
 
-      videoEncoder.frameAvailable(cameraSurface, cameraId);
+      // Vibegram: only frames of an open camera during the capture itself (see cameraDetachedFromEncoder).
+      if (isCapturing && !cameraDetachedFromEncoder) {
+        // The encoder draws its own copy of the frame: the camera texture is free for the next one at once.
+        int slot = videoEncoder.acquireFrameSlot(ENCODER_WAIT_MS);
+        if (slot != -1 && copyCameraFrame(slot)) {
+          videoEncoder.frameAvailable(cameraSurface, cameraId);
+        } else if (RoundRecordStats.active) {
+          RoundRecordStats.dropped.incrementAndGet();
+        }
+      }
     }
-
-    cameraSurface.getTransformMatrix(mSTMatrix);
 
     GLES20.glUseProgram(drawProgram);
     GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
@@ -851,6 +938,201 @@ public class RoundVideoRecorder {
   }
 
   private long recordStartTime;
+
+  // Vibegram: frames for the encoder. It drew straight from the camera texture, on its own thread: the camera
+  // thread had to keep the texture until the encoder drew it (or the frame was lost), and the two threads took
+  // turns instead of working in parallel. At 60 fps that lost 7-23 of 58 frames a second. Now the camera thread
+  // copies each frame into one of a few textures (a cheap GPU copy) and goes on, the encoder draws the copies.
+
+  /** Frames the encoder may lag behind the camera before frames are dropped. */
+  private static final int FRAME_RING_SIZE = 8;
+  /** When the encoder is that far behind: wait a bit for it, not long enough to freeze the preview. */
+  private static final long ENCODER_WAIT_MS = 12;
+  private static final float[] IDENTITY_MATRIX = new float[16];
+  static {
+    android.opengl.Matrix.setIdentityM(IDENTITY_MATRIX, 0);
+  }
+  private static final String FRAGMENT_COPY_SHADER =
+    "#extension GL_OES_EGL_image_external : require\n" +
+      "precision highp float;\n" +
+      "varying vec2 vTextureCoord;\n" +
+      "uniform samplerExternalOES sTexture;\n" +
+      "void main() {\n" +
+      "   gl_FragColor = texture2D(sTexture, vTextureCoord);\n" +
+      "}\n";
+
+  private final int[] frameRing = new int[FRAME_RING_SIZE];
+  /** Transform of the camera texture for each copy: the encoder applies it like it did to the camera texture. */
+  private final float[][] frameRingMatrix = new float[FRAME_RING_SIZE][16];
+  // GPU fences (OpenGL ES 3) instead of glFinish(), which made each thread wait for the whole GPU queue:
+  // copyFence[slot]: the copy is written, the encoder GPU waits for it (glWaitSync, no CPU wait);
+  // readFence[slot]: the encoder has read the copy, the camera waits for it before writing that slot again.
+  private final long[] copyFence = new long[FRAME_RING_SIZE];
+  private final long[] readFence = new long[FRAME_RING_SIZE];
+  private volatile boolean cameraGles3;
+
+  private static boolean isGles3 () {
+    String version = GLES20.glGetString(GLES20.GL_VERSION);
+    return version != null && version.startsWith("OpenGL ES 3");
+  }
+
+  private boolean useFences () {
+    return cameraGles3 && videoEncoder != null && videoEncoder.encoderGles3;
+  }
+  private int frameRingWidth, frameRingHeight;
+  private final int[] copyFramebuffer = new int[1];
+  private int copyProgram;
+  private int copyPositionHandle, copyTextureHandle, copyVertexMatrixHandle, copyTextureMatrixHandle;
+  private FloatBuffer fullTextureBuffer;
+  private final int[] savedViewport = new int[4];
+
+  private void resetFrameCopies () {
+    // The objects belonged to a destroyed context.
+    java.util.Arrays.fill(frameRing, 0);
+    java.util.Arrays.fill(copyFence, 0);
+    java.util.Arrays.fill(readFence, 0);
+    frameRingWidth = frameRingHeight = 0;
+    copyFramebuffer[0] = 0;
+    copyProgram = 0;
+  }
+
+  /** Size of the copies: the camera buffer, landscape like all camera output sizes. */
+  private int copyWidth () {
+    return Math.max(mPreviewWidth, mPreviewHeight);
+  }
+
+  private int copyHeight () {
+    return Math.min(mPreviewWidth, mPreviewHeight);
+  }
+
+  private boolean ensureCopyProgram () {
+    if (copyProgram != 0) {
+      return true;
+    }
+    int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER);
+    int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_COPY_SHADER);
+    if (vertexShader == 0 || fragmentShader == 0) {
+      return false;
+    }
+    int program = GLES20.glCreateProgram();
+    GLES20.glAttachShader(program, vertexShader);
+    GLES20.glAttachShader(program, fragmentShader);
+    GLES20.glLinkProgram(program);
+    int[] linkStatus = new int[1];
+    GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linkStatus, 0);
+    if (linkStatus[0] == 0) {
+      Log.e(Log.TAG_ROUND, "Copy program link failed");
+      GLES20.glDeleteProgram(program);
+      return false;
+    }
+    copyPositionHandle = GLES20.glGetAttribLocation(program, "aPosition");
+    copyTextureHandle = GLES20.glGetAttribLocation(program, "aTextureCoord");
+    copyVertexMatrixHandle = GLES20.glGetUniformLocation(program, "uMVPMatrix");
+    copyTextureMatrixHandle = GLES20.glGetUniformLocation(program, "uSTMatrix");
+    float[] texData = {0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f};
+    fullTextureBuffer = ByteBuffer.allocateDirect(texData.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+    fullTextureBuffer.put(texData).position(0);
+    GLES20.glGenFramebuffers(1, copyFramebuffer, 0);
+    copyProgram = program;
+    return true;
+  }
+
+  private static int createFrameTexture (int width, int height) {
+    int[] texture = new int[1];
+    GLES20.glGenTextures(1, texture, 0);
+    GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture[0]);
+    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
+    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+    GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null);
+    GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+    return texture[0];
+  }
+
+  /** Camera thread: copies the current camera frame into the slot of the ring. */
+  private boolean copyCameraFrame (int slot) {
+    int width = copyWidth(), height = copyHeight();
+    if (width <= 0 || height <= 0) {
+      return false;
+    }
+    if (frameRingWidth != width || frameRingHeight != height) {
+      for (int i = 0; i < FRAME_RING_SIZE; i++) {
+        if (frameRing[i] != 0) {
+          GLES20.glDeleteTextures(1, frameRing, i);
+        }
+        frameRing[i] = createFrameTexture(width, height);
+      }
+      frameRingWidth = width;
+      frameRingHeight = height;
+    }
+    System.arraycopy(mSTMatrix, 0, frameRingMatrix[slot], 0, 16);
+    boolean fences = useFences();
+    long fence;
+    synchronized (videoEncoder.frameLock) {
+      fence = readFence[slot];
+      readFence[slot] = 0;
+    }
+    if (fence != 0) {
+      // The encoder issued its drawing of this slot: wait until the GPU has read it (usually done already).
+      GLES30.glClientWaitSync(fence, 0, 50_000_000L);
+      GLES30.glDeleteSync(fence);
+    }
+    if (!copyToTexture(cameraTexture[0], frameRing[slot], width, height, !fences)) {
+      return false;
+    }
+    if (copyFence[slot] != 0) {
+      // Left by a frame the encoder skipped without drawing (the first 200 ms).
+      GLES30.glDeleteSync(copyFence[slot]);
+      copyFence[slot] = 0;
+    }
+    if (fences) {
+      copyFence[slot] = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+      // The fence is waited for from the encoder context: it has to reach the GPU.
+      GLES20.glFlush();
+    }
+    return true;
+  }
+
+  /**
+   * Copies the camera buffer as it is (not through its transform) into a 2D texture: sampled with the camera
+   * transform, the copy gives what the camera texture gave, round mask and zoom included.
+   */
+  private boolean copyToTexture (int cameraTextureId, int target, int width, int height, boolean finish) {
+    if (!ensureCopyProgram()) {
+      return false;
+    }
+    GLES20.glGetIntegerv(GLES20.GL_VIEWPORT, savedViewport, 0);
+    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, copyFramebuffer[0]);
+    GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, target, 0);
+    boolean complete = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE;
+    if (complete) {
+      GLES20.glViewport(0, 0, width, height);
+      GLES20.glUseProgram(copyProgram);
+      GLES20.glVertexAttribPointer(copyPositionHandle, 3, GLES20.GL_FLOAT, false, 12, vertexBuffer);
+      GLES20.glEnableVertexAttribArray(copyPositionHandle);
+      GLES20.glVertexAttribPointer(copyTextureHandle, 2, GLES20.GL_FLOAT, false, 8, fullTextureBuffer);
+      GLES20.glEnableVertexAttribArray(copyTextureHandle);
+      GLES20.glUniformMatrix4fv(copyVertexMatrixHandle, 1, false, IDENTITY_MATRIX, 0);
+      GLES20.glUniformMatrix4fv(copyTextureMatrixHandle, 1, false, IDENTITY_MATRIX, 0);
+      GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+      GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTextureId);
+      GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+      GLES20.glDisableVertexAttribArray(copyPositionHandle);
+      GLES20.glDisableVertexAttribArray(copyTextureHandle);
+      GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);
+      GLES20.glUseProgram(0);
+    } else {
+      Log.e(Log.TAG_ROUND, "Frame copy framebuffer incomplete");
+    }
+    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
+    GLES20.glViewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
+    if (finish) {
+      // The encoder reads the copy from its own context: it has to be complete before the frame is queued.
+      GLES20.glFinish();
+    }
+    return complete;
+  }
   private boolean recording;
 
   private void doStartRecord () {
@@ -865,6 +1147,7 @@ public class RoundVideoRecorder {
   private static final int MSG_STOP_RECORDING = 1;
   private static final int MSG_VIDEOFRAME_AVAILABLE = 2;
   private static final int MSG_AUDIOFRAME_AVAILABLE = 3;
+  private static final int MSG_TRANSITION_FRAME = 4;
 
   private static class EncoderHandler extends Handler {
     private WeakReference<VideoRecorder> mWeakEncoder;
@@ -903,11 +1186,19 @@ public class RoundVideoRecorder {
         case MSG_VIDEOFRAME_AVAILABLE: {
           long timestamp = (((long) inputMessage.arg1) << 32) | (((long) inputMessage.arg2) & 0xffffffffL);
           Integer cameraId = (Integer) inputMessage.obj;
-          encoder.handleVideoFrameAvailable(timestamp, cameraId);
+          try {
+            encoder.handleVideoFrameAvailable(timestamp, cameraId);
+          } finally {
+            encoder.onFrameConsumed();
+          }
           break;
         }
         case MSG_AUDIOFRAME_AVAILABLE: {
           encoder.handleAudioFrameAvailable((AudioBufferInfo) inputMessage.obj);
+          break;
+        }
+        case MSG_TRANSITION_FRAME: {
+          encoder.handleTransitionFrame(inputMessage.arg1);
           break;
         }
       }
@@ -962,6 +1253,56 @@ public class RoundVideoRecorder {
 
     private long currentTimestamp = 0;
     private long lastTimestamp = -1;
+    private volatile long lastQueuedTimestamp;
+
+    // Vibegram: frames reach the encoder through a ring of copies (see copyCameraFrame): the camera thread
+    // copies frame N into slot N % FRAME_RING_SIZE, the encoder thread draws the slots in the same order.
+    final Object frameLock = new Object();
+    volatile boolean encoderGles3;
+    private int queuedFrames, consumedFrames;
+
+    void onFrameConsumed () {
+      synchronized (frameLock) {
+        consumedFrames++;
+        frameLock.notifyAll();
+      }
+    }
+
+    /** Encoder thread: the slot of the frame being handled. */
+    private int currentFrameSlot () {
+      synchronized (frameLock) {
+        return consumedFrames % FRAME_RING_SIZE;
+      }
+    }
+
+    /**
+     * Camera thread: the slot for the next frame, waiting at most timeoutMs while all slots wait for the encoder;
+     * -1 when it is still behind (the frame is dropped, the preview goes on).
+     */
+    int acquireFrameSlot (long timeoutMs) {
+      synchronized (frameLock) {
+        if (queuedFrames - consumedFrames < FRAME_RING_SIZE) {
+          return queuedFrames % FRAME_RING_SIZE;
+        }
+        final long waitStart = System.nanoTime();
+        long deadline = SystemClock.uptimeMillis() + timeoutMs;
+        while (queuedFrames - consumedFrames >= FRAME_RING_SIZE) {
+          long left = deadline - SystemClock.uptimeMillis();
+          if (left <= 0) {
+            break;
+          }
+          try {
+            frameLock.wait(left);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            break;
+          }
+        }
+        boolean full = queuedFrames - consumedFrames >= FRAME_RING_SIZE;
+        RoundRecordStats.onWait(System.nanoTime() - waitStart, full);
+        return full ? -1 : queuedFrames % FRAME_RING_SIZE;
+      }
+    }
 
     private volatile EncoderHandler handler;
 
@@ -982,6 +1323,9 @@ public class RoundVideoRecorder {
     private int alphaHandle;
     private int texelOffsetHandle = -1;
     private int encoderZoomHandle = -1;
+    private int blurProgram;
+    private int blurPositionHandle, blurTextureHandle, blurScaleXHandle, blurScaleYHandle, blurAlphaHandle, blurZoomHandle,
+      blurRadiusHandle, blurVertexMatrixHandle, blurTextureMatrixHandle;
 
     private Integer lastCameraId = 0;
 
@@ -1060,6 +1404,9 @@ public class RoundVideoRecorder {
       videoWidth = quality.side;
       videoHeight = quality.side;
       sharedEglContext = sharedContext;
+      synchronized (frameLock) {
+        queuedFrames = consumedFrames = 0;
+      }
 
       synchronized (sync) {
         if (running) {
@@ -1090,8 +1437,17 @@ public class RoundVideoRecorder {
       }
 
       long timestamp = st.getTimestamp();
-      if (timestamp == 0) {
+      // Vibegram: a render without a new camera frame (several frame callbacks, one updateTexImage) repeats
+      // the timestamp: such a frame went to the encoder as a duplicate with a zero duration.
+      if (timestamp == 0 || timestamp == lastQueuedTimestamp) {
         return;
+      }
+      lastQueuedTimestamp = timestamp;
+      synchronized (frameLock) {
+        queuedFrames++;
+      }
+      if (RoundRecordStats.active) {
+        RoundRecordStats.queued.incrementAndGet();
       }
 
       handler.sendMessage(handler.obtainMessage(MSG_VIDEOFRAME_AVAILABLE, (int) (timestamp >> 32), (int) timestamp, cameraId));
@@ -1171,6 +1527,16 @@ public class RoundVideoRecorder {
     }
 
     private void handleVideoFrameAvailable(long timestampNanos, Integer cameraId) {
+      // Vibegram: frames are drawn from the shared camera texture when this thread gets to them, not when they
+      // arrived. Queued frames handled after the camera was closed drew its replacement, an empty texture
+      // fading in: the green and black end of the video (seen at 60 fps, where this thread falls behind).
+      if (cameraDetachedFromEncoder) {
+        return;
+      }
+      final long handleStart = System.nanoTime();
+      if (RoundRecordStats.active) {
+        RoundRecordStats.handled.incrementAndGet();
+      }
       try {
         drainEncoder(false);
       } catch (Exception e) {
@@ -1203,6 +1569,26 @@ public class RoundVideoRecorder {
       }
       currentTimestamp += dt;
 
+      // Vibegram: each queued frame has its own copy (see copyCameraFrame), drawn with its own time.
+      int frameSlot = currentFrameSlot();
+      int frameTexture = frameRing[frameSlot];
+      long frameCopyFence = copyFence[frameSlot];
+      copyFence[frameSlot] = 0;
+      if (frameCopyFence != 0) {
+        // The GPU of this context waits for the copy; this thread goes on.
+        GLES30.glWaitSync(frameCopyFence, 0, GLES30.GL_TIMEOUT_IGNORED);
+        GLES30.glDeleteSync(frameCopyFence);
+      }
+
+      if (oldCameraTexture[0] != 0 && blurProgram != 0) {
+        drawTransitionFrame(frameSlot, frameTexture);
+        RoundRecordStats.onDrawn(0, System.nanoTime() - handleStart);
+        advanceCameraTransition(alphaDt);
+        return;
+      }
+      transitionStart = -1;
+      lastEncodedZoom = context.getSoftwareZoom();
+
       GLES20.glUseProgram(drawProgram);
       GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, vertexBuffer);
       GLES20.glEnableVertexAttribArray(positionHandle);
@@ -1226,25 +1612,159 @@ public class RoundVideoRecorder {
         }
         GLES20.glUniformMatrix4fv(textureMatrixHandle, 1, false, moldSTMatrix, 0);
         GLES20.glUniform1f(alphaHandle, 1.0f);
-        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oldCameraTexture[0]);
+        if (encoderZoomHandle != -1) {
+          GLES20.glUniform1f(encoderZoomHandle, oldCameraZoom);
+        }
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, oldCameraTexture[0]);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+        if (encoderZoomHandle != -1) {
+          GLES20.glUniform1f(encoderZoomHandle, context.getSoftwareZoom());
+        }
       }
-      GLES20.glUniformMatrix4fv(textureMatrixHandle, 1, false, mSTMatrix, 0);
+      GLES20.glUniformMatrix4fv(textureMatrixHandle, 1, false, frameRingMatrix[frameSlot], 0);
       GLES20.glUniform1f(alphaHandle, cameraTextureAlpha);
-      GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTexture[0]);
+      GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, frameTexture);
       GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
 
       GLES20.glDisableVertexAttribArray(positionHandle);
       GLES20.glDisableVertexAttribArray(textureHandle);
-      GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);
+      GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
       GLES20.glUseProgram(0);
 
       // Log.i(Log.TAG_ROUND, "frame time = " + currentTimestamp);
       EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, currentTimestamp);
+      if (encoderGles3 && cameraGles3) {
+        // The camera waits for this before reusing the slot (see copyCameraFrame).
+        long fence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        synchronized (frameLock) {
+          readFence[frameSlot] = fence;
+        }
+      }
+      final long swapStart = System.nanoTime();
       EGL14.eglSwapBuffers(eglDisplay, eglSurface);
+      if (!(encoderGles3 && cameraGles3)) {
+        // The swap only queues the drawing: let it read the copy before the camera thread reuses its slot.
+        GLES20.glFinish();
+      }
+      long drawnTime = System.nanoTime();
+      RoundRecordStats.onDrawn(drawnTime - swapStart, drawnTime - handleStart);
 
+      advanceCameraTransition(alphaDt);
+    }
+
+    // Lens switch in the video: the previous frame blurs (also while the camera reopens, see handleTransitionFrame),
+    // stays until the new lens has settled its exposure (CameraApi.isCameraSettled), then the new lens fades in
+    // from blurred to sharp. Without the blur program: the original 200 ms crossfade.
+
+    /** currentTimestamp when the previous frame started to blur, -1 out of a switch. */
+    private long transitionStart = -1;
+
+    private float transitionBlurIn () {
+      if (transitionStart == -1) {
+        transitionStart = currentTimestamp;
+      }
+      return Math.min(1f, (float) (currentTimestamp - transitionStart) / (float) SWITCH_BLUR_IN_NS);
+    }
+
+    void startTransitionFrames (int newCameraId) {
+      Handler handler = this.handler;
+      if (handler != null && running) {
+        handler.removeMessages(MSG_TRANSITION_FRAME);
+        handler.sendMessage(handler.obtainMessage(MSG_TRANSITION_FRAME, newCameraId, 0));
+      }
+    }
+
+    /** Frames of the blurring previous frame while no camera gives frames (~60 a second, real time). */
+    private void handleTransitionFrame (int newCameraId) {
+      if (!running || blurProgram == 0 || oldCameraTexture[0] == 0 || lastCameraId == newCameraId || currentTimestamp == 0 || !skippedFirst) {
+        return;
+      }
+      long now = SystemClock.uptimeMillis();
+      // The camera may have stopped a few frames before the switch: the gap is filled with 60 fps frames too
+      // (a single long frame is a visible freeze in the video)
+      for (int i = 0; i < 12 && now - lastCommitedFrameTime >= 15; i++) {
+        try {
+          drainEncoder(false);
+        } catch (Exception e) {
+          Log.e(Log.TAG_ROUND, "Error", e);
+        }
+        long step = now - lastCommitedFrameTime >= 33 ? 16 : now - lastCommitedFrameTime;
+        currentTimestamp += step * 1000000L;
+        lastCommitedFrameTime += step;
+        drawTransitionFrame(-1, 0);
+      }
+      if (now - lastCommitedFrameTime >= 15) {
+        currentTimestamp += (now - lastCommitedFrameTime) * 1000000L;
+        lastCommitedFrameTime = now;
+      }
+      handler.sendMessageDelayed(handler.obtainMessage(MSG_TRANSITION_FRAME, newCameraId, 0), 16);
+    }
+
+    private void setupBlurDraw (float alpha, float blur, float zoom) {
+      GLES20.glUseProgram(blurProgram);
+      GLES20.glVertexAttribPointer(blurPositionHandle, 3, GLES20.GL_FLOAT, false, 12, vertexBuffer);
+      GLES20.glEnableVertexAttribArray(blurPositionHandle);
+      GLES20.glVertexAttribPointer(blurTextureHandle, 2, GLES20.GL_FLOAT, false, 8, textureBuffer);
+      GLES20.glEnableVertexAttribArray(blurTextureHandle);
+      GLES20.glUniform1f(blurScaleXHandle, scaleX);
+      GLES20.glUniform1f(blurScaleYHandle, scaleY);
+      GLES20.glUniform1f(blurAlphaHandle, alpha);
+      GLES20.glUniform1f(blurZoomHandle, zoom);
+      int side = Math.min(mPreviewWidth, mPreviewHeight);
+      float rx = mPreviewWidth > 0 ? SWITCH_BLUR_RADIUS * blur * side / mPreviewWidth : 0f;
+      float ry = mPreviewHeight > 0 ? SWITCH_BLUR_RADIUS * blur * side / mPreviewHeight : 0f;
+      GLES20.glUniform2f(blurRadiusHandle, rx, ry);
+      GLES20.glUniformMatrix4fv(blurVertexMatrixHandle, 1, false, mMVPMatrix, 0);
+    }
+
+    /** The previous frame blurred, and over it the new frame (frameSlot != -1) fading in from blurred to sharp. */
+    private void drawTransitionFrame (int frameSlot, int frameTexture) {
+      float blurIn = transitionBlurIn();
+      // Smooth start and end
+      float oldBlur = blurIn * blurIn * (3f - 2f * blurIn);
+      GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+      if (!blendEnabled) {
+        GLES20.glEnable(GLES20.GL_BLEND);
+        blendEnabled = true;
+      }
+      setupBlurDraw(1f, oldBlur, oldCameraZoom);
+      GLES20.glUniformMatrix4fv(blurTextureMatrixHandle, 1, false, moldSTMatrix, 0);
+      GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, oldCameraTexture[0]);
+      GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+      if (frameSlot != -1 && cameraTextureAlpha > 0f) {
+        float fade = cameraTextureAlpha * cameraTextureAlpha * (3f - 2f * cameraTextureAlpha);
+        float zoom = context.getSoftwareZoom();
+        lastEncodedZoom = zoom;
+        setupBlurDraw(fade, oldBlur * (1f - fade), zoom);
+        GLES20.glUniformMatrix4fv(blurTextureMatrixHandle, 1, false, frameRingMatrix[frameSlot], 0);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, frameTexture);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+      }
+      GLES20.glDisableVertexAttribArray(blurPositionHandle);
+      GLES20.glDisableVertexAttribArray(blurTextureHandle);
+      GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+      GLES20.glUseProgram(0);
+
+      EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, currentTimestamp);
+      if (frameSlot != -1 && encoderGles3 && cameraGles3) {
+        long fence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        synchronized (frameLock) {
+          readFence[frameSlot] = fence;
+        }
+      }
+      EGL14.eglSwapBuffers(eglDisplay, eglSurface);
+      if (!(encoderGles3 && cameraGles3)) {
+        GLES20.glFinish();
+      }
+    }
+
+    private void advanceCameraTransition (long alphaDt) {
+      if (oldCameraTexture[0] != 0 && blurProgram != 0 && (!context.isCameraSettled() || transitionBlurIn() < 1f)) {
+        // The new lens is still settling its exposure, or the previous frame is still blurring: it stays
+        return;
+      }
       if (oldCameraTexture[0] != 0 && cameraTextureAlpha < 1.0f) {
-        cameraTextureAlpha += alphaDt / 200000000.0f;
+        cameraTextureAlpha += alphaDt / (blurProgram != 0 ? SWITCH_FADE_NS : 200000000.0f);
         if (cameraTextureAlpha > 1) {
           GLES20.glDisable(GLES20.GL_BLEND);
           blendEnabled = false;
@@ -1458,6 +1978,9 @@ public class RoundVideoRecorder {
       }
       GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
       GLES20.glViewport(0, 0, videoWidth, videoHeight);
+      encoderGles3 = isGles3();
+      Log.i(Log.TAG_ROUND, "Encoder GL: %s, fences: %b", GLES20.glGetString(GLES20.GL_VERSION), encoderGles3 && cameraGles3);
+      RoundRecordStats.setEncoderSync(encoderGles3 && cameraGles3);
 
       // Camera pixels per output pixel: the square crop of the camera frame vs the output side.
       int cameraSide = Math.min(mPreviewWidth, mPreviewHeight);
@@ -1472,10 +1995,11 @@ public class RoundVideoRecorder {
       Log.i(Log.TAG_ROUND, "Encoder draw: camera %dx%d -> %d, ratio %.2f, downscale: %b", mPreviewWidth, mPreviewHeight, videoWidth, ratio, downscale);
 
       int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER);
-      int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, downscale ? FRAGMENT_SHADER_DOWNSCALE : FRAGMENT_SHADER);
+      // The encoder draws 2D copies of the camera frames (see copyCameraFrame), not the camera texture.
+      int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, toTexture2D(downscale ? FRAGMENT_SHADER_DOWNSCALE : FRAGMENT_SHADER));
       if (downscale && fragmentShader == 0) {
         // Some old GPUs may refuse the bigger shader: fall back to the single sample one.
-        fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER);
+        fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, toTexture2D(FRAGMENT_SHADER));
       }
       if (vertexShader != 0 && fragmentShader != 0) {
         drawProgram = GLES20.glCreateProgram();
@@ -1497,6 +2021,31 @@ public class RoundVideoRecorder {
           encoderZoomHandle = GLES20.glGetUniformLocation(drawProgram, "zoom");
           vertexMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uMVPMatrix");
           textureMatrixHandle = GLES20.glGetUniformLocation(drawProgram, "uSTMatrix");
+        }
+      }
+      int blurVertexShader = loadShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER);
+      int blurFragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER_BLUR);
+      if (blurVertexShader != 0 && blurFragmentShader != 0) {
+        int program = GLES20.glCreateProgram();
+        GLES20.glAttachShader(program, blurVertexShader);
+        GLES20.glAttachShader(program, blurFragmentShader);
+        GLES20.glLinkProgram(program);
+        int[] linkStatus = new int[1];
+        GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linkStatus, 0);
+        if (linkStatus[0] == 0) {
+          // No blur on this GPU: lens switches crossfade as before
+          GLES20.glDeleteProgram(program);
+        } else {
+          blurProgram = program;
+          blurPositionHandle = GLES20.glGetAttribLocation(program, "aPosition");
+          blurTextureHandle = GLES20.glGetAttribLocation(program, "aTextureCoord");
+          blurScaleXHandle = GLES20.glGetUniformLocation(program, "scaleX");
+          blurScaleYHandle = GLES20.glGetUniformLocation(program, "scaleY");
+          blurAlphaHandle = GLES20.glGetUniformLocation(program, "alpha");
+          blurZoomHandle = GLES20.glGetUniformLocation(program, "zoom");
+          blurRadiusHandle = GLES20.glGetUniformLocation(program, "radius");
+          blurVertexMatrixHandle = GLES20.glGetUniformLocation(program, "uMVPMatrix");
+          blurTextureMatrixHandle = GLES20.glGetUniformLocation(program, "uSTMatrix");
         }
       }
     }
@@ -1564,13 +2113,18 @@ public class RoundVideoRecorder {
             changed = true;
           }
         }
-        // Constant bitrate: a full minute must fit into Telegram's 10 MB at any motion,
-        // with VBR some encoders (Qualcomm) do not go below ~2 Mbit/s at 60 fps however low the target is
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && RoundVideoQuality.supportsCbr()) {
+        // A bitrate that fits a full minute into Telegram's 10 MB: constant, so it fits at any motion
+        // (with VBR some encoders, Qualcomm, do not go below ~2 Mbit/s at 60 fps however low the target is).
+        // A higher one: variable, quiet scenes stay small and are more likely to be sent without re-encoding.
+        boolean preferCbr = q.fitsFullLength();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && preferCbr && RoundVideoQuality.supportsCbr()) {
           format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
           changed = true;
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && RoundVideoQuality.supportsVbr()) {
           format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR);
+          changed = true;
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && RoundVideoQuality.supportsCbr()) {
+          format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
           changed = true;
         }
         if (!changed) {
@@ -1582,6 +2136,17 @@ public class RoundVideoRecorder {
         }
       }
       return format;
+    }
+
+    /** CBR, VBR or null when the encoder chose. */
+    @androidx.annotation.Nullable
+    private static String getBitrateModeName (MediaFormat format) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && format.containsKey(MediaFormat.KEY_BITRATE_MODE)) {
+        int bitrateMode = format.getInteger(MediaFormat.KEY_BITRATE_MODE);
+        return bitrateMode == MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR ? "CBR" :
+          bitrateMode == MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR ? "VBR" : null;
+      }
+      return null;
     }
 
     /** Configures and starts the H.264 encoder; tries the tuned config first and the plain one if it is refused. */
@@ -1601,6 +2166,7 @@ public class RoundVideoRecorder {
           videoEncoder = codec;
           surface = inputSurface;
           Log.i(Log.TAG_ROUND, "Video encoder: %s, format: %s", q, format);
+          RoundRecordStats.setEncoderConfig(codec.getName(), q.side, q.fps, q.getVideoBitrateBps() / 1000, getBitrateModeName(format));
           return;
         } catch (Exception e) {
           lastError = e;
@@ -1631,14 +2197,26 @@ public class RoundVideoRecorder {
     private boolean videoFinished;
     private long videoFinishedPresentationTimeUs;
 
+
     public void drainEncoder(boolean endOfStream) throws Exception {
+      final long drainStart = System.nanoTime();
+      try {
+        drainEncoderImpl(endOfStream);
+      } finally {
+        RoundRecordStats.onDrain(System.nanoTime() - drainStart);
+      }
+    }
+
+    private void drainEncoderImpl(boolean endOfStream) throws Exception {
       if (endOfStream) {
         videoEncoder.signalEndOfInputStream();
       }
 
       ByteBuffer[] encoderOutputBuffers = videoEncoder.getOutputBuffers();
       while (true) {
-        int encoderStatus = videoEncoder.dequeueOutputBuffer(videoBufferInfo, 10000);
+        // Vibegram: wait for output only at the end. Called for every video and audio frame, a 10 ms wait each
+        // time nothing was ready took 10 ms of each 16.7 ms frame at 60 fps from this thread: frames were dropped.
+        int encoderStatus = videoEncoder.dequeueOutputBuffer(videoBufferInfo, endOfStream ? 10000 : 0);
         if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
           if (!endOfStream) {
             break;

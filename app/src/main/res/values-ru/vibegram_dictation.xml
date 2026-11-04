@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="vg_HoldToVideoNext">Видео — удерживайте. Диктовка — нажмите.</string>
+  <string name="vg_HoldToDictation">Диктовка — удерживайте. Звук — нажмите.</string>
+  <string name="vg_DictationNoModel">Для диктовки скачайте модель распознавания речи</string>
+  <string name="vg_DictationRecognizing">Распознаю речь…</string>
+  <string name="vg_DictationEmpty">Речь не распознана</string>
+  <string name="vg_DictationFailed">Не удалось распознать речь</string>
+  <string name="vg_DictationCopied">Распознанный текст скопирован в буфер обмена</string>
+</resources>

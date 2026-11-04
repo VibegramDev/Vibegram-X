@@ -50,6 +50,7 @@ import com.googlecode.mp4parser.authoring.tracks.AppendTrack;
 import com.googlecode.mp4parser.authoring.tracks.CroppedTrack;
 
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.player.RoundVideoQuality;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
@@ -118,6 +119,9 @@ public class VideoGen {
     private long reportedBytesCount, reportedExpectedBytesCount;
 
     private int inputVideoRotation;
+    // Vibegram: a re-encoded round video came out bigger than Telegram's 10 MB: next attempt's bitrate and count.
+    private long roundBitrateOverride;
+    private int roundRetries;
 
     private final VideoGen context;
     private final long generationId;
@@ -416,6 +420,11 @@ public class VideoGen {
       inputVideoBitrate
     );
 
+    if (info.isRoundVideo() && entry.roundBitrateOverride > 0) {
+      outputVideoBitrate = Math.min(outputVideoBitrate, entry.roundBitrateOverride);
+    }
+    final long roundOutputBitrate = outputVideoBitrate;
+
     MediaItem.Builder mediaItemBuilder = new MediaItem.Builder()
       .setUri(sourcePath);
     if (info.needTrim()) {
@@ -466,6 +475,26 @@ public class VideoGen {
       .addListener(new Transformer.Listener() {
         @Override
         public void onCompleted (@NonNull Composition composition, @NonNull ExportResult exportResult) {
+          // Vibegram: a round video must fit Telegram's 10 MB, or it fails to send. Encoders overshoot
+          // the target a bit on motion: encode again with the bitrate scaled down by the overshoot.
+          long outputSize = new File(destinationPath).length();
+          if (info.isRoundVideo() && outputSize > RoundVideoQuality.MAX_FILE_SIZE && entry.roundRetries < 3 && !entry.canceled.get()) {
+            entry.roundRetries++;
+            entry.roundBitrateOverride = Math.max(100_000L, (long) (roundOutputBitrate * ((double) (RoundVideoQuality.MAX_FILE_SIZE - (256L << 10)) / outputSize) * 0.95));
+            Log.w(Log.TAG_VIDEO, "Round video is %d bytes after re-encoding at %d bit/s, again at %d bit/s", outputSize, roundOutputBitrate, entry.roundBitrateOverride);
+            synchronized (transformFinished) {
+              transformFinished.set(true); // stops this attempt's progress polling
+            }
+            queue.post(() -> {
+              try {
+                convertVideoComplexV2(sourcePath, destinationPath, info, entry, onProgress, onComplete, onCancel, onFailure, after);
+              } catch (Throwable t) {
+                onFailure.runWithData(t);
+                U.run(after);
+              }
+            }, 0);
+            return;
+          }
           synchronized (transformFinished) {
             transformFinished.set(true);
             onComplete.run();
@@ -488,9 +517,14 @@ public class VideoGen {
     }
     // Vibegram: a trimmed round video keeps its own bitrate; without it Transformer picks its own (lower) default.
     if (inputVideoBitrate > outputVideoBitrate || (info.isRoundVideo() && outputVideoBitrate > 0)) {
-      VideoEncoderSettings videoEncoderSettings = new VideoEncoderSettings.Builder()
-        .setBitrate((int) outputVideoBitrate)
-        .build();
+      VideoEncoderSettings.Builder videoEncoderSettingsBuilder = new VideoEncoderSettings.Builder()
+        .setBitrate((int) outputVideoBitrate);
+      if (info.isRoundVideo() && RoundVideoQuality.supportsCbr()) {
+        // Vibegram: constant bitrate, so the result fits Telegram's 10 MB at any motion
+        // (in VBR some encoders keep ~2 Mbit/s at 60 fps whatever the target is).
+        videoEncoderSettingsBuilder.setBitrateMode(android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
+      }
+      VideoEncoderSettings videoEncoderSettings = videoEncoderSettingsBuilder.build();
       transformerBuilder.setEncoderFactory(new DefaultEncoderFactory.Builder(AppContext.get())
         .setRequestedVideoEncoderSettings(videoEncoderSettings)
         .build());

@@ -75,6 +75,30 @@ public final class RoundVideoQuality {
     return Math.max(200, (int) (bps / 1000) / 50 * 50);
   }
 
+  /**
+   * Vibegram: video bit/s at which a round video of this length with this audio fits into {@link #MAX_FILE_SIZE}.
+   * Used when a recording made at a higher bitrate is too big to send as is and gets re-encoded.
+   */
+  public static int getFitVideoBitrate (long durationMs, int audioBitrate) {
+    durationMs = Math.max(durationMs, 1000L);
+    long audioBytes = (long) audioBitrate * durationMs / 8000L;
+    long videoBytes = MAX_FILE_SIZE - CONTAINER_OVERHEAD - audioBytes;
+    double bps = videoBytes * 8000.0 / durationMs / ENCODER_MARGIN;
+    return Math.max(200_000, (int) bps / 10_000 * 10_000);
+  }
+
+  /** Whether a full-length recording at this quality fits into {@link #MAX_FILE_SIZE} without re-encoding. */
+  public boolean fitsFullLength () {
+    return videoKbps <= getFitVideoKbps(audioBitrate);
+  }
+
+  /**
+   * Vibegram: "max" recording bitrate. Recordings are made at this quality and re-encoded
+   * before sending only when the file does not fit into {@link #MAX_FILE_SIZE}: short round videos keep it.
+   * 8 Mbit/s at 640×640@60 is ~0.33 bit per pixel, above it H.264 High gains nothing visible.
+   */
+  public static final int RECORD_MAX_KBPS = 8000;
+
   /** Never ask the camera for a stream smaller than this: the downscale needs detail. */
   public static final int MIN_CAPTURE_SIDE = 480;
 
@@ -82,8 +106,16 @@ public final class RoundVideoQuality {
   // Do not modify these arrays: they are the ladders the step-down walks on.
   public static final int[] SIDE_OPTIONS = {640, 576, 512, 480, 384, 320, 240};
   public static final int[] FPS_OPTIONS = {60, 30};
-  /** The first one is the most that fits a minute into Telegram's 10 MB, see {@link #getFitVideoKbps}. */
-  public static final int[] BITRATE_OPTIONS_KBPS = {1200, 1000, 800, 600, 400};
+  /**
+   * Recording bitrates. A file bigger than Telegram's 10 MB is re-encoded to fit before sending;
+   * the last one ({@link #getFitVideoKbps}) fits a full minute and is never re-encoded.
+   */
+  public static final int[] BITRATE_OPTIONS_KBPS = {8000, 6000, 4000, 2500, 1200};
+  /**
+   * Bitrates offered in the settings besides "maximum". All of them fit a full minute into {@link #MAX_FILE_SIZE}:
+   * recorded with CBR and sent as is, uploaded while recording.
+   */
+  public static final int[] SETTINGS_BITRATE_OPTIONS_KBPS = {1200, 1000, 750};
 
   // "Max" bitrate at 640×640, scaled by pixel count for smaller sides.
 
@@ -278,7 +310,7 @@ public final class RoundVideoQuality {
   }
 
   /** Constant bitrate keeps the file size predictable: with VBR some encoders ignore low targets on motion. */
-  static boolean supportsCbr () {
+  public static boolean supportsCbr () {
     MediaCodecInfo.EncoderCapabilities encoder = caps().encoder;
     return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && encoder != null &&
       encoder.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
@@ -341,9 +373,9 @@ public final class RoundVideoQuality {
     return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP ? BITRATE_OPTIONS_KBPS[0] : 1500;
   }
 
-  /** Largest ladder bitrate not above the encoder limit and the 10 MB fit. */
+  /** Largest ladder bitrate not above the encoder limit. */
   private static int capBitrate (int kbps) {
-    int upper = Math.min(encoderMaxBitrateKbps(), getFitVideoKbps(caps().audioBitrate));
+    int upper = encoderMaxBitrateKbps();
     if (kbps <= upper) {
       return kbps;
     }
@@ -356,12 +388,11 @@ public final class RoundVideoQuality {
   }
 
   /**
-   * kbit/s that "max" bitrate means for side@fps on this device: the most that fits a minute into 10 MB.
-   * The limit is the file size, so it is the same for every side and frame rate: at this bitrate 640×640 still
-   * looks best (VMAF on a real 60 fps round video: 640 — 85.8, 576 — 84.2, 512 — 83.4, 480 — 82.9).
+   * kbit/s that "max" bitrate means for side@fps on this device: {@link #RECORD_MAX_KBPS} capped by the encoder.
+   * The 10 MB limit is met at sending (re-encoding to {@link #getFitVideoBitrate}), not while recording.
    */
   public static int getMaxBitrate (int side, int fps) {
-    return capBitrate(getFitVideoKbps(caps().audioBitrate));
+    return capBitrate(RECORD_MAX_KBPS);
   }
 
   private static int ladderFloor (int[] ladder, int value) {

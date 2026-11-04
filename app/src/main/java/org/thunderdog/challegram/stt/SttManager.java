@@ -632,6 +632,72 @@ public final class SttManager {
     return true;
   }
 
+  // Dictation
+
+  public interface DictationCallback {
+    /** UI thread. @param text recognized text, empty when no speech was found, null on failure */
+    void onDictationResult (@Nullable String text);
+  }
+
+  /** True when dictation can run: a model is selected and downloaded. */
+  public boolean canDictate () {
+    SttModel model = getSelectedModel();
+    return model != null && isDownloaded(model);
+  }
+
+  /** Loads the model while the user is still speaking, so recognition starts right after the recording. */
+  public void prepareDictation () {
+    final SttModel model = getSelectedModel();
+    if (model == null || !isDownloaded(model)) {
+      return;
+    }
+    recognitionExecutor.submit(() -> {
+      try {
+        obtainEngine(model);
+      } catch (Throwable t) {
+        Log.w("STT: dictation model load failed", t);
+      }
+      scheduleEngineUnload();
+    });
+  }
+
+  /**
+   * Recognizes dictated speech (16 kHz mono samples) with the selected model. Runs on the same thread as
+   * voice message transcriptions, after the ones already queued.
+   *
+   * @return false when no model is downloaded and selected
+   */
+  public boolean transcribeSamples (final float[] samples, final DictationCallback callback) {
+    final SttModel model = getSelectedModel();
+    if (model == null || !isDownloaded(model)) {
+      return false;
+    }
+    recognitionExecutor.submit(() -> {
+      String result;
+      try {
+        long start = SystemClock.uptimeMillis();
+        SttEngine engine = obtainEngine(model);
+        engine.resetCancel();
+        long loaded = SystemClock.uptimeMillis();
+        result = engine.transcribe(samples, new SttEngine.Listener() {
+          @Override
+          public void onProgress (float progress) { }
+
+          @Override
+          public void onPartialText (String text) { }
+        }).replaceAll("\\s+", " ").trim();
+        android.util.Log.i("VgStt", String.format(java.util.Locale.US, "%s: dictation %.1fs audio, load %dms, recognition %dms", model.id, samples.length / (float) AudioDecoder.SAMPLE_RATE, loaded - start, SystemClock.uptimeMillis() - loaded));
+      } catch (Throwable t) {
+        Log.w("STT: dictation failed", t);
+        result = null;
+      }
+      final String text = result;
+      UI.post(() -> callback.onDictationResult(text));
+      scheduleEngineUnload();
+    });
+    return true;
+  }
+
   private void rememberSpeed (String prefKey, float speed) {
     float old = prefs.getFloat(prefKey, 0f);
     prefs.edit().putFloat(prefKey, old > 0 ? old * .5f + speed * .5f : speed).apply();

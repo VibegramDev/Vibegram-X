@@ -24,6 +24,7 @@ import android.content.res.Configuration;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.graphics.PointF;
 import android.graphics.RectF;
 import android.location.Location;
 import android.location.LocationManager;
@@ -3527,16 +3528,75 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void onPreferVideoModeChanged (boolean preferVideoMode) {
-    if (!sendShown.getValue()) {
-      showBottomHint(preferVideoMode ? R.string.HoldToVideo : R.string.HoldToAudio);
-    }
+    onPreferRecordModeChanged(preferVideoMode ? Settings.RECORD_MODE_ROUND : Settings.RECORD_MODE_VOICE);
+  }
+
+  @Override
+  public void onPreferRecordModeChanged (int recordMode) {
+    showRecordModeHint(recordMode);
   }
 
   @Override
   public void onRecordAudioVideoError (boolean preferVideoMode) {
+    showRecordModeHint(Settings.instance().getPreferredRecordMode());
+  }
+
+  private void showRecordModeHint (int recordMode) {
     if (!sendShown.getValue()) {
-      showBottomHint(preferVideoMode ? R.string.HoldToVideo : R.string.HoldToAudio);
+      // Vibegram: the tap cycles voice → round → dictation, the hint names the next mode.
+      switch (recordMode) {
+        case Settings.RECORD_MODE_DICTATION:
+          showBottomHint(R.string.vg_HoldToDictation);
+          break;
+        case Settings.RECORD_MODE_ROUND:
+          showBottomHint(R.string.vg_HoldToVideoNext);
+          break;
+        default:
+          showBottomHint(R.string.HoldToAudio);
+          break;
+      }
     }
+  }
+
+  // Vibegram: dictation results (see RecordAudioVideoController)
+
+  private boolean dictationInProgress;
+
+  /** While the dictated speech is being recognized, the composer placeholder says so. */
+  public void setDictationInProgress (boolean inProgress) {
+    if (this.dictationInProgress != inProgress) {
+      this.dictationInProgress = inProgress;
+      updateInputHint();
+    }
+  }
+
+  /** Inserts dictated text at the cursor (at the end when the field is not focused), spaced from the neighbouring text. */
+  public void insertDictatedText (String text) {
+    if (inputView == null || StringUtils.isEmpty(text)) {
+      return;
+    }
+    android.text.Editable editable = inputView.getText();
+    if (editable == null) {
+      return;
+    }
+    int start = inputView.getSelectionStart(), end = inputView.getSelectionEnd();
+    if (!inputView.isFocused() || start < 0 || end < 0) {
+      start = end = editable.length();
+    } else if (start > end) {
+      int temp = start;
+      start = end;
+      end = temp;
+    }
+    String insert = text;
+    if (start > 0 && !Character.isWhitespace(editable.charAt(start - 1))) {
+      insert = " " + insert;
+    }
+    if (end < editable.length() && !Character.isWhitespace(editable.charAt(end))) {
+      insert = insert + " ";
+    }
+    editable.replace(start, end, insert);
+    int cursor = Math.min(start + insert.length(), editable.length());
+    inputView.setSelection(cursor);
   }
 
   public void setInputVisible (boolean visible, boolean notEmpty) {
@@ -4828,6 +4888,52 @@ public class MessagesController extends ViewController<MessagesController.Argume
     showMessageOptions(new MessageContext(msg, selectedMessageTag, selectedMessageSender, disableMessageMetadata), ids, options, icons);
   }
 
+  /**
+   * Average bitrate of a video message file (video and sound) and, when the file is here, its real frame rate
+   * (frames / duration): what the phone actually recorded, not the chosen setting. Null when unknown.
+   */
+  @Nullable
+  private static String getVideoNoteQualityInfo (TdApi.VideoNote videoNote) {
+    TdApi.File file = videoNote.video;
+    long size = file.size > 0 ? file.size : file.expectedSize;
+    long durationMs = videoNote.duration * 1000L;
+    int fps = 0;
+    if (file.local.isDownloadingCompleted && !StringUtils.isEmpty(file.local.path)) {
+      // The duration in the message is rounded to seconds: take the exact one from the file when it is here.
+      MediaMetadataRetriever retriever = null;
+      try {
+        retriever = new MediaMetadataRetriever();
+        retriever.setDataSource(file.local.path);
+        long fileDurationMs = StringUtils.parseLong(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
+        if (fileDurationMs > 0) {
+          durationMs = fileDurationMs;
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            long frameCount = StringUtils.parseLong(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT));
+            if (frameCount > 1) {
+              fps = (int) Math.round(frameCount * 1000.0 / fileDurationMs);
+            }
+          }
+        }
+      } catch (Throwable ignored) {
+      } finally {
+        if (retriever != null) {
+          try {
+            retriever.release();
+          } catch (Throwable ignored) { }
+        }
+      }
+    }
+    if (size <= 0 || durationMs <= 0) {
+      return null;
+    }
+    int kbps = (int) Math.round(size * 8.0 / durationMs);
+    String info = Lang.getString(R.string.vg_RoundBitrateInfo, SettingsRoundVideoController.formatBitrate(kbps));
+    if (fps > 0) {
+      info += ", " + Lang.getString(R.string.vg_RoundFpsValue, fps);
+    }
+    return info;
+  }
+
   private static OptionItem readItem (Tdlib tdlib, int readDate) {
     return new OptionItem.Builder()
       .name(Lang.getRelativeDate(readDate, TimeUnit.SECONDS, tdlib.currentTimeMillis(), TimeUnit.MILLISECONDS, false, 0, R.string.ReadDate, false))
@@ -4919,6 +5025,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
         resId = R.string.RestrictSavingGroupInfo;
       }
       b.append(Lang.getString(resId));
+    }
+
+    // Vibegram: the bitrate and frame rate of an own video message (not a forwarded one), to check the recording quality
+    // (Settings → Video messages → Diagnostics, off by default).
+    TdApi.Message rawMessage = msg.getMessage();
+    if (Settings.instance().showRoundQualityInfo() && rawMessage.isOutgoing && rawMessage.forwardInfo == null && rawMessage.content != null && rawMessage.content.getConstructor() == TdApi.MessageVideoNote.CONSTRUCTOR) {
+      String qualityInfo = getVideoNoteQualityInfo(((TdApi.MessageVideoNote) rawMessage.content).videoNote);
+      if (qualityInfo != null) {
+        if (b.length() > 0) {
+          b.append(". ");
+        }
+        b.append(qualityInfo);
+      }
     }
 
     CharSequence text = StringUtils.trim(b);
@@ -8665,6 +8784,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private String getCustomInputPlaceholder () {
+    if (dictationInProgress) {
+      return Lang.getString(R.string.vg_DictationRecognizing);
+    }
     if (!StringUtils.isEmpty(customBotPlaceholder)) {
       return customBotPlaceholder;
     } else if (!StringUtils.isEmpty(customCaptionPlaceholder)) {
@@ -9810,6 +9932,23 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   public LinearLayout getBottomWrap () {
     return bottomWrap;
+  }
+
+  /**
+   * Vibegram: bounds of the floating composer field and the centre of its record button, in window coordinates.
+   * The voice / round video recording bar takes the field's place with the same shape. False without a floating
+   * composer (chat preview): the recording bar then keeps the old full-width layout.
+   */
+  public boolean getComposerRecordGeometry (RectF pill, PointF recordCenter) {
+    if (!composerFloating || inputView == null || recordButton == null || inputView.getWidth() == 0 || recordButton.getWidth() == 0) {
+      return false;
+    }
+    int[] location = Views.getLocationInWindow(inputView); // shared array: read it before the next call
+    pill.set(location[0], location[1], location[0] + inputView.getWidth(), location[1] + inputView.getHeight());
+    location = Views.getLocationInWindow(recordButton);
+    int contentWidth = recordButton.getWidth() - recordButton.getPaddingLeft() - recordButton.getPaddingRight();
+    recordCenter.set(location[0] + recordButton.getPaddingLeft() + contentWidth / 2f, location[1] + recordButton.getHeight() / 2f);
+    return true;
   }
 
   // Send sticker

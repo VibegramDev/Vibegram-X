@@ -15,6 +15,9 @@
 package org.thunderdog.challegram.player;
 
 import android.graphics.Canvas;
+import android.graphics.Outline;
+import android.graphics.PointF;
+import android.graphics.RectF;
 import android.os.Build;
 import android.os.SystemClock;
 import android.util.TypedValue;
@@ -22,6 +25,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -49,17 +53,22 @@ import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibFilesManager;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.stt.DictationRecorder;
+import org.thunderdog.challegram.stt.SttManager;
 import org.thunderdog.challegram.theme.ColorState;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Fonts;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.MessagesController;
+import org.thunderdog.challegram.ui.SettingsVoiceTranscriptionController;
 import org.thunderdog.challegram.ui.camera.CameraControlButton;
 import org.thunderdog.challegram.ui.camera.CameraController;
 import org.thunderdog.challegram.ui.camera.legacy.CameraManagerLegacy;
@@ -79,6 +88,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
@@ -138,6 +148,7 @@ public class RecordAudioVideoController implements
     context.addActivityListener(this);
 
     this.preferVideoMode = Settings.instance().preferVideoMode();
+    this.preferDictation = Settings.instance().getPreferredRecordMode() == Settings.RECORD_MODE_DICTATION;
     Settings.instance().addVideoPreferenceChangeListener(this);
 
     Recorder.instance();
@@ -168,7 +179,7 @@ public class RecordAudioVideoController implements
       return;
     }
 
-    this.inputOverlayView.setBackgroundColor(Theme.fillingColor());
+    applyOverlayBackground();
     this.slideHintView.setTextColor(Theme.textDecentColor());
     this.cancelView.setTextColor(Theme.getColor(ColorId.textNeutral));
     this.videoPlaceholderView.setBackgroundColor(Theme.fillingColor());
@@ -242,6 +253,63 @@ public class RecordAudioVideoController implements
   @Override
   public void onPreferVideoModeChanged (boolean preferVideoMode) {
     this.preferVideoMode = preferVideoMode;
+  }
+
+  @Override
+  public void onPreferRecordModeChanged (int recordMode) {
+    this.preferVideoMode = recordMode == Settings.RECORD_MODE_ROUND;
+    this.preferDictation = recordMode == Settings.RECORD_MODE_DICTATION;
+  }
+
+  // Vibegram: dictation, the third mode of the record button. Recording looks like a voice message (same bar,
+  // lock and slide-to-cancel), but finishing it recognizes the speech with the selected transcription model
+  // and inserts the text into the composer instead of sending anything.
+
+  private boolean preferDictation;
+  /** The current (or last) recording is a dictation. Set when a recording starts. */
+  private boolean dictating;
+
+  private final DictationRecorder.Listener dictationListener = new DictationRecorder.Listener() {
+    @Override
+    public void onAmplitude (float amplitude) {
+      RecordAudioVideoController.this.onAmplitude(amplitude);
+    }
+
+    @Override
+    public void onFail () {
+      RecordAudioVideoController.this.onFail();
+    }
+  };
+
+  private void finishDictation (boolean cancel) {
+    final float[] samples = DictationRecorder.instance().stop(cancel);
+    if (samples == null || !hasValidOutputTarget()) {
+      return;
+    }
+    final MessagesController target = targetController;
+    final long chatId = targetChatId;
+    final TdApi.MessageTopic topicId = targetMessageTopicId;
+    target.setDictationInProgress(true);
+    boolean started = SttManager.instance().transcribeSamples(samples, text -> {
+      boolean sameChat = !target.isDestroyed() && target.compareChat(chatId, topicId);
+      if (sameChat) {
+        target.setDictationInProgress(false);
+      }
+      if (text == null) {
+        UI.showToast(R.string.vg_DictationFailed, Toast.LENGTH_SHORT);
+      } else if (text.isEmpty()) {
+        UI.showToast(R.string.vg_DictationEmpty, Toast.LENGTH_SHORT);
+      } else if (sameChat) {
+        target.insertDictatedText(text);
+      } else {
+        // The chat was closed while recognizing: keep the text rather than put it into another chat.
+        UI.copyText(text, R.string.vg_DictationCopied);
+      }
+    });
+    if (!started) {
+      target.setDictationInProgress(false);
+      UI.showToast(R.string.vg_DictationFailed, Toast.LENGTH_SHORT);
+    }
   }
 
   // Layout
@@ -394,9 +462,9 @@ public class RecordAudioVideoController implements
 
       // Vibegram: zoom buttons + ruler under the round preview (positioned in updateVideoY)
       this.zoomBar = new RoundZoomBar(context);
-      this.zoomBar.setDelegate(ratio -> {
+      this.zoomBar.setDelegate((ratio, target) -> {
         if (ownedCamera != null) {
-          ownedCamera.getLegacyManager().requestZoomRatio(ratio);
+          ownedCamera.getLegacyManager().requestZoomRatio(ratio, target);
         }
       });
       this.zoomBar.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP));
@@ -416,7 +484,7 @@ public class RecordAudioVideoController implements
           resumeRecordingImpl(RECORD_MODE_AUDIO);
         } else if (recordMode == RECORD_MODE_VIDEO_EDIT) {
           resumeRecordingImpl(RECORD_MODE_VIDEO);
-        } else if (isReleased) {
+        } else if (isReleased && !dictating) {
           finishRecording(true);
         }
       });
@@ -701,11 +769,11 @@ public class RecordAudioVideoController implements
     updateVideoY();
     updateDuration();
 
-    inputOverlayView.setTranslationY(overallTranslation);
+    inputOverlayView.setTranslationY(overallTranslation + overlayExtraY);
     videoTopShadowView.setTranslationY(overallTranslation - inputOverlayView.getMeasuredHeight());
     videoBottomShadowView.setTranslationY(overallTranslation + videoBottomShadowView.getMeasuredHeight());
 
-    float y = overallTranslation + actualY;
+    float y = overallTranslation + buttonExtraY + actualY;
     voiceVideoButtonView.setTranslationY(y);
 
     // Relative to voiceVideoButtonView
@@ -841,6 +909,9 @@ public class RecordAudioVideoController implements
       this.releaseFactor = factor;
       voiceVideoButtonView.setSendFactor(factor);
       lockView.setSendFactor(factor);
+      if (dictating) {
+        updateMainAlphas();
+      }
       updateTranslations();
     }
   }
@@ -849,8 +920,94 @@ public class RecordAudioVideoController implements
     ViewController<?> c = UI.getCurrentStackItem(context);
     if (c instanceof MessagesController) {
       View view = ((MessagesController) c).getBottomWrap();
-      setOverallTranslation((Views.getLocationInWindow(view)[1] - Views.getLocationInWindow(rootLayout)[1]) - voiceVideoButtonView.getTop());
+      // Views.getLocationInWindow returns one shared array: copy the values before the next call.
+      int[] location = Views.getLocationInWindow(rootLayout);
+      int rootX = location[0], rootY = location[1];
+      int wrapTop = Views.getLocationInWindow(view)[1] - rootY;
+      updateComposerGeometry((MessagesController) c, rootX, rootY, wrapTop);
+      setOverallTranslation(wrapTop - voiceVideoButtonView.getTop());
     }
+  }
+
+  // Vibegram: the floating composer (MD3 pill with side and bottom margins). The recording bar takes the pill's place:
+  // same bounds and corner radius, the duration starts inside it and the record circle grows from the composer's own
+  // record button. Without a floating composer (chat preview) the old full-width 49dp bar stays.
+
+  private boolean composerFloating;
+  private final RectF composerPill = new RectF();
+  private final PointF composerRecordCenter = new PointF();
+  /** Offsets from the old layout (49dp bar at the top of the bottom wrap, record button at the right edge). */
+  private int overlayExtraY, durationExtraY, buttonExtraX, buttonExtraY;
+  private M3.RoleShape overlayBackground;
+
+  private void updateComposerGeometry (MessagesController c, int rootX, int rootY, int wrapTop) {
+    boolean floating = c.getComposerRecordGeometry(composerPill, composerRecordCenter) && rootLayout.getWidth() > 0;
+    int left = 0, width = ViewGroup.LayoutParams.MATCH_PARENT, height = Screen.dp(49f);
+    if (floating) {
+      composerPill.offset(-rootX, -rootY);
+      composerRecordCenter.offset(-rootX, -rootY);
+      left = Math.round(composerPill.left);
+      width = Math.round(composerPill.width());
+      height = Math.round(composerPill.height());
+      int pillTop = Math.round(composerPill.top) - wrapTop;
+      overlayExtraY = pillTop + height - Screen.dp(49f);
+      durationExtraY = pillTop + (height - Screen.dp(49f)) / 2;
+      buttonExtraX = Math.round(composerRecordCenter.x - (rootLayout.getWidth() - Screen.dp(50f) / 2f));
+      buttonExtraY = Math.round(composerRecordCenter.y - wrapTop - Screen.dp(49f) / 2f);
+    } else {
+      overlayExtraY = durationExtraY = buttonExtraX = buttonExtraY = 0;
+    }
+    FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) inputOverlayView.getLayoutParams();
+    if (params.width != width || params.height != height || params.leftMargin != left) {
+      params.width = width;
+      params.height = height;
+      params.leftMargin = left;
+      params.gravity = Gravity.LEFT | Gravity.BOTTOM;
+      inputOverlayView.setLayoutParams(params);
+    }
+    // The duration text starts inside the pill, clear of its rounded corner.
+    int durationLeft = floating ? left + Screen.dp(12f) : 0;
+    ViewGroup.MarginLayoutParams durationParams = (ViewGroup.MarginLayoutParams) durationView.getLayoutParams();
+    if (durationParams.leftMargin != durationLeft) {
+      durationParams.leftMargin = durationLeft;
+      durationView.setLayoutParams(durationParams);
+    }
+    voiceVideoButtonView.setTranslationX(buttonExtraX);
+    if (this.composerFloating != floating) {
+      this.composerFloating = floating;
+      // The shadows edged the old full-width bar; a floating pill has none.
+      videoTopShadowView.setVisibility(floating ? View.GONE : View.VISIBLE);
+      videoBottomShadowView.setVisibility(floating ? View.GONE : View.VISIBLE);
+      applyOverlayBackground();
+    }
+  }
+
+  private void applyOverlayBackground () {
+    if (!composerFloating) {
+      inputOverlayView.setBackgroundColor(Theme.fillingColor());
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        inputOverlayView.setClipToOutline(false);
+      }
+      return;
+    }
+    if (overlayBackground == null) {
+      // Same surface role and radius as the composer field.
+      overlayBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
+    }
+    float radius = MainNavigationBar.getBarRadius();
+    overlayBackground.setRadii(radius, radius);
+    ViewUtils.setBackground(inputOverlayView, overlayBackground);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      // Children (delete/send ripples, waveform) stay inside the rounded pill.
+      inputOverlayView.setOutlineProvider(new ViewOutlineProvider() {
+        @Override
+        public void getOutline (View view, Outline outline) {
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), Math.min(MainNavigationBar.getBarRadius(), view.getHeight() / 2f));
+        }
+      });
+      inputOverlayView.setClipToOutline(true);
+    }
+    inputOverlayView.invalidate();
   }
 
   private int overallTranslation;
@@ -1186,7 +1343,10 @@ public class RecordAudioVideoController implements
     this.recordingVideo = isVideoMode(this.recordMode) || isVideoMode(mode);
     setRecordModeImpl(mode);
     if (targetController != null) {
-      targetController.setChatAction(recordingVideo ? TdApi.ChatActionRecordingVideoNote.CONSTRUCTOR : TdApi.ChatActionRecordingVoiceNote.CONSTRUCTOR, mode != RECORD_MODE_NONE, false);
+      if (!dictating) {
+        // Dictation does not tell the chat that a voice message is being recorded.
+        targetController.setChatAction(recordingVideo ? TdApi.ChatActionRecordingVideoNote.CONSTRUCTOR : TdApi.ChatActionRecordingVoiceNote.CONSTRUCTOR, mode != RECORD_MODE_NONE, false);
+      }
       targetController.hideBottomHint();
     }
     recordAnimator.setDuration(isRecording ? EXPAND_DURATION : COLLAPSE_DURATION);
@@ -1199,7 +1359,8 @@ public class RecordAudioVideoController implements
     }
     this.recordAnimator.setValue(isRecording, animated);
     if (isRecording) {
-      voiceVideoButtonView.setInVideoMode(mode == RECORD_MODE_VIDEO, recordFactor > 0f);
+      voiceVideoButtonView.setRecordMode(dictating ? Settings.RECORD_MODE_DICTATION : mode == RECORD_MODE_VIDEO ? Settings.RECORD_MODE_ROUND : Settings.RECORD_MODE_VOICE, recordFactor > 0f);
+      voiceVideoButtonView.setDoneInsteadOfSend(dictating);
     }
 
     videoTimelineView.setVisibility(mode == RECORD_MODE_VIDEO_EDIT ? View.VISIBLE : View.GONE);
@@ -1230,7 +1391,17 @@ public class RecordAudioVideoController implements
       return false;
     }
 
-    final boolean needVideo = !inRaiseMode && preferVideoMode;
+    final boolean dictation = !inRaiseMode && preferDictation;
+    final boolean needVideo = !inRaiseMode && preferVideoMode && !dictation;
+    if (dictation && !SttManager.instance().canDictate()) {
+      // No model yet: open the models page right away.
+      MessagesController c = findMessagesController();
+      if (c != null && !c.isDestroyed()) {
+        UI.showToast(R.string.vg_DictationNoModel, Toast.LENGTH_SHORT);
+        c.navigateTo(new SettingsVoiceTranscriptionController(context, c.tdlib()));
+      }
+      return false;
+    }
     if (requestPermissions(needVideo, !inRaiseMode)) {
       return false;
     }
@@ -1251,7 +1422,8 @@ public class RecordAudioVideoController implements
       return false;
     }
 
-    CharSequence restrictionText = tdlib.getVoiceVideoRestrictionText(tdlib.chat(targetChatId), needVideo);
+    // Dictation only types text: voice message restrictions of the chat do not apply.
+    CharSequence restrictionText = dictation ? null : tdlib.getVoiceVideoRestrictionText(tdlib.chat(targetChatId), needVideo);
     if (restrictionText != null) {
       if (view != null) {
         context.tooltipManager().builder(view).controller(targetController).icon(R.drawable.baseline_warning_24).show(tdlib, restrictionText).hideDelayed();
@@ -1293,7 +1465,7 @@ public class RecordAudioVideoController implements
 
     if (sendHelper != null)
       sendHelper.detachFromView(sendButton);
-    sendHelper = tdlib.ui()
+    sendHelper = dictation ? null : tdlib.ui()
       .createSimpleHapticMenu(targetController, targetChatId, () -> editFactor == 1f, null, null, null, (sendOptions, disableMarkdown) -> {
         if (recordMode == RECORD_MODE_AUDIO_EDIT) {
           sendAudio(sendOptions);
@@ -1302,6 +1474,10 @@ public class RecordAudioVideoController implements
         }
       }, null)
       .attachToView(sendButton);
+    this.dictating = dictation;
+    if (dictation) {
+      SttManager.instance().prepareDictation();
+    }
     if (!inRaiseMode) {
       context.setScreenFlagEnabled(BaseActivity.SCREEN_FLAG_RECORDING, true);
     }
@@ -1346,6 +1522,10 @@ public class RecordAudioVideoController implements
     if (recordMode == RECORD_MODE_NONE || recordMode == RECORD_MODE_VIDEO_EDIT || recordMode == RECORD_MODE_AUDIO_EDIT) {
       return false;
     }
+    if (dictating && closeMode != CLOSE_MODE_CANCEL) {
+      // No preview for dictation: stop and the lock's stop button both finish it.
+      closeMode = CLOSE_MODE_SEND;
+    }
 
     if (closeMode == CLOSE_MODE_CANCEL) {
       UI.forceVibrate(voiceVideoButtonView, true, true);
@@ -1388,7 +1568,7 @@ public class RecordAudioVideoController implements
   }
 
   private boolean isAudioRecordingReady () {
-    return !Recorder.instance().isRecording();
+    return !Recorder.instance().isRecording() && !DictationRecorder.instance().isRecording();
   }
 
   private boolean hasValidOutputTarget () {
@@ -1475,7 +1655,7 @@ public class RecordAudioVideoController implements
     float editDyTotal = inputOverlayView.getMeasuredHeight() / 2;
     float editDy = editFactor * (1f - recordFactor) * editDyTotal;
     durationView.setAlpha(range);
-    durationView.setTranslationY(overallTranslation + editDy);
+    durationView.setTranslationY(overallTranslation + durationExtraY + editDy);
   }
 
   private void updateMainAlphas () {
@@ -1485,7 +1665,8 @@ public class RecordAudioVideoController implements
     float editRange = Math.max(range, editFactor);
     voiceVideoButtonView.setAlpha(range);
     inputOverlayView.setAlpha(editRange);
-    lockView.setAlpha(editRange);
+    // Dictation has no pause/preview: once locked, only the check mark (finish) and "Cancel" stay.
+    lockView.setAlpha(dictating ? editRange * (1f - releaseFactor) : editRange);
 
     float videoRange = recordingVideo ? editRange : 0f;
     videoBackgroundView.setFactor(videoRange);
@@ -1639,7 +1820,9 @@ public class RecordAudioVideoController implements
     this.currentRecording = mode;
     switch (mode) {
       case RECORD_MODE_AUDIO:
-        if (tdlib != null) {
+        if (dictating) {
+          DictationRecorder.instance().start(dictationListener);
+        } else if (tdlib != null) {
           Recorder.instance().record(tdlib, ChatId.isSecret(targetChatId), this);
         }
         break;
@@ -1693,6 +1876,10 @@ public class RecordAudioVideoController implements
     final boolean needResult = closeMode != CLOSE_MODE_CANCEL && hasValidOutputTarget();
     switch (currentRecording) {
       case RECORD_MODE_AUDIO:
+        if (dictating) {
+          finishDictation(!needResult);
+          break;
+        }
         voiceCloseMode = closeMode;
         if (needResult) {
           Recorder.instance().save(closeMode == CLOSE_MODE_PREVIEW || closeMode == CLOSE_MODE_PREVIEW_SCHEDULE);
@@ -1707,7 +1894,6 @@ public class RecordAudioVideoController implements
     this.currentRecording = RECORD_MODE_NONE;
     stopTimers();
   }
-
 
   // Audio record impl
 
@@ -1765,7 +1951,6 @@ public class RecordAudioVideoController implements
     return tdlib.selfChatId() != targetChatId && ChatId.isUserChat(targetChatId);
   }
 
-
   // Video record impl
 
   private void setupCamera (boolean isOwned) {
@@ -1798,7 +1983,15 @@ public class RecordAudioVideoController implements
       throw new IllegalStateException();
     }
     roundKey = "round" + SystemClock.uptimeMillis() + "_" + System.currentTimeMillis() + "_" + Math.random();
-    tdlib.client().send(new TdApi.PreliminaryUploadFile(new TdApi.InputFileGenerated(null, roundKey, 0), ChatId.isSecret(targetChatId) ? new TdApi.FileTypeSecret() : new TdApi.FileTypeVideoNote(), 1), object -> {
+    // Vibegram: a bitrate that does not fit a full minute into 10 MB may produce a file that is re-encoded
+    // before sending, so it is not uploaded while recording (the upload would be wasted or fail past 10 MB).
+    roundUploadWhileRecording = RoundVideoQuality.resolve(Settings.instance()).fitsFullLength();
+    // A recording that may not fit is generated as a plain video file: TDLib refuses to register a generated
+    // video note over its size limit (option video_note_size_max, 12 MB), the generation then fails and is
+    // requested again on sending, after the recording is gone. It is sent via its path, re-encoded if needed.
+    TdApi.FileType roundFileType = ChatId.isSecret(targetChatId) ? new TdApi.FileTypeSecret() :
+      roundUploadWhileRecording ? new TdApi.FileTypeVideoNote() : new TdApi.FileTypeVideo();
+    tdlib.client().send(new TdApi.PreliminaryUploadFile(new TdApi.InputFileGenerated(null, roundKey, 0), roundFileType, 1), object -> {
       if (object.getConstructor() == TdApi.File.CONSTRUCTOR) {
         setRoundGenerationFile((TdApi.File) object);
       } else {
@@ -1822,6 +2015,9 @@ public class RecordAudioVideoController implements
 
   private void setRoundFile (TdApi.File file) {
     this.roundFile = file;
+    if (!roundUploadWhileRecording) {
+      detachRoundUpload();
+    }
     checkActualRecording(CLOSE_MODE_CANCEL);
   }
 
@@ -1836,16 +2032,23 @@ public class RecordAudioVideoController implements
 
     if (deleteFile) {
       if (!StringUtils.isEmpty(roundOutputPath)) {
-        tdlib.client().send(new TdApi.FinishFileGeneration(roundGenerationId, new TdApi.Error()), tdlib.silentHandler());
+        // Vibegram: a described error instead of an empty one ("Empty error 400"), to tell where a failed round came from
+        tdlib.client().send(new TdApi.FinishFileGeneration(roundGenerationId, new TdApi.Error(400,
+          "VG-R1: round video recording cancelled, mode " + roundCloseMode + ", detached " + roundUploadDetached +
+          ", file " + (roundFile != null ? roundFile.id + "/" + roundFile.size : "null"))), tdlib.silentHandler());
       }
       if (roundFile != null) {
         tdlib.client().send(new TdApi.CancelPreliminaryUploadFile(roundFile.id), tdlib.silentHandler());
+        if (roundUploadDetached) {
+          tdlib.client().send(new TdApi.CancelDownloadFile(roundFile.id, false), tdlib.silentHandler());
+        }
       }
       resetRoundState();
     }
   }
 
   private void resetRoundState () {
+    roundUploadDetached = false;
     if (roundFile != null) {
       tdlib.files().unsubscribe(roundFile.id, this);
       roundFile = null;
@@ -1863,7 +2066,9 @@ public class RecordAudioVideoController implements
       if (StringUtils.equalsOrBothEmpty(key, roundKey)) {
         setRoundGeneration(generationId, outputPath);
       } else {
-        tdlib.client().send(new TdApi.FinishFileGeneration(generationId, new TdApi.Error()), tdlib.silentHandler());
+        tdlib.client().send(new TdApi.FinishFileGeneration(generationId, new TdApi.Error(400,
+          "VG-R2: round video generation requested again" + (StringUtils.isEmpty(roundKey) ? " after the recording was closed" : " for another recording") +
+          ", detached " + roundUploadDetached + ", upload while recording " + roundUploadWhileRecording)), tdlib.silentHandler());
       }
     });
   }
@@ -1918,8 +2123,84 @@ public class RecordAudioVideoController implements
   @Override
   public void onVideoRecordProgress (String key, long readyBytesCount) {
     if (StringUtils.equalsOrBothEmpty(roundKey, key) && prevVideoPath == null) {
+      if (readyBytesCount > ROUND_UPLOAD_DETACH_BYTES) {
+        detachRoundUpload();
+      }
       tdlib.client().send(new TdApi.SetFileGenerationProgress(roundGenerationId, 0, readyBytesCount), tdlib.silentHandler());
     }
+  }
+
+  // Vibegram: rounds are recorded at a high bitrate, a longer one does not fit Telegram's 10 MB
+  // (TDLib uploads video notes only as small files) and is re-encoded to fit when sent.
+  // Its upload during recording would fail past 10 MB, so it stops before that.
+
+  /** Recorded bytes after which the upload during recording is stopped. */
+  private static final long ROUND_UPLOAD_DETACH_BYTES = 9L << 20;
+  /** Files up to this size are sent as recorded. */
+  private static final long ROUND_SEND_AS_IS_BYTES = RoundVideoQuality.MAX_FILE_SIZE - (64L << 10);
+
+  private volatile boolean roundUploadDetached;
+  private boolean roundUploadWhileRecording = true;
+
+  @AnyThread
+  private void detachRoundUpload () {
+    TdApi.File file = roundFile;
+    if (roundUploadDetached || file == null) {
+      return;
+    }
+    roundUploadDetached = true;
+    Log.i(Log.TAG_ROUND, "Stopping the round video upload during recording, size limit: %b", roundUploadWhileRecording);
+    // TDLib stops generating a file nobody downloads or uploads: keep the generation alive with a download,
+    // and cancel the upload only once the download is registered (TDLib checks the partial file first, asynchronously).
+    tdlib.client().send(new TdApi.DownloadFile(file.id, 1, 0, 0, false), result -> {
+      if (result.getConstructor() == TdApi.File.CONSTRUCTOR) {
+        tdlib.client().send(new TdApi.CancelPreliminaryUploadFile(file.id), tdlib.silentHandler());
+      } else {
+        Log.w(Log.TAG_ROUND, "Cannot keep the round video generation without upload: %s", TD.toErrorString(result));
+      }
+    });
+  }
+
+  private static long getVideoDurationMs (String path, long fallbackMs) {
+    android.media.MediaMetadataRetriever retriever;
+    try {
+      retriever = U.openRetriever(path);
+    } catch (Throwable t) {
+      retriever = null;
+    }
+    if (retriever != null) {
+      try {
+        long durationMs = StringUtils.parseLong(retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION));
+        if (durationMs > 0) {
+          return durationMs;
+        }
+      } catch (Throwable ignored) {
+      } finally {
+        U.closeRetriever(retriever);
+      }
+    }
+    return fallbackMs;
+  }
+
+  /** Sends the whole recorded round: as is when it fits Telegram's 10 MB, re-encoded to fit otherwise. */
+  private void sendRecordedRound (TdApi.MessageSendOptions initialSendOptions) {
+    String path = !StringUtils.isEmpty(roundFile.local.path) ? roundFile.local.path : roundOutputPath;
+    long size = !StringUtils.isEmpty(path) ? new File(path).length() : 0;
+    if (size <= 0) {
+      size = Math.max(roundFile.size, roundFile.local.downloadedSize);
+    }
+    if (size <= ROUND_SEND_AS_IS_BYTES) {
+      // Uploaded during recording: send that file. Otherwise it is not a video note file in TDLib, send it by path.
+      TdApi.InputFile inputFile = roundUploadWhileRecording || StringUtils.isEmpty(path) ? new TdApi.InputFileId(roundFile.id) : new TdApi.InputFileLocal(path);
+      sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(inputFile, null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, roundFile);
+      return;
+    }
+    tdlib.send(new TdApi.CancelPreliminaryUploadFile(roundFile.id), tdlib.typedOkHandler());
+    long durationMs = getVideoDurationMs(path, (savedRoundDurationSeconds + 1) * 1000L);
+    String conversion = VideoGenerationInfo.makeRoundConversion(roundFile.id, -1, -1, durationMs, RoundVideoQuality.getRecorded(roundKey));
+    Log.i(Log.TAG_ROUND, "Round video is %d bytes, %d ms: re-encoding to fit, %s", size, durationMs, conversion);
+    TdApi.InputFileGenerated fittedFile = new TdApi.InputFileGenerated(path, conversion, 0);
+    sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(fittedFile, null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, null);
   }
 
   private void sendVideoNote (TdApi.InputMessageVideoNote videoNote, TdApi.MessageSendOptions initialSendOptions, TdApi.File helperFile) {
@@ -1992,9 +2273,15 @@ public class RecordAudioVideoController implements
           FileUtils.deleteFile(mergedFile);
           U.moveFile(new File(prevVideoPath), outputFile);
         }
+        if (outputFile.length() > ROUND_UPLOAD_DETACH_BYTES) {
+          detachRoundUpload();
+        }
         tdlib.client().send(new TdApi.FinishFileGeneration(roundGenerationId, null), tdlib.silentHandler(after));
       });
       return;
+    }
+    if (resultFileSize > ROUND_UPLOAD_DETACH_BYTES) {
+      detachRoundUpload();
     }
     tdlib.client().send(new TdApi.SetFileGenerationProgress(roundGenerationId, resultFileSize, resultFileSize), tdlib.silentHandler());
     tdlib.client().send(new TdApi.FinishFileGeneration(roundGenerationId, null), tdlib.silentHandler(after));
@@ -2016,9 +2303,22 @@ public class RecordAudioVideoController implements
             awaitRoundVideo();
             finishFileGeneration(resultFileSize, null);
           } else {
-            finishFileGeneration(resultFileSize, () ->
-              sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(new TdApi.InputFileId(roundFile.id), null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), Td.newSendOptions(), roundFile)
-            );
+            // The generated file is moved once finished: take its final location before choosing how to send it.
+            finishFileGeneration(resultFileSize, () -> {
+              TdApi.File file = roundFile;
+              if (file == null) {
+                return;
+              }
+              tdlib.client().send(new TdApi.GetFile(file.id), result -> tdlib.ui().post(() -> {
+                if (roundFile == null || roundFile.id != file.id) {
+                  return;
+                }
+                if (result.getConstructor() == TdApi.File.CONSTRUCTOR) {
+                  roundFile = (TdApi.File) result;
+                }
+                sendRecordedRound(Td.newSendOptions());
+              }));
+            });
           }
         } else {
           finishFileGeneration(-1, this::cancelAwaitRoundRecord);
@@ -2151,12 +2451,12 @@ public class RecordAudioVideoController implements
         // Vibegram: trim with the round's own size/fps/bitrate, not the general video quality setting.
         String conversion = VideoGenerationInfo.makeRoundConversion(roundFile.id,
           (long) (startTimeSeconds * 1_000_000), (long) (endTimeSeconds * 1_000_000),
-          RoundVideoQuality.getRecorded(roundKey)
+          (long) ((endTimeSeconds - startTimeSeconds) * 1000), RoundVideoQuality.getRecorded(roundKey)
         );
         TdApi.InputFileGenerated trimmedFile = new TdApi.InputFileGenerated(roundFile.local.path, conversion, 0);
         sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(trimmedFile, null, (int) Math.round(endTimeSeconds - startTimeSeconds), getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, null);
       } else {
-        sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(new TdApi.InputFileId(roundFile.id), null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, roundFile);
+        sendRecordedRound(initialSendOptions);
       }
     } else {
       tdlib.client().send(new TdApi.DeleteFile(roundFile.id), tdlib.silentHandler());

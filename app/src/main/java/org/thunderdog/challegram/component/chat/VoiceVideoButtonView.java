@@ -43,15 +43,20 @@ import me.vkryl.core.lambda.Destroyable;
 public class VoiceVideoButtonView extends View implements FactorAnimator.Target, Settings.VideoModePreferenceListener, Destroyable, TooltipOverlayView.LocationProvider {
   private boolean hasTouchControls;
 
-  private final Drawable sendIcon, micIcon, videoIcon, searchIcon;
+  private final Drawable sendIcon, micIcon, videoIcon, dictationIcon, doneIcon, searchIcon;
+  /** Record mode icons in the order the tap cycles them: index = {@link Settings#RECORD_MODE_VOICE} etc. */
+  private final Drawable[] modeIcons;
 
   public VoiceVideoButtonView (Context context) {
     super(context);
     sendIcon = Drawables.get(getResources(), R.drawable.deproko_baseline_send_24);
     micIcon = Drawables.get(getResources(), R.drawable.deproko_baseline_msg_voice_24);
     videoIcon = Drawables.get(getResources(), R.drawable.deproko_baseline_msg_video_24);
+    dictationIcon = Drawables.get(getResources(), R.drawable.vg_dictation_24);
+    doneIcon = Drawables.get(getResources(), R.drawable.baseline_check_24);
     searchIcon = Drawables.get(getResources(), R.drawable.baseline_search_24);
-    setInVideoMode(Settings.instance().preferVideoMode(), false);
+    modeIcons = new Drawable[] {micIcon, videoIcon, dictationIcon};
+    setRecordMode(Settings.instance().getPreferredRecordMode(), false);
   }
 
   @Override
@@ -72,17 +77,54 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
     }
   }
 
-  private static final int ANIMATOR_VIDEO_MODE = 0, ANIMATOR_SEARCH_MODE = 1;
-  private final BoolAnimator inVideoMode = new BoolAnimator(ANIMATOR_VIDEO_MODE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 120l);
+  private static final int ANIMATOR_RECORD_MODE = 0, ANIMATOR_SEARCH_MODE = 1;
+  /**
+   * Vibegram: position in the voice → round → dictation cycle (0..2). Going on from dictation back to voice
+   * animates to 3 (voice again, below dictation) and snaps to 0, so the icons always roll the same way.
+   */
+  private final FactorAnimator recordModeAnimator = new FactorAnimator(ANIMATOR_RECORD_MODE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 120l);
+  private int recordMode = Settings.RECORD_MODE_VOICE;
   private final BoolAnimator inSearchMode = new BoolAnimator(ANIMATOR_SEARCH_MODE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
 
   @Override
   public void onPreferVideoModeChanged (boolean preferVideoMode) {
-    setInVideoMode(preferVideoMode, hasTouchControls);
+    setRecordMode(preferVideoMode ? Settings.RECORD_MODE_ROUND : Settings.RECORD_MODE_VOICE, hasTouchControls);
+  }
+
+  @Override
+  public void onPreferRecordModeChanged (int recordMode) {
+    setRecordMode(recordMode, hasTouchControls);
   }
 
   public void setInVideoMode (boolean inVideoMode, boolean animated) {
-    this.inVideoMode.setValue(inVideoMode, animated);
+    setRecordMode(inVideoMode ? Settings.RECORD_MODE_ROUND : Settings.RECORD_MODE_VOICE, animated);
+  }
+
+  public void setRecordMode (int recordMode, boolean animated) {
+    if (this.recordMode == recordMode && (animated || !recordModeAnimator.isAnimating())) {
+      return;
+    }
+    this.recordMode = recordMode;
+    if (animated) {
+      float target = recordMode;
+      if (target < recordModeAnimator.getFactor()) {
+        target += modeIcons.length;
+      }
+      recordModeAnimator.animateTo(target);
+    } else {
+      recordModeAnimator.forceFactor(recordMode);
+      invalidate();
+    }
+  }
+
+  private boolean doneInsteadOfSend;
+
+  /** The big recording circle finishes dictation with a check mark instead of the send arrow. */
+  public void setDoneInsteadOfSend (boolean doneInsteadOfSend) {
+    if (this.doneInsteadOfSend != doneInsteadOfSend) {
+      this.doneInsteadOfSend = doneInsteadOfSend;
+      invalidate();
+    }
   }
 
   public void setInSearchMode (boolean inSearchMode, boolean animated) {
@@ -104,7 +146,12 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
   }
 
   @Override
-  public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) { }
+  public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) {
+    if (id == ANIMATOR_RECORD_MODE && finalFactor >= modeIcons.length) {
+      recordModeAnimator.forceFactor(finalFactor - modeIcons.length);
+      invalidate();
+    }
+  }
 
   @Override
   public void performDestroy () {
@@ -136,7 +183,7 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
     final int viewHeight = getMeasuredHeight();
     final int cx = getPaddingLeft() + (viewWidth - getPaddingLeft() - getPaddingRight()) / 2;
     final int cy = viewHeight / 2;
-    final float videoFactor = inVideoMode.getFloatValue();
+    final float modeFactor = recordModeAnimator.getFactor();
     final float searchFactor = inSearchMode.getFloatValue();
 
     final Paint paint = hasTouchControls && iconColor == 0 ? Paints.getIconGrayPorterDuffPaint() : getIconPaint();
@@ -151,15 +198,17 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
           c.scale(scale, scale, cx, cy);
         }
 
-        int y;
-
-        y = (int) (cy + (cy + videoIcon.getMinimumHeight() / 2) * videoFactor);
-        paint.setAlpha((int) ((float) savedAlpha * ((1f - videoFactor) * alpha)));
-        Drawables.drawCentered(c, micIcon, cx, y, paint);
-
-        y = (int) (cy - (cy + videoIcon.getMinimumHeight() / 2) * (1f - videoFactor));
-        paint.setAlpha((int) ((float) savedAlpha * videoFactor * alpha));
-        Drawables.drawCentered(c, videoIcon, cx, y, paint);
+        // The current mode icon leaves downwards while the next one comes in from above.
+        final int span = cy + videoIcon.getMinimumHeight() / 2;
+        for (int i = 0; i <= modeIcons.length; i++) {
+          float distance = modeFactor - i;
+          if (Math.abs(distance) >= 1f) {
+            continue;
+          }
+          int y = (int) (cy + span * distance);
+          paint.setAlpha((int) ((float) savedAlpha * (1f - Math.abs(distance)) * alpha));
+          Drawables.drawCentered(c, modeIcons[i % modeIcons.length], cx, y, paint);
+        }
 
         if (scale != 1f) {
           c.restore();
@@ -183,7 +232,7 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
     }
 
     paint.setAlpha((int) ((float) savedAlpha * sendFactor));
-    Drawables.drawCentered(c, sendIcon, cx, cy, paint);
+    Drawables.drawCentered(c, doneInsteadOfSend ? doneIcon : sendIcon, cx, cy, paint);
 
     paint.setAlpha(savedAlpha);
   }
@@ -251,7 +300,7 @@ public class VoiceVideoButtonView extends View implements FactorAnimator.Target,
 
   private void performTap () {
     ViewUtils.onClick(this);
-    Settings.instance().setPreferVideoMode(!inVideoMode.getValue());
+    Settings.instance().setPreferredRecordMode(Settings.instance().getNextRecordMode());
   }
 
   private void checkDraggingCircle () {
