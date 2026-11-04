@@ -22,10 +22,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -129,6 +129,10 @@ public final class SttManager {
   private final Map<String, Transcription> transcriptions = new HashMap<>();
 
   private @Nullable SttEngine engine;
+  /** Bumped after every recognition run; an unload scheduled after an older run is skipped. Recognition thread only. */
+  private long engineUseCount;
+  /** The model is unloaded after this much idle time: Parakeet takes over 2 GB of RAM while loaded. */
+  private static final long ENGINE_IDLE_UNLOAD_MS = 60_000;
   private @Nullable String engineModelId;
   private volatile @Nullable String runningKey;
 
@@ -153,17 +157,8 @@ public final class SttManager {
         deleteRecursive(dir);
       }
     }
-    File[] cached = getCacheDir().listFiles();
-    if (cached != null) {
-      String suffix = "_v" + PIPELINE_VERSION + ".txt";
-      for (File file : cached) {
-        if (!file.getName().endsWith(suffix)) {
-          // results of an older pipeline
-          //noinspection ResultOfMethodCallIgnored
-          file.delete();
-        }
-      }
-    }
+    // Transcriptions are no longer saved: remove the files saved by older builds.
+    deleteRecursive(new File(getModelsDir(), "transcripts"));
   }
 
   // Storage
@@ -174,10 +169,6 @@ public final class SttManager {
 
   public File getModelDir (SttModel model) {
     return new File(getModelsDir(), model.id);
-  }
-
-  private File getCacheDir () {
-    return new File(getModelsDir(), "transcripts");
   }
 
   public boolean isDownloaded (SttModel model) {
@@ -215,8 +206,14 @@ public final class SttManager {
     if (model != null) {
       notifyModel(model);
     }
-    // Transcriptions are stored per model: let visible messages switch to the new model's results.
+    forgetFinishedTranscriptions();
+    // Transcriptions are kept per model: let visible messages switch to the new model's state.
     notifyTranscription(null);
+  }
+
+  /** Identifies how a message is recognized; results and the measured speed are kept per run id. */
+  private String runId (SttModel model) {
+    return model.id;
   }
 
   // Listeners
@@ -264,13 +261,18 @@ public final class SttManager {
     downloadProgress.put(model.id, 0f);
     Future<?> future = downloadExecutor.submit(() -> {
       boolean ok = false;
+      long missingSpace = 0;
       try {
         downloadFiles(model);
         ok = true;
+      } catch (NoSpaceException e) {
+        missingSpace = e.missingBytes;
+        Log.w("STT: no space for %s, %d bytes more needed", model.id, missingSpace);
       } catch (Throwable t) {
         Log.w("STT: download of %s failed", t, model.id);
       }
       final boolean success = ok;
+      final long missing = missingSpace;
       final boolean interrupted = Thread.currentThread().isInterrupted();
       ui.post(() -> {
         boolean wasActive = downloads.remove(model.id) != null;
@@ -279,7 +281,11 @@ public final class SttManager {
           setSelectedModel(model);
         }
         if (!success && !interrupted && wasActive) {
-          UI.showToast(org.thunderdog.challegram.R.string.vg_SttDownloadFailed, android.widget.Toast.LENGTH_SHORT);
+          if (missing > 0) {
+            UI.showToast(org.thunderdog.challegram.core.Lang.getString(org.thunderdog.challegram.R.string.vg_SttNoSpace, sizeText(missing)), android.widget.Toast.LENGTH_LONG);
+          } else {
+            UI.showToast(org.thunderdog.challegram.R.string.vg_SttDownloadFailed, android.widget.Toast.LENGTH_SHORT);
+          }
         }
         notifyModel(model);
       });
@@ -324,10 +330,50 @@ public final class SttManager {
     file.delete();
   }
 
+  /** Not enough free space for the files of a model. */
+  private static class NoSpaceException extends IOException {
+    final long missingBytes;
+
+    NoSpaceException (long missingBytes) {
+      super("No space left");
+      this.missingBytes = missingBytes;
+    }
+  }
+
+  /** Kept free on the device after a download, so the phone does not run out of space because of a model. */
+  private static final long SPACE_RESERVE = 300L * 1024 * 1024;
+
+  private static String sizeText (long bytes) {
+    long mb = Math.max(1, (bytes + 1024 * 1024 - 1) / (1024 * 1024));
+    if (mb < 1000) {
+      return org.thunderdog.challegram.core.Lang.getString(org.thunderdog.challegram.R.string.fileSize_MB, String.valueOf(mb));
+    }
+    return org.thunderdog.challegram.core.Lang.getString(org.thunderdog.challegram.R.string.fileSize_GB, org.thunderdog.challegram.core.Lang.formatNumber(Math.round(mb / 1024.0 * 10) / 10.0));
+  }
+
   private void downloadFiles (SttModel model) throws IOException {
     File dir = getModelDir(model);
     final long total = model.totalSize();
     long done = 0;
+    // check the space before writing gigabytes: a full disk breaks the app and the whole phone, not only the download
+    long needed = 0;
+    for (SttModel.FileSpec spec : model.files) {
+      File target = new File(dir, spec.name);
+      if (target.exists() && target.length() == spec.size) {
+        continue;
+      }
+      File part = new File(target.getPath() + ".part");
+      needed += spec.size - (part.exists() && part.length() <= spec.size ? part.length() : 0);
+    }
+    File existing = dir.exists() ? dir : getModelsDir();
+    if (!existing.exists()) {
+      //noinspection ResultOfMethodCallIgnored
+      existing.mkdirs();
+    }
+    long usable = existing.getUsableSpace();
+    if (needed > 0 && usable < needed + SPACE_RESERVE) {
+      throw new NoSpaceException(needed + SPACE_RESERVE - usable);
+    }
     for (SttModel.FileSpec spec : model.files) {
       File target = new File(dir, spec.name);
       if (target.exists() && target.length() == spec.size) {
@@ -427,40 +473,28 @@ public final class SttManager {
 
   public Transcription getTranscription (String key) {
     SttModel model = getSelectedModel();
-    return getTranscription(key, model != null ? model.id : "none");
+    return getTranscription(key, model != null ? runId(model) : "none");
   }
 
-  private Transcription getTranscription (String key, String modelId) {
-    String fullKey = cacheKey(key, modelId);
+  /** Results live only in memory, so a message can be recognized again and compared between models. */
+  private Transcription getTranscription (String key, String runId) {
+    String fullKey = key + "@" + runId;
     Transcription t = transcriptions.get(fullKey);
     if (t == null) {
       t = new Transcription();
-      File cached = new File(getCacheDir(), safeName(fullKey) + ".txt");
-      if (cached.exists()) {
-        try (InputStream in = new FileInputStream(cached)) {
-          byte[] data = new byte[(int) cached.length()];
-          int off = 0, read;
-          while (off < data.length && (read = in.read(data, off, data.length - off)) > 0) {
-            off += read;
-          }
-          t.text = new String(data, 0, off, StandardCharsets.UTF_8);
-          t.state = STATE_DONE;
-        } catch (IOException ignored) { }
-      }
       transcriptions.put(fullKey, t);
     }
     return t;
   }
 
-  /** Bumped when the recognition pipeline changes, so old results are recognized again. */
-  private static final int PIPELINE_VERSION = 11;
-
-  private static String cacheKey (String key, String modelId) {
-    return key + "@" + modelId + "@v" + PIPELINE_VERSION;
-  }
-
-  private static String safeName (String key) {
-    return key.replaceAll("[^A-Za-z0-9_-]", "_");
+  /** On a model or mode switch, finished results are dropped: going back to a model recognizes the message again. */
+  private void forgetFinishedTranscriptions () {
+    Iterator<Transcription> it = transcriptions.values().iterator();
+    while (it.hasNext()) {
+      if (it.next().state != STATE_RUNNING) {
+        it.remove();
+      }
+    }
   }
 
   public interface AudioPathProvider {
@@ -477,7 +511,8 @@ public final class SttManager {
     if (model == null || !isDownloaded(model)) {
       return false;
     }
-    final Transcription t = getTranscription(key, model.id);
+    final String runId = runId(model);
+    final Transcription t = getTranscription(key, runId);
     if (t.state == STATE_RUNNING) {
       return true;
     }
@@ -551,9 +586,7 @@ public final class SttManager {
         long recognitionMs = end - t.runStartTime;
         android.util.Log.i("VgStt", String.format(java.util.Locale.US, "%s: %.1fs audio, decode %dms, load %dms, recognition %dms", model.id, audioSeconds, decodeTime - startTime, t.runStartTime - decodeTime, recognitionMs));
         if (audioSeconds >= 3f) {
-          float speed = recognitionMs / audioSeconds;
-          float old = prefs.getFloat("speed_" + model.id, 0f);
-          prefs.edit().putFloat("speed_" + model.id, old > 0 ? old * .5f + speed * .5f : speed).apply();
+          rememberSpeed("speed_" + model.id, recognitionMs / audioSeconds);
         }
         if (t.generation != generation) {
           // cancelled while the engine was finishing its last chunk
@@ -561,7 +594,6 @@ public final class SttManager {
         }
         t.text = text;
         t.state = STATE_DONE;
-        saveToCache(cacheKey(key, model.id), text);
         if (onDone != null && !text.isEmpty()) {
           UI.post(onDone);
         }
@@ -581,8 +613,33 @@ public final class SttManager {
         t.preparing = false;
         notifyTranscription(key);
       }
+      scheduleEngineUnload();
     });
     return true;
+  }
+
+  private void rememberSpeed (String prefKey, float speed) {
+    float old = prefs.getFloat(prefKey, 0f);
+    prefs.edit().putFloat(prefKey, old > 0 ? old * .5f + speed * .5f : speed).apply();
+  }
+
+  /**
+   * Unloads the model after a minute without recognition. Runs queue up on the single recognition thread,
+   * so a run queued before the unload task finishes first and makes it obsolete.
+   */
+  private void scheduleEngineUnload () {
+    final long useCount = ++engineUseCount;
+    UI.post(() -> recognitionExecutor.submit(() -> {
+      if (engineUseCount != useCount) {
+        return;
+      }
+      if (engine != null) {
+        android.util.Log.i("VgStt", "unloading " + engineModelId + " after " + ENGINE_IDLE_UNLOAD_MS / 1000 + "s idle");
+        engine.release();
+        engine = null;
+        engineModelId = null;
+      }
+    }), ENGINE_IDLE_UNLOAD_MS);
   }
 
   /**
@@ -593,7 +650,8 @@ public final class SttManager {
     switch (model.id) {
       case "futo_74": return 120f;
       case "futo_244": return 400f;
-      case "parakeet_v3": return 150f;
+      case "parakeet_ultra": return 150f;
+      case "gigaam_v3_e2e": return 60f;
     }
     return 500f;
   }
@@ -626,16 +684,6 @@ public final class SttManager {
       t.expanded = expanded;
       notifyTranscription(key);
     }
-  }
-
-  private void saveToCache (String key, String text) {
-    File dir = getCacheDir();
-    if (!dir.exists() && !dir.mkdirs()) {
-      return;
-    }
-    try (OutputStream out = new FileOutputStream(new File(dir, safeName(key) + ".txt"))) {
-      out.write(text.getBytes(StandardCharsets.UTF_8));
-    } catch (IOException ignored) { }
   }
 
   private SttEngine obtainEngine (SttModel model) throws IOException {

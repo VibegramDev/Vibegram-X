@@ -3,12 +3,12 @@
   <string name="vg_SttTitle">Расшифровка голосовых</string>
   <string name="vg_SttDescription">Голосовые сообщения расшифровываются на устройстве, ничего никуда не отправляется. Звёзды показывают качество распознавания моделей.</string>
   <string name="vg_SttLangWhisper">99 языков</string>
+  <string name="vg_SttLangGigaAm">Только русский</string>
   <string name="vg_SttLangParakeet">25 языков</string>
-  <string name="vg_SttSizeMb">%1$d МБ</string>
   <string name="vg_SttDownloadingProgress">загрузка %1$s</string>
-  <string name="vg_SttDownload">Скачать · %1$d МБ</string>
+  <string name="vg_SttDownload">Скачать · %1$s</string>
   <string name="vg_SttCancelDownload">Отменить загрузку</string>
-  <string name="vg_SttDelete">Удалить модель · %1$d МБ</string>
+  <string name="vg_SttDelete">Удалить модель · %1$s</string>
   <string name="vg_SttDeleteAction">Удалить модель</string>
   <string name="vg_SttDownloadAction">Скачать модель</string>
   <string name="vg_SttCreditsModels">Авторы моделей</string>
@@ -21,7 +21,9 @@
   <string name="vg_SttInProgress">Расшифровка…</string>
   <string name="vg_SttFailed">Не удалось расшифровать сообщение</string>
   <string name="vg_SttEmpty">Речь не распознана</string>
-  <string name="vg_SttModelsHeader">Модели</string>
+  <string name="vg_SttNoSpace">Недостаточно места для модели: освободите ещё %1$s.</string>
+  <string name="vg_SttRussianHeader">Лучший для русского языка</string>
+  <string name="vg_SttMultilingualHeader">Многоязычные</string>
   <string name="vg_SttQueued">В очереди…</string>
   <string name="vg_SttProgress">Распознаю… %1$d%%</string>
   <string name="vg_SttPreparing">Подготовка…</string>

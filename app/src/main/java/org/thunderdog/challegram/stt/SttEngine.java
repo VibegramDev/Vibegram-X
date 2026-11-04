@@ -131,12 +131,56 @@ public abstract class SttEngine {
       case SttModel.ENGINE_WHISPER_CPP:
         return new WhisperCpp(model, new File(dir, "model.bin"));
       case SttModel.ENGINE_SHERPA_NEMO_TDT:
-        return new SherpaOffline(dir);
+        return new SherpaOffline(model, dir, 80, 60);
+      case SttModel.ENGINE_SHERPA_GIGAAM:
+        // GigaAM was trained on segments up to ~30 s and drops most of the speech in longer ones
+        return new SherpaOffline(model, dir, 64, 30);
     }
     throw new IOException("Unknown engine");
   }
 
   // Post-processing
+
+  private static final String UNKNOWN = "<unk>";
+
+  /**
+   * Parakeet's vocabulary has every Russian letter except «ё», so the model writes <unk> where it hears one
+   * («е<unk>» = «её», «ещ<unk>» = «ещё»; int8 usually picks «е» instead). Next to a Cyrillic letter it becomes «ё»
+   * («Ё» in an uppercase word or at the start of a sentence); anywhere else the marker is dropped.
+   */
+  static String restoreUnknown (String text) {
+    if (!text.contains(UNKNOWN)) {
+      return text;
+    }
+    StringBuilder b = new StringBuilder(text.length());
+    int start = 0, index;
+    while ((index = text.indexOf(UNKNOWN, start)) != -1) {
+      b.append(text, start, index);
+      start = index + UNKNOWN.length();
+      char prev = b.length() > 0 ? b.charAt(b.length() - 1) : 0;
+      char next = start < text.length() ? text.charAt(start) : 0;
+      if (!isCyrillic(prev) && !isCyrillic(next)) {
+        continue;
+      }
+      boolean upper;
+      if (Character.isLetter(prev)) {
+        upper = Character.isUpperCase(prev) && !Character.isLowerCase(next);
+      } else {
+        int i = b.length() - 1;
+        while (i >= 0 && Character.isWhitespace(b.charAt(i))) {
+          i--;
+        }
+        upper = i < 0 || ".!?…".indexOf(b.charAt(i)) != -1;
+      }
+      b.append(upper ? 'Ё' : 'ё');
+    }
+    b.append(text, start, text.length());
+    return b.toString();
+  }
+
+  private static boolean isCyrillic (char c) {
+    return Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CYRILLIC && Character.isLetter(c);
+  }
 
   /** Phrases Whisper invents on silence and music: it learned them from subtitles of videos. */
   private static final Pattern HALLUCINATION = Pattern.compile(
@@ -190,11 +234,9 @@ public abstract class SttEngine {
   private static final String WHISPER_PROMPT = "Привет! Да, всё хорошо, спасибо. Okay, let's do it.";
 
   static final class WhisperCpp extends SttEngine {
-    private final boolean acft;
     private long ptr;
 
     WhisperCpp (SttModel model, File file) throws IOException {
-      this.acft = model.acft;
       WhisperNative.load();
       ptr = WhisperNative.init(file.getAbsolutePath(), true);
       if (ptr == 0) {
@@ -273,13 +315,8 @@ public abstract class SttEngine {
         input = new float[AudioDecoder.SAMPLE_RATE + AudioDecoder.SAMPLE_RATE / 10];
         System.arraycopy(chunk, 0, input, 0, chunk.length);
       }
-      int audioCtx = 0;
-      if (acft && input.length < 30 * AudioDecoder.SAMPLE_RATE) {
-        // FUTO models are finetuned to run the encoder on the real audio length instead of 30 s (1500 frames).
-        float seconds = input.length / (float) AudioDecoder.SAMPLE_RATE;
-        audioCtx = Math.min(1500, (int) Math.ceil(seconds * 50f) + 64);
-      }
-      byte[] result = WhisperNative.transcribe(ptr, input, threadCount(), audioCtx, WHISPER_PROMPT,
+      // Greedy decoding (beam size 1): beam search gave fewer errors but was 1.3–1.5× slower, the setting was removed.
+      byte[] result = WhisperNative.transcribe(ptr, input, threadCount(), 1, WHISPER_PROMPT,
         progress == null ? null : new WhisperNative.ProgressListener() {
           @Override
           public void onProgress (int value) {
@@ -321,31 +358,33 @@ public abstract class SttEngine {
     }
   }
 
-  // sherpa-onnx, offline: Parakeet TDT
+  // sherpa-onnx, offline NeMo-style transducers: Parakeet TDT, GigaAM RNN-T
 
   static final class SherpaOffline extends SttEngine {
     private final OfflineRecognizer recognizer;
+    private final int maxChunkSeconds;
 
-    SherpaOffline (File dir) {
+    SherpaOffline (SttModel model, File dir, int featureDim, int maxChunkSeconds) {
+      this.maxChunkSeconds = maxChunkSeconds;
       OfflineModelConfig modelConfig = new OfflineModelConfig();
       modelConfig.setNumThreads(threadCount());
       modelConfig.setProvider("cpu");
       OfflineTransducerModelConfig transducer = new OfflineTransducerModelConfig();
-      transducer.setEncoder(new File(dir, "encoder.int8.onnx").getAbsolutePath());
-      transducer.setDecoder(new File(dir, "decoder.int8.onnx").getAbsolutePath());
-      transducer.setJoiner(new File(dir, "joiner.int8.onnx").getAbsolutePath());
+      transducer.setEncoder(new File(dir, model.onnxFile("encoder")).getAbsolutePath());
+      transducer.setDecoder(new File(dir, model.onnxFile("decoder")).getAbsolutePath());
+      transducer.setJoiner(new File(dir, model.onnxFile("joiner")).getAbsolutePath());
       modelConfig.setTransducer(transducer);
       modelConfig.setTokens(new File(dir, "tokens.txt").getAbsolutePath());
       modelConfig.setModelType("nemo_transducer");
       OfflineRecognizerConfig config = new OfflineRecognizerConfig();
-      config.setFeatConfig(new FeatureConfig(AudioDecoder.SAMPLE_RATE, 80, 0f));
+      config.setFeatConfig(new FeatureConfig(AudioDecoder.SAMPLE_RATE, featureDim, 0f));
       config.setModelConfig(modelConfig);
       config.setDecodingMethod("greedy_search");
       recognizer = new OfflineRecognizer(null, config);
     }
 
     /**
-     * Chunks of up to 60 s cut at the longest pause. A chunk that starts in the middle of a sentence
+     * Parakeet: chunks of up to 60 s cut at the longest pause. A chunk that starts in the middle of a sentence
      * often comes out with no punctuation at all, so cuts go where the speaker actually stopped, and chunks are
      * long enough to give the model context. Measured on a 2-minute message: about 7% slower than 25 s chunks
      * with punctuation everywhere; the whole message in one piece is punctuated too but ~50% slower
@@ -353,7 +392,7 @@ public abstract class SttEngine {
      */
     @Override
     protected int maxChunkSeconds () {
-      return 60;
+      return maxChunkSeconds;
     }
 
     @Override
@@ -362,7 +401,7 @@ public abstract class SttEngine {
       try {
         stream.acceptWaveform(chunk, AudioDecoder.SAMPLE_RATE);
         recognizer.decode(stream);
-        return recognizer.getResult(stream).getText().trim();
+        return restoreUnknown(recognizer.getResult(stream).getText()).trim();
       } finally {
         stream.release();
       }
