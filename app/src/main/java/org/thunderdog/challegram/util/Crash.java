@@ -33,7 +33,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.StringUtils;
@@ -161,16 +160,8 @@ public class Crash {
       // User has seen the "Aw, snap!" screen, but didn't press "Launch App" afterwards.
       return true;
     }
-    if (BuildConfig.DEBUG || BuildConfig.EXPERIMENTAL) {
-      // Experimental builds should always allow interacting with the crash on the next app launch
-      return true;
-    }
-    if (TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis() - date) > 15 ||
-      uptime > TimeUnit.MINUTES.toMillis(1)) {
-      // Do not show "Aw, snap!" if app crashed more than 15 minutes ago,
-      // or if uptime before crash was over a minute
-      return false;
-    }
+    // Vibegram X: every build shows the crash on the next launch, like experimental builds do
+    // (Telegram X release builds skip crashes older than 15 minutes or after a minute of work)
     return true;
   }
 

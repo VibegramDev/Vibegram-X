@@ -71,16 +71,9 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     ArrayList<ListItem> items = new ArrayList<>();
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_SttDescription));
 
-    items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_SttModelsHeader));
-    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    for (int i = 0; i < SttModel.ALL.length; i++) {
-      if (i > 0) {
-        items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-      }
-      SttModel model = SttModel.ALL[i];
-      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_RADIO, R.id.btn_vgSttModel, 0, model.title, false).setData(model));
-    }
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+    // One radio group in two sections: the Russian-only model on top, the multilingual ones below.
+    addModels(items, R.string.vg_SttRussianHeader, true);
+    addModels(items, R.string.vg_SttMultilingualHeader, false);
 
     addCredits(items, R.string.vg_SttCreditsModels, SttModel.MODEL_CREDITS);
     addCredits(items, R.string.vg_SttCreditsEngines, SttModel.ENGINE_CREDITS);
@@ -88,6 +81,23 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     adapter.setItems(items, false);
     recyclerView.setAdapter(adapter);
     SttManager.instance().addModelListener(this);
+  }
+
+  private static void addModels (ArrayList<ListItem> items, int headerRes, boolean russianOnly) {
+    items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, headerRes));
+    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    boolean first = true;
+    for (SttModel model : SttModel.ALL) {
+      if (model.isRussianOnly() != russianOnly) {
+        continue;
+      }
+      if (!first) {
+        items.add(new ListItem(ListItem.TYPE_SEPARATOR));
+      }
+      first = false;
+      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_RADIO, R.id.btn_vgSttModel, 0, model.title, false).setData(model));
+    }
+    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
   }
 
   private static void addCredits (ArrayList<ListItem> items, int headerRes, SttModel.Credit[] credits) {
@@ -112,7 +122,7 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
 
   private static String buildSubtitle (SttModel model) {
     SttManager manager = SttManager.instance();
-    String size = Lang.getString(R.string.vg_SttSizeMb, model.sizeMb());
+    String size = model.sizeText();
     if (manager.isDownloading(model)) {
       // Download / delete state is shown by the action button; only the progress needs words.
       return size + " · " + Lang.getString(R.string.vg_SttDownloadingProgress, Math.round(manager.getDownloadProgress(model) * 100f) + "%");
@@ -212,6 +222,10 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
       }
       Drawables.draw(c, icon, iconCenterX - icon.getMinimumWidth() / 2f, centerY - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(Theme.getColor(ColorId.icon)));
 
+      if (model.quality <= 0) {
+        // not rated: GigaAM is compared only with itself on Russian speech, stars would mislead in other languages
+        return;
+      }
       float starsStart = Screen.dp(ACTION_MARGIN + ACTION_SIZE + STARS_TO_ACTION + starsWidth());
       float size = Screen.dp(STAR_SIZE), step = Screen.dp(STAR_SIZE + STAR_GAP);
       for (int i = 0; i < SttModel.MAX_QUALITY; i++) {
@@ -238,7 +252,7 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     if (manager.isDownloading(model)) {
       manager.cancelDownload(model);
     } else if (manager.isDownloaded(model)) {
-      showOptions(model.title, new int[] {R.id.btn_vgSttDelete}, new String[] {Lang.getString(R.string.vg_SttDelete, model.sizeMb())}, new int[] {OptionColor.RED}, new int[] {R.drawable.baseline_delete_24}, (itemView, id) -> {
+      showOptions(model.title, new int[] {R.id.btn_vgSttDelete}, new String[] {Lang.getString(R.string.vg_SttDelete, model.sizeText())}, new int[] {OptionColor.RED}, new int[] {R.drawable.baseline_delete_24}, (itemView, id) -> {
         if (id == R.id.btn_vgSttDelete) {
           manager.delete(model);
         }
@@ -283,7 +297,7 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
         manager.setSelectedModel(model);
       }
     } else {
-      showOptions(model.title, new int[] {R.id.btn_vgSttDownload}, new String[] {Lang.getString(R.string.vg_SttDownload, model.sizeMb())}, null, new int[] {R.drawable.baseline_file_download_24}, (itemView, id) -> {
+      showOptions(model.title, new int[] {R.id.btn_vgSttDownload}, new String[] {Lang.getString(R.string.vg_SttDownload, model.sizeText())}, null, new int[] {R.drawable.baseline_file_download_24}, (itemView, id) -> {
         if (id == R.id.btn_vgSttDownload) {
           manager.download(model);
         }
