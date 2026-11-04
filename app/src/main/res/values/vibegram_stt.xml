@@ -13,12 +13,12 @@
   <string name="vg_SttTitle">Voice transcription</string>
   <string name="vg_SttDescription">Voice messages are transcribed on this device, nothing is sent anywhere. Stars show the recognition quality of the models.</string>
   <string name="vg_SttLangWhisper">99 languages</string>
+  <string name="vg_SttLangGigaAm">Russian only</string>
   <string name="vg_SttLangParakeet">25 languages</string>
-  <string name="vg_SttSizeMb">%1$d MB</string>
   <string name="vg_SttDownloadingProgress">downloading %1$s</string>
-  <string name="vg_SttDownload">Download · %1$d MB</string>
+  <string name="vg_SttDownload">Download · %1$s</string>
   <string name="vg_SttCancelDownload">Cancel download</string>
-  <string name="vg_SttDelete">Delete model · %1$d MB</string>
+  <string name="vg_SttDelete">Delete model · %1$s</string>
   <string name="vg_SttDeleteAction">Delete model</string>
   <string name="vg_SttDownloadAction">Download model</string>
   <string name="vg_SttCreditsModels">Model authors</string>
@@ -31,7 +31,9 @@
   <string name="vg_SttInProgress">Transcribing…</string>
   <string name="vg_SttFailed">Couldn\'t transcribe this message</string>
   <string name="vg_SttEmpty">No speech recognized</string>
-  <string name="vg_SttModelsHeader">Models</string>
+  <string name="vg_SttNoSpace">Not enough space for the model: free up %1$s more.</string>
+  <string name="vg_SttRussianHeader">Best for Russian</string>
+  <string name="vg_SttMultilingualHeader">Multilingual</string>
   <string name="vg_SttQueued">Queued…</string>
   <string name="vg_SttProgress">Transcribing… %1$d%%</string>
   <string name="vg_SttPreparing">Preparing…</string>

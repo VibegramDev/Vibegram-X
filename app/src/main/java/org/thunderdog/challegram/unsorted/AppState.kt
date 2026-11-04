@@ -55,7 +55,8 @@ private fun initApplicationImpl() {
     DeviceTokenRetrieverInstance.initialize()
   }
 
-  if (BuildConfig.DEBUG || BuildConfig.EXPERIMENTAL) {
+  // Vibegram X: crashes are kept in release builds too, so the next launch offers to share the error
+  run {
     trace("CrashReporter") {
       val defaultUncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler()
       val isCrashing = AtomicBoolean(false)

@@ -638,10 +638,7 @@ public class SettingsBugController extends RecyclerViewController<SettingsBugCon
       if (!items.isEmpty())
         items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
       items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_launchApp, R.drawable.baseline_warning_24, R.string.LaunchApp));
-      if (!(BuildConfig.DEBUG || BuildConfig.EXPERIMENTAL)) {
-        items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-        items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_update, R.drawable.baseline_system_update_24, R.string.LaunchAppCheckUpdate));
-      }
+      // Vibegram X: no "Check for Updates", it opens Google Play where the app is not published
       if (section != Section.TDLIB) {
         items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
         if (crash.getType() == Crash.Type.DISK_FULL) {

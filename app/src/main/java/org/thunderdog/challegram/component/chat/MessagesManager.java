@@ -3289,7 +3289,8 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     message.buildLayout(width);
     final int fullHeight = message.getVideoMessageTargetHeight(true);
     final int offset = height / 2 - fullHeight / 2 + message.findTopEdge();
-    final int scrollBy = calculateScrollBy(index, offset, true);
+    // Vibegram X: a transcribed round plays in its small round in place, nothing to center
+    final int scrollBy = message.isTranscriptionShown() ? 0 : calculateScrollBy(index, offset, true);
 
     out.message = message;
     out.index = index;
