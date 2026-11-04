@@ -9,6 +9,7 @@
   <item type="id" name="btn_vgSttDownload" />
   <item type="id" name="btn_vgSttCancel" />
   <item type="id" name="btn_vgSttDelete" />
+  <item type="id" name="btn_vgSttVideos" />
 
   <string name="vg_SttTitle">Voice transcription</string>
   <string name="vg_SttDescription">Voice messages are transcribed on this device, nothing is sent anywhere. Stars show the recognition quality of the models.</string>
@@ -37,4 +38,7 @@
   <string name="vg_SttQueued">Queued…</string>
   <string name="vg_SttProgress">Transcribing… %1$d%%</string>
   <string name="vg_SttPreparing">Preparing…</string>
+  <string name="vg_SttVideos">Transcription button on videos</string>
+  <string name="vg_SttVideosInfo">A button in the corner of a video turns its speech into text under it, on the device. The video is downloaded first. Videos up to 5 minutes.</string>
+  <string name="vg_SttVideoTooLong">Only videos up to 5 minutes can be transcribed</string>
 </resources>
