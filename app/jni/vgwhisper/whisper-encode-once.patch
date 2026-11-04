@@ -1,0 +1,32 @@
+--- src/whisper.cpp	2026-10-06 17:10:35
++++ src/whisper.cpp	2026-11-04 05:17:33
+@@ -6989,6 +6989,10 @@
+         }
+     }
+ 
++    // Vibegram: the language detection below encodes the first window (seek 0); the main loop reuses that
++    // encoder output instead of running the encoder over the same 30 s again (it is ~90% of the time).
++    int vg_encoded_seek = -1;
++
+     // auto-detect language if not specified
+     if (params.language == nullptr || strlen(params.language) == 0 || strcmp(params.language, "auto") == 0 || params.detect_language) {
+         std::vector<float> probs(whisper_lang_max_id() + 1, 0.0f);
+@@ -7007,6 +7011,7 @@
+         }
+         state->lang_id = lang_id;
+         params.language = whisper_lang_str(lang_id);
++        vg_encoded_seek = 0;
+ 
+         WHISPER_LOG_INFO("%s: auto-detected language: %s (p = %f)\n", __func__, params.language, probs[whisper_lang_id(params.language)]);
+         if (params.detect_language) {
+@@ -7212,7 +7217,9 @@
+         }
+ 
+         // encode audio features starting at offset seek
+-        if (!whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
++        if (seek == vg_encoded_seek) {
++            vg_encoded_seek = -1; // already encoded by the language detection
++        } else if (!whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
+             WHISPER_LOG_ERROR("%s: failed to encode\n", __func__);
+             return -6;
+         }

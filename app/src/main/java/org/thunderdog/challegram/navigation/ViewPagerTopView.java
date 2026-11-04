@@ -966,6 +966,8 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     // Removing BackgroundView for the last item only, as other just update dimensions
     removeViewAt(getChildCount() - 1);
+    // The removed tab no longer counts towards the cached widths (onMeasure checks them).
+    relayout();
     invalidate();
   }
 
