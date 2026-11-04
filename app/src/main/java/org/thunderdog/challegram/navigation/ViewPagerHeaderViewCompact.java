@@ -213,6 +213,9 @@ public class ViewPagerHeaderViewCompact extends FrameLayoutFix implements PagerH
         if (dx != 0 && dragging) {
           hasUserInteraction = true;
         }
+        if (dx != 0) {
+          getTopView().onScrolledHorizontally();
+        }
       }
     });
     recyclerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Size.getHeaderPortraitSize(), Gravity.TOP));

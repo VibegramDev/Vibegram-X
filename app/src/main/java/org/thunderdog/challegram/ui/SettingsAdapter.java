@@ -1923,6 +1923,8 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
             if (item.getData() instanceof TdlibAccount) {
               TdlibAccount account = (TdlibAccount) item.getData();
               avatarView.setUser(account);
+            } else if (item.getData() instanceof org.drinkless.tdlib.TdApi.Chat) {
+              avatarView.setChat(tdlib, (org.drinkless.tdlib.TdApi.Chat) item.getData());
             } else {
               Tdlib tdlib = this.tdlib;
               if (item.getData() instanceof Tdlib) {

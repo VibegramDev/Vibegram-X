@@ -1156,6 +1156,11 @@ public class MessagesLoader implements Client.ResultHandler {
             Log.ensureReturnType(TdApi.GetForumTopicHistory.class, TdApi.Messages.class);
             int forumTopicId = ((TdApi.MessageTopicForum) topicId).forumTopicId;
             function = new TdApi.GetForumTopicHistory(sourceChatId, forumTopicId, (lastFromMessageId = fromMessageId).getMessageId(), lastOffset = offset, lastLimit = limit);
+          } else if (topicId != null && topicId.getConstructor() == TdApi.MessageTopicDirectMessages.CONSTRUCTOR) {
+            loadingLocal = false;
+            Log.ensureReturnType(TdApi.GetDirectMessagesChatTopicHistory.class, TdApi.Messages.class);
+            long directMessagesChatTopicId = ((TdApi.MessageTopicDirectMessages) topicId).directMessagesChatTopicId;
+            function = new TdApi.GetDirectMessagesChatTopicHistory(sourceChatId, directMessagesChatTopicId, (lastFromMessageId = fromMessageId).getMessageId(), lastOffset = offset, lastLimit = limit);
           } else {
             Log.ensureReturnType(TdApi.GetChatHistory.class, TdApi.Messages.class);
             function = new TdApi.GetChatHistory(sourceChatId, (lastFromMessageId = fromMessageId).getMessageId(), lastOffset = offset, lastLimit = limit, loadingLocal);

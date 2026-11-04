@@ -440,6 +440,8 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   private final HashMap<String, TdApi.ForumTopicInfo> forumTopicInfos = new HashMap<>();
   private final HashMap<Long, Integer> forumUnreadTopicCounts = new HashMap<>();
   private final HashMap<Long, List<TdApi.ForumTopic>> forumTopicsCache = new HashMap<>();
+  /** Topics of administered channel direct messages chats (updateDirectMessagesChatTopic), by chat and topic id. */
+  private final HashMap<Long, HashMap<Long, TdApi.DirectMessagesChatTopic>> directMessagesChatTopics = new HashMap<>();
   private final HashMap<String, TdApi.ChatNotificationSettings> forumTopicNotificationSettings = new HashMap<>();
   /** Elapsed realtime of the last GetForumTopic made for a notification, by topic key. */
   private final HashMap<String, Long> forumTopicNotificationSettingsFetchTime = new HashMap<>();
@@ -8728,7 +8730,46 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
 
   @TdlibThread
   private void updateDirectMessagesChatTopic (TdApi.UpdateDirectMessagesChatTopic update) {
+    final TdApi.DirectMessagesChatTopic topic = update.topic;
+    synchronized (dataLock) {
+      HashMap<Long, TdApi.DirectMessagesChatTopic> topics = directMessagesChatTopics.get(topic.chatId);
+      if (topics == null) {
+        topics = new HashMap<>();
+        directMessagesChatTopics.put(topic.chatId, topics);
+      }
+      topics.put(topic.id, topic);
+    }
+    listeners.updateDirectMessagesChatTopic(update);
+  }
 
+  /** Known topics of a channel direct messages chat administered by the user, in the order of the topic list. */
+  public List<TdApi.DirectMessagesChatTopic> directMessagesChatTopics (long chatId) {
+    List<TdApi.DirectMessagesChatTopic> result = new ArrayList<>();
+    synchronized (dataLock) {
+      HashMap<Long, TdApi.DirectMessagesChatTopic> topics = directMessagesChatTopics.get(chatId);
+      if (topics != null) {
+        for (TdApi.DirectMessagesChatTopic topic : topics.values()) {
+          if (topic.order != 0) {
+            result.add(topic);
+          }
+        }
+      }
+    }
+    Collections.sort(result, (a, b) -> Long.compare(b.order, a.order));
+    return result;
+  }
+
+  public @Nullable TdApi.DirectMessagesChatTopic directMessagesChatTopic (long chatId, long topicId) {
+    synchronized (dataLock) {
+      HashMap<Long, TdApi.DirectMessagesChatTopic> topics = directMessagesChatTopics.get(chatId);
+      return topics != null ? topics.get(topicId) : null;
+    }
+  }
+
+  /** Channel direct messages chat administered by the user: messages are grouped into topics, one per sender. */
+  public boolean isAdministeredDirectMessagesChat (long chatId) {
+    TdApi.Supergroup supergroup = chatToSupergroup(chatId);
+    return supergroup != null && supergroup.isAdministeredDirectMessagesGroup;
   }
 
   @TdlibThread

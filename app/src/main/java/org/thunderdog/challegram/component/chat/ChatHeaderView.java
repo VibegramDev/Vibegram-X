@@ -213,6 +213,7 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
     this.lastChat = chat;
     this.lastThread = messageThread;
     this.lastForumTopic = forumTopic;
+    this.lastDirectMessagesTopic = null;
 
     // Clear previous topic emoji
     clearTopicEmoji();
@@ -286,6 +287,33 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
     }
   }
 
+  /**
+   * Topic of a channel direct messages chat: the sender's avatar and name, the chat title below
+   * (as a forum topic shows its name above the forum title).
+   */
+  public void setDirectMessagesTopic (Tdlib tdlib, TdApi.Chat chat, TdApi.DirectMessagesChatTopic topic) {
+    this.tdlib = tdlib;
+    this.lastChat = chat;
+    this.lastThread = null;
+    this.lastForumTopic = null;
+    this.lastDirectMessagesTopic = topic;
+    clearTopicEmoji();
+    getAvatarReceiver().requestMessageSender(tdlib, topic.senderId, AvatarReceiver.Options.FULL_SIZE);
+    setShowVerify(false);
+    setShowScam(false);
+    setShowFake(false);
+    setShowMute(tdlib.chatNeedsMuteIcon(chat));
+    setShowLock(false);
+    setSubtitleLoading(!isConnected() && connectionHasProgress());
+    setEmojiStatus(null);
+    setText(tdlib.senderName(topic.senderId), currentSubtitle());
+    setExpandedSubtitle(null);
+    setUseRedHighlight(false);
+    attachChatStatus(chat.id, new TdApi.MessageTopicDirectMessages(topic.id));
+  }
+
+  private @Nullable TdApi.DirectMessagesChatTopic lastDirectMessagesTopic;
+
   // Updates (new)
 
   private Tdlib tdlib;
@@ -297,7 +325,7 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
     if (StringUtils.isEmpty(forcedSubtitle)) {
       lastChat = chat;
       setSubtitle(currentSubtitle());
-      setExpandedSubtitle(isConnected() && lastThread == null && lastForumTopic == null ? tdlib.status().chatStatusExpanded(chat) : null);
+      setExpandedSubtitle(isConnected() && lastThread == null && lastForumTopic == null && lastDirectMessagesTopic == null ? tdlib.status().chatStatusExpanded(chat) : null);
     }
   }
 
@@ -318,7 +346,7 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
     if (!isConnected()) {
       return tdlib.connectionStateText();
     }
-    if (lastForumTopic != null && lastChat != null) {
+    if ((lastForumTopic != null || lastDirectMessagesTopic != null) && lastChat != null) {
       return tdlib.chatTitle(lastChat);
     }
     if (lastThread != null) {
@@ -333,7 +361,7 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
     }
     setSubtitleLoading(!isConnected() && connectionHasProgress());
     setSubtitle(currentSubtitle());
-    setExpandedSubtitle(isConnected() && lastThread == null && lastForumTopic == null ? tdlib.status().chatStatusExpanded(lastChat) : null);
+    setExpandedSubtitle(isConnected() && lastThread == null && lastForumTopic == null && lastDirectMessagesTopic == null ? tdlib.status().chatStatusExpanded(lastChat) : null);
   }
 
   private final GlobalConnectionListener connectionListener = new GlobalConnectionListener() {

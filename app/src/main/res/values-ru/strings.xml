@@ -12,6 +12,15 @@
   <string name="CenterTitles">Заголовки по центру</string>
   <string name="Attach">Прикрепить</string>
   <string name="SelectText">Выделить текст</string>
+  <string name="PersonalChannel">Канал</string>
+  <string name="PersonalChannelTitle">Личный канал</string>
+  <string name="PersonalChannelAdd">Добавить</string>
+  <string name="PersonalChannelHide">Не показывать канал</string>
+  <string name="PersonalChannelSelect">Выберите канал</string>
+  <string name="PersonalChannelCreate">Создать новый канал</string>
+  <string name="PersonalChannelSet">Канал добавлен в профиль</string>
+  <string name="PersonalChannelRemoved">Канал убран из профиля</string>
+  <string name="DirectMessagesAll">Все</string>
   <string name="QuoteSelection">Цитировать</string>
   <string name="NavigationStyle">Навигация</string>
   <string name="NavigationStyleRail">Боковая панель</string>

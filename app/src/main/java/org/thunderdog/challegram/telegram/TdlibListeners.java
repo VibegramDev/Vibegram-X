@@ -1353,6 +1353,14 @@ public class TdlibListeners {
     });
   }
 
+  // updateDirectMessagesChatTopic
+
+  void updateDirectMessagesChatTopic (TdApi.UpdateDirectMessagesChatTopic update) {
+    runChatUpdate(update.topic.chatId, listener -> {
+      listener.onDirectMessagesChatTopicUpdated(update.topic.chatId, update.topic);
+    });
+  }
+
   // updateChatPendingJoinRequests
 
   void updateChatPendingJoinRequests (TdApi.UpdateChatPendingJoinRequests update) {

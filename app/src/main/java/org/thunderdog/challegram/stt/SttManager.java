@@ -497,6 +497,20 @@ public final class SttManager {
     }
   }
 
+  // Videos
+
+  /** The transcription button over regular videos (Settings › Voice transcription). Rounds and voice keep theirs. */
+  public boolean isVideoTranscriptionEnabled () {
+    return prefs.getBoolean("video_button", true);
+  }
+
+  public void setVideoTranscriptionEnabled (boolean enabled) {
+    if (isVideoTranscriptionEnabled() != enabled) {
+      prefs.edit().putBoolean("video_button", enabled).apply();
+      notifyTranscription(null);
+    }
+  }
+
   public interface AudioPathProvider {
     /** Blocks until the file is available locally, returns its path or null. */
     @Nullable String awaitLocalPath () throws InterruptedException;

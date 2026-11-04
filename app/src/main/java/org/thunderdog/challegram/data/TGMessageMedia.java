@@ -24,6 +24,12 @@ import android.view.ViewParent;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.thunderdog.challegram.stt.SttManager;
+import org.thunderdog.challegram.ui.SettingsVoiceTranscriptionController;
+import org.thunderdog.challegram.tool.Drawables;
+import org.thunderdog.challegram.telegram.Tdlib;
+import android.graphics.drawable.Drawable;
+import me.vkryl.core.StringUtils;
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
@@ -53,7 +59,7 @@ import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.CancellableRunnable;
 import tgx.td.Td;
 
-public class TGMessageMedia extends TGMessage {
+public class TGMessageMedia extends TGMessage implements SttManager.TranscriptionListener {
   // private MediaWrapper mediaWrapper;
   private @Nullable TextWrapper wrapper;
 
@@ -161,6 +167,7 @@ public class TGMessageMedia extends TGMessage {
     }
     mosaicWrapper = new MosaicWrapper(wrapper, this);
     updateRounds();
+    checkSttKey();
     setCaption(caption, msg.id);
     checkCommonCaption();
     checkHasEditedMedia();
@@ -229,6 +236,10 @@ public class TGMessageMedia extends TGMessage {
 
   @Override
   protected void onMessageContainerDestroyed () {
+    if (sttListening) {
+      sttListening = false;
+      SttManager.instance().removeTranscriptionListener(this);
+    }
     mosaicWrapper.destroy();
     cancelScheduledHotOpening(null, false);
     closeHot(null, true, false);
@@ -308,7 +319,7 @@ public class TGMessageMedia extends TGMessage {
 
   @Override
   protected int getFooterPaddingTop () {
-    return Td.isEmpty(caption) ? Screen.dp(8f) : -Screen.dp(2f);
+    return Td.isEmpty(caption) && !hasSttBlock() ? Screen.dp(8f) : -Screen.dp(2f);
   }
 
   @Override
@@ -435,6 +446,11 @@ public class TGMessageMedia extends TGMessage {
     if (checkCommonCaption()) {
       changed |= FLAG_CHANGED_SIMPLY;
     }
+    String oldSttKey = sttKey;
+    checkSttKey();
+    if (!java.util.Objects.equals(oldSttKey, sttKey)) {
+      changed |= FLAG_CHANGED_SIMPLY;
+    }
 
     if (changed != 0) {
       rebuildContent();
@@ -498,6 +514,7 @@ public class TGMessageMedia extends TGMessage {
     if (wrapper != null) {
       wrapper.prepare(useBubbles() ? mosaicWrapper.getWidth() - xBubblePadding * 2 : getRealContentMaxWidth());
     }
+    buildSttText();
   }
 
   @Override
@@ -528,12 +545,15 @@ public class TGMessageMedia extends TGMessage {
     checkCommonCaption();
     checkHasEditedMedia();
     mosaicWrapper.addItem(createMediaWrapper(otherMessage), atBottom);
+    checkSttKey();
   }
 
   @Override
   protected void onMessageCombinationRemoved (TdApi.Message message, int index) {
     boolean useFullWidth = useFullWidth();
-    switch (mosaicWrapper.removeItem(message.id, index)) {
+    int result = mosaicWrapper.removeItem(message.id, index);
+    checkSttKey();
+    switch (result) {
       case MosaicWrapper.MOSAIC_CHANGED: {
         rebuildAndUpdateContent();
         break;
@@ -560,6 +580,10 @@ public class TGMessageMedia extends TGMessage {
 
   @Override
   protected int getBottomLineContentWidth () {
+    if (wrapper == null && hasSttBlock()) {
+      int lastLineWidth = sttStatusText != null ? sttStatusText.getWidth() : sttText != null ? sttText.getLastLineWidth() : 0;
+      return lastLineWidth + (xBubblePaddingSmall + xBubblePadding) * 2;
+    }
     return wrapper != null && Lang.rtl() == wrapper.getLastLineIsRtl() ? wrapper.getLastLineWidth() + (xBubblePaddingSmall + xBubblePadding) * 2 : BOTTOM_LINE_EXPAND_HEIGHT;
   }
 
@@ -570,7 +594,7 @@ public class TGMessageMedia extends TGMessage {
 
   @Override
   protected boolean drawBubbleTimeOverContent () {
-    return wrapper == null && !hasFooter();
+    return wrapper == null && !hasSttBlock() && !hasFooter();
   }
 
   @Override
@@ -583,9 +607,11 @@ public class TGMessageMedia extends TGMessage {
     final boolean clipped = useBubbles() && !useForward();
     final int saveCount = clipped ? ViewSupport.clipPath(c, getBubbleClipPath()) : Integer.MIN_VALUE;
     mosaicWrapper.draw(view, c, startX, startY, complexReceiver, useFullWidth());
+    drawVideoSttButton(c);
     if (clipped) {
       ViewSupport.restoreClipPath(c, saveCount);
     }
+    drawSttText(c, startY + mosaicWrapper.getHeight());
 
     if (timerText != null) {
       MediaWrapper mediaWrapper = mosaicWrapper.getSingularItem();
@@ -630,7 +656,7 @@ public class TGMessageMedia extends TGMessage {
 
     if (wrapper != null) {
       float alpha = getTranslationLoadingAlphaValue();
-      wrapper.draw(c, getTextX(view, wrapper, false), getTextX(view, wrapper, true), Config.MOVE_BUBBLE_TIME_RTL_TO_LEFT ? 0 : getBubbleTimePartWidth(), startY + mosaicWrapper.getHeight() + Screen.dp(TEXT_MARGIN), null, alpha, view.getTextMediaReceiver());
+      wrapper.draw(c, getTextX(view, wrapper, false), getTextX(view, wrapper, true), Config.MOVE_BUBBLE_TIME_RTL_TO_LEFT ? 0 : getBubbleTimePartWidth(), startY + mosaicWrapper.getHeight() + getSttBlockHeight() + Screen.dp(TEXT_MARGIN), null, alpha, view.getTextMediaReceiver());
     }
   }
 
@@ -807,7 +833,10 @@ public class TGMessageMedia extends TGMessage {
 
   @Override
   protected int getContentHeight () {
-    int mosaicHeight = mosaicWrapper != null ? mosaicWrapper.getHeight() : 0;
+    int mosaicHeight = (mosaicWrapper != null ? mosaicWrapper.getHeight() : 0) + getSttBlockHeight();
+    if (wrapper == null && hasSttBlock()) {
+      return mosaicHeight + (useBubbles() && !useForward() ? Screen.dp(TEXT_MARGIN) - getBubbleContentPadding() : 0);
+    }
     return wrapper == null ?
       mosaicHeight :
       mosaicHeight + wrapper.getHeight() + Screen.dp(TEXT_MARGIN) + (useBubbles() && !useForward() ? Screen.dp(TEXT_MARGIN) - getBubbleContentPadding() : 0);
@@ -827,6 +856,10 @@ public class TGMessageMedia extends TGMessage {
     int cellBottom = cellTop + mosaicWrapper.getHeight();
 
     if (wrapper != null && wrapper.onTouchEvent(view, e)) {
+      return true;
+    }
+
+    if (onSttTouchEvent(e)) {
       return true;
     }
 
@@ -986,5 +1019,295 @@ public class TGMessageMedia extends TGMessage {
     }
 
     return updated;
+  }
+
+  // Vibegram X: on-device transcription of the audio of a video (the button over the video, the text under it).
+
+  private static final float STT_BUTTON_SIZE = 28f, STT_BUTTON_MARGIN = 8f, STT_STATUS_ROW = 20f;
+  /** The whole audio track is decoded into memory (at the source rate first): keeps it within ~60 MB. */
+  private static final int STT_MAX_DURATION = 5 * 60;
+
+  private @Nullable String sttKey;
+  private boolean sttListening;
+  private @Nullable Text sttText, sttStatusText;
+  private @Nullable String sttTextSource, sttStatusSource;
+  private final RectF sttButtonRect = new RectF();
+  private boolean sttCaught;
+  private boolean sttInvalidatePending;
+  private long sttLastProgressUpdate;
+
+  private @Nullable TdApi.Video getSttVideo () {
+    if (mosaicWrapper == null || !mosaicWrapper.isSingular() || msg.content.getConstructor() != TdApi.MessageVideo.CONSTRUCTOR) {
+      return null;
+    }
+    return ((TdApi.MessageVideo) msg.content).video;
+  }
+
+  private void checkSttKey () {
+    TdApi.Video video = getSttVideo();
+    boolean canTranscribe = video != null && msg.chatId != 0 && !isHot() && !isSponsoredMessage();
+    if (canTranscribe && !sttListening) {
+      // The settings switch comes as a transcription update too.
+      sttListening = true;
+      SttManager.instance().addTranscriptionListener(this);
+    }
+    this.sttKey = canTranscribe && SttManager.instance().isVideoTranscriptionEnabled() ?
+      SttManager.key(video.video.id, video.video.remote != null ? video.video.remote.uniqueId : null) : null;
+  }
+
+  private boolean hasSttBlock () {
+    return sttText != null || sttStatusText != null;
+  }
+
+  private int getSttBlockHeight () {
+    int height = 0;
+    if (sttText != null) {
+      height += Screen.dp(TEXT_MARGIN) + sttText.getHeight();
+    }
+    if (sttStatusText != null) {
+      height += Screen.dp(TEXT_MARGIN) + Screen.dp(STT_STATUS_ROW);
+    }
+    return height;
+  }
+
+  private int getSttTextWidth () {
+    return mosaicWrapper == null ? 0 : useBubbles() ? mosaicWrapper.getWidth() - xBubblePadding * 2 : mosaicWrapper.getWidth();
+  }
+
+  private @Nullable String getSttDisplayText () {
+    if (sttKey == null) {
+      return null;
+    }
+    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
+    if (!t.expanded) {
+      return null;
+    }
+    switch (t.state) {
+      case SttManager.STATE_RUNNING:
+        return StringUtils.isEmpty(t.text) ? null : t.text;
+      case SttManager.STATE_DONE:
+        return StringUtils.isEmpty(t.text) ? Lang.getString(R.string.vg_SttEmpty) : t.text;
+      case SttManager.STATE_FAILED:
+        return Lang.getString(R.string.vg_SttFailed);
+    }
+    return null;
+  }
+
+  private @Nullable String getSttStatus () {
+    if (sttKey == null) {
+      return null;
+    }
+    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
+    if (!t.expanded || t.state != SttManager.STATE_RUNNING) {
+      return null;
+    }
+    float progress = t.getDisplayProgress();
+    if (progress < 0) {
+      return Lang.getString(R.string.vg_SttQueued);
+    }
+    if (t.preparing) {
+      return Lang.getString(R.string.vg_SttPreparing);
+    }
+    return Lang.getString(R.string.vg_SttProgress, (int) (progress * 100));
+  }
+
+  private void buildSttText () {
+    int width = getSttTextWidth();
+    String text = width > 0 ? getSttDisplayText() : null;
+    if (text == null) {
+      sttText = null;
+      sttTextSource = null;
+    } else if (sttText == null || !text.equals(sttTextSource) || sttText.getMaxWidth() != width) {
+      sttTextSource = text;
+      sttText = new Text.Builder(text, width, getTextStyleProvider(), getTextColorSet()).build();
+    }
+    String status = width > 0 ? getSttStatus() : null;
+    if (status == null) {
+      sttStatusText = null;
+      sttStatusSource = null;
+    } else if (sttStatusText == null || !status.equals(sttStatusSource) || sttStatusText.getMaxWidth() != width) {
+      sttStatusSource = status;
+      sttStatusText = new Text.Builder(status, width, getTextStyleProvider(), getDecentColorSet()).singleLine().build();
+    }
+  }
+
+  @Override
+  public void onTranscriptionStateChanged (String key) {
+    if (isDestroyed() || (key != null && (sttKey == null || !sttKey.equals(key)))) {
+      return;
+    }
+    String oldKey = sttKey;
+    int oldHeight = getSttBlockHeight();
+    checkSttKey();
+    buildSttText();
+    if (oldHeight != getSttBlockHeight() || !java.util.Objects.equals(oldKey, sttKey)) {
+      rebuildAndUpdateContent();
+    }
+    invalidate();
+  }
+
+  /** Refreshes the percentage twice a second while the transcription is running. */
+  private void updateSttProgressText () {
+    long now = SystemClock.uptimeMillis();
+    if (now - sttLastProgressUpdate < 500) {
+      return;
+    }
+    sttLastProgressUpdate = now;
+    String status = getSttStatus();
+    if (status != null && !status.equals(sttStatusSource)) {
+      UI.post(() -> onTranscriptionStateChanged(sttKey));
+    }
+  }
+
+  private void drawSttText (Canvas c, int top) {
+    if (!hasSttBlock()) {
+      return;
+    }
+    int x = useBubbles() ? (useForward() ? getContentX() : getContentX() + xBubblePadding) : getRealContentX();
+    if (sttText != null) {
+      top += Screen.dp(TEXT_MARGIN);
+      sttText.draw(c, x, x + sttText.getWidth(), 0, top);
+      top += sttText.getHeight();
+    }
+    if (sttStatusText != null) {
+      float cy = top + Screen.dp(TEXT_MARGIN) + Screen.dp(STT_STATUS_ROW) / 2f;
+      sttStatusText.draw(c, x, x + sttStatusText.getWidth(), 0, (int) (cy - sttStatusText.getHeight() / 2f));
+    }
+  }
+
+  /** Round button in the bottom left corner of the video: transcribe, stop, show or hide the text. */
+  private void drawVideoSttButton (Canvas c) {
+    MediaWrapper item = sttKey != null ? mosaicWrapper.getSingularItem() : null;
+    if (item == null) {
+      sttButtonRect.setEmpty();
+      return;
+    }
+    float radius = Screen.dp(STT_BUTTON_SIZE) / 2f;
+    float cx = item.getCellLeft() + Screen.dp(STT_BUTTON_MARGIN) + radius;
+    float cy = item.getCellBottom() - Screen.dp(STT_BUTTON_MARGIN) - radius;
+    sttButtonRect.set(cx - radius, cy - radius, cx + radius, cy + radius);
+    c.drawCircle(cx, cy, radius, Paints.fillingPaint(0x99000000));
+    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
+    if (t.state == SttManager.STATE_RUNNING) {
+      float r = Screen.dp(8f);
+      RectF arc = Paints.getRectF(cx - r, cy - r, cx + r, cy + r);
+      float progress = t.getDisplayProgress();
+      float angle = (SystemClock.uptimeMillis() % 1500L) / 1500f * 360f;
+      if (progress < 0) {
+        c.drawArc(arc, angle, 270f, false, Paints.getProgressPaint(0xffffffff, Screen.dp(2f)));
+      } else {
+        c.drawArc(arc, 0, 360f, false, Paints.getProgressPaint(0x40ffffff, Screen.dp(2f)));
+        c.drawArc(arc, angle - 90f, Math.max(36f, 360f * progress), false, Paints.getProgressPaint(0xffffffff, Screen.dp(2f)));
+      }
+      float half = Screen.dp(3f);
+      c.drawRect(cx - half, cy - half, cx + half, cy + half, Paints.fillingPaint(0xffffffff));
+      updateSttProgressText();
+      if (!sttInvalidatePending) {
+        // 30 frames per second are enough for the ring and leave the CPU to the recognition
+        sttInvalidatePending = true;
+        UI.post(() -> {
+          sttInvalidatePending = false;
+          invalidate();
+        }, 33);
+      }
+    } else {
+      boolean shown = t.expanded && (t.state == SttManager.STATE_DONE || t.state == SttManager.STATE_FAILED);
+      Drawable icon = Drawables.get(shown ? R.drawable.baseline_keyboard_arrow_up_24 : R.drawable.vg_speech_to_text_24);
+      c.save();
+      if (!shown) {
+        c.scale(.75f, .75f, cx, cy);
+      }
+      Drawables.drawCentered(c, icon, cx, cy, Paints.getPorterDuffPaint(0xffffffff));
+      c.restore();
+    }
+  }
+
+  private boolean onSttTouchEvent (MotionEvent e) {
+    if (sttKey == null) {
+      return false;
+    }
+    switch (e.getAction()) {
+      case MotionEvent.ACTION_DOWN: {
+        float slop = Screen.dp(6f);
+        sttCaught = !sttButtonRect.isEmpty() &&
+          e.getX() >= sttButtonRect.left - slop && e.getX() <= sttButtonRect.right + slop &&
+          e.getY() >= sttButtonRect.top - slop && e.getY() <= sttButtonRect.bottom + slop;
+        return sttCaught;
+      }
+      case MotionEvent.ACTION_UP: {
+        if (sttCaught) {
+          sttCaught = false;
+          onSttButtonClick();
+          performClickSoundFeedback();
+          return true;
+        }
+        break;
+      }
+      case MotionEvent.ACTION_CANCEL: {
+        if (sttCaught) {
+          sttCaught = false;
+          return true;
+        }
+        break;
+      }
+      default: {
+        return sttCaught;
+      }
+    }
+    return false;
+  }
+
+  private void onSttButtonClick () {
+    if (sttKey == null) {
+      return;
+    }
+    SttManager manager = SttManager.instance();
+    SttManager.Transcription t = manager.getTranscription(sttKey);
+    if (t.state == SttManager.STATE_RUNNING) {
+      manager.cancelTranscription(sttKey);
+      return;
+    }
+    if (t.state == SttManager.STATE_DONE || t.state == SttManager.STATE_FAILED) {
+      if (t.state == SttManager.STATE_FAILED && !t.expanded) {
+        startTranscription();
+      } else {
+        manager.setExpanded(sttKey, !t.expanded);
+      }
+      return;
+    }
+    startTranscription();
+  }
+
+  private void startTranscription () {
+    final TdApi.Video video = getSttVideo();
+    if (video == null || sttKey == null) {
+      return;
+    }
+    if (video.duration > STT_MAX_DURATION) {
+      UI.showToast(R.string.vg_SttVideoTooLong, android.widget.Toast.LENGTH_SHORT);
+      return;
+    }
+    final Tdlib tdlib = this.tdlib;
+    // The audio track is decoded right from the video file, which has to be downloaded first.
+    boolean started = SttManager.instance().transcribe(sttKey, () -> {
+      TdApi.File file = video.video;
+      if (file.local != null && file.local.isDownloadingCompleted && new java.io.File(file.local.path).exists()) {
+        return file.local.path;
+      }
+      final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+      final String[] path = new String[1];
+      tdlib.send(new TdApi.DownloadFile(file.id, 32, 0, 0, true), (result, error) -> {
+        if (result != null && result.local != null && result.local.isDownloadingCompleted) {
+          path[0] = result.local.path;
+        }
+        latch.countDown();
+      });
+      latch.await(5, java.util.concurrent.TimeUnit.MINUTES);
+      return path[0];
+    }, null);
+    if (!started) {
+      UI.showToast(R.string.vg_SttNoModel, android.widget.Toast.LENGTH_SHORT);
+      controller().navigateTo(new SettingsVoiceTranscriptionController(controller().context(), tdlib));
+    }
   }
 }
