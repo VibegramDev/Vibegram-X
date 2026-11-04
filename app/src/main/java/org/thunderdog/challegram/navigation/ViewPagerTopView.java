@@ -1065,11 +1065,9 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
   private void onUpdateItems () {
     for (Item item : items) {
-      if (item.avatarSender != null) {
-        long key = Td.getSenderId(item.avatarSender);
-        item.avatarReceiver = complexReceiver.getAvatarReceiver(key);
-        item.avatarReceiver.requestMessageSender(item.avatarTdlib, item.avatarSender, AvatarReceiver.Options.NONE);
-      }
+      // Avatars are requested when their tab is first drawn on screen: there can be hundreds of tabs
+      // (channel direct messages), and loading every photo up front is wasteful.
+      item.avatarReceiver = null;
       if (item.reaction != null) {
         TGReaction reaction = item.reaction;
         TGStickerObj stickerObj = reaction.centerAnimationSicker();
@@ -1081,13 +1079,46 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     }
   }
 
-  private static void drawItemAvatar (Canvas c, Item item, int left, int viewHeight) {
-    AvatarReceiver receiver = item.avatarReceiver;
-    if (receiver == null) {
+  private int visibleLeft, visibleRight;
+  private boolean hasPendingAvatars;
+
+  /** Tabs scrolled into view need their avatars: the header calls this on every horizontal scroll. */
+  public void onScrolledHorizontally () {
+    if (hasPendingAvatars) {
+      invalidate();
+    }
+  }
+
+  private void updateVisibleRange () {
+    View parent = getParent() instanceof View ? (View) getParent() : null;
+    if (parent != null && parent.getWidth() > 0) {
+      visibleLeft = -getLeft();
+      visibleRight = visibleLeft + parent.getWidth();
+    } else {
+      visibleLeft = 0;
+      visibleRight = Integer.MAX_VALUE;
+    }
+    hasPendingAvatars = false;
+  }
+
+  private void drawItemAvatar (Canvas c, Item item, int left, int viewHeight) {
+    if (item.avatarSender == null) {
       return;
     }
     int size = Screen.dp(ICON_SIZE);
     int top = viewHeight / 2 - size / 2;
+    if (left + size < visibleLeft || left > visibleRight) {
+      // Off screen: not drawn and not requested yet, the scroll redraws the view (see hasPendingAvatars)
+      if (item.avatarReceiver == null) {
+        hasPendingAvatars = true;
+      }
+      return;
+    }
+    AvatarReceiver receiver = item.avatarReceiver;
+    if (receiver == null) {
+      receiver = item.avatarReceiver = complexReceiver.getAvatarReceiver(Td.getSenderId(item.avatarSender));
+      receiver.requestMessageSender(item.avatarTdlib, item.avatarSender, AvatarReceiver.Options.NONE);
+    }
     receiver.setBounds(left, top, left + size, top + size);
     if (receiver.needPlaceholder()) {
       receiver.drawPlaceholder(c);
@@ -1428,6 +1459,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       int cx = rtl ? totalWidth : 0;
       int itemIndex = 0;
       int itemCount = items.size();
+      updateVisibleRange();
       for (int i = 0; i < itemCount; i++) {
         Item item = items.get(i);
         boolean hasTranslate = item.translationX != 0;
@@ -1475,7 +1507,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
             float backgroundAlpha = counterAlphaProvider.getBackgroundAlpha(item.counter, alphaFactor);
             if (item.hasLabel()) {
               int stringX;
-              if (item.avatarReceiver != null) {
+              if (item.avatarSender != null) {
                 drawItemAvatar(c, item, cx + horizontalPadding, viewHeight);
                 stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
               } else if (item.iconRes != 0) {
@@ -1511,7 +1543,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
             }
           } else if (item.hasLabel()) {
             int stringX;
-            if (item.avatarReceiver != null) {
+            if (item.avatarSender != null) {
               drawItemAvatar(c, item, cx + horizontalPadding, viewHeight);
               stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
             } else if (item.iconRes != 0) {

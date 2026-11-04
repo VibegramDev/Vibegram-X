@@ -75,6 +75,9 @@ public class DirectMessagesTabsController extends ViewPagerController<DirectMess
     super.setArguments(args);
     this.chat = args.chat;
     this.chatId = args.chat.id;
+    // Before the pager gets its adapter: changing the count later without notifying it crashes ViewPager.
+    topics.clear();
+    topics.addAll(tdlib.directMessagesChatTopics(chatId));
   }
 
   @Override
@@ -114,7 +117,6 @@ public class DirectMessagesTabsController extends ViewPagerController<DirectMess
 
   @Override
   protected void onCreateView (Context context, FrameLayoutFix contentView, ViewPager pager) {
-    topics.addAll(tdlib.directMessagesChatTopics(chatId));
     tdlib.listeners().subscribeToChatUpdates(chatId, this);
     DirectMessagesTopicsController.loadTopics(tdlib, chatId);
   }
@@ -127,13 +129,25 @@ public class DirectMessagesTabsController extends ViewPagerController<DirectMess
 
   // Topics
 
+  private boolean topicsUpdatePending;
+
+  /** Topics come one update each (hundreds while loading): the tabs are rebuilt at most every 300 ms. */
   @Override
   public void onDirectMessagesChatTopicUpdated (long chatId, TdApi.DirectMessagesChatTopic topic) {
     runOnUiThreadOptional(() -> {
-      List<TdApi.DirectMessagesChatTopic> newTopics = tdlib.directMessagesChatTopics(chatId);
-      topics.clear();
-      topics.addAll(newTopics);
-      notifyPagerItemPositionsChanged();
+      if (topicsUpdatePending) {
+        return;
+      }
+      topicsUpdatePending = true;
+      runOnUiThreadOptional(() -> {
+        topicsUpdatePending = false;
+        if (isDestroyed()) {
+          return;
+        }
+        topics.clear();
+        topics.addAll(tdlib.directMessagesChatTopics(this.chatId));
+        notifyPagerItemPositionsChanged();
+      }, null, 300);
     });
   }
 

@@ -139,7 +139,7 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
           // Local only: creates the chat object for the row, nothing is sent to the user.
           tdlib.send(new TdApi.CreatePrivateChat(userId, true), (result, error) -> {
             if (result != null) {
-              runOnUiThreadOptional(this::buildRows);
+              onDirectMessagesChatTopicUpdated(chatId, null);
             }
           });
         }
@@ -187,9 +187,23 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
     }
   }
 
+  private boolean rowsUpdatePending;
+
+  /** Topics come one update each (hundreds while loading): the list is rebuilt at most every 300 ms. */
   @Override
   public void onDirectMessagesChatTopicUpdated (long chatId, TdApi.DirectMessagesChatTopic topic) {
-    runOnUiThreadOptional(this::buildRows);
+    runOnUiThreadOptional(() -> {
+      if (rowsUpdatePending) {
+        return;
+      }
+      rowsUpdatePending = true;
+      runOnUiThreadOptional(() -> {
+        rowsUpdatePending = false;
+        if (!isDestroyed()) {
+          buildRows();
+        }
+      }, null, 300);
+    });
   }
 
   @Override
