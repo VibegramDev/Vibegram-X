@@ -714,7 +714,8 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
 
   public boolean updateForumUnreadTopicCount (long chatId) {
     if (chat.id == chatId && tdlib.isForum(chatId)) {
-      setCounter(true);
+      // Through the batched layout of changes, like the other counters: at most once in CHAT_CHANGES_INTERVAL_MS
+      postChanges(CHANGE_COUNTER);
       return true;
     }
     return false;
