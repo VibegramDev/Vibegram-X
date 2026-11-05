@@ -188,10 +188,6 @@ public class Settings {
   private static final int VERSION_48 = 48; // Force strong sensor, if user has it.
   private static final int VERSION = VERSION_48;
 
-  // Vibegram: versions of its own upgrades of settings (KEY_VG_VERSION), see upgradeVibegramPmc.
-  private static final int VG_VERSION_1 = 1; // "Hide keyboard on chat scroll" on by default
-  private static final int VG_VERSION = VG_VERSION_1;
-
   private static final AtomicBoolean hasInstance = new AtomicBoolean(false);
   private static volatile Settings instance;
 
@@ -209,7 +205,6 @@ public class Settings {
   }
 
   private static final String KEY_VERSION = "version";
-  private static final String KEY_VG_VERSION = "vg_settings_version";
   private static final String KEY_FEATURES = "features";
   private static final String KEY_FEATURES_ADDED_NOTIFICATIONS = "features_new";
   private static final String KEY_FEATURES_REMOVED_NOTIFICATIONS = "features_gone";
@@ -903,14 +898,6 @@ public class Settings {
       SharedPreferences.Editor editor = pmc.edit();
       upgradePmc(pmc, editor, version);
       editor.putInt(KEY_VERSION, version);
-      editor.apply();
-    }
-    // Vibegram: own upgrades, counted apart from VERSION, so that a merge of Telegram X never skips one of its own.
-    int vgVersion = Math.min(pmc.getInt(KEY_VG_VERSION, 0), VG_VERSION);
-    for (int version = vgVersion + 1; version <= VG_VERSION; version++) {
-      SharedPreferences.Editor editor = pmc.edit();
-      upgradeVibegramPmc(pmc, editor, version);
-      editor.putInt(KEY_VG_VERSION, version);
       editor.apply();
     }
     /*if (BuildConfig.DEBUG) {
@@ -2357,17 +2344,6 @@ public class Settings {
             pmc.putInt(Passcode.KEY_PASSCODE_BIOMETRICS_OPTIONS, BitwiseUtils.optional(Passcode.BIOMETRICS_OPTION_ONLY_STRONG, strongEnrolled));
           }
         }
-        break;
-      }
-    }
-  }
-
-  /** Vibegram: upgrades of settings of its own, numbered by {@link #VG_VERSION}. */
-  private void upgradeVibegramPmc (LevelDB pmc, SharedPreferences.Editor editor, int version) {
-    switch (version) {
-      case VG_VERSION_1: {
-        // Off by default upstream: turn it on once for installations made before the new default, too.
-        resetOtherFlag(pmc, editor, FLAG_OTHER_HIDE_CHAT_KEYBOARD, true);
         break;
       }
     }
