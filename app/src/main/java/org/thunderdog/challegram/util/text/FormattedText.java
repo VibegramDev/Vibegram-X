@@ -454,7 +454,7 @@ public class FormattedText {
       case TdApi.RichTextDiff.CONSTRUCTOR: {
         TdApi.RichTextDiff textDiff = (TdApi.RichTextDiff) in;
         // TODO textDiff.oldText
-        parseRichText(context, textDiff.text, out, entities, offset, flags, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, textDiff.text, out, entities, offset, flags, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextIcon.CONSTRUCTOR: {
@@ -481,110 +481,110 @@ public class FormattedText {
         break;
       }
       case TdApi.RichTextBold.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextBold) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_BOLD, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextBold) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_BOLD, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextItalic.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextItalic) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_ITALIC, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextItalic) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_ITALIC, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextUnderline.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextUnderline) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_UNDERLINE, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextUnderline) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_UNDERLINE, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextFixed.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextFixed) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_MONOSPACE, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextFixed) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_MONOSPACE, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextStrikethrough.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextStrikethrough) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_STRIKETHROUGH, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextStrikethrough) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_STRIKETHROUGH, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextSubscript.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextSubscript) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_SUBSCRIPT, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextSubscript) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_SUBSCRIPT, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextSuperscript.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextSuperscript) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_SUPERSCRIPT, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextSuperscript) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_SUPERSCRIPT, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextMarked.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextMarked) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_MARKED, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextMarked) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_MARKED, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextSpoiler.CONSTRUCTOR: {
-        parseRichText(context, ((TdApi.RichTextSpoiler) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_SPOILER, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+        parseRichText(context, ((TdApi.RichTextSpoiler) in).text, out, entities, offset, flags | TextEntityCustom.FLAG_SPOILER, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextPhoneNumber.CONSTRUCTOR: {
         TdApi.RichTextPhoneNumber phoneNumber = (TdApi.RichTextPhoneNumber) in;
-        parseRichText(context, phoneNumber.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_PHONE_NUMBER, phoneNumber.phoneNumber, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, phoneNumber.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_PHONE_NUMBER, phoneNumber.phoneNumber, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextBankCardNumber.CONSTRUCTOR: {
         TdApi.RichTextBankCardNumber bankCardNumber = (TdApi.RichTextBankCardNumber) in;
-        parseRichText(context, bankCardNumber.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_BANK_CARD_NUMBER, bankCardNumber.bankCardNumber, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, bankCardNumber.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_BANK_CARD_NUMBER, bankCardNumber.bankCardNumber, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextTonAddress.CONSTRUCTOR: {
         TdApi.RichTextTonAddress tonAddress = (TdApi.RichTextTonAddress) in;
-        parseRichText(context, tonAddress.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_TON_ADDRESS, tonAddress.address, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, tonAddress.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_TON_ADDRESS, tonAddress.address, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextBotCommand.CONSTRUCTOR: {
         TdApi.RichTextBotCommand botCommand = (TdApi.RichTextBotCommand) in;
-        parseRichText(context, botCommand.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_BOT_COMMAND, botCommand.botCommand, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, botCommand.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_BOT_COMMAND, botCommand.botCommand, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextCashtag.CONSTRUCTOR: {
         TdApi.RichTextCashtag cashtag = (TdApi.RichTextCashtag) in;
-        parseRichText(context, cashtag.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_CASHTAG, cashtag.cashtag, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, cashtag.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_CASHTAG, cashtag.cashtag, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextDateTime.CONSTRUCTOR: {
         TdApi.RichTextDateTime dateTime = (TdApi.RichTextDateTime) in;
-        parseRichText(context, dateTime.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_DATE_TIME, Integer.toString(dateTime.unixTime), linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, dateTime.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_DATE_TIME, Integer.toString(dateTime.unixTime), linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextHashtag.CONSTRUCTOR: {
         TdApi.RichTextHashtag dateTime = (TdApi.RichTextHashtag) in;
-        parseRichText(context, dateTime.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_HASHTAG, dateTime.hashtag, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, dateTime.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_HASHTAG, dateTime.hashtag, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextMention.CONSTRUCTOR: {
         TdApi.RichTextMention mention = (TdApi.RichTextMention) in;
-        parseRichText(context, mention.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_MENTION, mention.username, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, mention.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_MENTION, mention.username, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextMentionName.CONSTRUCTOR: {
         TdApi.RichTextMentionName mention = (TdApi.RichTextMentionName) in;
-        parseRichText(context, mention.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_MENTION_NAME, Long.toString(mention.userId), linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, mention.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_MENTION_NAME, Long.toString(mention.userId), linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextEmailAddress.CONSTRUCTOR: {
         TdApi.RichTextEmailAddress email = (TdApi.RichTextEmailAddress) in;
-        parseRichText(context, email.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_EMAIL, email.emailAddress, linkCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, email.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_EMAIL, email.emailAddress, linkCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextUrl.CONSTRUCTOR: {
         TdApi.RichTextUrl url = (TdApi.RichTextUrl) in;
-        parseRichText(context, url.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_URL, url.url, url.isCached, referenceAnchorName, null, openParameters);
+        parseRichText(context, url.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_URL, url.url, url.isCached, referenceAnchorName, null, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextAnchorLink.CONSTRUCTOR: {
         TdApi.RichTextAnchorLink anchorLink = (TdApi.RichTextAnchorLink) in;
-        parseRichText(context, anchorLink.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_ANCHOR, anchorLink.anchorName, false, referenceAnchorName, anchorLink.url, openParameters);
+        parseRichText(context, anchorLink.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_ANCHOR, anchorLink.anchorName, false, referenceAnchorName, anchorLink.url, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTextReferenceLink.CONSTRUCTOR: {
         TdApi.RichTextReferenceLink reference = (TdApi.RichTextReferenceLink) in;
-        parseRichText(context, reference.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_REFERENCE, null, false, reference.referenceName, reference.url, openParameters);
+        parseRichText(context, reference.text, out, entities, offset, flags | TextEntityCustom.FLAG_CLICKABLE, linkOffset, new int[1], TextEntityCustom.LINK_TYPE_REFERENCE, null, false, reference.referenceName, reference.url, openParameters, inlineButton);
         break;
       }
       case TdApi.RichTexts.CONSTRUCTOR: {
         TdApi.RichTexts texts = (TdApi.RichTexts) in;
         for (TdApi.RichText concatenatedText : texts.texts) {
-          parseRichText(context, concatenatedText, out, entities, offset, flags, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters);
+          parseRichText(context, concatenatedText, out, entities, offset, flags, linkOffset, linkLength, linkType, link, linkCached, referenceAnchorName, copyLink, openParameters, inlineButton);
         }
         break;
       }

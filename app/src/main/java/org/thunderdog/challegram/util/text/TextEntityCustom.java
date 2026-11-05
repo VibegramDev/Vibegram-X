@@ -182,6 +182,9 @@ public class TextEntityCustom extends TextEntity {
     if (mathematicalExpression != null) {
       copy.setMathematicalExpression(mathematicalExpression);
     }
+    if (button != null) {
+      copy.setButton(button);
+    }
     return copy;
   }
 
@@ -193,6 +196,8 @@ public class TextEntityCustom extends TextEntity {
     if (customColorSet != null) {
       colorSet = customColorSet;
     } else if (linkType == LINK_TYPE_REFERENCE) {
+      colorSet = TextColorSets.InstantView.REFERENCE;
+    } else if (linkType == LINK_TYPE_BUTTON && (button == null || button.style == null)) {
       colorSet = TextColorSets.InstantView.REFERENCE;
     } else if (linkType == LINK_TYPE_BUTTON) {
       // TODO: similar to TextColorSets.InstantView.REFERENCE
@@ -422,7 +427,7 @@ public class TextEntityCustom extends TextEntity {
         break;
       }
       case LINK_TYPE_BUTTON: {
-        if (callback == null || !(callback.onButtonClick(view, button, this.openParameters(view, text, part, isFromLongPressMenu)))) {
+        if (button == null || callback == null || !(callback.onButtonClick(view, button, this.openParameters(view, text, part, isFromLongPressMenu)))) {
           // TODO
         }
         break;
