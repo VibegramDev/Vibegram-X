@@ -33,6 +33,7 @@ import org.thunderdog.challegram.telegram.TGLegacyManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.ThemeInvalidateListener;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -51,7 +52,7 @@ import me.vkryl.core.lambda.Destroyable;
  * emphasized) with the emoji status and a "phone • @username" line (body medium, onSurfaceVariant), centered.
  * The block sits on the page color (no container); both the avatar and the button open the existing profile photo menu.
  */
-public class M3SettingsProfileView extends FrameLayoutFix implements AttachDelegate, Destroyable, TGLegacyManager.EmojiLoadListener {
+public class M3SettingsProfileView extends FrameLayoutFix implements AttachDelegate, Destroyable, TGLegacyManager.EmojiLoadListener, ThemeInvalidateListener {
   public static final float AVATAR_SIZE = 96f;
   private static final float PADDING_TOP = 8f, NAME_TOP = PADDING_TOP + AVATAR_SIZE + 16f, NAME_HEIGHT = 32f,
     SUBTITLE_HEIGHT = 20f, PADDING_BOTTOM = 16f, BUTTON_SIZE = 40f, BUTTON_RING = 3f, TEXT_PADDING = 24f;
@@ -110,10 +111,6 @@ public class M3SettingsProfileView extends FrameLayoutFix implements AttachDeleg
     emojiStatusHelper.setClickListener(listener);
   }
 
-  public View getPhotoAnchorView () {
-    return cameraButton;
-  }
-
   public int getEmojiStatusLastDrawX () {
     return emojiStatusHelper.getLastDrawX();
   }
@@ -143,6 +140,13 @@ public class M3SettingsProfileView extends FrameLayoutFix implements AttachDeleg
   @Override
   public void onEmojiUpdated (boolean isPackSwitch) {
     invalidate();
+  }
+
+  @Override
+  public void onThemeInvalidate (boolean isTempUpdate) {
+    invalidate();
+    avatarView.invalidate();
+    cameraButton.invalidate();
   }
 
   @Override
@@ -213,6 +217,7 @@ public class M3SettingsProfileView extends FrameLayoutFix implements AttachDeleg
 
   @Override
   public void performDestroy () {
+    TGLegacyManager.instance().removeEmojiListener(this);
     avatarView.receiver.destroy();
     emojiStatusHelper.performDestroy();
   }

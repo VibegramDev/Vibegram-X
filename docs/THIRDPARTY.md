@@ -39,10 +39,21 @@
 * [Diff-Match-Patch](http://code.google.com/p/google-diff-match-patch/): [source code](/app/src/main/java/org/thunderdog/challegram/core/DiffMatchPatch.java)
 * [RTL View Pager](https://github.com/diego-gomez-olvera/RtlViewPager): [source code](/app/src/main/java/org/thunderdog/challegram/widget/rtl/RtlViewPager.java)
 * [svg-android](https://github.com/japgolly/svg-android): [source code](/app/src/main/java/org/thunderdog/challegram/loader/svg)
-## Telegram-Monet
 
-The Material You color mapping used by the built-in "Monet" themes (`app/src/main/assets/monet/`) is adapted from
-[Telegram-Monet](https://github.com/mi-g-alex/Telegram-Monet) by mi-g-alex et al., licensed under EPL-2.0.
+## Speech recognition
+
+Voice messages are transcribed on the device. The native libraries are prebuilt and committed to
+`app/src/main/jniLibs/arm64-v8a/`; [README](/app/src/main/jniLibs/README.md) lists versions, sources and checksums.
+
+* [whisper.cpp](https://github.com/ggml-org/whisper.cpp) v1.9.5 with [ggml](https://github.com/ggml-org/ggml), licensed under
+  [MIT](https://github.com/ggml-org/whisper.cpp/blob/v1.9.5/LICENSE): statically linked into `libvgwhisper.so`,
+  `libvgwhisper_v82.so` and `libvgwhisper_v86.so`. The JNI bridge is [our code](/app/jni/vgwhisper), built by
+  [scripts/stt/build_vgwhisper.sh](/scripts/stt/build_vgwhisper.sh).
+* [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) v2.0.1, licensed under
+  [Apache-2.0](https://github.com/k2-fsa/sherpa-onnx/blob/v2.0.1/LICENSE): `libsherpa-onnx-jni.so` from the official release
+  and the Kotlin API ([source code](/app/src/main/kotlin/com/k2fsa/sherpa/onnx)).
+* [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.28.2, licensed under
+  [MIT](https://github.com/microsoft/onnxruntime/blob/main/LICENSE): `libonnxruntime.so`, shipped with the sherpa-onnx release.
 
 ## Telegram for Android (WEB proxy)
 

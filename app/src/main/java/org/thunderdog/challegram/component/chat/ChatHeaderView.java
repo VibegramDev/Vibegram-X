@@ -153,6 +153,26 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
     }
   }
 
+  private static String topicLetter (TdApi.ForumTopicInfo info) {
+    if (info.isGeneral) {
+      return "#";
+    }
+    if (StringUtils.isEmpty(info.name)) {
+      return "?";
+    }
+    // The whole first code point: substring(0, 1) splits surrogate pairs
+    return info.name.substring(0, Character.charCount(info.name.codePointAt(0))).toUpperCase();
+  }
+
+  @Override
+  public void performDestroy () {
+    super.performDestroy();
+    clearTopicEmoji();
+    if (topicIconReceiver != null) {
+      topicIconReceiver.performDestroy();
+    }
+  }
+
   private void clearTopicEmoji () {
     if (topicCustomEmojiId != 0 && topicCustomEmoji == null && tdlib != null) {
       tdlib.emoji().forgetWatcher(topicCustomEmojiId, this);
@@ -232,28 +252,16 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
         topicColor = 0xFF000000 | topicColor;
       }
 
-      // Check if topic has custom emoji icon
       if (icon != null && icon.customEmojiId != 0) {
-        // Request custom emoji
         topicCustomEmojiId = icon.customEmojiId;
         topicCustomEmoji = tdlib.emoji().findOrPostponeRequest(topicCustomEmojiId, this);
         if (topicCustomEmoji != null) {
           loadTopicEmojiFiles();
         }
-        // Use placeholder while loading or as fallback
-        String letter = forumTopic.info.forumTopicId == 1 ? "#" :
-          (!StringUtils.isEmpty(forumTopic.info.name) ? forumTopic.info.name.substring(0, 1).toUpperCase() : "?");
-        TdlibAccentColor accentColor = new TdlibAccentColor(topicColor);
-        AvatarPlaceholder.Metadata metadata = new AvatarPlaceholder.Metadata(accentColor, new Letters(letter));
-        getAvatarReceiver().requestPlaceholder(tdlib, metadata, AvatarReceiver.Options.FULL_SIZE);
-      } else {
-        // No custom emoji - show colored placeholder with letter/hash
-        String letter = forumTopic.info.forumTopicId == 1 ? "#" :
-          (!StringUtils.isEmpty(forumTopic.info.name) ? forumTopic.info.name.substring(0, 1).toUpperCase() : "?");
-        TdlibAccentColor accentColor = new TdlibAccentColor(topicColor);
-        AvatarPlaceholder.Metadata metadata = new AvatarPlaceholder.Metadata(accentColor, new Letters(letter));
-        getAvatarReceiver().requestPlaceholder(tdlib, metadata, AvatarReceiver.Options.FULL_SIZE);
       }
+      // Colored letter: the icon without a custom emoji, or a placeholder while the emoji loads
+      AvatarPlaceholder.Metadata metadata = new AvatarPlaceholder.Metadata(new TdlibAccentColor(topicColor), new Letters(topicLetter(forumTopic.info)));
+      getAvatarReceiver().requestPlaceholder(tdlib, metadata, AvatarReceiver.Options.FULL_SIZE);
     } else {
       getAvatarReceiver().requestChat(tdlib, chat.id, AvatarReceiver.Options.FULL_SIZE);
     }

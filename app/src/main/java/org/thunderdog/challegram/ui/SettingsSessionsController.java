@@ -354,7 +354,6 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
     if (getArguments() == null) {
       requestActiveSessions();
     }
-    requestConnectedWebsites();
 
     adapter.setSegmented();
 
@@ -437,7 +436,7 @@ public class SettingsSessionsController extends RecyclerViewController<Void> imp
   @Override
   public void onFocus () {
     super.onFocus();
-    // The count changes after disconnecting websites on their screen
+    // Also the first load: the count changes after disconnecting websites on their screen.
     requestConnectedWebsites();
   }
 

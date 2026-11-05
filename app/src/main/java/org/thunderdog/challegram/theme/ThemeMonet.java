@@ -20,54 +20,77 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.Log;
+import org.thunderdog.challegram.core.Background;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 
 /**
  * Built-in Material You ("Monet") theme.
  *
- * Colors are described by an asset template (assets/monet/*.monet) that refers to the tonal
- * palettes of the device, so the theme follows the system wallpaper colors. Everything the template
+ * Colors are described by asset templates (assets/monet/*.monet) in terms of Material 3 color roles and tonal palette
+ * tones of the device ({@link MonetPalette}), so the theme follows the system wallpaper colors. Everything a template
  * does not define (and all properties) comes from the statically baked theme with the same id.
+ *
+ * Templates are read and parsed once per process, off the UI thread when {@link #preload} runs early enough; a theme
+ * built before that waits for the same single load. A palette change only re-resolves the parsed values.
  */
 public final class ThemeMonet implements ThemeDelegate {
-  private static final Pattern MIX = Pattern.compile("^mix\\((.+),(.+),(\\d+)\\)$");
-  /** sys(role,fallback): Android 14+ system color role (android.R.color.system_<role>), fallback for older systems. */
-  private static final Pattern SYS = Pattern.compile("^sys\\((\\w+),(.+)\\)$");
-  private static final Pattern ALPHA = Pattern.compile("^[0-9A-Fa-f]{2}$");
+  static final String[] TEMPLATE_NAMES = {"white", "dark", "black"};
 
-  private static Map<String, Integer> colorIdsByName;
+  private static volatile Context loaderContext;
+  /** Reads and parses all templates exactly once: on {@link #preload}'s thread or on the first theme's thread. */
+  private static final FutureTask<Map<String, Template>> TEMPLATES = new FutureTask<>(ThemeMonet::loadTemplates);
 
   private final ThemeDelegate base;
   private final int[] colors = new int[ThemeColors.COUNT + 1];
   private final boolean[] hasColor = new boolean[ThemeColors.COUNT + 1];
+  /** Color roles of this theme (Material 3 scheme of the device), see {@link M3.Roles}. */
+  private final M3.Roles roles = new M3.Roles(true);
 
   public ThemeMonet (@NonNull ThemeDelegate base, @NonNull String template, @Nullable Context context) {
     this.base = base;
-    final int[][] palette = MonetPalette.get(context);
-    final Map<String, String> values = loadTemplate(context, template);
-    final Map<String, Integer> ids = colorIds();
-    for (Map.Entry<String, String> entry : values.entrySet()) {
-      Integer colorId = ids.get(entry.getKey());
-      if (colorId == null) {
-        Log.w("Unknown color in Monet template %s: %s", template, entry.getKey());
-        continue;
-      }
-      try {
-        colors[colorId] = resolve(entry.getValue(), palette);
-        hasColor[colorId] = true;
-      } catch (IllegalArgumentException e) {
-        Log.w("Bad value in Monet template %s: %s: %s", template, entry.getKey(), entry.getValue());
-      }
+    if (context == null) {
+      return;
     }
+    final boolean dark = base.isDark();
+    final int[] scheme = MonetPalette.scheme(context, dark, base.getId() == ThemeId.MONET_BLACK);
+    final int[][] palette = MonetPalette.palette(context);
+    final Template parsed = template(context, template);
+    if (parsed == null) {
+      return;
+    }
+    for (int i = 0; i < parsed.colorIds.length; i++) {
+      int colorId = parsed.colorIds[i];
+      colors[colorId] = parsed.values[i].resolve(scheme, palette);
+      hasColor[colorId] = true;
+    }
+  }
+
+  /**
+   * Starts reading the templates and the system scheme on a background thread. Safe to call more than once and from
+   * any thread; themes built meanwhile wait for this load instead of starting their own.
+   */
+  public static void preload (@Nullable Context context) {
+    if (context == null) {
+      return;
+    }
+    if (loaderContext == null) {
+      loaderContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+    }
+    final Context appContext = loaderContext;
+    Background.instance().post(() -> {
+      TEMPLATES.run();
+      MonetPalette.palette(appContext);
+    });
   }
 
   @Override
@@ -82,9 +105,6 @@ public final class ThemeMonet implements ThemeDelegate {
     }
     return base.getRawColor(colorId);
   }
-
-  /** System dynamic color roles on Android 14+, see {@link M3.Roles}. */
-  private final M3.Roles roles = new M3.Roles(true);
 
   @Override
   public int getRoleColor (int role) {
@@ -113,22 +133,68 @@ public final class ThemeMonet implements ThemeDelegate {
 
   // Templates
 
-  private static synchronized Map<String, Integer> colorIds () {
-    if (colorIdsByName == null) {
-      Map<String, Integer> map = new HashMap<>(ThemeColors.COUNT * 2);
-      for (int colorId = 1; colorId <= ThemeColors.COUNT; colorId++) {
-        map.put(ThemeColors.getName(colorId), colorId);
-      }
-      colorIdsByName = map;
-    }
-    return colorIdsByName;
+  private interface Value {
+    /** @param scheme roles of the scheme, {@link MonetPalette#scheme} */
+    @ColorInt int resolve (int[] scheme, int[][] palette);
   }
 
-  private static Map<String, String> loadTemplate (@Nullable Context context, String name) {
-    Map<String, String> values = new LinkedHashMap<>();
-    if (context == null) {
-      return values;
+  private static final class Template {
+    final int[] colorIds;
+    final Value[] values;
+
+    Template (int[] colorIds, Value[] values) {
+      this.colorIds = colorIds;
+      this.values = values;
     }
+  }
+
+  private static @Nullable Template template (@NonNull Context context, String name) {
+    if (loaderContext == null) {
+      loaderContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
+    }
+    // FutureTask runs its body at most once: if preload() is already loading, run() returns at once and get() waits.
+    TEMPLATES.run();
+    try {
+      return TEMPLATES.get().get(name);
+    } catch (ExecutionException e) {
+      Log.e("Cannot load Monet templates", e.getCause());
+      return null;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return null;
+    }
+  }
+
+  private static Map<String, Template> loadTemplates () {
+    final Context context = loaderContext;
+    final Map<String, Integer> ids = ThemeColors.getMap();
+    final Map<String, Template> templates = new HashMap<>();
+    for (String name : TEMPLATE_NAMES) {
+      final Map<String, String> source = new LinkedHashMap<>();
+      loadTemplate(context, name, source);
+      final int[] colorIds = new int[source.size()];
+      final Value[] values = new Value[source.size()];
+      int count = 0;
+      for (Map.Entry<String, String> entry : source.entrySet()) {
+        Integer colorId = ids.get(entry.getKey());
+        if (colorId == null) {
+          Log.w("Unknown color in Monet template %s: %s", name, entry.getKey());
+          continue;
+        }
+        try {
+          values[count] = parse(entry.getValue());
+          colorIds[count] = colorId;
+          count++;
+        } catch (IllegalArgumentException e) {
+          Log.w("Bad value in Monet template %s: %s: %s", name, entry.getKey(), entry.getValue());
+        }
+      }
+      templates.put(name, new Template(Arrays.copyOf(colorIds, count), Arrays.copyOf(values, count)));
+    }
+    return templates;
+  }
+
+  private static void loadTemplate (@NonNull Context context, String name, Map<String, String> out) {
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(context.getAssets().open("monet/" + name + ".monet"), StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
@@ -143,87 +209,115 @@ public final class ThemeMonet implements ThemeDelegate {
         String key = line.substring(0, i).trim();
         String value = line.substring(i + 1).trim();
         if ("include".equals(key)) {
-          values.putAll(loadTemplate(context, value));
+          loadTemplate(context, value, out);
         } else {
-          values.put(key, value);
+          out.put(key, value);
         }
       }
     } catch (IOException e) {
       Log.e("Cannot load Monet template %s", e, name);
     }
-    return values;
   }
 
   // Values
 
-  static @ColorInt int resolve (String value, int[][] palette) {
-    value = value.trim();
-    Matcher sys = SYS.matcher(value);
-    if (sys.matches()) {
-      int color = systemRole(sys.group(1));
-      return color != 0 ? color : resolve(sys.group(2), palette);
+  private static Map<String, Integer> roleIndexes;
+
+  private static int roleIndex (String name) {
+    if (roleIndexes == null) {
+      Map<String, Integer> map = new HashMap<>();
+      for (int i = 0; i < MonetPalette.ROLE_NAMES.length; i++) {
+        map.put(MonetPalette.ROLE_NAMES[i], i);
+      }
+      roleIndexes = map;
     }
-    Matcher mix = MIX.matcher(value);
-    if (mix.matches()) {
-      int a = resolve(mix.group(1), palette);
-      int b = resolve(mix.group(2), palette);
-      float p = Integer.parseInt(mix.group(3)) / 100f;
-      return Color.argb(
-        lerp(Color.alpha(a), Color.alpha(b), p),
-        lerp(Color.red(a), Color.red(b), p),
-        lerp(Color.green(a), Color.green(b), p),
-        lerp(Color.blue(a), Color.blue(b), p)
-      );
+    Integer index = roleIndexes.get(name);
+    return index != null ? index : -1;
+  }
+
+  /** Parses `role`, `P40` (palette tone), `#RRGGBB[AA]`, `mix(A,B,P)`, each optionally followed by `@NN` (opacity, %). */
+  private static Value parse (String value) {
+    value = value.trim();
+    int at = value.lastIndexOf('@');
+    if (at > 0 && value.indexOf(')', at) == -1) {
+      final Value color = parse(value.substring(0, at));
+      final int alpha = Math.round(Integer.parseInt(value.substring(at + 1).trim()) * 255 / 100f);
+      if (alpha < 0 || alpha > 255) {
+        throw new IllegalArgumentException(value);
+      }
+      return (scheme, palette) -> (color.resolve(scheme, palette) & 0x00FFFFFF) | (alpha << 24);
+    }
+    if (value.startsWith("mix(") && value.endsWith(")")) {
+      String[] args = splitArguments(value.substring(4, value.length() - 1));
+      final Value a = parse(args[0]);
+      final Value b = parse(args[1]);
+      final float p = Integer.parseInt(args[2].trim()) / 100f;
+      return (scheme, palette) -> mix(a.resolve(scheme, palette), b.resolve(scheme, palette), p);
     }
     if (value.startsWith("#")) {
-      return parseLiteral(value.substring(1));
+      final int color = parseLiteral(value.substring(1));
+      return (scheme, palette) -> color;
     }
-    if (value.length() > 3 && value.charAt(2) == '_') {
-      for (int paletteIndex = 0; paletteIndex < MonetPalette.NAMES.length; paletteIndex++) {
-        if (!value.startsWith(MonetPalette.NAMES[paletteIndex])) {
-          continue;
-        }
-        String rest = value.substring(3);
-        // Longest tone first, so that "1000" is not read as "100" + alpha
-        int bestTone = -1;
-        for (int toneIndex = 0; toneIndex < MonetPalette.TONES.length; toneIndex++) {
-          String tone = Integer.toString(MonetPalette.TONES[toneIndex]);
-          if (rest.startsWith(tone)) {
-            String alpha = rest.substring(tone.length());
-            if (alpha.isEmpty() || ALPHA.matcher(alpha).matches()) {
-              if (bestTone == -1 || tone.length() > Integer.toString(MonetPalette.TONES[bestTone]).length()) {
-                bestTone = toneIndex;
-              }
-            }
+    final int role = roleIndex(value);
+    if (role != -1) {
+      return (scheme, palette) -> scheme[role];
+    }
+    int digits = 0;
+    while (digits < value.length() && !Character.isDigit(value.charAt(digits))) {
+      digits++;
+    }
+    if (digits > 0 && digits < value.length()) {
+      String paletteName = value.substring(0, digits);
+      for (int paletteIndex = 0; paletteIndex < MonetPalette.PALETTE_NAMES.length; paletteIndex++) {
+        if (MonetPalette.PALETTE_NAMES[paletteIndex].equals(paletteName)) {
+          final int p = paletteIndex;
+          final int tone = Integer.parseInt(value.substring(digits));
+          if (tone < 0 || tone > 100) {
+            break;
           }
-        }
-        if (bestTone != -1) {
-          int color = palette[paletteIndex][bestTone];
-          String alpha = rest.substring(Integer.toString(MonetPalette.TONES[bestTone]).length());
-          return alpha.isEmpty() ? color : (color & 0x00FFFFFF) | (Integer.parseInt(alpha, 16) << 24);
+          return (scheme, palette) -> MonetPalette.tone(palette, p, tone);
         }
       }
     }
     throw new IllegalArgumentException(value);
   }
 
-  private static int lerp (int a, int b, float p) {
-    return Math.round(a + (b - a) * p);
+  /** Splits top-level comma-separated arguments (nested mix() calls keep their commas). */
+  private static String[] splitArguments (String args) {
+    String[] result = new String[3];
+    int depth = 0, start = 0, count = 0;
+    for (int i = 0; i < args.length(); i++) {
+      char c = args.charAt(i);
+      if (c == '(') {
+        depth++;
+      } else if (c == ')') {
+        depth--;
+      } else if (c == ',' && depth == 0) {
+        if (count == 2) {
+          throw new IllegalArgumentException(args);
+        }
+        result[count++] = args.substring(start, i);
+        start = i + 1;
+      }
+    }
+    if (count != 2) {
+      throw new IllegalArgumentException(args);
+    }
+    result[2] = args.substring(start);
+    return result;
   }
 
-  /** Material 3 dynamic color role from the system (Android 14+), or 0 when unavailable. */
-  private static @ColorInt int systemRole (String role) {
-    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      return 0;
-    }
-    try {
-      Context context = org.thunderdog.challegram.unsorted.AppContext.get();
-      android.content.res.Resources res = context.getResources();
-      int id = res.getIdentifier("system_" + role, "color", "android");
-      return id != 0 ? res.getColor(id, null) | 0xFF000000 : 0;
-    } catch (Throwable t) {
-      return 0;
-    }
+  private static @ColorInt int mix (int a, int b, float p) {
+    return Color.argb(
+      lerp(Color.alpha(a), Color.alpha(b), p),
+      lerp(Color.red(a), Color.red(b), p),
+      lerp(Color.green(a), Color.green(b), p),
+      lerp(Color.blue(a), Color.blue(b), p)
+    );
+  }
+
+  private static int lerp (int a, int b, float p) {
+    return Math.round(a + (b - a) * p);
   }
 
   private static @ColorInt int parseLiteral (String hex) {

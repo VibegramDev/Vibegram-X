@@ -18,14 +18,27 @@ package org.thunderdog.challegram.stars;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.drawable.Drawable;
 import android.text.style.ReplacementSpan;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.tool.Drawables;
+
 /** The gold star inside text of a {@link android.widget.TextView}, about the height of a capital letter. */
 public class StarSpan extends ReplacementSpan {
-  private final StarDrawable drawable = new StarDrawable();
+  // Spans are drawn on the main thread, and every draw sets the bounds and the alpha: one drawable serves all of them.
+  private static Drawable sharedDrawable;
+
+  private static Drawable drawable () {
+    if (sharedDrawable == null) {
+      sharedDrawable = Drawables.get(R.drawable.vg_star_24);
+    }
+    return sharedDrawable;
+  }
+
   private final float scale;
 
   public StarSpan () {
@@ -54,6 +67,7 @@ public class StarSpan extends ReplacementSpan {
     Paint.FontMetricsInt fm = paint.getFontMetricsInt();
     float centerY = y + (fm.ascent + fm.descent) / 2f;
     int drawTop = Math.round(centerY - size / 2f);
+    Drawable drawable = drawable();
     drawable.setAlpha(paint.getAlpha());
     drawable.setBounds(Math.round(x), drawTop, Math.round(x) + size, drawTop + size);
     drawable.draw(canvas);

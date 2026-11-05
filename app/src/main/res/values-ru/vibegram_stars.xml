@@ -235,4 +235,5 @@
   <string name="vg_TelegramStars">Звёзды Telegram</string>
   <string name="vg_TelegramStarsChoose">Выберите количество</string>
   <string name="vg_TelegramStarsInfo">Звёзды Telegram нужны для оплаты контента \nи услуг в мини-приложениях. **Подробнее о звёздах &gt;**</string>
+  <string name="vg_WebProxyUnsupported">Для WEB-прокси нужна более новая версия Android System WebView. Обновите её в Google Play и попробуйте снова.</string>
 </resources>

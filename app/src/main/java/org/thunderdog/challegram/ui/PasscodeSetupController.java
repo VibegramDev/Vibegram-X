@@ -53,7 +53,6 @@ import org.thunderdog.challegram.widget.SeparatorView;
 import org.thunderdog.challegram.widget.ShadowView;
 
 import me.vkryl.android.AnimatorUtils;
-import me.vkryl.android.ViewUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntList;
@@ -175,11 +174,7 @@ public class PasscodeSetupController extends ViewController<PasscodeSetupControl
         }
       }
       setSegmentMargins(row);
-      if (!(row.getBackground() instanceof SettingHolder.SegmentBackground)) {
-        ViewUtils.setBackground(row, new SettingHolder.SegmentBackground());
-        addThemeInvalidateListener(row);
-      }
-      ((SettingHolder.SegmentBackground) row.getBackground()).setShape(row, previous != null, next != null);
+      SettingHolder.setSegmentShape(row, previous != null, next != null, this);
       previous = row;
     }
   }

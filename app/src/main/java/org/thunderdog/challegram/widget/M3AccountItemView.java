@@ -201,6 +201,7 @@ public class M3AccountItemView extends BaseView implements AttachDelegate, Destr
 
   @Override
   public void performDestroy () {
+    TGLegacyManager.instance().removeEmojiListener(this);
     receiver.destroy();
     emojiStatusHelper.performDestroy();
   }

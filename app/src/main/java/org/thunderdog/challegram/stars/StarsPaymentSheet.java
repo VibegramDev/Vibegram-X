@@ -49,17 +49,20 @@ import me.vkryl.core.StringUtils;
 public final class StarsPaymentSheet {
   private StarsPaymentSheet () { }
 
-  /** Loads the payment form of the invoice and opens the matching payment UI. */
-  public static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @Nullable Runnable onPaid, @Nullable Runnable onFailed) {
+  /**
+   * Loads the payment form of the invoice and opens the matching payment UI. {@code onDone} runs once the form is
+   * loaded or failed to load, so the caller can stop its progress.
+   */
+  public static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @Nullable Runnable onPaid, @Nullable Runnable onDone) {
     tdlib.send(new TdApi.GetPaymentForm(invoice, null), (form, error) -> UI.post(() -> {
+      if (onDone != null) {
+        onDone.run();
+      }
       if (context.isDestroyed()) {
         return;
       }
       if (error != null) {
         UI.showError(error);
-        if (onFailed != null) {
-          onFailed.run();
-        }
         return;
       }
       switch (form.type.getConstructor()) {
@@ -75,10 +78,10 @@ public final class StarsPaymentSheet {
           StarsCheckoutController.open(context, tdlib, invoice, form, null, onPaid);
           break;
         }
-      }
-      if (onFailed != null) {
-        // The UI is shown: the caller's progress can stop.
-        onFailed.run();
+        default: {
+          StarsUi.showUnavailable();
+          break;
+        }
       }
     }));
   }
@@ -87,14 +90,17 @@ public final class StarsPaymentSheet {
     final boolean isSubscription = form.type.getConstructor() == TdApi.PaymentFormTypeStarSubscription.CONSTRUCTOR;
     final String botName = form.sellerBotUserId != 0 ? tdlib.cache().userName(form.sellerBotUserId) : "";
     final String productTitle = form.productInfo != null ? form.productInfo.title : "";
-    final boolean[] paying = new boolean[1];
+    // paying stays set after a successful payment: the form is paid only once.
+    final boolean[] confirming = new boolean[1], paying = new boolean[1];
     final PopupLayout[] popup = new PopupLayout[1];
     final SettingsAdapter[] adapterRef = new SettingsAdapter[1];
     SettingsAdapter adapter = new SettingsAdapter(context, v -> {
-      if (v.getId() != R.id.btn_vgStarsPay || paying[0]) {
+      if (v.getId() != R.id.btn_vgStarsPay || confirming[0] || paying[0]) {
         return;
       }
+      confirming[0] = true;
       StarsUi.confirmAgain(context, Lang.getString(R.string.vg_StarsConfirmAgainPay, Stars.format(starCount), botName), Lang.getString(R.string.vg_StarsPay), confirmed -> {
+        confirming[0] = false;
         if (!confirmed || paying[0]) {
           return;
         }
@@ -107,15 +113,15 @@ public final class StarsPaymentSheet {
         paying[0] = true;
         adapterRef[0].updateValuedSettingById(R.id.btn_vgStarsPay);
         tdlib.send(new TdApi.SendPaymentForm(invoice, form.id, "", "", null, 0), (result, error) -> UI.post(() -> {
-          paying[0] = false;
           if (popup[0] != null) {
             popup[0].hideWindow(true);
           }
           if (error != null) {
+            paying[0] = false;
             UI.showError(error);
             return;
           }
-          if (!StringUtils.isEmpty(result.verificationUrl)) {
+          if (!StringUtils.isEmpty(result.verificationUrl) && !context.isDestroyed()) {
             StarsUi.openUrl(context, result.verificationUrl);
           }
           showPurchaseCompleted(productTitle, botName, starCount, isSubscription);

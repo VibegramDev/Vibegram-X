@@ -130,6 +130,7 @@ import org.thunderdog.challegram.ui.SettingsPhoneController;
 import org.thunderdog.challegram.ui.SettingsPrivacyController;
 import org.thunderdog.challegram.ui.SettingsPrivacyKeyController;
 import org.thunderdog.challegram.proxy.WebProxy;
+import org.thunderdog.challegram.proxy.WebProxyTransport;
 import org.thunderdog.challegram.ui.SettingsProxyController;
 import org.thunderdog.challegram.ui.SettingsSessionsController;
 import org.thunderdog.challegram.ui.SettingsStickersAndEmojiController;
@@ -688,6 +689,9 @@ public class TdlibUi extends Handler {
         .setAllowResize(false));
     }
   }
+
+  /** Channel direct messages with more known conversations open as a list by default, not as tabs. */
+  private static final int DIRECT_MESSAGES_TABS_MAX_COUNT = 10;
 
   public static final int DURATION_MODE_FULL = 0;
   public static final int DURATION_MODE_SHORT = 1;
@@ -2206,7 +2210,11 @@ public class TdlibUi extends Handler {
     if (messageThread == null && messageTopicId == null && (params == null || params.highlightMessageId == null) &&
       !onlyScheduled && (options & CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT) == 0 && tdlib.isAdministeredDirectMessagesChat(chat.id)) {
       ViewController<?> topicsController;
-      if (tdlib.settings().getForumViewPreference(chat.id) == TdlibSettingsManager.FORUM_VIEW_TOPICS) {
+      // Without a choice made, tabs; but a chat with many known conversations opens as a list: dozens of tabs can't be navigated
+      final int viewPreference = tdlib.settings().getForumViewPreference(chat.id);
+      final boolean preferList = viewPreference == TdlibSettingsManager.FORUM_VIEW_TOPICS ||
+        (viewPreference == 0 && tdlib.directMessagesChatTopics(chat.id).size() > DIRECT_MESSAGES_TABS_MAX_COUNT);
+      if (preferList) {
         DirectMessagesTopicsController c = new DirectMessagesTopicsController(context.context(), context.tdlib());
         c.setArguments(new DirectMessagesTopicsController.Arguments(chat));
         topicsController = c;
@@ -3529,13 +3537,15 @@ public class TdlibUi extends Handler {
       // TDLib does not know WEB proxies
       final TdApi.Proxy webProxy = WebProxy.parseLink(rawUrl);
       post(() -> {
-        if (webProxy != null) {
+        if (webProxy != null && !WebProxyTransport.isSupported()) {
+          showLinkTooltip(tdlib, R.drawable.baseline_warning_24, Lang.getString(R.string.vg_WebProxyUnsupported), openParameters);
+        } else if (webProxy != null) {
           openProxyAlert(context, webProxy);
         } else {
           showLinkTooltip(tdlib, R.drawable.baseline_warning_24, Lang.getString(R.string.ProxyLinkUnsupported), openParameters);
         }
         if (after != null) {
-          after.runWithBool(webProxy != null);
+          after.runWithBool(webProxy != null && WebProxyTransport.isSupported());
         }
       });
       return;

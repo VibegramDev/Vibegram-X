@@ -194,6 +194,9 @@ public class TGFoundChat {
 
   private void setChat (TdApi.Chat chat, String highlight, boolean isGlobal) {
     this.chat = chat;
+    if (chat != null && (flags & FLAG_NO_UNREAD) == 0) {
+      tdlib.loadForumUnreadTopicCount(chat.id);
+    }
     this.isGlobal = isGlobal;
     this.highlight = highlight;
     int flags = this.flags;
@@ -363,15 +366,7 @@ public class TGFoundChat {
     if ((flags & FLAG_NO_UNREAD) != 0 || chat == null) {
       return 0;
     }
-    if (tdlib.isForum(chat.id)) {
-      int unreadTopics = tdlib.forumUnreadTopicCount(chat.id);
-      if (unreadTopics == -1) {
-        tdlib.fetchForumUnreadTopicCount(chat.id, null);
-        return chat.unreadCount > 0 ? Tdlib.CHAT_MARKED_AS_UNREAD : 0;
-      }
-      return unreadTopics > 0 ? unreadTopics : chat.isMarkedAsUnread ? Tdlib.CHAT_MARKED_AS_UNREAD : 0;
-    }
-    return chat.unreadCount > 0 ? chat.unreadCount : chat.isMarkedAsUnread ? Tdlib.CHAT_MARKED_AS_UNREAD : 0;
+    return tdlib.chatListUnreadCount(chat);
   }
 
   private void setTitleImpl (String title, @Nullable TdApi.Chat chat) {

@@ -251,6 +251,7 @@ public final class OAuthSheet {
   private static void showMainSheet (ViewController<?> context, Request request, @Nullable LoginUrlCallback loginUrlCallback) {
     final Tdlib tdlib = request.tdlib;
     final boolean[] processing = new boolean[1];
+    final boolean[] askingPhone = new boolean[1];
     final boolean[] processed = new boolean[1];
     final PopupLayout[] sheet = new PopupLayout[1];
     final SettingsAdapter[] adapterRef = new SettingsAdapter[1];
@@ -264,7 +265,7 @@ public final class OAuthSheet {
         request.allowWriteAccess = adapterRef[0].toggleView(v);
         return;
       }
-      if (processing[0] || sheet[0] == null) {
+      if (processing[0] || askingPhone[0] || request.handedOff || sheet[0] == null) {
         return;
       }
       PopupLayout popupLayout = sheet[0];
@@ -287,13 +288,11 @@ public final class OAuthSheet {
           processing[0] = true;
           processed[0] = true;
           updateButtons.run();
-          accept(context, request, popupLayout, () -> {
-            processing[0] = false;
-            updateButtons.run();
-          });
+          accept(context, request, popupLayout);
         });
         if (request.requestPhoneNumberAccess) {
-          askPhoneNumber(context, request, accept);
+          askingPhone[0] = true;
+          askPhoneNumber(context, request, accept, () -> askingPhone[0] = false);
         } else {
           accept.run();
         }
@@ -369,7 +368,7 @@ public final class OAuthSheet {
     }
   }
 
-  private static void askPhoneNumber (ViewController<?> context, Request request, Runnable after) {
+  private static void askPhoneNumber (ViewController<?> context, Request request, Runnable after, Runnable onClosed) {
     TdApi.User self = request.tdlib.myUser();
     String phone = self != null ? Strings.formatPhone(self.phoneNumber) : "";
     String name = request.fromBotButton && !request.fromApp ? request.tdlib.cache().userName(request.botUserId) : request.displayName();
@@ -385,6 +384,7 @@ public final class OAuthSheet {
         request.allowPhoneNumberAccess = true;
         after.run();
       })
+      .setOnDismissListener(dialog -> onClosed.run())
       .show();
   }
 
@@ -408,13 +408,12 @@ public final class OAuthSheet {
     }
   }
 
-  private static void accept (ViewController<?> context, Request request, PopupLayout sheet, Runnable onFailed) {
+  private static void accept (ViewController<?> context, Request request, PopupLayout sheet) {
     final String displayName = request.displayName();
     TdApi.AcceptOauthRequest function = new TdApi.AcceptOauthRequest(request.url, request.selectedMatchCode != null ? request.selectedMatchCode : "", request.requestWriteAccess && request.allowWriteAccess, request.allowPhoneNumberAccess, null);
     request.tdlib.send(function, (httpUrl, error) -> UI.post(() -> {
       sheet.hideWindow(true);
       if (error != null) {
-        onFailed.run();
         showFailure(displayName, error);
         return;
       }

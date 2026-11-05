@@ -58,12 +58,16 @@ public class TdlibWallpaperManager {
    * Monet themes are monochrome: their chat background is a plain color of the theme.
    * If the wallpaper kept for the theme is still a stock picture of one of the older built-in
    * themes (nobody has picked it explicitly), replace it with an empty one.
+   * Done once per wallpaper slot: a stock picture chosen for a Monet theme afterwards stays.
    */
   private void resetStockWallpaperForMonet (@ThemeId int themeId) {
     if (!ThemeSet.isMonetTheme(themeId)) {
       return;
     }
     final int usageId = Theme.getWallpaperIdentifier(themeId);
+    if (!tdlib.settings().checkMonetWallpaperResetNeeded(usageId)) {
+      return;
+    }
     TGBackground current = tdlib.settings().getWallpaper(usageId, true);
     if (current == null || current.isEmpty()) {
       return;

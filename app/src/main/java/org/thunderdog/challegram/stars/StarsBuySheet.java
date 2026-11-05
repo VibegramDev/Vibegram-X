@@ -18,7 +18,6 @@ package org.thunderdog.challegram.stars;
 
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
-import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
@@ -31,6 +30,7 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.component.base.SettingView;
@@ -132,7 +132,7 @@ public final class StarsBuySheet {
     }, context) {
       @Override
       protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
-        view.setIcon(new StarDrawable(Screen.dp(72f)), 72f);
+        view.setIcon(Drawables.get(R.drawable.vg_star_96), 72f);
         CharSequence title = missingStars > 0 ? Lang.plural(R.string.vg_StarsNeededTitle, missingStars) : Lang.getString(R.string.vg_TelegramStars);
         TdApi.FormattedText text;
         if (missingStars > 0 && !StringUtils.isEmpty(purposeName)) {
@@ -148,7 +148,7 @@ public final class StarsBuySheet {
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         if (item.getData() instanceof TdApi.StarPaymentOption) {
           TdApi.StarPaymentOption option = (TdApi.StarPaymentOption) item.getData();
-          view.setIconDrawable(new StarStackDrawable(Math.min(item.getIntValue(), 6)));
+          view.setIconDrawable(StarStackDrawable.get(item.getIntValue()));
           view.setData(CurrencyUtils.buildAmount(option.currency, option.amount));
         }
       }
@@ -183,13 +183,27 @@ public final class StarsBuySheet {
 
   /** 1…6 overlapping stars: bigger packages show more of them, as in the official app. */
   static final class StarStackDrawable extends Drawable {
-    private final int count;
-    private final StarDrawable star = new StarDrawable();
-    private final Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private static final int MAX_COUNT = 6;
+    // Stateless apart from the bounds, which every draw sets: shared by all rows (drawn on the main thread only).
+    private static final StarStackDrawable[] cache = new StarStackDrawable[MAX_COUNT];
+    private static Drawable star;
 
-    StarStackDrawable (int count) {
-      this.count = Math.max(1, count);
-      outline.setStyle(Paint.Style.FILL);
+    /** The stack of 1…6 stars: shared, rows are bound without allocations. */
+    static StarStackDrawable get (int count) {
+      int index = Math.max(1, Math.min(count, MAX_COUNT)) - 1;
+      if (cache[index] == null) {
+        cache[index] = new StarStackDrawable(index + 1);
+      }
+      return cache[index];
+    }
+
+    private final int count;
+
+    private StarStackDrawable (int count) {
+      this.count = count;
+      if (star == null) {
+        star = Drawables.get(R.drawable.vg_star_24);
+      }
     }
 
     private int size () {

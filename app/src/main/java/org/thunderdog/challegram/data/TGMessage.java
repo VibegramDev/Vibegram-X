@@ -6359,6 +6359,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     if (replyData != null)
       replyData.performDestroy();
     messageReactions.performDestroy();
+    if (inlineKeyboard != null) {
+      inlineKeyboard.performDestroy();
+    }
     setViewAttached(false);
     onMessageContainerDestroyed();
   }

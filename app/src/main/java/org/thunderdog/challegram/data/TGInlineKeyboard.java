@@ -45,6 +45,7 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.ui.OAuthSheet;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
@@ -108,6 +109,13 @@ public class TGInlineKeyboard {
   public void clear () {
     this.keyboard = null;
     this.messageId = 0;
+    performDestroy();
+  }
+
+  public void performDestroy () {
+    for (Button button : buttons) {
+      button.performDestroy();
+    }
   }
 
   public void updateMessageId (long oldMessageId, long newMessageId) {
@@ -149,6 +157,41 @@ public class TGInlineKeyboard {
     receiver.clearReceiversWithHigherKey(key);
   }
 
+  // Keyboards embedded into the message content draw icons from the message text media receiver,
+  // so their keys don't collide with the keys of the message inline keyboard.
+  private boolean embeddedIcons;
+
+  public TGInlineKeyboard setEmbeddedIcons () {
+    this.embeddedIcons = true;
+    return this;
+  }
+
+  /**
+   * Requests icons of an embedded keyboard into a shared receiver starting from {@code startKey}.
+   *
+   * @return number of keys used
+   */
+  public int requestEmbeddedIconMedia (@NonNull ComplexReceiver receiver, long startKey) {
+    if (keyboard == null || isCustom) {
+      return 0;
+    }
+    int count = 0;
+    for (Button button : buttons) {
+      if (button.iconText != null) {
+        button.iconText.requestMedia(receiver, startKey + count, 1);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private @Nullable ComplexReceiver getIconReceiver (@Nullable MessageView view) {
+    if (view == null) {
+      return null;
+    }
+    return embeddedIcons ? view.getTextMediaReceiver() : view.getInlineKeyboardMediaReceiver(false);
+  }
+
   public boolean hasIconMedia () {
     if (keyboard == null || isCustom) {
       return false;
@@ -162,7 +205,11 @@ public class TGInlineKeyboard {
   }
 
   private void onIconMediaInvalidated (Text text, @Nullable TextMedia specificMedia) {
-    parent.invalidateInlineKeyboardMedia(this, text, specificMedia);
+    if (embeddedIcons) {
+      parent.invalidateTextMediaReceiver(text, specificMedia);
+    } else {
+      parent.invalidateInlineKeyboardMedia(this, text, specificMedia);
+    }
   }
 
   private boolean isCustom, disableCustomPadding;
@@ -288,10 +335,8 @@ public class TGInlineKeyboard {
         buttonCount++;
       }
     }
-    if (buttonCount < buttons.size() - 1) {
-      for (int i = buttonCount; i < buttons.size(); i++) {
-        buttons.remove(i);
-      }
+    while (buttons.size() > buttonCount) {
+      buttons.remove(buttons.size() - 1).performDestroy();
     }
 
     if (retryWidth != 0 && retryWidth > maxWidth && preferredMinWidth > maxWidth) {
@@ -529,15 +574,19 @@ public class TGInlineKeyboard {
       return iconText != null ? iconText.getWidth() + Screen.dp(ICON_GAP_DP) : 0;
     }
 
+    private void performDestroy () {
+      if (iconText != null) {
+        iconText.performDestroy();
+        iconText = null;
+      }
+    }
+
     private void setIcon (long customEmojiId) {
       final boolean noAnimations = Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
       if (iconCustomEmojiId == customEmojiId && (customEmojiId == 0 || iconText != null)) {
         return;
       }
-      if (iconText != null) {
-        iconText.performDestroy();
-        iconText = null;
-      }
+      performDestroy();
       iconCustomEmojiId = customEmojiId;
       if (customEmojiId == 0) {
         return;
@@ -563,25 +612,45 @@ public class TGInlineKeyboard {
     }
 
     /**
-     * Background color for buttons with a non-default style, or 0 for the regular look.
+     * Whether the button is filled with its style color instead of the regular look.
      */
-    private static int getStyleColor (@Nullable TdApi.ButtonStyle style) {
+    private static boolean isFilledStyle (@Nullable TdApi.ButtonStyle style) {
       if (style == null) {
-        return 0;
+        return false;
       }
       switch (style.getConstructor()) {
         case TdApi.ButtonStylePrimary.CONSTRUCTOR:
-          return 0xff3a7ce6;
         case TdApi.ButtonStyleDanger.CONSTRUCTOR:
-          return 0xffe0484d;
         case TdApi.ButtonStyleSuccess.CONSTRUCTOR:
-          return 0xff2fa65a;
+          return true;
         case TdApi.ButtonStyleDefault.CONSTRUCTOR:
         case TdApi.ButtonStyleLink.CONSTRUCTOR:
-          return 0;
+          return false;
         default:
           Td.assertButtonStyle_4f30e8d0();
           throw Td.unsupported(style);
+      }
+    }
+
+    private static int getStyleColor (@NonNull TdApi.ButtonStyle style) {
+      switch (style.getConstructor()) {
+        case TdApi.ButtonStyleDanger.CONSTRUCTOR:
+          return M3.error();
+        case TdApi.ButtonStyleSuccess.CONSTRUCTOR:
+          return Theme.getColor(ColorId.iconPositive);
+        default:
+          return M3.primary();
+      }
+    }
+
+    private static int getStyleContentColor (@NonNull TdApi.ButtonStyle style) {
+      switch (style.getConstructor()) {
+        case TdApi.ButtonStyleDanger.CONSTRUCTOR:
+          return M3.onError();
+        case TdApi.ButtonStyleSuccess.CONSTRUCTOR:
+          return Theme.getColor(ColorId.circleButtonPositiveIcon);
+        default:
+          return M3.onPrimary();
       }
     }
 
@@ -672,14 +741,14 @@ public class TGInlineKeyboard {
         }
       }
 
-      final int styleColor = isCustom ? 0 : getStyleColor(style);
-      final boolean useBubbleMode = useWhiteMode() || styleColor != 0;
+      final boolean isFilled = !isCustom && isFilledStyle(style);
+      final boolean useBubbleMode = useWhiteMode() || isFilled;
       // float darkFactor = Theme.getDarkFactor();
       int inlineOutlineColor = customColorId != ColorId.NONE ? Theme.getColor(customColorId) : Theme.inlineOutlineColor(isOutBubble);
       int fillingColor = 0;
 
-      if (styleColor != 0) {
-        c.drawRoundRect(rounder, radius, radius, Paints.fillingPaint(fillingColor = styleColor));
+      if (isFilled) {
+        c.drawRoundRect(rounder, radius, radius, Paints.fillingPaint(fillingColor = getStyleColor(style)));
       } else if (useBubbleMode) {
         c.drawRoundRect(rounder, radius, radius, Paints.fillingPaint(fillingColor = context.context.getBubbleButtonBackgroundColor()));
       } else {
@@ -690,7 +759,7 @@ public class TGInlineKeyboard {
 
       //noinspection ConstantConditions
       float selectionColorFactor = ALLOW_INVERSE ? (ALLOW_ALWAYS_ACTIVE && isAlwaysActive() ? selectionFactor : activeFactor) : (ALLOW_ALWAYS_ACTIVE ? selectionFactor : 0f); // : Utils.color((int) (255f * (1f - fadeFactor)), selectionChanger.getColor(inverseFactor));
-      int selectionColor = styleColor != 0 ? 0x33ffffff : useBubbleMode ? context.context.getBubbleButtonRippleColor() : ColorUtils.fromToArgb(ColorUtils.color(0x1a, inlineOutlineColor), inlineOutlineColor, selectionColorFactor);
+      int selectionColor = isFilled ? ColorUtils.color(0x33, getStyleContentColor(style)) : useBubbleMode ? context.context.getBubbleButtonRippleColor() : ColorUtils.fromToArgb(ColorUtils.color(0x1a, inlineOutlineColor), inlineOutlineColor, selectionColorFactor);
       if (fadeFactor != 0f) {
         selectionColor = ColorUtils.color((int) ((float) Color.alpha(selectionColor) * (1f - fadeFactor)), selectionColor);
       }
@@ -721,7 +790,7 @@ public class TGInlineKeyboard {
 
       //noinspection ConstantConditions
       final float textColorFactor = ALLOW_INVERSE ? (selectionFactor * activeFactor * (1f - fadeFactor)) : ALLOW_ALWAYS_ACTIVE ? selectionFactor * (1f - fadeFactor) : 0f;
-      final int textColor = styleColor != 0 ? Color.WHITE : useBubbleMode ? context.context.getBubbleButtonTextColor() : ColorUtils.fromToArgb(customColorId != ColorId.NONE ? Theme.getColor(customColorId) :Theme.inlineTextColor(isOutBubble), Theme.inlineTextActiveColor(), textColorFactor);
+      final int textColor = isFilled ? getStyleContentColor(style) : useBubbleMode ? context.context.getBubbleButtonTextColor() : ColorUtils.fromToArgb(customColorId != ColorId.NONE ? Theme.getColor(customColorId) :Theme.inlineTextColor(isOutBubble), Theme.inlineTextActiveColor(), textColorFactor);
 
       int textX = cx + getButtonPadding();
       if (customIconRes != 0) {
@@ -754,7 +823,7 @@ public class TGInlineKeyboard {
           textX += iconSpace;
         }
         iconTextColor = textColor;
-        ComplexReceiver iconReceiver = view != null ? view.getInlineKeyboardMediaReceiver(false) : null;
+        ComplexReceiver iconReceiver = context.getIconReceiver(view);
         if (iconReceiver != null) {
           iconText.draw(c, iconX, cy + (buttonHeight - iconText.getHeight()) / 2, null, 1f, iconReceiver);
         }
@@ -835,7 +904,7 @@ public class TGInlineKeyboard {
 
     private void drawProgress (Canvas c, boolean useBubbleMode, float textColorFactor) {
       if (progress != null) {
-        final int color = !isCustom && getStyleColor(style) != 0 ? Color.WHITE : useBubbleMode ?  context.context.getBubbleButtonTextColor() : ColorUtils.fromToArgb(customColorId != ColorId.NONE ? Theme.getColor(customColorId) :Theme.inlineIconColor(context.context != null && context.context.isOutgoingBubble()), Theme.inlineTextActiveColor(), textColorFactor);
+        final int color = !isCustom && isFilledStyle(style) ? getStyleContentColor(style) : useBubbleMode ?  context.context.getBubbleButtonTextColor() : ColorUtils.fromToArgb(customColorId != ColorId.NONE ? Theme.getColor(customColorId) :Theme.inlineIconColor(context.context != null && context.context.isOutgoingBubble()), Theme.inlineTextActiveColor(), textColorFactor);
         final int progressColor = ColorUtils.color((int) ((float) Color.alpha(color) * progressFactor), color);
         progress.forceColor(progressColor);
         progress.draw(c);

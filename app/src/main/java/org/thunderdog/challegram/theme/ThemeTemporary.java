@@ -65,7 +65,16 @@ final class ThemeTemporary implements ThemeDelegate {
   }
 
   @Override
-  public int getRawColor (@ThemeId int colorId) {
+  public int getColor (@ColorId int colorId) {
+    if (factor == 0f)
+      return fromTheme.getColor(colorId);
+    else if (factor == 1f)
+      return toTheme.getColor(colorId);
+    return ColorUtils.fromToArgb(fromTheme.getColor(colorId), toTheme.getColor(colorId), factor);
+  }
+
+  @Override
+  public int getRawColor (@ColorId int colorId) {
     if (factor == 0f)
       return fromTheme.getRawColor(colorId);
     else if (factor == 1f)

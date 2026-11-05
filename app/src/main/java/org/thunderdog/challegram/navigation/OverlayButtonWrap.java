@@ -254,6 +254,12 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
 
   /** FAB menu item: 56dp pill, primaryContainer, 24dp icon, TitleMedium label, Level3. */
   private static final class MenuItemView extends NoScrollTextView implements ForegroundCompat.Host {
+    private final Drawable icon;
+    private final GradientDrawable rippleMask;
+    private final M3StateLayerDrawable ripple;
+    private int textColor, rippleColor;
+
+    // A TextView, so not ForegroundCompat.HostView: the same forwarding (API < 23).
     private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
 
     @Nullable
@@ -265,43 +271,31 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     @Override
     public void draw (@NonNull Canvas c) {
       super.draw(c);
-      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-        foregroundCompat.draw(c);
-      }
+      ForegroundCompat.draw(foregroundCompat, c);
     }
 
     @Override
     protected boolean verifyDrawable (@NonNull Drawable who) {
-      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+      return super.verifyDrawable(who) || ForegroundCompat.verifyDrawable(foregroundCompat, who);
     }
 
     @Override
     protected void drawableStateChanged () {
       super.drawableStateChanged();
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableStateChanged();
-      }
+      ForegroundCompat.drawableStateChanged(foregroundCompat);
     }
 
     @Override
     public void drawableHotspotChanged (float x, float y) {
       super.drawableHotspotChanged(x, y);
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableHotspotChanged(x, y);
-      }
+      ForegroundCompat.drawableHotspotChanged(foregroundCompat, x, y);
     }
 
     @Override
     public void jumpDrawablesToCurrentState () {
       super.jumpDrawablesToCurrentState();
-      if (foregroundCompat != null) {
-        foregroundCompat.jumpDrawablesToCurrentState();
-      }
+      ForegroundCompat.jumpDrawablesToCurrentState(foregroundCompat);
     }
-    private final Drawable icon;
-    private final GradientDrawable rippleMask;
-    private final M3StateLayerDrawable ripple;
-    private int textColor, rippleColor;
 
     MenuItemView (Context context, @DrawableRes int iconRes) {
       super(context);

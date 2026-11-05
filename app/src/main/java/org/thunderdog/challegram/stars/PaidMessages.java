@@ -351,7 +351,8 @@ public final class PaidMessages {
   /**
    * Sends a message function from any place of the app (stickers, voice messages, polls, inline results…): when the
    * chat charges for messages, the payment is confirmed on the current screen first. Without a screen (a reply from a
-   * notification) the message is sent as is, and TDLib marks it failed until it's resent with payment.
+   * notification) the message is sent as is, and TDLib marks it failed until it's resent with payment. When the user
+   * declines, the handler receives the error of an aborted request, which isn't shown to the user.
    */
   public static void sendWithConfirmation (@NonNull Tdlib tdlib, @NonNull TdApi.Function<?> function, @NonNull org.drinkless.tdlib.Client.ResultHandler handler) {
     long chatId = chatIdOf(function);
@@ -370,6 +371,8 @@ public final class PaidMessages {
       confirm(context, tdlib, java.util.Collections.singletonList(function), confirmed -> {
         if (confirmed) {
           tdlib.client().send(function, handler);
+        } else {
+          handler.onResult(new TdApi.Error(500, "Request aborted"));
         }
       });
     });
@@ -399,16 +402,20 @@ public final class PaidMessages {
    */
   public static void resend (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, long chatId, @NonNull long[] messageIds) {
     tdlib.send(new TdApi.GetMessages(chatId, messageIds), (result, error) -> UI.post(() -> {
+      if (error != null) {
+        UI.showError(error);
+        return;
+      }
       long required = 0;
       int paidCount = 0;
-      if (result != null) {
-        for (TdApi.Message message : result.messages) {
-          if (message != null && message.sendingState != null && message.sendingState.getConstructor() == TdApi.MessageSendingStateFailed.CONSTRUCTOR) {
-            long price = ((TdApi.MessageSendingStateFailed) message.sendingState).requiredPaidMessageStarCount;
-            if (price > 0) {
-              required += price;
-              paidCount++;
-            }
+      long samePrice = -1;
+      for (TdApi.Message message : result.messages) {
+        if (message != null && message.sendingState != null && message.sendingState.getConstructor() == TdApi.MessageSendingStateFailed.CONSTRUCTOR) {
+          long price = ((TdApi.MessageSendingStateFailed) message.sendingState).requiredPaidMessageStarCount;
+          if (price > 0) {
+            required += price;
+            paidCount++;
+            samePrice = samePrice == -1 || samePrice == price ? price : 0;
           }
         }
       }
@@ -422,14 +429,16 @@ public final class PaidMessages {
       final long total = required;
       final int count = paidCount;
       String name = tdlib.chatTitle(chatId);
-      long price = total / count;
-      CharSequence line1 = Lang.plural(R.string.vg_StarsPaidMessageCharges, price, name);
-      CharSequence line2 = count == 1 ?
+      CharSequence payLine = count == 1 ?
         Lang.plural(R.string.vg_StarsPaidMessagePayOne, total) :
         payForMessages(total, count);
+      // Messages failed at different prices: only the total is named.
+      CharSequence text = samePrice > 0 ?
+        Lang.plural(R.string.vg_StarsPaidMessageCharges, samePrice, name) + "\n\n" + payLine :
+        payLine;
       StarsUi.confirm(context,
         Lang.getString(R.string.vg_StarsPaidMessageConfirmTitle),
-        line1 + "\n\n" + line2,
+        text,
         Lang.plural(R.string.vg_StarsPaidMessagePayButton, count),
         0, false,
         confirmed -> {

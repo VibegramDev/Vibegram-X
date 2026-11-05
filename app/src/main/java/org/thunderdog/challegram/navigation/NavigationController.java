@@ -230,17 +230,8 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   /** Whether the chat is opened in the right pane (also while its profile or another child screen is on top). */
   public boolean isTabletChatOpened (Tdlib tdlib, long chatId) {
-    if (!isTabletSplit()) {
-      return false;
-    }
-    NavigationStack stack = getStack();
-    for (int i = stack.size() - 1; i > 0; i--) {
-      ViewController<?> c = stack.get(i);
-      if (c instanceof MessagesController) {
-        return c.tdlib() == tdlib && ((MessagesController) c).getChatId() == chatId;
-      }
-    }
-    return false;
+    MessagesController c = tabletOpenedChat;
+    return chatId != 0 && c != null && c.tdlib() == tdlib && c.getChatId() == chatId;
   }
 
   /** Fill of the left pane row whose screen is opened in the right pane (the opened chat, the section row). */
@@ -255,6 +246,31 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   @Nullable Object pendingTabletOpener;
   private @Nullable Object tabletOpener;
   private @Nullable ViewController<?> tabletOpenerRoot;
+
+  // Selection of the left pane rows, read from their onDraw: recomputed when the stack or the panes change.
+  private @Nullable Object tabletSelectedOpener;
+  private @Nullable MessagesController tabletOpenedChat;
+
+  void updateTabletSelection () {
+    Object selectedOpener = null;
+    MessagesController openedChat = null;
+    if (isTabletSplit()) {
+      NavigationStack stack = getStack();
+      int rootIndex = getTabletDetailRootIndex();
+      if (tabletOpener != null && stack.size() > rootIndex && stack.get(rootIndex) == tabletOpenerRoot) {
+        selectedOpener = tabletOpener;
+      }
+      for (int i = stack.size() - 1; i > 0; i--) {
+        ViewController<?> c = stack.get(i);
+        if (c instanceof MessagesController) {
+          openedChat = (MessagesController) c;
+          break;
+        }
+      }
+    }
+    tabletSelectedOpener = selectedOpener;
+    tabletOpenedChat = openedChat;
+  }
 
   /** Call from the click of a left pane row (dock section) that may open a screen in the right pane. */
   public void setTabletDetailOpener (@Nullable Object rowKey) {
@@ -277,15 +293,11 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       tabletOpener = null;
     }
     pendingTabletOpener = null;
+    updateTabletSelection();
   }
 
   public boolean isTabletDetailOpener (@Nullable Object rowKey) {
-    if (rowKey == null || rowKey != tabletOpener || !isTabletSplit()) {
-      return false;
-    }
-    NavigationStack stack = getStack();
-    int rootIndex = getTabletDetailRootIndex();
-    return stack.size() > rootIndex && stack.get(rootIndex) == tabletOpenerRoot;
+    return rowKey != null && rowKey == tabletSelectedOpener;
   }
 
   /**
@@ -295,13 +307,13 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   public static boolean isTabletSelectedRow (View row, @Nullable Tdlib tdlib, long chatId) {
     BaseActivity context = UI.getContext(row.getContext());
     NavigationController navigation = context != null ? context.navigation() : null;
-    if (navigation == null || !navigation.isTabletSplit()) {
+    if (navigation == null) {
       return false;
     }
     if (navigation.isTabletDetailOpener(row.getTag())) {
       return true;
     }
-    return tdlib != null && chatId != 0 && navigation.isTabletChatOpened(tdlib, chatId) && navigation.isInTabletSection(row);
+    return tdlib != null && navigation.isTabletChatOpened(tdlib, chatId) && navigation.isInTabletSection(row);
   }
 
   /** Whether the view belongs to the dock section shown in the left pane. */
@@ -771,7 +783,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     Lang.addLanguageListener(this);
 
     tabletLayout = new TabletNavigationLayout(context, this, rootView);
-    getStack().addChangeListener(stack -> tabletLayout.requestLayout());
+    getStack().addChangeListener(stack -> {
+      tabletLayout.requestLayout();
+      updateTabletSelection();
+    });
     return tabletLayout;
   }
 

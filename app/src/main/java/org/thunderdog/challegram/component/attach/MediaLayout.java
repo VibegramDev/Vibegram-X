@@ -28,6 +28,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -101,6 +102,7 @@ import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
+import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.Destroyable;
 import tgx.td.Td;
 import tgx.td.TdConstants;
@@ -1846,10 +1848,23 @@ public class MediaLayout extends FrameLayoutFix implements
     return Math.max(headerFactor, selectionOnTop ? counterFactor : 0f);
   }
 
-  @Override
-  protected void dispatchDraw (android.graphics.Canvas canvas) {
+  // The sheet moves in many ways (drag, open and close animations, height changes of the controller): the selection
+  // row follows it right before each frame instead of being moved from the drawing pass.
+  private final ViewTreeObserver.OnPreDrawListener selectionHeaderTracker = () -> {
     updateSelectionHeaderPosition();
-    super.dispatchDraw(canvas);
+    return true;
+  };
+
+  @Override
+  protected void onAttachedToWindow () {
+    super.onAttachedToWindow();
+    getViewTreeObserver().addOnPreDrawListener(selectionHeaderTracker);
+  }
+
+  @Override
+  protected void onDetachedFromWindow () {
+    super.onDetachedFromWindow();
+    getViewTreeObserver().removeOnPreDrawListener(selectionHeaderTracker);
   }
 
   /** Space the selection takes at the bottom of the grid: the bar, or the caption pill with its margins. */
@@ -1860,13 +1875,17 @@ public class MediaLayout extends FrameLayoutFix implements
     return MediaBottomBar.getBarHeight();
   }
 
+  /**
+   * Caption with its formatting and custom emoji, as the composer text taken as a caption: markdown is parsed when
+   * sending (ImageGalleryFile#getCaption, unless sent without markdown).
+   */
   @Nullable
   private TdApi.FormattedText getCaptionText () {
     if (captionView == null || !selectionOnTop) {
       return null;
     }
-    String text = captionView.getText().toString().trim();
-    return text.isEmpty() ? null : new TdApi.FormattedText(text, null);
+    TdApi.FormattedText text = captionView.getOutputText(false);
+    return StringUtils.isEmptyOrBlank(text.text) ? null : text;
   }
 
   private boolean allowSpoiler;

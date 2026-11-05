@@ -1418,18 +1418,6 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return true;
   }
 
-  /**
-   * Whether the drop shadow line is drawn below the app bar. Unlike {@link #useDropShadow()}
-   * it doesn't affect the ongoing call / player bars. M3 app bars have no shadow line.
-   */
-  protected boolean useHeaderShadowLine () {
-    return true;
-  }
-
-  public final boolean needHeaderShadowLine () {
-    return useHeaderShadowLine();
-  }
-
   protected boolean useDropPlayer () {
     return true;
   }
@@ -2551,7 +2539,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       popupLayout.showFadingPopupView(newOptionsDialog(options, cancelIndex, actionIndex, popupLayout, onClickListener, delegate, forcedTheme));
     } else if (!options.needSheet && (anchor != null || !isCompactWindow()) && (touchPoint = anchor != null ? anchor : context.getRecentTouchPoint()) != null) {
       // An explicit anchor (long press on a message or a chat) opens the small menu at the finger on phones too.
-      MenuMoreWrap menu = newOptionsMenu(options, onClickListener, delegate, forcedTheme, menuHeaders);
+      MenuMoreWrap menu = newOptionsMenu(options, onClickListener, delegate, forcedTheme, menuHeaders, newPopupThemeListeners(popupLayout));
       menu.setAnchor((int) touchPoint[0], (int) touchPoint[1], (int) touchPoint[0], (int) touchPoint[1], false);
       menu.setAnchorPane(getValue());
       popupLayout.showMoreView(menu);
@@ -2616,10 +2604,32 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return optionsWrap;
   }
 
+  /**
+   * Theme listeners of the views of a short-lived popup (menu at the touch point): they follow theme changes only while
+   * the popup is shown, instead of staying in the controller's list until it is destroyed (a new set on every show).
+   */
+  protected final ThemeListenerList newPopupThemeListeners (PopupLayout popupLayout) {
+    final ThemeListenerList listeners = new ThemeListenerList();
+    ThemeChangeListener themeListener = new ThemeChangeListener() {
+      @Override
+      public boolean needsTempUpdates () {
+        return true;
+      }
+
+      @Override
+      public void onThemeColorsChanged (boolean areTemp, @Nullable ColorState state) {
+        listeners.onThemeColorsChanged(areTemp);
+      }
+    };
+    ThemeManager.instance().addThemeListener(themeListener);
+    popupLayout.addOnDismissPrepare(() -> ThemeManager.instance().removeThemeListener(themeListener));
+    return listeners;
+  }
+
   /** M3 menu at the touch point that opened the options (windows 600dp and wider); the same component as the ⋮ menu. */
-  private MenuMoreWrap newOptionsMenu (Options options, View.OnClickListener onClickListener, @Nullable OptionDelegate delegate, @Nullable ThemeDelegate forcedTheme, @Nullable RunnableData<MenuMoreWrap> menuHeaders) {
+  private MenuMoreWrap newOptionsMenu (Options options, View.OnClickListener onClickListener, @Nullable OptionDelegate delegate, @Nullable ThemeDelegate forcedTheme, @Nullable RunnableData<MenuMoreWrap> menuHeaders, ThemeListenerList menuThemeListeners) {
     MenuMoreWrap menu = new MenuMoreWrap(context, /* scrollable */ true);
-    menu.init(getThemeListeners(), forcedTheme);
+    menu.init(menuThemeListeners, forcedTheme);
     int padding = Screen.dp(MenuMoreWrap.ITEM_PADDING);
     if (!StringUtils.isEmpty(options.title)) {
       CustomTextView titleView = new CustomTextView(context, tdlib);
@@ -2628,12 +2638,20 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       titleView.setTextColorId(ColorId.text);
       titleView.setMaxLineCount(1);
       titleView.setBoldText(options.title, null, false);
-      menu.addHeaderView(themed(titleView, forcedTheme), Screen.dp(MenuMoreWrap.MAX_WIDTH), false);
+      menu.addHeaderView(themed(titleView, forcedTheme, menuThemeListeners), Screen.dp(MenuMoreWrap.MAX_WIDTH), false);
     }
     if (options.subtitle != null) {
       EmojiTextView subtitleView = OptionsLayout.genSubtitle(context);
       subtitleView.setPadding(padding, 0, padding, 0);
-      OptionsLayout.updateSubtitle(subtitleView, options.subtitle.name, options.subtitle.icon, options.subtitle.textColor, options.subtitle.iconColor, forcedTheme, forcedTheme != null ? null : this);
+      OptionsLayout.updateSubtitle(subtitleView, options.subtitle.name, options.subtitle.icon, options.subtitle.textColor, options.subtitle.iconColor, forcedTheme, null);
+      if (forcedTheme == null) {
+        // Same listeners as OptionsLayout.updateSubtitle adds to a controller, in the menu's own list.
+        menuThemeListeners.addThemeColorListener(subtitleView, OptionsLayout.getOptionColorId(options.subtitle.textColor));
+        Drawable icon = subtitleView.getCompoundDrawables()[Lang.rtl() ? 2 : 0];
+        if (icon != null) {
+          menuThemeListeners.addThemeFilterListener(icon, options.subtitle.iconColor == OptionColor.NORMAL ? ColorId.icon : OptionsLayout.getOptionColorId(options.subtitle.iconColor));
+        }
+      }
       subtitleView.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
       menu.addHeaderView(subtitleView, subtitleView.getMeasuredWidth(), false);
     }
@@ -2649,7 +2667,7 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
       // it may be dropped when the menu does not fit next to the touch point otherwise.
       int infoWidth = (int) Math.ceil(Paints.getRegularTextPaint(14f).measureText(info)) + padding * 2;
       boolean singleLine = info.indexOf('\n') == -1 && infoWidth <= Screen.dp(MenuMoreWrap.MAX_WIDTH);
-      menu.addHeaderView(themed(infoView, forcedTheme), infoWidth, singleLine && !options.keepInfo);
+      menu.addHeaderView(themed(infoView, forcedTheme, menuThemeListeners), infoWidth, singleLine && !options.keepInfo);
     }
     if (menuHeaders != null) {
       menuHeaders.runWithData(menu);
@@ -2680,11 +2698,11 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return menu;
   }
 
-  private CustomTextView themed (CustomTextView view, @Nullable ThemeDelegate forcedTheme) {
+  private static CustomTextView themed (CustomTextView view, @Nullable ThemeDelegate forcedTheme, ThemeListenerList themeListeners) {
     if (forcedTheme != null) {
       view.setForcedTheme(forcedTheme);
     } else {
-      addThemeInvalidateListener(view);
+      themeListeners.addThemeInvalidateListener(view);
     }
     return view;
   }

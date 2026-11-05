@@ -1455,7 +1455,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
   private ColorChanger barChanger;
 
   private boolean useShadowSwitch, shadowSwitch;
-  private float baseShadowLine = 1f, previewShadowLine = 1f;
   private boolean usePlayerSwitch, playerSwitch;
   private float translationFactor;
   private boolean forceRtlAnimation;
@@ -1671,9 +1670,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
     if (useShadowSwitch) {
       filling.setShadowAlpha(shadowSwitch ? raptor : 1f - raptor);
-    }
-    if (baseShadowLine != previewShadowLine) {
-      filling.setShadowLineFactor(baseShadowLine + (previewShadowLine - baseShadowLine) * raptor);
     }
     if (usePlayerSwitch) {
       filling.setPlayerAllowance(playerSwitch ? raptor : 1f - raptor);
@@ -2202,7 +2198,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     }
     filling.setColor(item.getHeaderColor());
     filling.setShadowAlpha(item.useDropShadow() ? 1f : 0f);
-    filling.setShadowLineFactor(item.needHeaderShadowLine() ? 1f : 0f);
     filling.setPlayerAllowance(item.useDropPlayer() ? 1f : 0f);
     // TODO other options
 
@@ -2668,9 +2663,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     }
 
     boolean baseShadow = (baseItem == null ? useDropShadow(previewItem) : useDropShadow(baseItem)) && !baseIsPopup;
-    baseShadowLine = needHeaderShadowLine(baseItem == null ? previewItem : baseItem) ? 1f : 0f;
-    previewShadowLine = needHeaderShadowLine(previewItem == null ? baseItem : previewItem) ? 1f : 0f;
-    getFilling().setShadowLineFactor(baseShadowLine);
     boolean previewShadow = (previewItem == null ? baseShadow : useDropShadow(previewItem)) && !previewIsPopup;
     boolean basePlayer = (baseItem == null ? useDropPlayer(previewItem) : useDropPlayer(baseItem)) && !baseIsPopup;
     boolean previewPlayer = (previewItem == null ? basePlayer : useDropPlayer(previewItem)) && !previewIsPopup;
@@ -2895,10 +2887,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
   public static boolean useDropShadow (ViewController<?> c) {
     return c == null || c.useDropShadow();
-  }
-
-  private static boolean needHeaderShadowLine (ViewController<?> c) {
-    return c == null || c.needHeaderShadowLine();
   }
 
   public static boolean useDropPlayer (ViewController<?> c) {

@@ -10,6 +10,8 @@ package org.thunderdog.challegram.stt;
 
 import androidx.annotation.Nullable;
 
+import org.thunderdog.challegram.Log;
+
 import com.k2fsa.sherpa.onnx.FeatureConfig;
 import com.k2fsa.sherpa.onnx.OfflineModelConfig;
 import com.k2fsa.sherpa.onnx.OfflineRecognizer;
@@ -23,8 +25,6 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.regex.Pattern;
 
 public abstract class SttEngine {
@@ -38,19 +38,23 @@ public abstract class SttEngine {
   protected volatile boolean cancelled;
 
   public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
-    List<float[]> chunks = splitOnPauses(samples, maxChunkSeconds());
+    // chunk boundaries only: each chunk is copied right before it is recognized, so the whole message
+    // never exists twice in memory
+    int[] bounds = splitOnPauses(samples, maxChunkSeconds());
     final long total = Math.max(1, samples.length);
-    long done = 0;
     StringBuilder b = new StringBuilder();
-    for (float[] chunk : chunks) {
+    for (int index = 0; index + 1 < bounds.length; index++) {
       if (cancelled) {
         throw new IOException("Cancelled");
       }
-      final long chunkStart = done;
-      final int chunkLength = chunk.length;
+      final int chunkStart = bounds[index];
+      final int chunkLength = bounds[index + 1] - chunkStart;
+      float[] chunk = chunkStart == 0 && chunkLength == samples.length ? samples : java.util.Arrays.copyOfRange(samples, chunkStart, chunkStart + chunkLength);
       String text = transcribeChunk(chunk, listener == null ? null : progress ->
         listener.onProgress((chunkStart + chunkLength * Math.max(0f, Math.min(1f, progress))) / (float) total)
       );
+      //noinspection UnusedAssignment
+      chunk = null;
       text = cleanUp(text);
       if (!text.isEmpty()) {
         if (b.length() > 0) {
@@ -61,9 +65,8 @@ public abstract class SttEngine {
           listener.onPartialText(b.toString());
         }
       }
-      done += chunk.length;
       if (listener != null) {
-        listener.onProgress(done / (float) total);
+        listener.onProgress((chunkStart + chunkLength) / (float) total);
       }
     }
     return removeRepeats(b.toString());
@@ -79,6 +82,7 @@ public abstract class SttEngine {
 
   protected abstract String transcribeChunk (float[] chunk, @Nullable ChunkProgress progress) throws IOException;
 
+  /** Any thread. Safe to call concurrently with {@link #release()}: implementations check their native handle under a lock. */
   public void cancel () {
     cancelled = true;
   }
@@ -87,6 +91,7 @@ public abstract class SttEngine {
     cancelled = false;
   }
 
+  /** Recognition thread only. */
   public abstract void release ();
 
   private static int cachedThreads;
@@ -122,7 +127,7 @@ public abstract class SttEngine {
       fast = cores > 4 ? cores - 1 : cores;
     }
     cachedThreads = Math.max(2, Math.min(8, fast));
-    android.util.Log.i("VgStt", cores + " cores, " + cachedThreads + " threads");
+    Log.i(Log.TAG_VOICE, "STT: %d cores, %d threads", cores, cachedThreads);
     return cachedThreads;
   }
 
@@ -234,7 +239,12 @@ public abstract class SttEngine {
   private static final String WHISPER_PROMPT = "Привет! Да, всё хорошо, спасибо. Okay, let's do it.";
 
   static final class WhisperCpp extends SttEngine {
-    private long ptr;
+    /**
+     * Guards {@link #ptr} between {@link #cancel()} (UI thread) and {@link #release()} (recognition thread):
+     * whisper_abort on a freed context would crash. Recognition itself runs without the lock.
+     */
+    private final Object lock = new Object();
+    private volatile long ptr;
 
     WhisperCpp (SttModel model, File file) throws IOException {
       WhisperNative.load();
@@ -294,16 +304,20 @@ public abstract class SttEngine {
     @Override
     public void cancel () {
       super.cancel();
-      if (ptr != 0) {
-        WhisperNative.cancel(ptr);
+      synchronized (lock) {
+        if (ptr != 0) {
+          WhisperNative.cancel(ptr);
+        }
       }
     }
 
     @Override
     public void resetCancel () {
       super.resetCancel();
-      if (ptr != 0) {
-        WhisperNative.resetCancel(ptr);
+      synchronized (lock) {
+        if (ptr != 0) {
+          WhisperNative.resetCancel(ptr);
+        }
       }
     }
 
@@ -316,6 +330,10 @@ public abstract class SttEngine {
         System.arraycopy(chunk, 0, input, 0, chunk.length);
       }
       // Greedy decoding (beam size 1): beam search gave fewer errors but was 1.3–1.5× slower, the setting was removed.
+      final long ptr = this.ptr;
+      if (ptr == 0) {
+        throw new IOException("whisper.cpp released");
+      }
       byte[] result = WhisperNative.transcribe(ptr, input, threadCount(), 1, WHISPER_PROMPT,
         progress == null ? null : new WhisperNative.ProgressListener() {
           @Override
@@ -351,9 +369,11 @@ public abstract class SttEngine {
 
     @Override
     public void release () {
-      if (ptr != 0) {
-        WhisperNative.free(ptr);
-        ptr = 0;
+      synchronized (lock) {
+        if (ptr != 0) {
+          WhisperNative.free(ptr);
+          ptr = 0;
+        }
       }
     }
   }
@@ -407,9 +427,14 @@ public abstract class SttEngine {
       }
     }
 
+    private boolean released;
+
     @Override
     public void release () {
-      recognizer.release();
+      if (!released) {
+        released = true;
+        recognizer.release();
+      }
     }
   }
 
@@ -417,28 +442,33 @@ public abstract class SttEngine {
    * Splits audio into chunks of at most {@code maxSeconds}, cutting in the middle of the longest pause
    * found in the last 60% of each chunk (pause = 20 ms frames quieter than 15% of the typical speech loudness).
    * Without a pause there, cuts at the quietest frame.
+   *
+   * @return chunk boundaries in samples: chunk i is [result[i], result[i + 1]), the first one is 0, the last one samples.length
    */
-  static List<float[]> splitOnPauses (float[] samples, int maxSeconds) {
-    List<float[]> chunks = new ArrayList<>();
+  static int[] splitOnPauses (float[] samples, int maxSeconds) {
     final int frame = AudioDecoder.SAMPLE_RATE / 50;
     final int frames = samples.length / frame;
     final int maxFrames = maxSeconds * 50;
     if (frames <= maxFrames) {
-      chunks.add(samples);
-      return chunks;
+      return new int[] {0, samples.length};
     }
     float[] rms = new float[frames];
+    float maxRms = 0f;
     for (int f = 0; f < frames; f++) {
       double sum = 0;
       for (int i = f * frame, end = i + frame; i < end; i++) {
         sum += samples[i] * samples[i];
       }
       rms[f] = (float) Math.sqrt(sum / frame);
+      if (rms[f] > maxRms) {
+        maxRms = rms[f];
+      }
     }
-    float[] sorted = rms.clone();
-    java.util.Arrays.sort(sorted);
-    final float quiet = sorted[frames * 3 / 4] * .15f;
+    final float quiet = percentile(rms, maxRms, .75f) * .15f;
 
+    int[] bounds = new int[frames / Math.max(1, maxFrames * 2 / 5) + 3];
+    int count = 0;
+    bounds[count++] = 0;
     int start = 0;
     while (frames - start > maxFrames) {
       int from = start + maxFrames * 2 / 5, to = start + maxFrames;
@@ -466,10 +496,31 @@ public abstract class SttEngine {
           }
         }
       }
-      chunks.add(java.util.Arrays.copyOfRange(samples, start * frame, cut * frame));
+      bounds[count++] = cut * frame;
       start = cut;
     }
-    chunks.add(java.util.Arrays.copyOfRange(samples, start * frame, samples.length));
-    return chunks;
+    bounds[count++] = samples.length;
+    return java.util.Arrays.copyOf(bounds, count);
+  }
+
+  /** Approximate percentile from a histogram over [0, max]: no sorted copy of the values. */
+  private static float percentile (float[] values, float max, float fraction) {
+    if (max <= 0f) {
+      return 0f;
+    }
+    final int bins = 4096;
+    int[] histogram = new int[bins];
+    for (float value : values) {
+      histogram[Math.min(bins - 1, (int) (value / max * bins))]++;
+    }
+    int target = (int) (values.length * fraction);
+    int seen = 0;
+    for (int bin = 0; bin < bins; bin++) {
+      seen += histogram[bin];
+      if (seen > target) {
+        return (bin + .5f) * max / bins;
+      }
+    }
+    return max;
   }
 }

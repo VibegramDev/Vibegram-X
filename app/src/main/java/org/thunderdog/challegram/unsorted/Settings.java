@@ -3123,12 +3123,47 @@ public class Settings {
     }
   }
 
+  // Vibegram X: speech recognition (stt.SttManager). Moved here from the separate "vg_stt" SharedPreferences.
+  private static final String KEY_STT_MODEL = "vg_stt_model";
+  private static final String KEY_STT_SPEED_PREFIX = "vg_stt_speed_";
+  private static final String KEY_STT_MIGRATED = "vg_stt_migrated";
+
+  public @Nullable String getSttModelId () {
+    return pmc.getString(KEY_STT_MODEL, null);
+  }
+
+  public void setSttModelId (@Nullable String modelId) {
+    if (modelId != null) {
+      pmc.putString(KEY_STT_MODEL, modelId);
+    } else {
+      pmc.remove(KEY_STT_MODEL);
+    }
+  }
+
+  /** Measured milliseconds of recognition per second of audio, 0 when not measured yet. */
+  public float getSttSpeed (String modelId) {
+    return pmc.getFloat(KEY_STT_SPEED_PREFIX + modelId, 0f);
+  }
+
+  public void setSttSpeed (String modelId, float msPerSecond) {
+    pmc.putFloat(KEY_STT_SPEED_PREFIX + modelId, msPerSecond).apply();
+  }
+
+  /** One-time move of the old "vg_stt" SharedPreferences: true when it still has to be done. */
+  public boolean needSttMigration () {
+    return !pmc.getBoolean(KEY_STT_MIGRATED, false);
+  }
+
+  public void markSttMigrated () {
+    pmc.putBoolean(KEY_STT_MIGRATED, true);
+  }
+
   // Vibegram: the record button cycles voice → round video → dictation on tap.
   public static final int RECORD_MODE_VOICE = 0, RECORD_MODE_ROUND = 1, RECORD_MODE_DICTATION = 2;
   private static final String KEY_PREFER_DICTATION = "vg_prefer_dictation";
 
   public int getPreferredRecordMode () {
-    if (getBoolean(KEY_PREFER_DICTATION, false)) {
+    if (getBoolean(KEY_PREFER_DICTATION, false) && org.thunderdog.challegram.stt.SttManager.isSupported()) {
       return RECORD_MODE_DICTATION;
     }
     return preferVideoMode() ? RECORD_MODE_ROUND : RECORD_MODE_VOICE;
@@ -3151,11 +3186,13 @@ public class Settings {
 
   /** The mode the record button switches to on tap. */
   public int getNextRecordMode () {
+    // Vibegram X: no dictation where the recognition libraries are missing (they are built for arm64-v8a only)
+    final int dictationOrVoice = org.thunderdog.challegram.stt.SttManager.isSupported() ? RECORD_MODE_DICTATION : RECORD_MODE_VOICE;
     switch (getPreferredRecordMode()) {
       case RECORD_MODE_VOICE:
-        return Config.ROUND_VIDEOS_RECORD_SUPPORTED ? RECORD_MODE_ROUND : RECORD_MODE_DICTATION;
+        return Config.ROUND_VIDEOS_RECORD_SUPPORTED ? RECORD_MODE_ROUND : dictationOrVoice;
       case RECORD_MODE_ROUND:
-        return RECORD_MODE_DICTATION;
+        return dictationOrVoice;
       case RECORD_MODE_DICTATION:
       default:
         return RECORD_MODE_VOICE;

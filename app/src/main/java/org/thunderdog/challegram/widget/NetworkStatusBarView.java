@@ -20,6 +20,9 @@ import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -57,9 +60,6 @@ import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
-
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
@@ -124,6 +124,7 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
     if (rootView != null) {
       rootView.addInsetsChangeListener(this);
     }
+    checkProxyHint();
   }
 
   @Override
@@ -133,6 +134,8 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
       rootView.removeInsetsChangeListener(this);
       rootView = null;
     }
+    removeCallbacks(proxyTimer);
+    proxyTimerScheduled = false;
   }
 
   @Override
@@ -184,7 +187,6 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
     UI.getContext(getContext()).removeActivityListener(this);
     removeCallbacks(this);
     removeCallbacks(proxyTimer);
-    proxyProbeToken++;
     Screen.removeStatusBarHeightListener(this);
   }
 
@@ -223,30 +225,19 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
   // Proxy suggestion: Telegram has been connecting for a while, but the internet itself works.
 
   private static final long PROXY_HINT_DELAY_MS = 10_000L;
-  private static final String CONNECTIVITY_CHECK_URL = "https://www.gstatic.com/generate_204";
 
   private boolean proxyTimerScheduled, proxyHintAvailable;
-  private int proxyProbeToken;
 
   private final Runnable proxyTimer = this::onProxyTimer;
 
   private void onProxyTimer () {
     proxyTimerScheduled = false;
-    if (!isConnectingState(state) || proxyHintAvailable) {
-      return;
+    if (isConnectingState(state) && !proxyHintAvailable && isInternetValidated()) {
+      proxyHintAvailable = true;
+      statusWrap.setClickable(true);
+      statusWrap.setOnClickListener(v -> openProxySettings());
+      refreshText();
     }
-    final int token = ++proxyProbeToken;
-    new Thread(() -> {
-      boolean internetWorks = checkInternet();
-      post(() -> {
-        if (token == proxyProbeToken && internetWorks && isConnectingState(state)) {
-          proxyHintAvailable = true;
-          statusWrap.setClickable(true);
-          statusWrap.setOnClickListener(v -> openProxySettings());
-          refreshText();
-        }
-      });
-    }, "proxy-hint-probe").start();
   }
 
   private static boolean isConnectingState (@ConnectionState int state) {
@@ -265,14 +256,12 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
       // Waiting for network / updating: nothing to suggest right now
       removeCallbacks(proxyTimer);
       proxyTimerScheduled = false;
-      proxyProbeToken++;
     }
   }
 
   private void resetProxyHint () {
     removeCallbacks(proxyTimer);
     proxyTimerScheduled = false;
-    proxyProbeToken++;
     if (proxyHintAvailable) {
       proxyHintAvailable = false;
       statusWrap.setOnClickListener(null);
@@ -280,22 +269,25 @@ public class NetworkStatusBarView extends FrameLayoutFix implements Destroyable,
     }
   }
 
-  /** Plain request outside of Telegram's connection (and its proxy): is the internet reachable at all? */
-  private static boolean checkInternet () {
-    HttpURLConnection connection = null;
+  /**
+   * Does the internet itself work (the system has validated the active network)? Below API 23 there is no such
+   * check: TDLib already reports «waiting for network» without a network, so a long «connecting» is enough.
+   */
+  private boolean isInternetValidated () {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      return true;
+    }
     try {
-      connection = (HttpURLConnection) new URL(CONNECTIVITY_CHECK_URL).openConnection();
-      connection.setInstanceFollowRedirects(false);
-      connection.setConnectTimeout(4000);
-      connection.setReadTimeout(4000);
-      connection.setUseCaches(false);
-      return connection.getResponseCode() == 204;
-    } catch (Throwable ignored) {
-      return false;
-    } finally {
-      if (connection != null) {
-        connection.disconnect();
+      ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+      if (cm == null) {
+        return false;
       }
+      Network network = cm.getActiveNetwork();
+      NetworkCapabilities capabilities = network != null ? cm.getNetworkCapabilities(network) : null;
+      return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+    } catch (SecurityException e) {
+      // Some Android 11 builds throw here despite ACCESS_NETWORK_STATE
+      return false;
     }
   }
 

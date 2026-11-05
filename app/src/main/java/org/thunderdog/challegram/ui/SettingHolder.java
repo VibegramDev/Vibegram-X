@@ -82,6 +82,7 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.ThemeListenerEntry;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
@@ -2825,10 +2826,26 @@ public class SettingHolder extends RecyclerView.ViewHolder {
     Drawable background = view.getBackground();
     if (background instanceof SegmentBackground) {
       c.save();
-      c.clipPath(((SegmentBackground) background).content.buildPath());
+      SegmentShape content = ((SegmentBackground) background).content;
+      c.clipPath(content.buildPath(content.isSelected()));
       return true;
     }
     return false;
+  }
+
+  /**
+   * Makes the row a card of a segmented group (SettingsAdapter.setSegmented, hand-built screens): installs the segment
+   * background once (its colors are read at draw time, so the row is invalidated on theme changes) and sets its shape.
+   */
+  public static void setSegmentShape (View view, boolean connectedTop, boolean connectedBottom, @Nullable ViewController<?> themeProvider) {
+    Drawable background = view.getBackground();
+    if (!(background instanceof SegmentBackground)) {
+      ViewUtils.setBackground(view, background = new SegmentBackground());
+      if (themeProvider != null && themeProvider.getThemeListeners().findThemeListenerByTarget(view, ThemeListenerEntry.MODE_INVALIDATE) == null) {
+        themeProvider.addThemeInvalidateListener(view);
+      }
+    }
+    ((SegmentBackground) background).setShape(view, connectedTop, connectedBottom);
   }
 
   private static int segmentRippleColor () {
@@ -2939,6 +2956,8 @@ public class SettingHolder extends RecyclerView.ViewHolder {
     private final Path path = new Path();
     private final RectF rect = new RectF();
     private final float[] radii = new float[8];
+    private final Rect pathBounds = new Rect();
+    private float pathTopRadius = -1f, pathBottomRadius = -1f;
 
     SegmentShape (boolean isContent) {
       this.isContent = isContent;
@@ -2962,28 +2981,34 @@ public class SettingHolder extends RecyclerView.ViewHolder {
       return row != null && NavigationController.isTabletSelectedRow(row, null, 0);
     }
 
-    Path buildPath () {
+    Path buildPath (boolean selected) {
       float outer = Screen.dp(M3.CORNER_LARGE);
       float inner = Screen.dp(M3.CORNER_EXTRA_SMALL);
       Rect bounds = getBounds();
       float maxRadius = Math.min(bounds.width(), bounds.height()) / 2f;
       // Selected: "Selected list items have a 16dp corner radius all around" (m3.material.io/components/lists).
-      float shapeFactor = isSelected() ? 1f : this.shapeFactor;
+      float shapeFactor = selected ? 1f : this.shapeFactor;
       float top = MathUtils.clamp(MathUtils.fromTo(connectedTop ? inner : outer, outer, shapeFactor), 0f, maxRadius);
       float bottom = MathUtils.clamp(MathUtils.fromTo(connectedBottom ? inner : outer, outer, shapeFactor), 0f, maxRadius);
-      radii[0] = radii[1] = radii[2] = radii[3] = top;
-      radii[4] = radii[5] = radii[6] = radii[7] = bottom;
-      rect.set(bounds);
-      path.reset();
-      path.addRoundRect(rect, radii, Path.Direction.CW);
+      if (top != pathTopRadius || bottom != pathBottomRadius || !bounds.equals(pathBounds)) {
+        pathTopRadius = top;
+        pathBottomRadius = bottom;
+        pathBounds.set(bounds);
+        radii[0] = radii[1] = radii[2] = radii[3] = top;
+        radii[4] = radii[5] = radii[6] = radii[7] = bottom;
+        rect.set(bounds);
+        path.reset();
+        path.addRoundRect(rect, radii, Path.Direction.CW);
+      }
       return path;
     }
 
     @Override
     public void draw (@NonNull Canvas c) {
-      Path path = buildPath();
+      boolean selected = isSelected();
+      Path path = buildPath(selected);
       // Cards on the surface page: one containment level up; the selected row: secondaryContainer (ListTokens).
-      c.drawPath(path, Paints.fillingPaint(!isContent ? 0xFFFFFFFF : isSelected() ? M3.secondaryContainer() : M3.surfaceContainer()));
+      c.drawPath(path, Paints.fillingPaint(!isContent ? 0xFFFFFFFF : selected ? M3.secondaryContainer() : M3.surfaceContainer()));
       if (isContent && liftFactor > 0f) {
         c.drawPath(path, Paints.fillingPaint(ColorUtils.alphaColor(M3.STATE_DRAGGED * MathUtils.clamp(liftFactor), M3.onSurface())));
       }
@@ -2993,7 +3018,7 @@ public class SettingHolder extends RecyclerView.ViewHolder {
     @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     @Override
     public void getOutline (@NonNull Outline outline) {
-      Path path = buildPath();
+      Path path = buildPath(isSelected());
       if (radii[0] == radii[4]) {
         outline.setRoundRect(getBounds(), radii[0]);
       } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
