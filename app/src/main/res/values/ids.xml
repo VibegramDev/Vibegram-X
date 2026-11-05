@@ -370,6 +370,7 @@
   <item type="id" name="btn_resetIcon" />
   <item type="id" name="btn_viewAsChat" />
   <item type="id" name="btn_viewAsTopics" />
+  <item type="id" name="btn_sideTabs" />
   <item type="id" name="btn_viewAsTabs" />
   <item type="id" name="btn_members" />
   <item type="id" name="btn_membersReading" />

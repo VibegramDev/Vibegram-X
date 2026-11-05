@@ -4,4 +4,6 @@
   <string name="vg_BotForumNewThread">Новая тема</string>
   <string name="vg_BotForumNewThreadText">Отправьте сообщение для начала нового обсуждения.</string>
   <string name="vg_BotForumContinueThread">Вернуться к последней теме</string>
+  <string name="vg_TopicTabsOnTop">Вкладки сверху</string>
+  <string name="vg_TopicTabsOnSide">Вкладки сбоку</string>
 </resources>
