@@ -69,9 +69,6 @@
   <item type="id" name="menu_btn_lock" />
   <item type="id" name="menu_btn_search" />
   <item type="id" name="menu_btn_compose" />
-  <item type="id" name="menu_btn_calls" />
-  <item type="id" name="menu_btn_contacts" />
-  <item type="id" name="menu_btn_account" />
   <item type="id" name="btn_tabletFoldersPosition" />
   <item type="id" name="btn_tabletFoldersSide" />
   <item type="id" name="btn_tabletFoldersBelowSearch" />
@@ -772,7 +769,6 @@
   <item type="id" name="btn_centerTitles" />
   <item type="id" name="btn_messageSelectText" />
   <item type="id" name="btn_quoteSelection" />
-  <item type="id" name="btn_navigationStyleRail" />
   <item type="id" name="btn_navigationStyleDock" />
   <item type="id" name="btn_navigationStyleBar" />
   <item type="id" name="btn_chatListStyle1" />

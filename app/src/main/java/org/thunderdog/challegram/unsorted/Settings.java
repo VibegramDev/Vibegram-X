@@ -1333,9 +1333,8 @@ public class Settings {
 
   // Main screen navigation style (phone)
 
-  /** Floating vertical rail at the bottom-end corner, folder tabs in the bottom bar. Default. */
-  public static final int NAVIGATION_STYLE_RAIL = 0;
-  /** Floating bar of the tablet layout at the bottom (with its shadow), folders as chips above it. */
+  // 0: the former floating vertical rail (removed), shown as the dock now.
+  /** Floating bar of the tablet layout at the bottom (with its shadow), folders as chips above it. Default. */
   public static final int NAVIGATION_STYLE_DOCK = 1;
   /** M3 navigation bar: full width at the bottom, icons with labels; folders as tabs below the app bar. */
   public static final int NAVIGATION_STYLE_BAR = 2;
@@ -1349,8 +1348,8 @@ public class Settings {
 
   public int getNavigationStyle () {
     if (_navigationStyle == null) {
-      int style = pmc.getInt(KEY_NAVIGATION_STYLE, NAVIGATION_STYLE_RAIL);
-      _navigationStyle = style == NAVIGATION_STYLE_DOCK || style == NAVIGATION_STYLE_BAR ? style : NAVIGATION_STYLE_RAIL;
+      int style = pmc.getInt(KEY_NAVIGATION_STYLE, NAVIGATION_STYLE_DOCK);
+      _navigationStyle = style == NAVIGATION_STYLE_BAR ? style : NAVIGATION_STYLE_DOCK;
     }
     return _navigationStyle;
   }

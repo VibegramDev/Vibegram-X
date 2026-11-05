@@ -197,7 +197,7 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
     boolean rtl = Lang.rtl();
     int width = getMeasuredWidth();
     boolean emojiFits = emojiFits(width);
-    // Narrow app bar (actions of the collapsed dock): no emoji, then the title is ellipsized.
+    // Narrow app bar: no emoji, then the title is ellipsized.
     float maxTextWidth = width - Screen.dp(START_PADDING) - Screen.dp(END_PADDING);
     if (maxTextWidth <= 0) {
       return;
@@ -207,7 +207,7 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
       float size = Math.max(MIN_TITLE_SIZE, TITLE_SIZE * maxTextWidth / paint.measureText(title));
       paint = Paints.getMediumTextPaint(size, Theme.headerTextColor(), false);
       if (paint.measureText(title) > maxTextWidth) {
-        // Narrow phones with the collapsed dock: a cut "Vibe…" is worse than no title, the actions take the app bar.
+        // Very narrow app bar: a cut "Vibe…" is worse than no title, the actions take the app bar.
         return;
       }
     }
