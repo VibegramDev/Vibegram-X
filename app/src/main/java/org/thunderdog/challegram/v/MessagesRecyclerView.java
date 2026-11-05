@@ -24,6 +24,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.thunderdog.challegram.component.attach.CustomItemAnimator;
+import org.thunderdog.challegram.component.chat.BotForumThreadHint;
 import org.thunderdog.challegram.component.chat.CustomTouchHelper;
 import org.thunderdog.challegram.component.chat.MessagesAdapter;
 import org.thunderdog.challegram.component.chat.MessagesManager;
@@ -349,6 +350,23 @@ public class MessagesRecyclerView extends RecyclerView implements FactorAnimator
     protected TGMessage lastMessage;
     protected int lastTop;
     protected float lastAlpha;
+
+    @Override
+    public void onDraw (Canvas c, RecyclerView parent, State state) {
+      BotForumThreadHint hint = manager.controller().getBotForumThreadHint();
+      if (hint == null) {
+        return;
+      }
+      // The list is reversed: the card goes under the newest message, in the bottom padding
+      for (int i = 0; i < parent.getChildCount(); i++) {
+        View view = parent.getChildAt(i);
+        if (parent.getChildAdapterPosition(view) == 0) {
+          int top = view.getBottom() + (int) view.getTranslationY();
+          hint.draw(c, parent.getMeasuredWidth(), top);
+          return;
+        }
+      }
+    }
 
     @Override
     public void onDrawOver (Canvas c, RecyclerView parent, State state) {

@@ -3476,6 +3476,157 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     return supergroup != null && supergroup.isForum;
   }
 
+  /** Chat with a bot that has topics: it opens as topics, like a forum. */
+  public boolean isBotForum (long chatId) {
+    TdApi.UserTypeBot bot = chatBotType(chatId);
+    return bot != null && bot.hasTopics;
+  }
+
+  /** Chat with a bot that has topics, which the user creates, renames, pins and deletes. */
+  public boolean canManageBotForumTopics (long chatId) {
+    TdApi.UserTypeBot bot = chatBotType(chatId);
+    return bot != null && bot.hasTopics && bot.allowsUsersToCreateTopics;
+  }
+
+  private @Nullable TdApi.UserTypeBot chatBotType (long chatId) {
+    TdApi.User user = chatUser(chatId);
+    if (user != null && user.type.getConstructor() == TdApi.UserTypeBot.CONSTRUCTOR) {
+      return (TdApi.UserTypeBot) user.type;
+    }
+    return null;
+  }
+
+  private static final int BOT_FORUM_TOPIC_NAME_LENGTH = 16;
+
+  /** Sends waiting for the new topic of their chat, accessed on the UI thread. */
+  private final HashMap<Long, List<RunnableData<TdApi.MessageTopic>>> pendingBotForumTopics =
+    new HashMap<>();
+
+  /**
+   * In a chat with a bot whose users create topics, messages sent outside of topics start a new
+   * topic, as in the official app: the topic is created first, named after the message, and the
+   * functions are moved into it. Returns false, without calling {@code after}, when the functions
+   * don't need a topic. Otherwise {@code after} runs on the UI thread once they are in the new
+   * topic, or with the functions as they are when the topic can't be created.
+   */
+  public boolean sendInNewBotForumTopic (
+    List<? extends TdApi.Function<?>> functions,
+    Runnable after
+  ) {
+    long chatId = 0;
+    for (TdApi.Function<?> function : functions) {
+      long functionChatId = chatIdWithoutTopic(function);
+      if (functionChatId == 0 || (chatId != 0 && functionChatId != chatId)) {
+        return false;
+      }
+      chatId = functionChatId;
+    }
+    if (chatId == 0 || !canManageBotForumTopics(chatId)) {
+      return false;
+    }
+    final long finalChatId = chatId;
+    final String name = newBotForumTopicName(functions.get(0));
+    runOnUiThread(() -> {
+      RunnableData<TdApi.MessageTopic> send = topicId -> {
+        if (topicId != null) {
+          for (TdApi.Function<?> function : functions) {
+            setTopicId(function, topicId);
+          }
+        }
+        after.run();
+      };
+      List<RunnableData<TdApi.MessageTopic>> pending = pendingBotForumTopics.get(finalChatId);
+      if (pending != null) {
+        // Messages sent while the topic is being created go to the same topic
+        pending.add(send);
+        return;
+      }
+      pending = new ArrayList<>();
+      pending.add(send);
+      pendingBotForumTopics.put(finalChatId, pending);
+      client().send(new TdApi.CreateForumTopic(finalChatId, name, true, null), result -> {
+        TdApi.MessageTopic topicId;
+        if (result.getConstructor() == TdApi.ForumTopicInfo.CONSTRUCTOR) {
+          topicId = new TdApi.MessageTopicForum(((TdApi.ForumTopicInfo) result).forumTopicId);
+        } else {
+          Log.e("Unable to create a bot topic: %s", TD.toErrorString(result));
+          topicId = null;
+        }
+        runOnUiThread(() -> {
+          List<RunnableData<TdApi.MessageTopic>> sends = pendingBotForumTopics.remove(finalChatId);
+          for (RunnableData<TdApi.MessageTopic> pendingSend : sends) {
+            pendingSend.runWithData(topicId);
+          }
+        });
+      });
+    });
+    return true;
+  }
+
+  /** Chat of a function that sends messages outside of topics and without a reply, or 0. */
+  private static long chatIdWithoutTopic (TdApi.Function<?> function) {
+    switch (function.getConstructor()) {
+      case TdApi.SendMessage.CONSTRUCTOR: {
+        TdApi.SendMessage send = (TdApi.SendMessage) function;
+        return send.topicId == null && send.replyTo == null ? send.chatId : 0;
+      }
+      case TdApi.SendMessageAlbum.CONSTRUCTOR: {
+        TdApi.SendMessageAlbum send = (TdApi.SendMessageAlbum) function;
+        return send.topicId == null && send.replyTo == null ? send.chatId : 0;
+      }
+      case TdApi.SendInlineQueryResultMessage.CONSTRUCTOR: {
+        TdApi.SendInlineQueryResultMessage send = (TdApi.SendInlineQueryResultMessage) function;
+        return send.topicId == null && send.replyTo == null ? send.chatId : 0;
+      }
+      case TdApi.ForwardMessages.CONSTRUCTOR: {
+        TdApi.ForwardMessages forward = (TdApi.ForwardMessages) function;
+        return forward.topicId == null ? forward.chatId : 0;
+      }
+    }
+    return 0;
+  }
+
+  private static void setTopicId (TdApi.Function<?> function, TdApi.MessageTopic topicId) {
+    switch (function.getConstructor()) {
+      case TdApi.SendMessage.CONSTRUCTOR:
+        ((TdApi.SendMessage) function).topicId = topicId;
+        break;
+      case TdApi.SendMessageAlbum.CONSTRUCTOR:
+        ((TdApi.SendMessageAlbum) function).topicId = topicId;
+        break;
+      case TdApi.SendInlineQueryResultMessage.CONSTRUCTOR:
+        ((TdApi.SendInlineQueryResultMessage) function).topicId = topicId;
+        break;
+      case TdApi.ForwardMessages.CONSTRUCTOR:
+        ((TdApi.ForwardMessages) function).topicId = topicId;
+        break;
+    }
+  }
+
+  /** The beginning of the text or the caption, as the official app names such topics. */
+  private static String newBotForumTopicName (TdApi.Function<?> function) {
+    TdApi.InputMessageContent content = null;
+    if (function.getConstructor() == TdApi.SendMessage.CONSTRUCTOR) {
+      content = ((TdApi.SendMessage) function).inputMessageContent;
+    } else if (function.getConstructor() == TdApi.SendMessageAlbum.CONSTRUCTOR) {
+      TdApi.SendMessageAlbum album = (TdApi.SendMessageAlbum) function;
+      content = album.inputMessageContents.length > 0 ? album.inputMessageContents[0] : null;
+    }
+    TdApi.FormattedText text = Td.textOrCaption(content);
+    String name = text != null ? text.text.trim() : null;
+    if (StringUtils.isEmpty(name)) {
+      return Lang.getString(R.string.TabMedia);
+    }
+    if (name.length() <= BOT_FORUM_TOPIC_NAME_LENGTH) {
+      return name;
+    }
+    int end = BOT_FORUM_TOPIC_NAME_LENGTH;
+    if (Character.isHighSurrogate(name.charAt(end - 1))) {
+      end--;
+    }
+    return name.substring(0, end) + "...";
+  }
+
   private static class ForumUnreadTopics {
     /** Unread visible topics among the first page of the topic list: topic id → id of the last known unread message. */
     final HashMap<Integer, Long> topics = new HashMap<>();

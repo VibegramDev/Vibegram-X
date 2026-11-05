@@ -35,6 +35,7 @@ import org.thunderdog.challegram.navigation.ViewPagerController;
 import org.thunderdog.challegram.navigation.ViewPagerTopView;
 import tgx.td.ChatId;
 import org.thunderdog.challegram.telegram.ChatListener;
+import org.thunderdog.challegram.telegram.MessageListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
@@ -53,7 +54,15 @@ import me.vkryl.core.collection.IntList;
 
 import org.thunderdog.challegram.util.StringList;
 
-public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabsController.Arguments> implements TdlibCache.SupergroupDataChangeListener, ChatListener, Menu, MoreDelegate {
+/**
+ * Forum topics as tabs. Chats with bots that have topics open here too: as in the official app,
+ * their first tab «All» shows the whole chat, and a message sent there starts a new topic
+ * ({@link Tdlib#sendInNewBotForumTopic}).
+ */
+public class ForumTopicTabsController
+  extends ViewPagerController<ForumTopicTabsController.Arguments>
+  implements TdlibCache.SupergroupDataChangeListener, ChatListener, MessageListener, Menu,
+  MoreDelegate {
 
   public static class Arguments {
     public final TdApi.Chat chat;
@@ -73,6 +82,12 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   private boolean isSubscribedToUpdates;
   private boolean knownIsForum = true, knownHasForumTabs = true;
 
+  private static final long ALL_ITEM_ID = 0;
+
+  private boolean isBotForum;
+  /** Topic to open once it's added: the one the user has just created. */
+  private int pendingSelectTopicId;
+
   public ForumTopicTabsController (Context context, Tdlib tdlib) {
     super(context, tdlib);
   }
@@ -82,6 +97,17 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
     super.setArguments(args);
     this.chat = args.chat;
     this.chatId = args.chat.id;
+    this.isBotForum = tdlib.isBotForum(chatId);
+  }
+
+  /** Number of tabs before the topics: «All» in chats with bots. */
+  private int topicsOffset () {
+    return isBotForum ? 1 : 0;
+  }
+
+  /** Chats with bots don't show the General topic, as in the official app. */
+  private boolean isShownTopic (TdApi.ForumTopic topic) {
+    return !(isBotForum && topic.info.isGeneral);
   }
 
   @Override
@@ -111,8 +137,8 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
 
   @Override
   protected int getMenuButtonsWidth () {
-    // Width for the more button (3 dots)
-    return Screen.dp(56f);
+    // Width for the more button (3 dots) and the button that creates topics in chats with bots
+    return Screen.dp(56f) + (canCreateBotTopics() ? Screen.dp(49f) : 0);
   }
 
   @Override
@@ -135,8 +161,11 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
         knownIsForum = supergroup.isForum;
         knownHasForumTabs = supergroup.hasForumTabs;
       }
-      tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      if (ChatId.isSupergroup(chatId)) {
+        tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      }
       tdlib.listeners().subscribeToChatUpdates(chatId, this);
+      tdlib.listeners().subscribeToMessageUpdates(chatId, this);
       isSubscribedToUpdates = true;
     }
 
@@ -144,7 +173,7 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
     java.util.List<TdApi.ForumTopic> cachedTopics = tdlib.getCachedForumTopics(chatId);
     if (cachedTopics != null && !cachedTopics.isEmpty()) {
       topics.clear();
-      topics.addAll(cachedTopics);
+      addShownTopics(cachedTopics);
       // Rebuild the pager with cached topics immediately
       notifyPagerItemPositionsChanged();
     }
@@ -156,9 +185,7 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
         tdlib.ui().post(() -> {
           if (isDestroyed()) return;
           topics.clear();
-          for (TdApi.ForumTopic topic : forumTopics.topics) {
-            topics.add(topic);
-          }
+          addShownTopics(java.util.Arrays.asList(forumTopics.topics));
           setNextOffset(forumTopics);
           // Update cache
           tdlib.updateForumTopicsCache(chatId, topics);
@@ -168,6 +195,7 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
           if (!topics.isEmpty()) {
             notifyPagerItemPositionsChanged();
           }
+          selectPendingTopic();
         });
       } else {
         tdlib.ui().post(() -> isLoading = false);
@@ -175,15 +203,30 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
     });
   }
 
+  private void addShownTopics (List<TdApi.ForumTopic> newTopics) {
+    for (TdApi.ForumTopic topic : newTopics) {
+      if (isShownTopic(topic)) {
+        topics.add(topic);
+      }
+    }
+  }
+
   @Override
   protected int getPagerItemCount () {
+    if (isBotForum) {
+      return 1 + topics.size();
+    }
     return topics.isEmpty() ? 1 : topics.size();
   }
 
   @Override
   protected long getPagerItemId (int position) {
-    if (position < topics.size()) {
-      return topics.get(position).info.forumTopicId;
+    if (isBotForum && position == 0) {
+      return ALL_ITEM_ID;
+    }
+    int index = position - topicsOffset();
+    if (index < topics.size()) {
+      return topics.get(index).info.forumTopicId;
     }
     return position;
   }
@@ -191,7 +234,12 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   @Override
   protected @Nullable List<ViewPagerTopView.Item> getPagerSectionItems () {
     List<ViewPagerTopView.Item> items = new ArrayList<>();
-    if (topics.isEmpty()) {
+    if (isBotForum) {
+      items.add(new ViewPagerTopView.Item(Lang.getString(R.string.DirectMessagesAll)));
+      for (TdApi.ForumTopic topic : topics) {
+        items.add(new ViewPagerTopView.Item(topic.info.name));
+      }
+    } else if (topics.isEmpty()) {
       // Return a "Loading..." placeholder to ensure tabs are created
       items.add(new ViewPagerTopView.Item(Lang.getString(R.string.LoadingTopics)));
     } else {
@@ -210,12 +258,19 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
 
   @Override
   protected ViewController<?> onCreatePagerItemForPosition (Context context, int position) {
+    if (isBotForum && position == 0) {
+      MessagesController controller = new MessagesController(context, tdlib);
+      controller.setArguments(
+        new MessagesController.Arguments(tdlib, null, chat, null, null, null)
+      );
+      return controller;
+    }
     if (topics.isEmpty()) {
       // Show empty loading placeholder
       return createEmptyController(context);
     }
 
-    TdApi.ForumTopic topic = topics.get(position);
+    TdApi.ForumTopic topic = topics.get(position - topicsOffset());
     MessagesController controller = new MessagesController(context, tdlib);
 
     MessagesController.Arguments args = new MessagesController.Arguments(
@@ -246,7 +301,7 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   @Override
   public void onPageScrolled (int position, int actualPosition, float positionOffset, int positionOffsetPixels) {
     // Load more topics when scrolling near the end
-    if (hasMore && !isLoading && actualPosition >= topics.size() - 3) {
+    if (hasMore && !isLoading && actualPosition - topicsOffset() >= topics.size() - 3) {
       loadMoreTopics();
     }
   }
@@ -261,7 +316,7 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
         tdlib.ui().post(() -> {
           if (isDestroyed()) return;
           for (TdApi.ForumTopic topic : forumTopics.topics) {
-            if (indexOfTopic(topic.info.forumTopicId) == -1) {
+            if (isShownTopic(topic) && indexOfTopic(topic.info.forumTopicId) == -1) {
               topics.add(topic);
             }
           }
@@ -282,6 +337,59 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
     nextOffsetMessageId = forumTopics.nextOffsetMessageId;
     nextOffsetForumTopicId = forumTopics.nextOffsetForumTopicId;
     hasMore = forumTopics.topics.length > 0 && (nextOffsetDate != 0 || nextOffsetMessageId != 0 || nextOffsetForumTopicId != 0);
+  }
+
+  // MessageListener: topics created after the tabs were loaded
+
+  @Override
+  public void onNewMessage (TdApi.Message message) {
+    if (message.topicId == null ||
+      message.topicId.getConstructor() != TdApi.MessageTopicForum.CONSTRUCTOR) {
+      return;
+    }
+    int forumTopicId = ((TdApi.MessageTopicForum) message.topicId).forumTopicId;
+    boolean isCreatedByUser = message.isOutgoing &&
+      message.content.getConstructor() == TdApi.MessageForumTopicCreated.CONSTRUCTOR;
+    tdlib.ui().post(() -> {
+      if (isDestroyed() || indexOfTopic(forumTopicId) != -1) {
+        return;
+      }
+      if (isCreatedByUser) {
+        // As in the official app, the topic the user has just created opens
+        pendingSelectTopicId = forumTopicId;
+      }
+      tdlib.client().send(new TdApi.GetForumTopic(chatId, forumTopicId), result -> {
+        if (result.getConstructor() != TdApi.ForumTopic.CONSTRUCTOR) {
+          return;
+        }
+        TdApi.ForumTopic topic = (TdApi.ForumTopic) result;
+        tdlib.ui().post(() -> {
+          if (isDestroyed() || indexOfTopic(forumTopicId) != -1 || !isShownTopic(topic)) {
+            return;
+          }
+          // The topic has the newest message: it goes right after the pinned ones
+          int index = 0;
+          while (index < topics.size() && topics.get(index).isPinned) {
+            index++;
+          }
+          topics.add(index, topic);
+          tdlib.updateForumTopicsCache(chatId, topics);
+          notifyPagerItemPositionsChanged();
+          selectPendingTopic();
+        });
+      });
+    });
+  }
+
+  private void selectPendingTopic () {
+    if (pendingSelectTopicId == 0) {
+      return;
+    }
+    int index = indexOfTopic(pendingSelectTopicId);
+    if (index != -1) {
+      pendingSelectTopicId = 0;
+      setCurrentPagerPosition(topicsOffset() + index, true);
+    }
   }
 
   private int indexOfTopic (int forumTopicId) {
@@ -361,6 +469,10 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_search) {
+      if (canCreateBotTopics()) {
+        header.addButton(menu, R.id.btn_createTopic, R.drawable.baseline_create_24,
+          getHeaderIconColorId(), this, Screen.dp(49f));
+      }
       header.addMoreButton(menu, this);
     } else if (id == R.id.menu_clear) {
       header.addClearButton(menu, this);
@@ -369,9 +481,9 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
 
   @Nullable
   private TdApi.ForumTopic getCurrentTopic () {
-    int position = getCurrentPagerItemPosition();
-    if (position >= 0 && position < topics.size()) {
-      return topics.get(position);
+    int index = getCurrentPagerItemPosition() - topicsOffset();
+    if (index >= 0 && index < topics.size()) {
+      return topics.get(index);
     }
     return null;
   }
@@ -380,6 +492,8 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   public void onMenuItemPressed (int id, View view) {
     if (id == R.id.menu_btn_clear) {
       clearSearchInput();
+    } else if (id == R.id.btn_createTopic) {
+      showCreateTopicDialog();
     } else if (id == R.id.menu_btn_more) {
       TdApi.ForumTopic topic = getCurrentTopic();
 
@@ -393,6 +507,8 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
       strings.append(R.string.Search);
 
       boolean canManage = canManageTopics();
+      // Topics of chats with bots can't be closed, the rest is up to the user
+      boolean canEdit = canManage || canCreateBotTopics();
 
       // Topic-specific options (only if we have a valid topic)
       if (topic != null) {
@@ -414,7 +530,9 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
             icons.append(R.drawable.baseline_lock_24);
             strings.append(R.string.CloseTopic);
           }
+        }
 
+        if (canEdit) {
           // Pin/Unpin
           if (topic.isPinned) {
             ids.append(R.id.btn_unpinTopic);
@@ -430,6 +548,12 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
           ids.append(R.id.btn_editTopic);
           icons.append(R.drawable.baseline_edit_24);
           strings.append(R.string.EditTopic);
+        }
+
+        if (canCreateBotTopics()) {
+          ids.append(R.id.btn_deleteTopic);
+          icons.append(R.drawable.baseline_delete_24);
+          strings.append(R.string.DeleteTopic);
         }
       }
 
@@ -452,10 +576,12 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
       icons.append(R.drawable.baseline_format_list_bulleted_type_24);
       strings.append(R.string.ViewAsTopics);
 
-      // View as chat option (always available)
-      ids.append(R.id.btn_viewAsChat);
-      icons.append(R.drawable.baseline_chat_bubble_24);
-      strings.append(R.string.ViewAsChat);
+      // View as chat option (chats with bots have the «All» tab instead)
+      if (!isBotForum) {
+        ids.append(R.id.btn_viewAsChat);
+        icons.append(R.drawable.baseline_chat_bubble_24);
+        strings.append(R.string.ViewAsChat);
+      }
 
       showMore(ids.get(), strings.get(), icons.get(), 0);
     }
@@ -519,8 +645,35 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
         toggleTopicPinned(topic, false);
       } else if (id == R.id.btn_editTopic) {
         editTopic(topic);
+      } else if (id == R.id.btn_deleteTopic) {
+        deleteTopic(topic);
       }
     }
+  }
+
+  private void deleteTopic (TdApi.ForumTopic topic) {
+    showConfirm(
+      Lang.getStringBold(R.string.DeleteTopicConfirm, topic.info.name),
+      Lang.getString(R.string.Delete),
+      R.drawable.baseline_delete_24,
+      OptionColor.RED,
+      () -> {
+        TdApi.DeleteForumTopic function =
+          new TdApi.DeleteForumTopic(topic.info.chatId, topic.info.forumTopicId);
+        tdlib.client().send(function, result -> tdlib.ui().post(() -> {
+          if (result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
+            UI.showError(result);
+            return;
+          }
+          int index = indexOfTopic(topic.info.forumTopicId);
+          if (!isDestroyed() && index != -1) {
+            topics.remove(index);
+            tdlib.updateForumTopicsCache(chatId, topics);
+            notifyPagerItemPositionsChanged();
+          }
+        }));
+      }
+    );
   }
 
   private void toggleTopicPinned (TdApi.ForumTopic topic, boolean pinned) {
@@ -722,13 +875,21 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   public void destroy () {
     super.destroy();
     if (isSubscribedToUpdates) {
-      tdlib.cache().unsubscribeFromSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      if (ChatId.isSupergroup(chatId)) {
+        tdlib.cache().unsubscribeFromSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      }
       tdlib.listeners().unsubscribeFromChatUpdates(chatId, this);
+      tdlib.listeners().unsubscribeFromMessageUpdates(chatId, this);
       isSubscribedToUpdates = false;
     }
   }
 
   // Permission checks for topic actions
+
+  private boolean canCreateBotTopics () {
+    return isBotForum && tdlib.canManageBotForumTopics(chatId);
+  }
+
   private boolean canCreateTopics () {
     TdApi.ChatMemberStatus status = tdlib.chatStatus(chatId);
     if (status == null) return false;

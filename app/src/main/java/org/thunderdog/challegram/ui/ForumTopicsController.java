@@ -94,6 +94,8 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
   private long chatId;
   private TdApi.Chat chat;
+  /** Chat with a bot that has topics: no General topic, and topics can't be closed. */
+  private boolean isBotForum;
 
   private FrameLayoutFix contentView;
   private CustomRecyclerView recyclerView;
@@ -148,6 +150,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     super.setArguments(args);
     this.chatId = args.chatId;
     this.chat = args.chat;
+    this.isBotForum = tdlib.isBotForum(chatId);
   }
 
   @Override
@@ -218,7 +221,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
       ids.append(R.id.btn_viewAsChat);
       icons.append(R.drawable.baseline_chat_bubble_24);
-      strings.append(R.string.ViewAsChat);
+      strings.append(isBotForum ? R.string.DirectMessagesAll : R.string.ViewAsChat);
 
       showMore(ids.get(), strings.get(), icons.get(), 0);
     }
@@ -704,7 +707,9 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     if (isSubscribedToUpdates) {
       tdlib.listeners().unsubscribeFromChatUpdates(chatId, this);
       tdlib.listeners().unsubscribeFromMessageUpdates(chatId, this);
-      tdlib.cache().unsubscribeFromSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      if (ChatId.isSupergroup(chatId)) {
+        tdlib.cache().unsubscribeFromSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      }
       isSubscribedToUpdates = false;
     }
   }
@@ -722,6 +727,13 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
         tabsController.destroyStackItemAt(tabsController.stackSize() - 2);
       });
       navigateTo(tabsController);
+    } else if (id == R.id.btn_viewAsChat && isBotForum) {
+      // Chats with bots have no such setting: the whole chat opens above the topics, as «All» tab
+      MessagesController messagesController = new MessagesController(context, tdlib);
+      messagesController.setArguments(
+        new MessagesController.Arguments(null, chat, null, null, null, 0, null)
+      );
+      navigateTo(messagesController);
     } else if (id == R.id.btn_viewAsChat) {
       // Set viewAsTopics to false and open as unified chat
       tdlib.client().send(new TdApi.ToggleChatViewAsTopics(chatId, false), result -> {
@@ -763,7 +775,9 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
         knownIsForum = supergroup.isForum;
         knownHasForumTabs = supergroup.hasForumTabs;
       }
-      tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      if (ChatId.isSupergroup(chatId)) {
+        tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      }
       isSubscribedToUpdates = true;
     }
 
@@ -806,8 +820,18 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   }
 
   private void setAllTopics (List<TdApi.ForumTopic> newTopics) {
-    allTopics = new ArrayList<>(newTopics);
+    allTopics = new ArrayList<>(newTopics.size());
+    for (TdApi.ForumTopic topic : newTopics) {
+      if (isShownTopic(topic)) {
+        allTopics.add(topic);
+      }
+    }
     showTopicsForCurrentQuery();
+  }
+
+  /** Chats with bots don't show the General topic, as in the official app. */
+  private boolean isShownTopic (TdApi.ForumTopic topic) {
+    return !(isBotForum && topic.info.isGeneral);
   }
 
   /** Rebuilds the displayed list from allTopics, keeping the current topic name search. */
@@ -838,7 +862,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
           setNextOffset(forumTopics);
           List<TdApi.ForumTopic> added = new ArrayList<>(forumTopics.topics.length);
           for (TdApi.ForumTopic topic : forumTopics.topics) {
-            if (indexOfTopic(allTopics, topic.info.forumTopicId) == -1) {
+            if (isShownTopic(topic) && indexOfTopic(allTopics, topic.info.forumTopicId) == -1) {
               added.add(topic);
             }
           }
@@ -978,17 +1002,13 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
         strings.add(Lang.getString(R.string.PinTopic));
       }
 
-      // Admin-only: Close/Reopen
-      if (topic.info.isClosed) {
-        ids.append(R.id.btn_reopenTopic);
+      // Admin-only: Close/Reopen (topics of chats with bots can't be closed)
+      if (!isBotForum) {
+        boolean isClosed = topic.info.isClosed;
+        ids.append(isClosed ? R.id.btn_reopenTopic : R.id.btn_closeTopic);
         icons.append(R.drawable.baseline_lock_24);
         colors.append(OptionColor.NORMAL);
-        strings.add(Lang.getString(R.string.ReopenTopic));
-      } else {
-        ids.append(R.id.btn_closeTopic);
-        icons.append(R.drawable.baseline_lock_24);
-        colors.append(OptionColor.NORMAL);
-        strings.add(Lang.getString(R.string.CloseTopic));
+        strings.add(Lang.getString(isClosed ? R.string.ReopenTopic : R.string.CloseTopic));
       }
     }
 
@@ -1563,6 +1583,9 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   }
 
   private boolean canCreateTopics () {
+    if (isBotForum) {
+      return tdlib.canManageBotForumTopics(chatId);
+    }
     TdApi.ChatMemberStatus status = tdlib.chatStatus(chatId);
     if (status == null) return false;
 
@@ -1581,6 +1604,9 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   }
 
   private boolean canManageTopics () {
+    if (isBotForum) {
+      return tdlib.canManageBotForumTopics(chatId);
+    }
     TdApi.ChatMemberStatus status = tdlib.chatStatus(chatId);
     if (status == null) return false;
 

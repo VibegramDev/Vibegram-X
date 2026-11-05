@@ -2162,11 +2162,13 @@ public class TdlibUi extends Handler {
     }
 
     // Check if this is a forum chat that should be viewed as topics
-    if (tdlib.isForum(chat.id) && messageThread == null && messageTopicId == null) {
+    // Chats with bots that have topics open as forums with tabs, as in the official app
+    final boolean isBotForum = tdlib.isBotForum(chat.id);
+    if ((isBotForum || tdlib.isForum(chat.id)) && messageThread == null && messageTopicId == null) {
       // Check if forum has tabs layout enabled
       long supergroupId = ChatId.toSupergroupId(chat.id);
       TdApi.Supergroup supergroup = supergroupId != 0 ? tdlib.cache().supergroup(supergroupId) : null;
-      boolean hasForumTabs = supergroup != null && supergroup.hasForumTabs;
+      boolean hasForumTabs = isBotForum || (supergroup != null && supergroup.hasForumTabs);
 
       // Show topics view if viewAsTopics is true (default for forums)
       // Forums with tabs should always open in tabs view by default

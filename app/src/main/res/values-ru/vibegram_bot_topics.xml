@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: topics in chats with bots (texts of the official app). -->
+<resources>
+  <string name="vg_BotForumNewThread">Новая тема</string>
+  <string name="vg_BotForumNewThreadText">Отправьте сообщение для начала нового обсуждения.</string>
+</resources>

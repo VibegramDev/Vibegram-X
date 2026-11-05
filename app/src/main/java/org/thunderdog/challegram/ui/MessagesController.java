@@ -93,6 +93,7 @@ import org.thunderdog.challegram.component.attach.SponsoredMessagesInfoControlle
 import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.component.chat.AttachLinearLayout;
 import org.thunderdog.challegram.component.chat.AudioFile;
+import org.thunderdog.challegram.component.chat.BotForumThreadHint;
 import org.thunderdog.challegram.component.chat.ChatBottomBarView;
 import org.thunderdog.challegram.component.chat.ChatHeaderView;
 import org.thunderdog.challegram.component.chat.ChatSearchMembersView;
@@ -706,12 +707,40 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private int composerInsetSource = -1;
   private static final int COMPOSER_INSET_PENDING = -2;
 
+  private @Nullable BotForumThreadHint botForumThreadHint;
+  /** Chat for which {@link #needsBotForumThreadHint} was checked: it's asked on every frame. */
+  private long botForumThreadHintChatId;
+  private boolean needsBotForumThreadHint;
+
+  /** «New Thread» card of the whole chat with a bot whose users create topics, or null. */
+  public @Nullable BotForumThreadHint getBotForumThreadHint () {
+    if (chat == null || previewMode != PREVIEW_MODE_NONE || isInForceTouchMode() ||
+      messageThread != null || messageTopicId != null) {
+      return null;
+    }
+    if (botForumThreadHintChatId != chat.id) {
+      botForumThreadHintChatId = chat.id;
+      needsBotForumThreadHint = tdlib.canManageBotForumTopics(chat.id);
+    }
+    if (!needsBotForumThreadHint) {
+      return null;
+    }
+    if (botForumThreadHint == null) {
+      botForumThreadHint = new BotForumThreadHint(manager);
+    }
+    return botForumThreadHint;
+  }
+
   private void updateMessagesViewInset () {
     if (messagesView == null || messagesInsetFrozen) {
       return;
     }
     composerInsetSource = getFloatingComposerInset();
     int requestedInset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? composerInsetSource : extraBottomInset;
+    BotForumThreadHint threadHint = getBotForumThreadHint();
+    if (threadHint != null && messagesView.getMeasuredWidth() > 0) {
+      requestedInset += threadHint.getHeight(messagesView.getMeasuredWidth());
+    }
     int listHeight = messagesView.getMeasuredHeight();
     if (listHeight > 0) {
       // Never let the padding cover the whole list. For a moment the composer with a panel can be as tall as the list
@@ -2387,6 +2416,24 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  /** Replaces the whole chat with its topics, as tabs or as a list. */
+  private void openTopicsInstead (boolean asTabs) {
+    ViewController<?> forumController;
+    if (asTabs) {
+      ForumTopicTabsController tabsController = new ForumTopicTabsController(context, tdlib);
+      tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
+      forumController = tabsController;
+    } else {
+      ForumTopicsController listController = new ForumTopicsController(context, tdlib);
+      listController.setArguments(new ForumTopicsController.Arguments(chat));
+      forumController = listController;
+    }
+    forumController.addOneShotFocusListener(() -> {
+      forumController.destroyStackItemAt(forumController.stackSize() - 2);
+    });
+    navigateTo(forumController);
+  }
+
   @Override
   public void onMoreItemPressed (int id) {
     if (tdlib.ui().processLeaveButton(this, null, getChatId(), id, null)) {
@@ -2413,6 +2460,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (id == R.id.btn_openDirectMessages) {
       openLinkedChat(true);
     } else if (id == R.id.btn_viewAsTopics) {
+      if (tdlib.isBotForum(chat.id)) {
+        // Chats with bots have no such setting: they always open as topics
+        int viewPreference = tdlib.settings().getForumViewPreference(chat.id);
+        openTopicsInstead(viewPreference != TdlibSettingsManager.FORUM_VIEW_TOPICS);
+        return;
+      }
       // Set viewAsTopics to true and open forum topics view
       tdlib.client().send(new TdApi.ToggleChatViewAsTopics(chat.id, true), result -> {
         if (result.getConstructor() == TdApi.Ok.CONSTRUCTOR) {
@@ -2420,24 +2473,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
             // Navigate directly to forum controller (don't use openChat - chat object not updated yet)
             long supergroupId = ChatId.toSupergroupId(chat.id);
             TdApi.Supergroup supergroup = supergroupId != 0 ? tdlib.cache().supergroup(supergroupId) : null;
-            boolean hasForumTabs = supergroup != null && supergroup.hasForumTabs;
-
-            ViewController<?> forumController;
-            if (hasForumTabs) {
-              ForumTopicTabsController tabsController = new ForumTopicTabsController(context, tdlib);
-              tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
-              forumController = tabsController;
-            } else {
-              ForumTopicsController listController = new ForumTopicsController(context, tdlib);
-              listController.setArguments(new ForumTopicsController.Arguments(chat));
-              forumController = listController;
-            }
-
-            // Navigate and destroy current controller
-            forumController.addOneShotFocusListener(() -> {
-              forumController.destroyStackItemAt(forumController.stackSize() - 2);
-            });
-            navigateTo(forumController);
+            openTopicsInstead(supergroup != null && supergroup.hasForumTabs);
           });
         }
       });
@@ -4875,7 +4911,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
 
     // Add "View as topics" option for forum chats viewed as unified chat
-    if (tdlib.isForum(chat.id) && messageThread == null && forumTopic == null && !chat.viewAsTopics) {
+    boolean canViewAsTopics = tdlib.isBotForum(chat.id) ||
+      (tdlib.isForum(chat.id) && !chat.viewAsTopics);
+    if (canViewAsTopics && messageThread == null && forumTopic == null && messageTopicId == null) {
       ids.append(R.id.btn_viewAsTopics);
       strings.append(R.string.ViewAsTopics);
     }
