@@ -1379,7 +1379,13 @@ public class RoundVideoController extends BasePlaybackController implements
       int translationY = (int) recyclerView.getTranslationY() - Views.getBottomMargin(recyclerView);
       int topOffset = m.getTopOffset();
       topOffset += UI.getContext(context).navigation().getHeaderView().getFilling().getPlayerOffset();
-      setMargins(topOffset + Math.max(0, translationY), bottomOffset + Math.max(-translationY, 0));
+      int bottomClip = bottomOffset + Math.max(-translationY, 0);
+      int composerTop = rootView.getHeight() > 0 ? m.getFloatingComposerTop(rootView) : -1;
+      if (composerTop >= 0) {
+        // Floating composer: the list goes down to the screen edge, the player stops at the composer.
+        bottomClip = Math.max(bottomClip, rootView.getHeight() - composerTop);
+      }
+      setMargins(topOffset + Math.max(0, translationY), bottomClip);
       abort = abort || !m.isFocused() && isAnimatingBackward;
     } else {
       // setBottomMargin(0);
