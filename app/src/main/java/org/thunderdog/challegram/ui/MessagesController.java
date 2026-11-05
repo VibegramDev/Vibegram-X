@@ -10742,7 +10742,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
             }
             quote.entities = entities.toArray(new TdApi.TextEntity[0]);
           }
-          final TdApi.InputTextQuote inputQuote = new TdApi.InputTextQuote(quote, start);
+          final TdApi.InputTextQuote inputQuote = new TdApi.InputTextQuote(quote, new TdApi.RichText[0], start);
           final TdApi.Message message = msg.getNewestMessage();
           finishTextSelection();
           msg.getMessageProperties(message.id, properties -> runOnUiThreadOptional(() -> {

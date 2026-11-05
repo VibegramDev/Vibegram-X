@@ -419,7 +419,7 @@ public final class OAuthSheet {
 
   private static void accept (ViewController<?> context, Request request, PopupLayout sheet, Runnable onFailed) {
     final String displayName = request.displayName();
-    TdApi.AcceptOauthRequest function = new TdApi.AcceptOauthRequest(request.url, request.selectedMatchCode != null ? request.selectedMatchCode : "", request.requestWriteAccess && request.allowWriteAccess, request.allowPhoneNumberAccess);
+    TdApi.AcceptOauthRequest function = new TdApi.AcceptOauthRequest(request.url, request.selectedMatchCode != null ? request.selectedMatchCode : "", request.requestWriteAccess && request.allowWriteAccess, request.allowPhoneNumberAccess, null);
     request.tdlib.send(function, (httpUrl, error) -> UI.post(() -> {
       sheet.hideWindow(true);
       if (error != null) {
