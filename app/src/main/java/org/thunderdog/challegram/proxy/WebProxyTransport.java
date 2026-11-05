@@ -437,7 +437,7 @@ public final class WebProxyTransport {
             && (!carrierConnected || !stream.opened || stream.sendWindow == 0)) {
             lock.wait();
           }
-          if (stopped || streams.get(stream.id) != stream) {
+          if (stopped || streams.get(stream.id) != stream || stream.finishing) {
             return;
           }
           allowance = (int) Math.min(DATA_CHUNK, stream.sendWindow);
@@ -453,7 +453,7 @@ public final class WebProxyTransport {
         byte[] data = new byte[count];
         System.arraycopy(buffer, 0, data, 0, count);
         synchronized (lock) {
-          if (stopped || streams.get(stream.id) != stream || !carrierConnected) {
+          if (stopped || streams.get(stream.id) != stream || stream.finishing || !carrierConnected) {
             return;
           }
           stream.sendWindow -= count;
@@ -766,23 +766,24 @@ public final class WebProxyTransport {
       if (payload.length == 0) {
         return false;
       }
+      final boolean startWriter;
       synchronized (lock) {
+        if (streams.get(stream.id) != stream || stream.finishing) {
+          return true;
+        }
         if (stream.receiveWindow < payload.length) {
           return false;
         }
+        // Queued bytes are bounded by the window: it is returned only once they reach the socket.
         stream.receiveWindow -= payload.length;
+        stream.incoming.add(payload);
+        startWriter = !stream.writing;
+        stream.writing = true;
       }
-      try {
-        OutputStream output = stream.socket.getOutputStream();
-        output.write(payload);
-        synchronized (lock) {
-          if (streams.get(stream.id) == stream) {
-            stream.receiveWindow += payload.length;
-            sendFrame(FRAME_WINDOW, stream.id, uint32(payload.length));
-          }
-        }
-      } catch (Exception e) {
-        closeStream(stream, true);
+      if (startWriter) {
+        try {
+          ioExecutor.execute(() -> writeLoop(stream));
+        } catch (Exception ignore) { /* executor is shut down */ }
       }
       return true;
     } else if (type == FRAME_WINDOW && payload.length == 4) {
@@ -805,14 +806,51 @@ public final class WebProxyTransport {
     return false;
   }
 
+  private void writeLoop (Stream stream) {
+    try {
+      OutputStream output = stream.socket.getOutputStream();
+      while (true) {
+        final byte[] data;
+        synchronized (lock) {
+          data = stream.incoming.poll();
+          if (data == null) {
+            stream.writing = false;
+            if (stream.finishing) {
+              break;
+            }
+            return;
+          }
+        }
+        output.write(data);
+        synchronized (lock) {
+          if (streams.get(stream.id) == stream && !stream.finishing) {
+            stream.receiveWindow += data.length;
+            sendFrame(FRAME_WINDOW, stream.id, uint32(data.length));
+          }
+        }
+      }
+    } catch (Exception e) {
+      closeStream(stream, true);
+      return;
+    }
+    closeStream(stream, false);
+  }
+
   private void closeStream (Stream stream, boolean notifyRelay) {
-    boolean sendClose;
+    final boolean sendClose;
     synchronized (lock) {
       if (streams.get(stream.id) != stream) {
         return;
       }
+      if (!notifyRelay && stream.writing) {
+        // CLOSE from the relay comes after its DATA: writeLoop delivers what is queued and then closes the stream.
+        stream.finishing = true;
+        lock.notifyAll();
+        return;
+      }
       streams.remove(stream.id);
-      sendClose = notifyRelay && carrierConnected && stream.opened;
+      sendClose = notifyRelay && carrierConnected && stream.opened && !stream.finishing;
+      stream.incoming.clear();
       lock.notifyAll();
     }
     closeSocket(stream.socket);
@@ -988,9 +1026,13 @@ public final class WebProxyTransport {
   private static final class Stream {
     final int id;
     final Socket socket;
+    // DATA from the relay, written to the socket by writeLoop
+    final ArrayDeque<byte[]> incoming = new ArrayDeque<>();
     long sendWindow = INITIAL_WINDOW;
     long receiveWindow = INITIAL_WINDOW;
     boolean opened;
+    boolean writing;
+    boolean finishing;
 
     Stream (int id, Socket socket) {
       this.id = id;
