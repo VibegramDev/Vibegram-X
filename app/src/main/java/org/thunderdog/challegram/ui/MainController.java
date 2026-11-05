@@ -3489,6 +3489,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     // Dock style: the folders are separate floating chips above the dock.
     boolean chipStyle = displayTabsAtBottom && isDockStyle();
     headerCell.getTopView().setChipStyle(chipStyle);
+    headerCell.getTopView().setChipElevated(chipStyle);
     headerCell.getTopView().setItemPadding(Screen.dp(chipStyle ? ViewPagerTopView.CHIP_ITEM_PADDING : hasFolders ? ViewPagerTopView.COMPACT_ITEM_PADDING : ViewPagerTopView.DEFAULT_ITEM_PADDING));
     headerCell.getTopView().setItemSpacing(Screen.dp(hasFolders ? ViewPagerTopView.COMPACT_ITEM_SPACING : ViewPagerTopView.DEFAULT_ITEM_SPACING));
     headerCellView.setFadingEdgeLength(displayTabsAtBottom && !chipStyle ? 0f : 16f);

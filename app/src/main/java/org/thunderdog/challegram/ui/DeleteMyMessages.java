@@ -28,7 +28,7 @@ import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.UI;
-import org.thunderdog.challegram.widget.VgSheets;
+import org.thunderdog.challegram.navigation.AlertPopup;
 
 import java.text.DateFormat;
 import java.util.ArrayList;
@@ -104,17 +104,28 @@ public final class DeleteMyMessages {
     }));
   }
 
+  /** Seconds the «Delete» button stays locked: deleting all own messages can't be undone. */
+  private static final int CONFIRM_DELAY_SECONDS = 3;
+
   private static void confirmStart (ViewController<?> context, long chatId, int totalCount, long lastMessageId) {
     final Tdlib tdlib = context.tdlib();
     final String title = tdlib.chatTitle(chatId);
     CharSequence text = totalCount > 0 ?
       Lang.getStringBold(R.string.vg_DeleteMyMessagesConfirm, title, Lang.formatNumber(totalCount)) :
       Lang.getStringBold(R.string.vg_DeleteMyMessagesConfirmUnknown, title);
-    VgSheets.showLockedDialog(context, Lang.getString(R.string.vg_DeleteMyMessagesTitle), text, Lang.getString(R.string.Delete), null, null, VgSheets.CONFIRM_DELAY_SECONDS, true, confirmed -> {
-      if (confirmed && !isRunning(tdlib, chatId)) {
-        new Job(tdlib, chatId, totalCount, lastMessageId).start();
-      }
-    });
+    new AlertPopup.Builder(context.context())
+      .setController(context)
+      .setTitle(Lang.getString(R.string.vg_DeleteMyMessagesTitle))
+      .setMessage(text)
+      .setNegativeButton(Lang.getString(R.string.Cancel), null)
+      .setPositiveButton(Lang.getString(R.string.Delete), (dialog, which) -> {
+        if (!isRunning(tdlib, chatId)) {
+          new Job(tdlib, chatId, totalCount, lastMessageId).start();
+        }
+      })
+      .setPositiveButtonDestructive()
+      .setPositiveButtonDelay(CONFIRM_DELAY_SECONDS)
+      .show();
   }
 
   private static void confirmStop (ViewController<?> context, Job job) {

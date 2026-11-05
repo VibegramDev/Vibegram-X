@@ -165,6 +165,11 @@ public class ListItem {
   public static final int TYPE_HEADER_WITH_TEXT_BUTTON = 143;
   public static final int TYPE_HEADER_WITH_CHECKBOX = 144;
 
+  /** Vibegram X: icon, title, amount, caption and text of a sheet or a screen, drawn by {@link org.thunderdog.challegram.widget.InfoHeaderView}. */
+  public static final int TYPE_INFO_HEADER = 145;
+  /** Vibegram X: M3 common button (56dp) on the page colour; style in {@link #setIntValue} ({@link org.thunderdog.challegram.widget.M3ButtonView#STYLE_FILLED} by default). */
+  public static final int TYPE_M3_BUTTON = 146;
+
   public static final int TYPE_CHAT_EMPTY = 1000;
   public static final int TYPE_MESSAGE = 1001;
   public static final int TYPE_MESSAGE_MEDIA = 1002;

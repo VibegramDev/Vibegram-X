@@ -16,7 +16,6 @@
  */
 package org.thunderdog.challegram.stars;
 
-import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -28,7 +27,8 @@ import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.UI;
-import org.thunderdog.challegram.widget.VgSheets;
+import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
+import org.thunderdog.challegram.ui.ListItem;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -297,19 +297,19 @@ public final class PaidMessages {
       CharSequence line2 = payment.messageCount == 1 ?
         Lang.plural(R.string.vg_StarsPaidMessagePayOne, payment.total()) :
         payForMessages(payment.total(), payment.messageCount);
-      message = VgSheets.markdown(line1 + "\n\n" + line2);
+      message = line1 + "\n\n" + line2;
     } else {
       recipient = Lang.plural(R.string.vg_StarsPaidMessageChats, paid.size());
       CharSequence line1 = Lang.plural(R.string.vg_StarsPaidMessageMultiChats, paid.size());
       CharSequence line2 = payForMessages(totalStars, totalMessages);
-      message = VgSheets.markdown(line1 + "\n\n" + line2);
+      message = line1 + "\n\n" + line2;
     }
     final CharSequence finalRecipient = recipient;
-    VgSheets.showLockedDialog(context,
+    StarsUi.confirm(context,
       Lang.getString(R.string.vg_StarsPaidMessageConfirmTitle),
-      Stars.withIcons(message),
+      message,
       Lang.plural(R.string.vg_StarsPaidMessagePayButton, totalMessages),
-      null, null, 0,
+      0, false,
       confirmed -> {
         if (!confirmed) {
           after.runWithBool(false);
@@ -427,11 +427,11 @@ public final class PaidMessages {
       CharSequence line2 = count == 1 ?
         Lang.plural(R.string.vg_StarsPaidMessagePayOne, total) :
         payForMessages(total, count);
-      VgSheets.showLockedDialog(context,
+      StarsUi.confirm(context,
         Lang.getString(R.string.vg_StarsPaidMessageConfirmTitle),
-        Stars.withIcons(VgSheets.markdown(line1 + "\n\n" + line2)),
+        line1 + "\n\n" + line2,
         Lang.plural(R.string.vg_StarsPaidMessagePayButton, count),
-        null, null, 0,
+        0, false,
         confirmed -> {
           if (!confirmed) {
             return;
@@ -459,39 +459,44 @@ public final class PaidMessages {
       }
       long paidStars = revenue != null ? revenue.starCount : 0;
       String name = tdlib.cache().userName(userId);
-      final boolean[] refund = {false};
-      LinearLayout content = null;
-      if (paidStars > 0) {
-        content = new LinearLayout(context.context());
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.addView(VgSheets.newSwitchCard(context.context(), Stars.withIcons(Lang.plural(R.string.vg_StarsRemoveFeeRefund, paidStars)), false, isEnabled -> refund[0] = isEnabled), VgSheets.wide(16f, 0));
-      }
-      VgSheets.showLockedDialog(context,
-        Lang.getString(R.string.vg_StarsRemoveFeeTitle),
-        VgSheets.markdown(Lang.getString(R.string.vg_StarsRemoveFeeMessage, name)),
-        Lang.getString(R.string.vg_StarsRemoveFeeAction),
-        null, content, 0,
-        confirmed -> {
-          if (!confirmed) {
-            return;
+      RunnableBool onConfirmed = refund -> {
+        Runnable remove = () -> tdlib.send(new TdApi.AllowUnpaidMessagesFromUser(userId, refund), (ok, error1) -> UI.post(() -> {
+          if (error1 != null) {
+            UI.showError(error1);
+          } else {
+            UI.showToast(Lang.getString(R.string.vg_StarsRemoveFeeDone, name), android.widget.Toast.LENGTH_SHORT);
           }
-          Runnable remove = () -> tdlib.send(new TdApi.AllowUnpaidMessagesFromUser(userId, refund[0]), (ok, error1) -> UI.post(() -> {
-            if (error1 != null) {
-              UI.showError(error1);
-            } else {
-              UI.showToast(Lang.getString(R.string.vg_StarsRemoveFeeDone, name), android.widget.Toast.LENGTH_SHORT);
-            }
-          }));
-          CharSequence again = refund[0] ?
-            Lang.getString(R.string.vg_StarsConfirmAgainRefund, Stars.format(paidStars), name) :
-            Lang.getString(R.string.vg_StarsConfirmAgainRemoveFee, name);
-          StarsUi.confirmAgain(context, again, Lang.getString(refund[0] ? R.string.vg_StarsRefundAction : R.string.vg_StarsRemoveFeeAction), confirmedAgain -> {
-            if (confirmedAgain) {
-              remove.run();
+        }));
+        CharSequence again = refund ?
+          Lang.getString(R.string.vg_StarsConfirmAgainRefund, Stars.format(paidStars), name) :
+          Lang.getString(R.string.vg_StarsConfirmAgainRemoveFee, name);
+        StarsUi.confirmAgain(context, again, Lang.getString(refund ? R.string.vg_StarsRefundAction : R.string.vg_StarsRemoveFeeAction), confirmedAgain -> {
+          if (confirmedAgain) {
+            remove.run();
+          }
+        });
+      };
+      if (paidStars > 0) {
+        // Telegram X dialog with an option (as «Pin message» with «Notify all members»).
+        context.showSettings(new SettingsWrapBuilder(R.id.btn_vgStarsRemoveFee)
+          .addHeaderItem(new ListItem(ListItem.TYPE_INFO, 0, 0, StarsUi.markdownSpans(context, Lang.getString(R.string.vg_StarsRemoveFeeMessage, name)), false))
+          .setRawItems(new ListItem[] {
+            new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_vgStarsRefund, 0, Lang.plural(R.string.vg_StarsRemoveFeeRefund, paidStars), false)
+          })
+          .setSaveStr(Lang.getString(R.string.vg_StarsRemoveFeeAction))
+          .setIntDelegate((id, result) -> onConfirmed.runWithBool(result.get(R.id.btn_vgStarsRefund) != 0)));
+      } else {
+        StarsUi.confirm(context,
+          Lang.getString(R.string.vg_StarsRemoveFeeTitle),
+          Lang.getString(R.string.vg_StarsRemoveFeeMessage, name),
+          Lang.getString(R.string.vg_StarsRemoveFeeAction),
+          0, false,
+          confirmed -> {
+            if (confirmed) {
+              onConfirmed.runWithBool(false);
             }
           });
-        }
-      );
+      }
     }));
   }
 }

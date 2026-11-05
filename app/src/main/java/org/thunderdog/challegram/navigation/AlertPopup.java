@@ -15,6 +15,7 @@ package org.thunderdog.challegram.navigation;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.text.Spanned;
+import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.view.View;
@@ -51,6 +52,8 @@ public final class AlertPopup implements DialogInterface {
     private CharSequence positiveText, negativeText, neutralText;
     private @Nullable OnClickListener positiveListener, negativeListener, neutralListener;
     private boolean cancelable = true;
+    private boolean positiveDestructive;
+    private int positiveDelaySeconds;
     private @Nullable OnCancelListener onCancelListener;
     private @Nullable OnDismissListener onDismissListener;
 
@@ -59,7 +62,7 @@ public final class AlertPopup implements DialogInterface {
     }
 
     /** Screen whose theme changes recolour the dialog (default: the current screen). */
-    Builder setController (@Nullable ViewController<?> controller) {
+    public Builder setController (@Nullable ViewController<?> controller) {
       this.controller = controller;
       return this;
     }
@@ -95,6 +98,21 @@ public final class AlertPopup implements DialogInterface {
     public Builder setNeutralButton (CharSequence text, @Nullable OnClickListener listener) {
       this.neutralText = text;
       this.neutralListener = listener;
+      return this;
+    }
+
+    /** The positive action deletes something: error role for its label. */
+    public Builder setPositiveButtonDestructive () {
+      this.positiveDestructive = true;
+      return this;
+    }
+
+    /**
+     * Keeps the positive button disabled for {@code seconds} with a countdown in its label, so that a stray tap right
+     * after the dialog opens can't confirm (operations with Stars, deleting all messages).
+     */
+    public Builder setPositiveButtonDelay (int seconds) {
+      this.positiveDelaySeconds = seconds;
       return this;
     }
 
@@ -166,6 +184,12 @@ public final class AlertPopup implements DialogInterface {
     }
     if (b.positiveText != null) {
       positiveButton = dialog.addButton(View.NO_ID, b.positiveText, newClickListener(BUTTON_POSITIVE, b.positiveListener));
+      if (b.positiveDestructive) {
+        dialog.setButtonDestructive(positiveButton);
+      }
+      if (b.positiveDelaySeconds > 0) {
+        lockButton(dialog, positiveButton, b.positiveText, b.positiveDelaySeconds);
+      }
     }
 
     final boolean cancelable = b.cancelable;
@@ -201,6 +225,26 @@ public final class AlertPopup implements DialogInterface {
       }
     });
     popupLayout.showFadingPopupView(dialog);
+  }
+
+  private static void lockButton (DialogLayout dialog, TextView button, CharSequence label, int seconds) {
+    dialog.setButtonEnabled(button, false);
+    Runnable tick = new Runnable() {
+      int secondsLeft = seconds;
+
+      @Override
+      public void run () {
+        if (secondsLeft <= 0) {
+          button.setText(label);
+          dialog.setButtonEnabled(button, true);
+          return;
+        }
+        button.setText(TextUtils.concat(label, " · ", Integer.toString(secondsLeft)));
+        secondsLeft--;
+        button.postDelayed(this, 1000L);
+      }
+    };
+    tick.run();
   }
 
   private View.OnClickListener newClickListener (int which, @Nullable OnClickListener listener) {

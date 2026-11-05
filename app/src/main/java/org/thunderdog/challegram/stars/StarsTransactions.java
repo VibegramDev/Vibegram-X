@@ -16,17 +16,29 @@
  */
 package org.thunderdog.challegram.stars;
 
+import me.vkryl.android.widget.FrameLayoutFix;
+import me.vkryl.android.AnimatorUtils;
+import org.thunderdog.challegram.navigation.ViewPagerTopView;
+import android.animation.ValueAnimator;
 import android.content.Context;
-import android.graphics.drawable.GradientDrawable;
-import android.text.TextUtils;
-import android.util.TypedValue;
+import org.thunderdog.challegram.component.base.SettingView;
+import org.thunderdog.challegram.widget.PopupLayout;
+import org.thunderdog.challegram.widget.M3Sheets;
+import org.thunderdog.challegram.widget.M3ButtonView;
+import org.thunderdog.challegram.widget.InfoHeaderView;
+import org.thunderdog.challegram.util.text.TextStyleProvider;
+import org.thunderdog.challegram.util.text.TextColorSets;
+import org.thunderdog.challegram.util.text.TextColorSet;
+import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.tool.Paints;
+import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.loader.AvatarReceiver;
+import android.graphics.drawable.Drawable;
+import android.graphics.Canvas;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
@@ -41,22 +53,16 @@ import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Drawables;
-import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.ListItem;
 import org.thunderdog.challegram.ui.SettingsAdapter;
-import org.thunderdog.challegram.widget.AvatarView;
-import org.thunderdog.challegram.widget.M3StateLayerDrawable;
-import org.thunderdog.challegram.widget.NoScrollTextView;
-import org.thunderdog.challegram.widget.VgSheets;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import me.vkryl.core.ColorUtils;
 import me.vkryl.core.StringUtils;
 
 /**
@@ -288,165 +294,208 @@ public final class StarsTransactions {
 
   // Rows
 
-  /** Avatar of the counterpart or an icon in a tonal circle. */
-  static View newAvatar (Context context, Tdlib tdlib, Info info, float sizeDp) {
-    if (info.userId != 0 || info.chatId != 0 || info.sender != null) {
-      AvatarView avatarView = new AvatarView(context);
-      if (info.userId != 0) {
-        avatarView.setUser(tdlib, info.userId, false);
-      } else if (info.chatId != 0) {
-        avatarView.setChat(tdlib, tdlib.chat(info.chatId));
-      } else {
-        avatarView.setMessageSender(tdlib, info.sender);
-      }
-      return avatarView;
+  /** Incoming amounts: the positive colour of the theme; outgoing: M3 error. */
+  static final TextColorSet INCOMING_COLORS = () -> Theme.getColor(ColorId.iconPositive);
+  static final TextColorSet OUTGOING_COLORS = M3::error;
+
+  static TextColorSet amountColors (TdApi.StarAmount amount) {
+    return Stars.isNegative(amount) ? OUTGOING_COLORS : INCOMING_COLORS;
+  }
+
+  static @Nullable TdApi.MessageSender senderOf (Info info) {
+    if (info.userId != 0) {
+      return new TdApi.MessageSenderUser(info.userId);
     }
-    ImageView icon = new ImageView(context);
-    icon.setScaleType(ImageView.ScaleType.CENTER);
-    GradientDrawable circle = new GradientDrawable();
-    circle.setShape(GradientDrawable.OVAL);
-    circle.setColor(M3.secondaryContainer());
-    icon.setBackground(circle);
-    icon.setImageDrawable(Drawables.get(context.getResources(), info.iconRes));
-    icon.setColorFilter(M3.onSecondaryContainer());
-    return icon;
+    if (info.chatId != 0) {
+      return new TdApi.MessageSenderChat(info.chatId);
+    }
+    return info.sender;
   }
 
-  static final int COLOR_INCOMING = 0xFF3FB950, COLOR_OUTGOING = 0xFFE5534B;
+  /**
+   * Row of the list in one view (M3 list item, three lines): 40dp avatar of the counterpart or an icon in a tonal
+   * circle, title (body large), counterpart and date (body medium), signed amount and status at the end. Texts are
+   * drawn by the {@link Text} engine, colours are read when drawing.
+   */
+  static final class TransactionView extends View {
+    private static final float AVATAR_SIZE = 40f, PADDING = 16f;
+    private static TextStyleProvider titleStyle, subtitleStyle, statusStyle;
 
-  static CharSequence amountText (TdApi.StarAmount amount) {
-    return Stars.withIcons(Stars.signedAmount(amount), 1.1f);
-  }
-
-  static int amountColor (TdApi.StarAmount amount) {
-    return Stars.isNegative(amount) ? COLOR_OUTGOING : COLOR_INCOMING;
-  }
-
-  /** Row of the list: avatar, title, counterpart and date, signed amount. */
-  static final class TransactionView extends LinearLayout {
-    private final FrameLayout avatarWrap;
-    private final TextView title, subtitle, amount, status;
+    private final AvatarReceiver avatarReceiver;
+    private @Nullable Tdlib tdlib;
+    private @Nullable TdApi.StarTransaction transaction;
+    private boolean hasAvatar;
+    private @DrawableRes int iconRes;
+    private String titleString = "", subtitleString = "", amountString = "";
+    private @Nullable String statusString;
+    private TextColorSet amountColors = INCOMING_COLORS;
+    private @Nullable Text title, subtitle, amount, status;
+    private int builtWidth;
 
     TransactionView (Context context) {
       super(context);
-      setOrientation(HORIZONTAL);
-      setGravity(Gravity.CENTER_VERTICAL);
-      setMinimumHeight(Screen.dp(64f));
-      setPadding(Screen.dp(16f), Screen.dp(8f), Screen.dp(16f), Screen.dp(8f));
-      avatarWrap = new FrameLayout(context);
-      addView(avatarWrap, new LayoutParams(Screen.dp(40f), Screen.dp(40f)));
-
-      LinearLayout texts = new LinearLayout(context);
-      texts.setOrientation(VERTICAL);
-      title = VgSheets.newBody(context, "", false);
-      title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-      title.setTypeface(Fonts.getRobotoMedium());
-      title.setSingleLine(true);
-      title.setEllipsize(TextUtils.TruncateAt.END);
-      texts.addView(title);
-      subtitle = VgSheets.newCaption(context, "", false);
-      subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-      subtitle.setMaxLines(2);
-      subtitle.setEllipsize(TextUtils.TruncateAt.END);
-      texts.addView(subtitle);
-      LayoutParams textsParams = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-      textsParams.leftMargin = Screen.dp(16f);
-      textsParams.rightMargin = Screen.dp(8f);
-      addView(texts, textsParams);
-
-      LinearLayout right = new LinearLayout(context);
-      right.setOrientation(VERTICAL);
-      right.setGravity(Gravity.END);
-      amount = new NoScrollTextView(context);
-      amount.setTypeface(Fonts.getRobotoMedium());
-      amount.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-      amount.setSingleLine(true);
-      right.addView(amount);
-      status = VgSheets.newCaption(context, "", false);
-      status.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12f);
-      right.addView(status);
-      addView(right, new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+      avatarReceiver = new AvatarReceiver(this);
       setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-      setBackground(new M3StateLayerDrawable(null, VgSheets.roundRect(0xffffffff, 0f), ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface())));
       Views.setClickable(this);
     }
 
     void bind (Tdlib tdlib, TdApi.StarTransaction transaction) {
+      this.tdlib = tdlib;
+      this.transaction = transaction;
       Info info = describe(tdlib, transaction);
-      avatarWrap.removeAllViews();
-      avatarWrap.addView(newAvatar(getContext(), tdlib, info, 40f), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-      title.setText(info.title);
+      TdApi.MessageSender sender = senderOf(info);
+      hasAvatar = sender != null;
+      if (hasAvatar) {
+        avatarReceiver.requestMessageSender(tdlib, sender, AvatarReceiver.Options.NONE);
+      } else {
+        avatarReceiver.clear();
+      }
+      iconRes = info.iconRes;
+      titleString = info.title;
       String date = Lang.getModifiedTimestamp(transaction.date, TimeUnit.SECONDS);
-      subtitle.setText(StringUtils.isEmpty(info.subtitle) ? date : info.subtitle + "\n" + date);
-      amount.setText(amountText(transaction.starAmount));
-      amount.setTextColor(amountColor(transaction.starAmount));
-      status.setText(info.status != null ? info.status : "");
-      status.setVisibility(info.status != null ? VISIBLE : GONE);
+      subtitleString = StringUtils.isEmpty(info.subtitle) ? date : info.subtitle + "\n" + date;
+      amountString = Stars.signedAmount(transaction.starAmount);
+      amountColors = amountColors(transaction.starAmount);
+      statusString = info.status;
+      builtWidth = 0;
+      requestLayout();
+      invalidate();
+    }
+
+    private static TextStyleProvider style (int kind) {
+      if (titleStyle == null) {
+        titleStyle = Paints.robotoStyleProvider(16f);
+        subtitleStyle = Paints.robotoStyleProvider(14f);
+        statusStyle = Paints.robotoStyleProvider(12f);
+      }
+      return kind == 0 ? titleStyle : kind == 1 ? subtitleStyle : statusStyle;
+    }
+
+    private void buildTexts (int width) {
+      if (builtWidth == width) {
+        return;
+      }
+      builtWidth = width;
+      int padding = Screen.dp(PADDING);
+      amount = new Text.Builder(tdlib, amountString, null, width / 2, style(0), amountColors, null).allBold().singleLine().build();
+      status = !StringUtils.isEmpty(statusString) ? new Text.Builder(tdlib, statusString, null, width / 3, style(2), TextColorSets.Regular.LIGHT, null).singleLine().build() : null;
+      int endWidth = Math.max(amount.getWidth(), status != null ? status.getWidth() : 0);
+      int textWidth = Math.max(0, width - padding * 2 - Screen.dp(AVATAR_SIZE) - padding - Screen.dp(8f) - endWidth);
+      title = new Text.Builder(tdlib, titleString, null, textWidth, style(0), TextColorSets.Regular.NORMAL, null).allBold().singleLine().build();
+      subtitle = new Text.Builder(tdlib, subtitleString, null, textWidth, style(1), TextColorSets.Regular.LIGHT, null).maxLineCount(2).build();
+    }
+
+    @Override
+    protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
+      int width = MeasureSpec.getSize(widthMeasureSpec);
+      buildTexts(width);
+      int textsHeight = (title != null ? title.getHeight() : 0) + (subtitle != null ? subtitle.getHeight() : 0);
+      int height = Math.max(Screen.dp(72f), textsHeight + Screen.dp(12f) * 2);
+      setMeasuredDimension(width, height);
+    }
+
+    @Override
+    protected void onDraw (@NonNull Canvas c) {
+      int width = getMeasuredWidth(), height = getMeasuredHeight();
+      buildTexts(width);
+      boolean rtl = Lang.rtl();
+      int padding = Screen.dp(PADDING), avatarSize = Screen.dp(AVATAR_SIZE);
+      int avatarLeft = rtl ? width - padding - avatarSize : padding;
+      int avatarTop = (height - avatarSize) / 2;
+      if (hasAvatar) {
+        avatarReceiver.setBounds(avatarLeft, avatarTop, avatarLeft + avatarSize, avatarTop + avatarSize);
+        if (avatarReceiver.needPlaceholder()) {
+          avatarReceiver.drawPlaceholder(c);
+        }
+        avatarReceiver.draw(c);
+      } else {
+        float radius = avatarSize / 2f;
+        c.drawCircle(avatarLeft + radius, avatarTop + radius, radius, Paints.fillingPaint(M3.secondaryContainer()));
+        Drawable icon = Drawables.get(getResources(), iconRes);
+        if (icon != null) {
+          Drawables.drawCentered(c, icon, avatarLeft + radius, avatarTop + radius, Paints.getPorterDuffPaint(M3.onSecondaryContainer()));
+        }
+      }
+      int textsHeight = (title != null ? title.getHeight() : 0) + (subtitle != null ? subtitle.getHeight() : 0);
+      int y = (height - textsHeight) / 2;
+      int textStart = padding + avatarSize + padding;
+      if (title != null) {
+        title.draw(c, rtl ? width - textStart - title.getWidth() : textStart, y);
+        y += title.getHeight();
+      }
+      if (subtitle != null) {
+        subtitle.draw(c, rtl ? width - textStart - subtitle.getWidth() : textStart, y);
+      }
+      if (amount != null) {
+        int endHeight = amount.getHeight() + (status != null ? status.getHeight() : 0);
+        int endY = (height - endHeight) / 2;
+        amount.draw(c, rtl ? padding : width - padding - amount.getWidth(), endY);
+        if (status != null) {
+          status.draw(c, rtl ? padding : width - padding - status.getWidth(), endY + amount.getHeight());
+        }
+      }
+    }
+
+    @Override
+    protected void onAttachedToWindow () {
+      super.onAttachedToWindow();
+      avatarReceiver.attach();
+    }
+
+    @Override
+    protected void onDetachedFromWindow () {
+      super.onDetachedFromWindow();
+      avatarReceiver.detach();
     }
   }
 
   // Details
 
+  /** Details of a transaction in an M3 sheet: Telegram X rows of a {@link SettingsAdapter}. */
   public static void showDetails (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.StarTransaction transaction) {
     Info info = describe(tdlib, transaction);
-    VgSheets.showSheet(context, popupLayout -> {
-      Context ctx = context.context();
-      LinearLayout content = VgSheets.newContent(ctx);
-      View avatar = StarsUi.newPhotoView(ctx, tdlib, info.photo, 80f, 16f);
-      if (avatar == null) {
-        avatar = newAvatar(ctx, tdlib, info, 80f);
+    final PopupLayout[] popup = new PopupLayout[1];
+    SettingsAdapter adapter = new SettingsAdapter(context, v -> {
+      int id = v.getId();
+      if (id == R.id.btn_vgStarsTransaction) {
+        UI.copyText(transaction.id, R.string.vg_StarsTransactionIDCopied);
+      } else if (id == R.id.btn_done && popup[0] != null) {
+        popup[0].hideWindow(true);
       }
-      content.addView(avatar, VgSheets.centered(Screen.dp(80f), 12f, 16f));
-      content.addView(VgSheets.newTitle(ctx, info.title), VgSheets.wide(0, 4f));
-      TextView amountView = VgSheets.newTitle(ctx, amountText(transaction.starAmount));
-      amountView.setTextColor(amountColor(transaction.starAmount));
-      amountView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20f);
-      content.addView(amountView, VgSheets.wide(0, info.status != null ? 2f : 20f));
-      if (info.status != null) {
-        content.addView(VgSheets.newCaption(ctx, info.status, true), VgSheets.wide(0, 20f));
+    }, context) {
+      @Override
+      protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
+        TdApi.MessageSender sender = senderOf(info);
+        if (!view.setPhoto(tdlib, info.photo, 80f, 16f)) {
+          if (sender != null) {
+            view.setAvatar(tdlib, sender, 80f);
+          } else {
+            view.setIconSymbol(info.iconRes, 80f);
+          }
+        }
+        view.setTexts(tdlib, info.title, StarsUi.linkText(Lang.getString(R.string.vg_StarsTransactionTOS), StarsUi.TERMS_URL));
+        view.setAmount(Stars.signedAmount(transaction.starAmount), amountColors(transaction.starAmount), 22f);
+        view.setCaption(info.status);
       }
 
-      LinearLayout card = VgSheets.newCard(ctx);
-      if (!StringUtils.isEmpty(info.subtitle)) {
-        card.addView(newDetailRow(ctx, Lang.getString(Stars.isNegative(transaction.starAmount) ? R.string.vg_StarsTransactionTo : R.string.vg_StarsTransactionRecipient), info.subtitle, null));
+      @Override
+      protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
+        view.setData(item.getStringValue());
       }
-      card.addView(newDetailRow(ctx, Lang.getString(R.string.vg_StarsTransactionID), transaction.id, v -> UI.copyText(transaction.id, R.string.vg_StarsTransactionIDCopied)));
-      card.addView(newDetailRow(ctx, Lang.getString(R.string.vg_StarsTransactionDate), Lang.getTimestamp(transaction.date, TimeUnit.SECONDS), null));
-      content.addView(card, VgSheets.wide(0, 12f));
-
-      TextView terms = VgSheets.newCaption(ctx, StarsUi.linkified(context, Lang.getString(R.string.vg_StarsTransactionTOS), StarsUi.TERMS_URL), true);
-      VgSheets.setLinksClickable(terms);
-      content.addView(terms, VgSheets.wide(4f, 16f));
-
-      content.addView(VgSheets.newTonalButton(ctx, Lang.getString(R.string.OK), v -> popupLayout.hideWindow(true)), VgSheets.buttonParams(0));
-      return content;
-    });
-  }
-
-  private static View newDetailRow (Context context, CharSequence label, CharSequence value, @Nullable View.OnClickListener onClick) {
-    LinearLayout row = new LinearLayout(context);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setMinimumHeight(Screen.dp(48f));
-    row.setGravity(Gravity.CENTER_VERTICAL);
-    row.setPadding(Screen.dp(16f), Screen.dp(8f), Screen.dp(16f), Screen.dp(8f));
-    TextView labelView = VgSheets.newCaption(context, label, false);
-    labelView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-    row.addView(labelView, new LinearLayout.LayoutParams(Screen.dp(110f), ViewGroup.LayoutParams.WRAP_CONTENT));
-    TextView valueView = VgSheets.newBody(context, value, false);
-    valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-    valueView.setTextIsSelectable(false);
-    row.addView(valueView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-    if (onClick != null) {
-      ImageView copy = new ImageView(context);
-      copy.setScaleType(ImageView.ScaleType.CENTER);
-      copy.setImageDrawable(Drawables.get(context.getResources(), R.drawable.baseline_content_copy_24));
-      copy.setColorFilter(M3.onSurfaceVariant());
-      row.addView(copy, new LinearLayout.LayoutParams(Screen.dp(24f), Screen.dp(24f)));
-      row.setOnClickListener(onClick);
-      row.setBackground(new M3StateLayerDrawable(null, VgSheets.roundRect(0xffffffff, M3.CORNER_LARGE), ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface())));
-      Views.setClickable(row);
+    };
+    adapter.setSegmented();
+    ArrayList<ListItem> items = new ArrayList<>();
+    items.add(new ListItem(ListItem.TYPE_INFO_HEADER));
+    if (!StringUtils.isEmpty(info.subtitle)) {
+      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, 0, R.drawable.baseline_person_24, Stars.isNegative(transaction.starAmount) ? R.string.vg_StarsTransactionTo : R.string.vg_StarsTransactionRecipient).setStringValue(info.subtitle));
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     }
-    return row;
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStarsTransaction, R.drawable.baseline_content_copy_24, R.string.vg_StarsTransactionID).setStringValue(transaction.id));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, 0, R.drawable.baseline_date_range_24, R.string.vg_StarsTransactionDate).setStringValue(Lang.getTimestamp(transaction.date, TimeUnit.SECONDS)));
+    items.add(new ListItem(ListItem.TYPE_M3_BUTTON, R.id.btn_done, 0, R.string.OK).setIntValue(M3ButtonView.STYLE_TONAL));
+    adapter.setItems(items, false);
+    popup[0] = M3Sheets.showList(context, adapter);
   }
 
   // List section
@@ -462,7 +511,7 @@ public final class StarsTransactions {
     private boolean isLoading;
     private int requestId;
     private final List<TdApi.StarTransaction> transactions = new ArrayList<>();
-    private @Nullable LinearLayout tabsView;
+    private @Nullable ViewPagerTopView tabsView;
     /** Balance of the owner from the first page (before updateOwnedStarCount arrives). */
     public @Nullable me.vkryl.core.lambda.RunnableData<TdApi.StarAmount> onBalanceLoaded;
 
@@ -493,49 +542,53 @@ public final class StarsTransactions {
       reload();
     }
 
+    /** Filter chips "All / Incoming / Outgoing": TGX {@link ViewPagerTopView} in the M3 filter chip style. */
     public View newTabsView (Context ctx) {
-      LinearLayout tabs = new LinearLayout(ctx);
-      tabs.setOrientation(LinearLayout.HORIZONTAL);
-      tabs.setPadding(Screen.dp(16f), Screen.dp(4f), Screen.dp(16f), Screen.dp(8f));
-      int[] labels = {R.string.vg_StarsTransactionsAll, R.string.vg_StarsTransactionsIncoming, R.string.vg_StarsTransactionsOutgoing};
-      for (int i = 0; i < labels.length; i++) {
-        final int tab = i;
-        TextView chip = new NoScrollTextView(ctx);
-        chip.setGravity(Gravity.CENTER);
-        chip.setTypeface(Fonts.getRobotoMedium());
-        chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-        chip.setSingleLine(true);
-        chip.setEllipsize(TextUtils.TruncateAt.END);
-        chip.setPadding(Screen.dp(12f), 0, Screen.dp(12f), 0);
-        chip.setText(Lang.getString(labels[i]));
-        chip.setOnClickListener(v -> setDirection(tab));
-        Views.setClickable(chip);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, Screen.dp(36f), 1f);
-        if (i > 0) {
-          params.leftMargin = Screen.dp(8f);
-        }
-        tabs.addView(chip, params);
-      }
-      tabs.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-      tabsView = tabs;
-      updateTabs();
-      return tabs;
+      ViewPagerTopView chips = new ViewPagerTopView(ctx);
+      chips.setChipStyle(true);
+      chips.setItemPadding(Screen.dp(ViewPagerTopView.CHIP_ITEM_PADDING));
+      chips.setItemSpacing(0);
+      chips.setItems(new String[] {
+        Lang.getString(R.string.vg_StarsTransactionsAll),
+        Lang.getString(R.string.vg_StarsTransactionsIncoming),
+        Lang.getString(R.string.vg_StarsTransactionsOutgoing)
+      });
+      chips.setSelectionFactor(direction);
+      chips.setOnItemClickListener(this::setDirection);
+      chips.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT));
+      context.addThemeInvalidateListener(chips);
+
+      FrameLayoutFix wrap = new FrameLayoutFix(ctx);
+      // The first chip starts at the 16dp content margin: the chip draws its own 4dp half-gap.
+      int edge = Screen.dp(16f) - Screen.dp(ViewPagerTopView.CHIP_INSET);
+      wrap.setPadding(edge, 0, edge, 0);
+      wrap.addView(chips);
+      wrap.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(48f)));
+      tabsView = chips;
+      return wrap;
     }
 
+    private @Nullable ValueAnimator tabsAnimator;
+
     private void updateTabs () {
-      if (tabsView == null) {
+      ViewPagerTopView chips = tabsView;
+      if (chips == null) {
         return;
       }
-      for (int i = 0; i < tabsView.getChildCount(); i++) {
-        TextView chip = (TextView) tabsView.getChildAt(i);
-        boolean selected = i == direction;
-        chip.setTextColor(selected ? M3.onSecondaryContainer() : M3.onSurfaceVariant());
-        GradientDrawable shape = VgSheets.roundRect(selected ? M3.secondaryContainer() : 0, 18f);
-        if (!selected) {
-          shape.setStroke(Screen.dp(1f), M3.outlineVariant());
-        }
-        chip.setBackground(new M3StateLayerDrawable(shape, VgSheets.roundRect(0xffffffff, 18f), ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface())));
+      if (tabsAnimator != null) {
+        tabsAnimator.cancel();
       }
+      float from = chips.getSelectionFactor();
+      float to = direction;
+      if (!chips.isAttachedToWindow()) {
+        chips.setSelectionFactor(to);
+        return;
+      }
+      tabsAnimator = ValueAnimator.ofFloat(from, to);
+      tabsAnimator.setDuration(180L);
+      tabsAnimator.setInterpolator(AnimatorUtils.DECELERATE_INTERPOLATOR);
+      tabsAnimator.addUpdateListener(animation -> chips.setSelectionFactor((float) animation.getAnimatedValue()));
+      tabsAnimator.start();
     }
 
     public View newTransactionView (Context ctx) {

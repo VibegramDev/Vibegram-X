@@ -85,6 +85,8 @@ import org.thunderdog.challegram.util.SelectableItemDelegate;
 import org.thunderdog.challegram.v.CustomRecyclerView;
 import org.thunderdog.challegram.v.EditText;
 import org.thunderdog.challegram.widget.AvatarView;
+import org.thunderdog.challegram.widget.InfoHeaderView;
+import org.thunderdog.challegram.widget.M3ButtonView;
 import org.thunderdog.challegram.widget.BetterChatView;
 import org.thunderdog.challegram.widget.ChartLayout;
 import org.thunderdog.challegram.widget.CheckBoxView;
@@ -638,6 +640,16 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
     textView.setText(item.getString());
   }
 
+  /** Fills {@link ListItem#TYPE_INFO_HEADER}: icon, title, amount and text. */
+  protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
+    // Override to fill the header.
+  }
+
+  /** Label of {@link ListItem#TYPE_M3_BUTTON}: the item string; override to lock it or change the label. */
+  protected void setM3Button (ListItem item, M3ButtonView view, boolean isUpdate) {
+    view.setText(item.getString());
+  }
+
   protected void setButtonText (ListItem item, ScalableTextView view, boolean isUpdate) {
     CharSequence text = item.getString() != null ? item.getString().toString() : null;
     if (isUpdate) {
@@ -1010,6 +1022,19 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
           } else {
             boolean ok = false;
             switch (item.getViewType()) {
+              case ListItem.TYPE_INFO_HEADER: {
+                if (ok = view instanceof InfoHeaderView) {
+                  setInfoHeader(item, (InfoHeaderView) view, true);
+                }
+                break;
+              }
+              case ListItem.TYPE_M3_BUTTON: {
+                View button = ((ViewGroup) view).getChildAt(0);
+                if (ok = button instanceof M3ButtonView) {
+                  setM3Button(item, (M3ButtonView) button, true);
+                }
+                break;
+              }
               case ListItem.TYPE_REACTION_CHECKBOX: {
                 if (ok = view instanceof ReactionCheckboxSettingsView) {
                   setReaction(item, position, ((ReactionCheckboxSettingsView) view), true);
@@ -1719,6 +1744,26 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
     holder.itemView.setId(item.getId());
     holder.itemView.setTag(item);
     switch (viewType) {
+      case ListItem.TYPE_INFO_HEADER: {
+        setInfoHeader(item, (InfoHeaderView) holder.itemView, false);
+        break;
+      }
+      case ListItem.TYPE_M3_BUTTON: {
+        ViewGroup wrap = (ViewGroup) holder.itemView;
+        int style = item.getIntValue();
+        M3ButtonView button = wrap.getChildCount() > 0 ? (M3ButtonView) wrap.getChildAt(0) : null;
+        if (button == null || button.getStyle() != style) {
+          wrap.removeAllViews();
+          button = new M3ButtonView(wrap.getContext(), style, M3ButtonView.SIZE_MEDIUM);
+          button.addThemeListeners(themeProvider);
+          button.setOnClickListener(onClickListener);
+          wrap.addView(button, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        button.setId(item.getId());
+        button.setTag(item);
+        setM3Button(item, button, false);
+        break;
+      }
       case ListItem.TYPE_SHADOWED_OFFSET: {
         if (holder.itemView.getMeasuredHeight() != Screen.currentHeight() / 2) {
           holder.itemView.requestLayout();

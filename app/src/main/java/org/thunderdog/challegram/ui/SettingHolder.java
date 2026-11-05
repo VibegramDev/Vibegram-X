@@ -104,6 +104,7 @@ import org.thunderdog.challegram.widget.EmbeddableStickerView;
 import org.thunderdog.challegram.widget.EmptySmartView;
 import org.thunderdog.challegram.widget.EmptyTextView;
 import org.thunderdog.challegram.widget.GiftHeaderView;
+import org.thunderdog.challegram.widget.InfoHeaderView;
 import org.thunderdog.challegram.widget.JoinedUsersView;
 import org.thunderdog.challegram.widget.ListInfoView;
 import org.thunderdog.challegram.widget.LiveLocationView;
@@ -306,6 +307,13 @@ public class SettingHolder extends RecyclerView.ViewHolder {
       }
       case ListItem.TYPE_GIFT_HEADER: {
         return GiftHeaderView.getDefaultHeight();
+      }
+      case ListItem.TYPE_INFO_HEADER: {
+        // Wraps its texts; an estimate for the callers that sum the heights of the rows.
+        return Screen.dp(160f);
+      }
+      case ListItem.TYPE_M3_BUTTON: {
+        return Screen.dp(56f + 8f * 2);
       }
       default: {
         // FIXME: This can be used only by ThemeController
@@ -1221,6 +1229,20 @@ public class SettingHolder extends RecyclerView.ViewHolder {
           stupidView.addThemeListeners(themeProvider);
         }
         return new SettingHolder(stupidView);
+      }
+      case ListItem.TYPE_INFO_HEADER: {
+        InfoHeaderView view = new InfoHeaderView(context);
+        if (themeProvider != null) {
+          themeProvider.addThemeInvalidateListener(view);
+        }
+        view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return new SettingHolder(view);
+      }
+      case ListItem.TYPE_M3_BUTTON: {
+        FrameLayoutFix wrap = new FrameLayoutFix(context);
+        wrap.setPadding(Screen.dp(24f), Screen.dp(8f), Screen.dp(24f), Screen.dp(8f));
+        wrap.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return new SettingHolder(wrap);
       }
       case ListItem.TYPE_GIFT_HEADER: {
         GiftHeaderView view = new GiftHeaderView(context);

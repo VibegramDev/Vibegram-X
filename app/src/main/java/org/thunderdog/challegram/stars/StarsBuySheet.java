@@ -16,20 +16,12 @@
  */
 package org.thunderdog.challegram.stars;
 
-import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -39,18 +31,19 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
-import org.thunderdog.challegram.theme.M3;
-import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
-import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.widget.M3StateLayerDrawable;
-import org.thunderdog.challegram.widget.VgSheets;
+import org.thunderdog.challegram.component.base.SettingView;
+import org.thunderdog.challegram.ui.ListItem;
+import org.thunderdog.challegram.ui.SettingsAdapter;
+import org.thunderdog.challegram.widget.InfoHeaderView;
+import org.thunderdog.challegram.widget.M3Sheets;
+import org.thunderdog.challegram.widget.PopupLayout;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-import me.vkryl.core.ColorUtils;
 import me.vkryl.core.CurrencyUtils;
 import me.vkryl.core.StringUtils;
 
@@ -94,126 +87,98 @@ public final class StarsBuySheet {
   }
 
   private static void showSheet (ViewController<?> context, Tdlib tdlib, TdApi.StarPaymentOption[] options, long missingStars, @Nullable String purposeName, boolean forMessages, @Nullable Runnable onPurchased) {
-    VgSheets.showSheet(context, popupLayout -> {
-      Context ctx = context.context();
-      LinearLayout content = VgSheets.newContent(ctx);
-      content.addView(StarsUi.newStarIcon(ctx, 72f), VgSheets.centered(Screen.dp(72f), 12f, 12f));
-
-      CharSequence title = missingStars > 0 ?
-        Stars.withIcons(Lang.plural(R.string.vg_StarsNeededTitle, missingStars)) :
-        Lang.getString(R.string.vg_TelegramStars);
-      content.addView(VgSheets.newTitle(ctx, title), VgSheets.wide(0, 8f));
-
-      CharSequence text;
-      if (missingStars > 0 && !StringUtils.isEmpty(purposeName)) {
-        text = VgSheets.markdown(Lang.getString(forMessages ? R.string.vg_StarsNeededTextMessage : R.string.vg_StarsNeededText, purposeName));
-      } else {
-        text = StarsUi.linkified(context, Lang.getString(R.string.vg_TelegramStarsInfo), StarsUi.ABOUT_URL);
+    // Packages: regular ones; the additional ones behind «More Options». When some Stars are missing, only the
+    // packages that cover them.
+    List<TdApi.StarPaymentOption> main = new ArrayList<>(), additional = new ArrayList<>();
+    for (TdApi.StarPaymentOption option : options) {
+      if (missingStars > 0 && option.starCount < missingStars) {
+        continue;
       }
-      TextView textView = VgSheets.newBody(ctx, text, true);
-      VgSheets.setLinksClickable(textView);
-      content.addView(textView, VgSheets.wide(0, 4f));
+      (option.isAdditional && missingStars == 0 ? additional : main).add(option);
+    }
+    if (main.isEmpty() && additional.isEmpty()) {
+      Collections.addAll(main, options);
+    }
 
-      TextView balanceView = VgSheets.newCaption(ctx, Stars.withIcons(Lang.getString(R.string.vg_StarsYourBalance, Stars.STAR + " " + (tdlib.ownedStarCount() != null ? Stars.format(tdlib.ownedStarCount()) : "…"))), true);
-      content.addView(balanceView, VgSheets.wide(0, 20f));
-
-      TextView header = VgSheets.newCaption(ctx, Lang.getString(R.string.vg_TelegramStarsChoose), false);
-      header.setPadding(Screen.dp(16f), 0, Screen.dp(16f), 0);
-      content.addView(header, VgSheets.wide(0, 8f));
-
-      // Packages: regular ones; the additional ones behind «More Options». When some Stars are missing, only the
-      // packages that cover them.
-      List<TdApi.StarPaymentOption> main = new ArrayList<>(), additional = new ArrayList<>();
-      for (TdApi.StarPaymentOption option : options) {
-        if (missingStars > 0 && option.starCount < missingStars) {
-          continue;
+    final PopupLayout[] popup = new PopupLayout[1];
+    final SettingsAdapter[] adapterRef = new SettingsAdapter[1];
+    SettingsAdapter adapter = new SettingsAdapter(context, v -> {
+      ListItem item = (ListItem) v.getTag();
+      if (item == null) {
+        return;
+      }
+      if (v.getId() == R.id.btn_vgStarsMoreOptions) {
+        // Unfold the additional packages in place of the row.
+        SettingsAdapter list = adapterRef[0];
+        int at = list.indexOfViewById(R.id.btn_vgStarsMoreOptions);
+        if (at == -1) {
+          return;
         }
-        (option.isAdditional && missingStars == 0 ? additional : main).add(option);
+        int position = main.size();
+        List<ListItem> rows = new ArrayList<>();
+        for (TdApi.StarPaymentOption option : additional) {
+          rows.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+          rows.add(newOptionItem(option, ++position));
+        }
+        list.removeItem(at);
+        list.removeItem(at - 1);
+        list.addItems(at - 1, rows.toArray(new ListItem[0]));
+      } else if (item.getData() instanceof TdApi.StarPaymentOption) {
+        if (popup[0] != null) {
+          popup[0].hideWindow(true);
+        }
+        StarsCheckoutController.buyStars(context, tdlib, (TdApi.StarPaymentOption) item.getData(), onPurchased);
       }
-      if (main.isEmpty() && additional.isEmpty()) {
-        for (TdApi.StarPaymentOption option : options) {
-          main.add(option);
+    }, context) {
+      @Override
+      protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
+        view.setIcon(new StarDrawable(Screen.dp(72f)), 72f);
+        CharSequence title = missingStars > 0 ? Lang.plural(R.string.vg_StarsNeededTitle, missingStars) : Lang.getString(R.string.vg_TelegramStars);
+        TdApi.FormattedText text;
+        if (missingStars > 0 && !StringUtils.isEmpty(purposeName)) {
+          text = StarsUi.markdownText(Lang.getString(forMessages ? R.string.vg_StarsNeededTextMessage : R.string.vg_StarsNeededText, purposeName));
+        } else {
+          text = StarsUi.linkText(Lang.getString(R.string.vg_TelegramStarsInfo), StarsUi.ABOUT_URL);
+        }
+        view.setTexts(tdlib, title, text);
+        view.setCaption(Lang.getString(R.string.vg_StarsYourBalance, Stars.STAR + " " + (tdlib.ownedStarCount() != null ? Stars.format(tdlib.ownedStarCount()) : "…")));
+      }
+
+      @Override
+      protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
+        if (item.getData() instanceof TdApi.StarPaymentOption) {
+          TdApi.StarPaymentOption option = (TdApi.StarPaymentOption) item.getData();
+          view.setIconDrawable(new StarStackDrawable(Math.min(item.getIntValue(), 6)));
+          view.setData(CurrencyUtils.buildAmount(option.currency, option.amount));
         }
       }
+    };
+    adapterRef[0] = adapter;
+    adapter.setSegmented();
 
-      LinearLayout card = VgSheets.newCard(ctx);
-      int index = 0;
-      for (TdApi.StarPaymentOption option : main) {
-        card.addView(newOptionRow(ctx, option, ++index, v -> {
-          popupLayout.hideWindow(true);
-          StarsCheckoutController.buyStars(context, tdlib, option, onPurchased);
-        }));
+    ArrayList<ListItem> items = new ArrayList<>();
+    items.add(new ListItem(ListItem.TYPE_INFO_HEADER));
+    items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_TelegramStarsChoose));
+    int position = 0;
+    for (TdApi.StarPaymentOption option : main) {
+      if (position > 0) {
+        items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       }
-      if (!additional.isEmpty()) {
-        LinearLayout more = newMoreRow(ctx);
-        card.addView(more);
-        final int startIndex = index;
-        more.setOnClickListener(v -> {
-          int at = card.indexOfChild(more);
-          card.removeView(more);
-          int i = startIndex;
-          for (TdApi.StarPaymentOption option : additional) {
-            card.addView(newOptionRow(ctx, option, ++i, v1 -> {
-              popupLayout.hideWindow(true);
-              StarsCheckoutController.buyStars(context, tdlib, option, onPurchased);
-            }), at++);
-          }
-        });
-      }
-      content.addView(card, VgSheets.wide(0, 16f));
-
-      TextView terms = VgSheets.newCaption(ctx, StarsUi.linkified(context, Lang.getString(R.string.vg_StarsTOS), StarsUi.TERMS_URL), true);
-      VgSheets.setLinksClickable(terms);
-      content.addView(terms, VgSheets.wide(0, 8f));
-      return content;
-    });
+      items.add(newOptionItem(option, ++position));
+    }
+    if (!additional.isEmpty()) {
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgStarsMoreOptions, R.drawable.baseline_keyboard_arrow_down_24, R.string.vg_StarsMoreOptions));
+    }
+    items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, StarsUi.linkified(context, Lang.getString(R.string.vg_StarsTOS), StarsUi.TERMS_URL), false));
+    adapter.setItems(items, false);
+    popup[0] = M3Sheets.showList(context, adapter);
   }
 
-  private static LinearLayout newRowLayout (Context context) {
-    LinearLayout row = new LinearLayout(context);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setGravity(Gravity.CENTER_VERTICAL);
-    row.setMinimumHeight(Screen.dp(56f));
-    row.setPadding(Screen.dp(16f), 0, Screen.dp(16f), 0);
-    row.setBackground(new M3StateLayerDrawable(null, VgSheets.roundRect(0xffffffff, M3.CORNER_LARGE), ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface())));
-    Views.setClickable(row);
-    return row;
-  }
-
-  private static View newOptionRow (Context context, TdApi.StarPaymentOption option, int position, View.OnClickListener onClick) {
-    LinearLayout row = newRowLayout(context);
-    ImageView icon = new ImageView(context);
-    icon.setScaleType(ImageView.ScaleType.FIT_START);
-    int stackCount = Math.min(position, 6);
-    StarStackDrawable stack = new StarStackDrawable(stackCount);
-    icon.setImageDrawable(stack);
-    row.addView(icon, new LinearLayout.LayoutParams(stack.getIntrinsicWidth(), Screen.dp(24f)));
-
-    TextView title = VgSheets.newBody(context, Lang.plural(R.string.vg_StarsCount, option.starCount), false);
-    title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-    title.setTypeface(org.thunderdog.challegram.tool.Fonts.getRobotoMedium());
-    LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-    titleParams.leftMargin = Screen.dp(12f);
-    row.addView(title, titleParams);
-
-    TextView price = VgSheets.newBody(context, CurrencyUtils.buildAmount(option.currency, option.amount), false);
-    price.setTextColor(M3.onSurfaceVariant());
-    row.addView(price, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    row.setOnClickListener(onClick);
-    return row;
-  }
-
-  private static LinearLayout newMoreRow (Context context) {
-    LinearLayout row = newRowLayout(context);
-    TextView title = VgSheets.newBody(context, Lang.getString(R.string.vg_StarsMoreOptions), false);
-    title.setTextColor(M3.primary());
-    row.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-    ImageView arrow = new ImageView(context);
-    arrow.setScaleType(ImageView.ScaleType.CENTER);
-    arrow.setImageDrawable(Drawables.get(context.getResources(), R.drawable.baseline_keyboard_arrow_down_24));
-    arrow.setColorFilter(M3.primary());
-    row.addView(arrow, new LinearLayout.LayoutParams(Screen.dp(24f), Screen.dp(24f)));
-    return row;
+  private static ListItem newOptionItem (TdApi.StarPaymentOption option, int position) {
+    return new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStarsOption, 0, Lang.plural(R.string.vg_StarsCount, option.starCount), false)
+      .setData(option)
+      .setIntValue(position);
   }
 
   /** 1…6 overlapping stars: bigger packages show more of them, as in the official app. */
@@ -235,9 +200,10 @@ public final class StarsBuySheet {
       return Screen.dp(5f);
     }
 
+    /** Width of a list icon slot: the stack grows towards the text, which starts 72dp from the edge. */
     @Override
     public int getIntrinsicWidth () {
-      return size() + step() * (count - 1);
+      return Screen.dp(24f);
     }
 
     @Override
@@ -251,8 +217,9 @@ public final class StarsBuySheet {
       int size = size();
       int top = bounds.top + (bounds.height() - size) / 2;
       // The back stars first, the front (leftmost) star last.
+      boolean rtl = Lang.rtl();
       for (int i = count - 1; i >= 0; i--) {
-        int left = bounds.left + step() * i;
+        int left = rtl ? bounds.right - size - step() * i : bounds.left + step() * i;
         star.setAlpha(i == 0 ? 255 : Math.max(110, 255 - i * 28));
         star.setBounds(left, top, left + size, top + size);
         star.draw(c);
