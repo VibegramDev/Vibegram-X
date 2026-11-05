@@ -14,7 +14,6 @@
   <item type="id" name="btn_vgRoundFps" />
   <item type="id" name="btn_vgRoundBitrate" />
   <item type="id" name="btn_vgRoundEarpiece" />
-  <item type="id" name="btn_vgRoundEarpieceVoice" />
   <item type="id" name="btn_vgRoundQualityInfo" />
   <item type="id" name="btn_vgRoundOption0" />
   <item type="id" name="btn_vgRoundOption1" />
@@ -52,7 +51,7 @@
   <string name="vg_RoundQualityDescription">If the phone cannot handle the chosen quality, the next lower one is used.</string>
   <string name="vg_RoundDeviceMax">This phone: up to %1$d×%2$d, %3$d fps, %4$s.</string>
   <string name="vg_RoundCurrent">Now: %1$d×%2$d, %3$d fps, up to %4$s.</string>
-  <string name="vg_RoundPlaybackHeader">Playback through the earpiece</string>
+  <string name="vg_RoundPlaybackHeader">Playback</string>
   <string name="vg_RoundCamera2Failed">Camera2 does not work on this phone, video messages are recorded with Camera1</string>
   <item type="id" name="controller_vgRoundDiagnostics" />
   <item type="id" name="btn_vgRoundDiagnostics" />

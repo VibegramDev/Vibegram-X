@@ -60,8 +60,8 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
           view.getToggler().setRadioEnabled(Settings.instance().isRoundLensLocked(), isUpdate);
         } else if (id == R.id.btn_vgRoundShowQualityInfo) {
           view.getToggler().setRadioEnabled(Settings.instance().showRoundQualityInfo(), isUpdate);
-        } else if (id == R.id.btn_vgRoundEarpiece || id == R.id.btn_vgRoundEarpieceVoice) {
-          switch (Settings.instance().getEarpieceMode(id == R.id.btn_vgRoundEarpiece)) {
+        } else if (id == R.id.btn_vgRoundEarpiece) {
+          switch (Settings.instance().getEarpieceMode(true)) {
             case Settings.EARPIECE_MODE_ALWAYS:
               view.setData(R.string.EarpieceModeAlways);
               break;
@@ -104,9 +104,8 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
 
     items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_RoundPlaybackHeader));
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgRoundEarpieceVoice, 0, R.string.VoiceMessages));
-    items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgRoundEarpiece, 0, R.string.VideoMessages));
+    // Voice messages have their own earpiece setting in Interface settings (Telegram X)
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgRoundEarpiece, 0, R.string.EarpieceMode));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_RoundDiagHeader));
@@ -261,9 +260,7 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
     } else if (id == R.id.btn_vgRoundBitrate) {
       showIntOptions(R.id.btn_vgRoundBitrate, RoundVideoQuality.SETTINGS_BITRATE_OPTIONS_KBPS, true, Settings.instance().getRoundVideoBitrate(), kbps -> getBitrateName(kbps), value -> Settings.instance().setRoundVideoBitrate(value));
     } else if (id == R.id.btn_vgRoundEarpiece) {
-      showEarpieceOptions(true);
-    } else if (id == R.id.btn_vgRoundEarpieceVoice) {
-      showEarpieceOptions(false);
+      showEarpieceOptions();
     } else if (id == R.id.btn_vgRoundLockLens) {
       Settings.instance().setRoundLensLocked(adapter.toggleView(v));
     } else if (id == R.id.btn_vgRoundShowQualityInfo) {
@@ -360,15 +357,14 @@ public class SettingsRoundVideoController extends RecyclerViewController<Void> i
     }));
   }
 
-  private void showEarpieceOptions (boolean isVideo) {
+  private void showEarpieceOptions () {
+    final boolean isVideo = true;
     int mode = Settings.instance().getEarpieceMode(isVideo);
-    int settingId = isVideo ? R.id.btn_vgRoundEarpiece : R.id.btn_vgRoundEarpieceVoice;
+    int settingId = R.id.btn_vgRoundEarpiece;
     ListItem never = new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_earpieceMode_never, 0, R.string.EarpieceModeNever, settingId, mode == Settings.EARPIECE_MODE_NEVER);
     ListItem proximity = new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_earpieceMode_proximity, 0, R.string.EarpieceModeProximity, settingId, mode == Settings.EARPIECE_MODE_PROXIMITY);
-    // "Always" plays voice messages through the earpiece; round videos do not offer it (as in the old settings)
-    ListItem[] items = isVideo ? new ListItem[] {never, proximity} : new ListItem[] {
-      never, proximity, new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_earpieceMode_always, 0, R.string.EarpieceModeAlways, settingId, mode == Settings.EARPIECE_MODE_ALWAYS)
-    };
+    // No "Always": round videos do not offer it (as in the settings of Telegram X)
+    ListItem[] items = new ListItem[] {never, proximity};
     showSettings(new SettingsWrapBuilder(settingId).setRawItems(items).setAllowResize(false).setIntDelegate((id, result) -> {
       int resultId = result.get(settingId);
       int newMode = resultId == R.id.btn_earpieceMode_always ? Settings.EARPIECE_MODE_ALWAYS :

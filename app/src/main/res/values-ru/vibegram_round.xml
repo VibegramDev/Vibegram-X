@@ -27,7 +27,7 @@
   <string name="vg_RoundQualityDescription">Если телефон не тянет выбранное качество, берётся ближайшее ниже.</string>
   <string name="vg_RoundDeviceMax">Этот телефон: до %1$d×%2$d, %3$d кадров/с, %4$s.</string>
   <string name="vg_RoundCurrent">Сейчас: %1$d×%2$d, %3$d кадров/с, до %4$s.</string>
-  <string name="vg_RoundPlaybackHeader">Звук через разговорный динамик</string>
+  <string name="vg_RoundPlaybackHeader">Воспроизведение</string>
   <string name="vg_RoundCamera2Failed">Camera2 не работает на этом телефоне, кружки записываются через Camera1</string>
   <string name="vg_RoundDiagTitle">Диагностика записи</string>
   <string name="vg_RoundDiagHint">Частота кадров на каждом этапе последней записи: где теряются кадры.</string>
