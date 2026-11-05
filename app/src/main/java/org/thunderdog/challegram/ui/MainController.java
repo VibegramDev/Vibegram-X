@@ -3190,7 +3190,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         }
       };
 
-      c.setArguments(new ShareController.Args(shareDelegate).setNeedOpenChat(true));
+      c.setArguments(new ShareController.Args(shareDelegate));
       c.show();
     })));
   }
