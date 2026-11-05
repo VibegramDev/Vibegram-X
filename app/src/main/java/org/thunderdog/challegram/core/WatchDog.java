@@ -20,6 +20,7 @@ import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.SystemClock;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
 import org.drinkless.tdlib.TdApi;
@@ -173,7 +174,30 @@ public class WatchDog {
   }
 
   private static int getConnectionType (NetworkInfo info) {
-    if (info.isRoaming()) {
+    return getConnectionType(null, null, info);
+  }
+
+  /**
+   * Roaming only for a cellular network roaming right now: on Android 9+ by the network capabilities
+   * (no NET_CAPABILITY_NOT_ROAMING), which follow the current registration, not by the deprecated NetworkInfo flag.
+   */
+  private static int getConnectionType (@Nullable ConnectivityManager manager, @Nullable Object rawNetwork, NetworkInfo info) {
+    boolean isRoaming;
+    android.net.NetworkCapabilities capabilities = null;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && manager != null && rawNetwork != null) {
+      try {
+        capabilities = manager.getNetworkCapabilities((android.net.Network) rawNetwork);
+      } catch (Throwable t) {
+        Log.w("Unable to get network capabilities", t);
+      }
+    }
+    if (capabilities != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      isRoaming = capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) &&
+        !capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING);
+    } else {
+      isRoaming = info.getType() == ConnectivityManager.TYPE_MOBILE && info.isRoaming();
+    }
+    if (isRoaming) {
       return CONNECTION_TYPE_ROAMING;
     }
     switch (info.getType()) {
@@ -293,9 +317,11 @@ public class WatchDog {
         restrictBackgroundStatus = manager.getRestrictBackgroundStatus();
       } catch (SecurityException e) {
         Log.w("Unable to fetch background network status", e);
-        restrictBackgroundStatus = ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED;
+        restrictBackgroundStatus = ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED;
       }
-      boolean dataSaverEnabled = manager.isActiveNetworkMetered() && restrictBackgroundStatus != ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED;
+      // Only the system Data Saver restricting this app counts: WHITELISTED means it is on, but the app is
+      // allowed unrestricted data, and an unknown status must not force the data saver on.
+      boolean dataSaverEnabled = manager.isActiveNetworkMetered() && restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED;
       setSystemDataSaverEnabled(dataSaverEnabled);
       if (dataSaverOnly) {
         return;
@@ -341,7 +367,7 @@ public class WatchDog {
       isOnline = true;
       chosenNetworkInfo = activeNetworkInfo;
       chosenNetwork = activeNetwork;
-      connectionType = getConnectionType(activeNetworkInfo);
+      connectionType = getConnectionType(manager, activeNetwork, activeNetworkInfo);
     } else {
       // Trying to find active network manually
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -351,7 +377,7 @@ public class WatchDog {
           if (info != null) {
             if (filter(info)) {
               isOnline = true;
-              int type = getConnectionType(info);
+              int type = getConnectionType(manager, network, info);
               chosenNetworkInfo = info;
               chosenNetwork = network;
               if (connectionType == CONNECTION_TYPE_NONE || type != CONNECTION_TYPE_WIFI) {
@@ -392,7 +418,7 @@ public class WatchDog {
       isOnline = true;
       chosenNetworkInfo = availableNetworkInfo;
       chosenNetwork = availableNetwork;
-      connectionType = getConnectionType(availableNetworkInfo);
+      connectionType = getConnectionType(manager, availableNetwork, availableNetworkInfo);
     }
 
     boolean isUnavailable = isUnavailable(chosenNetworkInfo);

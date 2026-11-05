@@ -235,7 +235,8 @@ public class U {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         android.net.Network network = cm.getActiveNetwork();
         android.net.NetworkCapabilities capabilities = cm.getNetworkCapabilities(network);
-        return capabilities != null && !capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING);
+        return capabilities != null && capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) &&
+          !capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING);
       } else {
         NetworkInfo netInfo = cm.getActiveNetworkInfo();
         return netInfo != null && netInfo.isRoaming();
