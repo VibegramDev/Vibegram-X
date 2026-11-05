@@ -17,6 +17,7 @@
 package org.thunderdog.challegram.component.chat;
 
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 
@@ -127,6 +128,29 @@ public final class BotForumThreadHint implements TextColorSet {
       Screen.dp(PADDING_BOTTOM);
   }
 
+  /** Height of a topic separator: dashes across the list with a topic pill in the middle. */
+  public static int getSeparatorHeight () {
+    return Screen.dp(SEPARATOR_HEIGHT);
+  }
+
+  /** Dashed line of a topic separator, from the center to both sides, as in the official app. */
+  public static void drawSeparatorDashes (Canvas c, int width, int top, int color) {
+    RectF rect = Paints.getRectF();
+    float centerX = width / 2f;
+    float dashTop = top + Screen.dp(SEPARATOR_DASH_TOP);
+    float dashBottom = dashTop + Screen.dp(SEPARATOR_DASH_HEIGHT);
+    float dashWidth = Screen.dp(SEPARATOR_DASH_WIDTH);
+    float dashStep = Screen.dp(SEPARATOR_DASH_STEP);
+    float dashRadius = dashBottom - dashTop;
+    Paint paint = Paints.fillingPaint(color);
+    for (float x = centerX + Screen.dp(SEPARATOR_CENTER_GAP) / 2f; x < width; x += dashStep) {
+      rect.set(x, dashTop, x + dashWidth, dashBottom);
+      c.drawRoundRect(rect, dashRadius, dashRadius, paint);
+      rect.set(width - x - dashWidth, dashTop, width - x, dashBottom);
+      c.drawRoundRect(rect, dashRadius, dashRadius, paint);
+    }
+  }
+
   /** Draws the card with its top at {@code top}, centered in the list. */
   public void draw (Canvas c, int listWidth, int top) {
     layout(listWidth);
@@ -134,20 +158,9 @@ public final class BotForumThreadHint implements TextColorSet {
     final int contentColor = defaultTextColor();
     final float centerX = listWidth / 2f;
 
-    // Dashed separator, from the center to both sides
-    RectF rect = Paints.getRectF();
-    float dashTop = top + Screen.dp(SEPARATOR_DASH_TOP);
-    float dashBottom = dashTop + Screen.dp(SEPARATOR_DASH_HEIGHT);
-    float dashWidth = Screen.dp(SEPARATOR_DASH_WIDTH);
-    float dashStep = Screen.dp(SEPARATOR_DASH_STEP);
-    float dashRadius = dashBottom - dashTop;
-    for (float x = centerX + Screen.dp(SEPARATOR_CENTER_GAP) / 2f; x < listWidth; x += dashStep) {
-      rect.set(x, dashTop, x + dashWidth, dashBottom);
-      c.drawRoundRect(rect, dashRadius, dashRadius, Paints.fillingPaint(backgroundColor));
-      rect.set(listWidth - x - dashWidth, dashTop, listWidth - x, dashBottom);
-      c.drawRoundRect(rect, dashRadius, dashRadius, Paints.fillingPaint(backgroundColor));
-    }
+    drawSeparatorDashes(c, listWidth, top, backgroundColor);
 
+    RectF rect = Paints.getRectF();
     int cardTop = top + Screen.dp(SEPARATOR_HEIGHT);
     int cardLeft = (int) (centerX - cardWidth / 2f);
     int cardRight = cardLeft + cardWidth;

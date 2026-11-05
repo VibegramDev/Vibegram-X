@@ -799,13 +799,8 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
   private void drawLetterIcon (Canvas canvas, int centerX, int centerY) {
     // For General topic (id = 1), show hash symbol "#" instead of letter
     // This matches Telegram for Android (TGA) behavior
-    String displayChar;
-    if (topic.info.isGeneral) {
-      displayChar = "#";
-    } else if (!StringUtils.isEmpty(topic.info.name)) {
-      // The whole first code point: substring(0, 1) splits surrogate pairs (emoji)
-      displayChar = topic.info.name.substring(0, Character.charCount(topic.info.name.codePointAt(0))).toUpperCase();
-    } else {
+    String displayChar = getTopicLetter(topic.info);
+    if (displayChar == null) {
       return;
     }
 
@@ -813,7 +808,19 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
     canvas.drawText(displayChar, centerX, textY, letterPaint);
   }
 
-  private int getTopicColor (int colorValue) {
+  /** Letter of the icon of a topic without a custom emoji, or null for an empty name. */
+  public static @Nullable String getTopicLetter (TdApi.ForumTopicInfo info) {
+    if (info.isGeneral) {
+      return "#";
+    }
+    if (StringUtils.isEmpty(info.name)) {
+      return null;
+    }
+    // The whole first code point: substring(0, 1) splits surrogate pairs (emoji)
+    return info.name.substring(0, Character.charCount(info.name.codePointAt(0))).toUpperCase();
+  }
+
+  public static int getTopicColor (int colorValue) {
     // Telegram topic colors are passed as actual color values like 0x6FB9F0
     // If color is 0 or very small, it's likely a color index (old format)
     if (colorValue > 0x00FFFFFF) {
