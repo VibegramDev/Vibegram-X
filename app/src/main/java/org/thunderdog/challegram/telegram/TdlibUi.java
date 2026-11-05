@@ -2165,22 +2165,12 @@ public class TdlibUi extends Handler {
     // Chats with bots that have topics open as forums with tabs, as in the official app
     final boolean isBotForum = tdlib.isBotForum(chat.id);
     if ((isBotForum || tdlib.isForum(chat.id)) && messageThread == null && messageTopicId == null) {
-      // Check if forum has tabs layout enabled
-      long supergroupId = ChatId.toSupergroupId(chat.id);
-      TdApi.Supergroup supergroup = supergroupId != 0 ? tdlib.cache().supergroup(supergroupId) : null;
-      boolean hasForumTabs = isBotForum || (supergroup != null && supergroup.hasForumTabs);
-
       // Show topics view if viewAsTopics is true (default for forums)
-      // Forums with tabs should always open in tabs view by default
       // Users can use "View as chat" option to switch to unified view (sets viewAsTopics to false)
-      if (chat.viewAsTopics || hasForumTabs) {
+      if (chat.viewAsTopics || isBotForum) {
         ViewController<?> forumController;
-        // Check user's saved preference for forum view (tabs vs topics list)
-        int viewPreference = tdlib.settings().getForumViewPreference(chat.id);
-        boolean preferTabs = hasForumTabs && viewPreference != TdlibSettingsManager.FORUM_VIEW_TOPICS;
-        boolean preferTopics = !hasForumTabs || viewPreference == TdlibSettingsManager.FORUM_VIEW_TOPICS;
-
-        if (preferTabs) {
+        // Tabs or the topic list, as chosen on this device: the layout set by the admins is ignored
+        if (tdlib.settings().isForumViewTabs(chat.id, isBotForum)) {
           ForumTopicTabsController tabsController = new ForumTopicTabsController(context.context(), context.tdlib());
           tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
           forumController = tabsController;
@@ -2204,7 +2194,7 @@ public class TdlibUi extends Handler {
         }
         return;
       }
-      // If not hasForumTabs and not viewAsTopics, fall through to open as unified chat
+      // Not viewAsTopics: fall through to open as unified chat
     }
 
     // Channel direct messages administered by the user: one conversation per sender, as tabs or as a list

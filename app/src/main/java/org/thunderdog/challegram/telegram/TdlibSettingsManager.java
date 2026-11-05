@@ -294,10 +294,18 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
     return pendingInfo == null || Arrays.equals(Settings.instance().getLongArray(key(DISMISS_REQUESTS_PREFIX, tdlib.id()) + chatId), pendingInfo.userIds);
   }
 
-  // Forum view preference: true = tabs, false = topics list
-  // This is used when forum has hasForumTabs enabled to remember user's choice
+  // Topic view of a forum or a chat with a bot with topics, chosen by the user on this device:
+  // tabs on top, the topic list or tabs on the side. The layout set for the forum by its admins
+  // (supergroup.hasForumTabs) is ignored.
   public static final int FORUM_VIEW_TABS = 1;
   public static final int FORUM_VIEW_TOPICS = 2;
+  public static final int FORUM_VIEW_SIDE_TABS = 3;
+
+  /** Whether topics open as tabs (on top or on the side); without a choice, {@code byDefault}. */
+  public boolean isForumViewTabs (long chatId, boolean byDefault) {
+    int viewPreference = getForumViewPreference(chatId);
+    return viewPreference == 0 ? byDefault : viewPreference != FORUM_VIEW_TOPICS;
+  }
 
   public void setForumViewPreference (long chatId, int viewPreference) {
     Settings.instance().putInt(key(FORUM_VIEW_PREFERENCE_PREFIX, tdlib.id()) + chatId, viewPreference);

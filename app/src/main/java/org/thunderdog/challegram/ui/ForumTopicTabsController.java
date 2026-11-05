@@ -15,9 +15,7 @@
 package org.thunderdog.challegram.ui;
 
 import android.content.Context;
-import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 
 import androidx.annotation.Nullable;
 
@@ -42,7 +40,6 @@ import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
-import org.thunderdog.challegram.widget.ProgressComponentView;
 import org.thunderdog.challegram.widget.ViewPager;
 
 import org.thunderdog.challegram.unsorted.Settings;
@@ -57,8 +54,8 @@ import me.vkryl.core.collection.IntList;
 import org.thunderdog.challegram.util.StringList;
 
 /**
- * Forum topics as tabs. Chats with bots that have topics open here too: as in the official app,
- * their first tab «All» shows the whole chat, and a message sent there starts a new topic
+ * Forum topics as tabs, after the «All» tab with the whole chat, as in the official app. Chats
+ * with bots that have topics open here too: a message sent to their «All» starts a new topic
  * ({@link Tdlib#sendInNewBotForumTopic}).
  */
 public class ForumTopicTabsController
@@ -82,7 +79,7 @@ public class ForumTopicTabsController
   private int nextOffsetDate, nextOffsetForumTopicId;
   private long nextOffsetMessageId;
   private boolean isSubscribedToUpdates;
-  private boolean knownIsForum = true, knownHasForumTabs = true;
+  private boolean knownIsForum = true;
 
   private static final long ALL_ITEM_ID = 0;
 
@@ -102,9 +99,9 @@ public class ForumTopicTabsController
     this.isBotForum = tdlib.isBotForum(chatId);
   }
 
-  /** Number of tabs before the topics: «All» in chats with bots. */
-  private int topicsOffset () {
-    return isBotForum ? 1 : 0;
+  /** Number of tabs before the topics: «All», the whole chat, as in the official app. */
+  private static int topicsOffset () {
+    return 1;
   }
 
   /** Chats with bots don't show the General topic, as in the official app. */
@@ -161,7 +158,6 @@ public class ForumTopicTabsController
       TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chatId);
       if (supergroup != null) {
         knownIsForum = supergroup.isForum;
-        knownHasForumTabs = supergroup.hasForumTabs;
       }
       if (ChatId.isSupergroup(chatId)) {
         tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
@@ -215,15 +211,12 @@ public class ForumTopicTabsController
 
   @Override
   protected int getPagerItemCount () {
-    if (isBotForum) {
-      return 1 + topics.size();
-    }
-    return topics.isEmpty() ? 1 : topics.size();
+    return topicsOffset() + topics.size();
   }
 
   @Override
   protected long getPagerItemId (int position) {
-    if (isBotForum && position == 0) {
+    if (position == 0) {
       return ALL_ITEM_ID;
     }
     int index = position - topicsOffset();
@@ -239,16 +232,11 @@ public class ForumTopicTabsController
     if (isBotForum) {
       // As in the official app, the whole chat of a bot is the tab where new topics start
       items.add(new ViewPagerTopView.Item(R.drawable.baseline_add_comment_24));
-      for (TdApi.ForumTopic topic : topics) {
-        items.add(newTopicItem(topic));
-      }
-    } else if (topics.isEmpty()) {
-      // Return a "Loading..." placeholder to ensure tabs are created
-      items.add(new ViewPagerTopView.Item(Lang.getString(R.string.LoadingTopics)));
     } else {
-      for (TdApi.ForumTopic topic : topics) {
-        items.add(newTopicItem(topic));
-      }
+      items.add(new ViewPagerTopView.Item(Lang.getString(R.string.DirectMessagesAll)));
+    }
+    for (TdApi.ForumTopic topic : topics) {
+      items.add(newTopicItem(topic));
     }
     return items;
   }
@@ -345,16 +333,12 @@ public class ForumTopicTabsController
 
   @Override
   protected ViewController<?> onCreatePagerItemForPosition (Context context, int position) {
-    if (isBotForum && position == 0) {
+    if (position == 0) {
       MessagesController controller = new MessagesController(context, tdlib);
       controller.setArguments(
         new MessagesController.Arguments(tdlib, null, chat, null, null, null)
       );
       return controller;
-    }
-    if (topics.isEmpty()) {
-      // Show empty loading placeholder
-      return createEmptyController(context);
     }
 
     TdApi.ForumTopic topic = topics.get(position - topicsOffset());
@@ -372,11 +356,6 @@ public class ForumTopicTabsController
     controller.setArguments(args);
 
     return controller;
-  }
-
-  private ViewController<?> createEmptyController (Context context) {
-    // Return a loading controller with centered progress spinner while topics load
-    return new LoadingController(context, tdlib);
   }
 
   @Override
@@ -531,20 +510,12 @@ public class ForumTopicTabsController
   public void onSupergroupUpdated (TdApi.Supergroup supergroup) {
     tdlib.ui().post(() -> {
       if (ChatId.toSupergroupId(chatId) == supergroup.id && !isDestroyed()) {
-        // Reopen the chat only when forum mode or the tabs layout actually changes, not on any supergroup update
-        final boolean wasForum = knownIsForum, hadForumTabs = knownHasForumTabs;
+        // Reopen the chat only when forum mode is turned off, not on any supergroup update.
+        // The layout set by the admins (hasForumTabs) is ignored: the user chooses it here.
+        final boolean wasForum = knownIsForum;
         knownIsForum = supergroup.isForum;
-        knownHasForumTabs = supergroup.hasForumTabs;
         if (wasForum && !supergroup.isForum && chat != null) {
           // Forum mode was disabled - navigate to regular chat view
-          navigateBack();
-          tdlib.ui().post(() -> {
-            if (!isDestroyed()) {
-              tdlib.ui().openChat(this, chat.id, new TdlibUi.ChatOpenParameters().keepStack());
-            }
-          });
-        } else if (supergroup.isForum && hadForumTabs && !supergroup.hasForumTabs && chat != null) {
-          // Tabs layout was disabled - switch to list controller
           navigateBack();
           tdlib.ui().post(() -> {
             if (!isDestroyed()) {
@@ -1025,40 +996,6 @@ public class ForumTopicTabsController
         return ((TdApi.ChatMemberStatusAdministrator) status).rights.canManageTopics;
       default:
         return false;
-    }
-  }
-
-  // Loading placeholder controller shown while topics are being loaded
-  private static class LoadingController extends ViewController<Void> {
-    public LoadingController (Context context, Tdlib tdlib) {
-      super(context, tdlib);
-    }
-
-    @Override
-    public int getId () {
-      return 0;
-    }
-
-    @Override
-    protected View onCreateView (Context context) {
-      // Create a centered progress spinner
-      FrameLayoutFix container = new FrameLayoutFix(context);
-      container.setLayoutParams(new ViewGroup.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-      ));
-
-      ProgressComponentView progressView = new ProgressComponentView(context);
-      progressView.initLoadingIndicator(1f);
-      FrameLayoutFix.LayoutParams lp = new FrameLayoutFix.LayoutParams(
-        Screen.dp(48f),
-        Screen.dp(48f),
-        Gravity.CENTER
-      );
-      progressView.setLayoutParams(lp);
-
-      container.addView(progressView);
-      return container;
     }
   }
 }

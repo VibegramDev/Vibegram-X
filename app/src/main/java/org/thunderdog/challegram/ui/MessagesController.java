@@ -737,6 +737,18 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return messageTopicId == null || !tdlib.isBotForum(chat.id);
   }
 
+  /**
+   * The whole chat in which messages of different topics are separated: «All» of a chat with a
+   * bot with topics, or the «All» tab of a forum.
+   */
+  public boolean isTopicsWholeChat () {
+    if (isBotForumWholeChat()) {
+      return true;
+    }
+    return chat != null && messageThread == null && messageTopicId == null &&
+      getParentOrSelf() instanceof ForumTopicTabsController;
+  }
+
   /** «Continue last thread»: the topic opens in the tabs, or on its own screen. */
   public void openBotForumTopic (int forumTopicId) {
     ViewController<?> parent = getParentOrSelf();
@@ -2493,8 +2505,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (id == R.id.btn_viewAsTopics) {
       if (tdlib.isBotForum(chat.id)) {
         // Chats with bots have no such setting: they always open as topics
-        int viewPreference = tdlib.settings().getForumViewPreference(chat.id);
-        openTopicsInstead(viewPreference != TdlibSettingsManager.FORUM_VIEW_TOPICS);
+        openTopicsInstead(tdlib.settings().isForumViewTabs(chat.id, true));
         return;
       }
       // Set viewAsTopics to true and open forum topics view
@@ -2502,9 +2513,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         if (result.getConstructor() == TdApi.Ok.CONSTRUCTOR) {
           tdlib.ui().post(() -> {
             // Navigate directly to forum controller (don't use openChat - chat object not updated yet)
-            long supergroupId = ChatId.toSupergroupId(chat.id);
-            TdApi.Supergroup supergroup = supergroupId != 0 ? tdlib.cache().supergroup(supergroupId) : null;
-            openTopicsInstead(supergroup != null && supergroup.hasForumTabs);
+            openTopicsInstead(tdlib.settings().isForumViewTabs(chat.id, false));
           });
         }
       });

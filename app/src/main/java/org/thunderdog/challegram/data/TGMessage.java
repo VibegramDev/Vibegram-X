@@ -4609,7 +4609,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
 
   private void updateTopicSeparator (@Nullable TGMessage top) {
     boolean hasTopicSeparator = forumTopicKey != null &&
-      messagesController().isBotForumWholeChat() &&
+      messagesController().isTopicsWholeChat() &&
       (top == null || top.forumTopicKey == null ||
         top.forumTopicKey.forumTopicId != forumTopicKey.forumTopicId);
     if (this.hasTopicSeparator != hasTopicSeparator) {

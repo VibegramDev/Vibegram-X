@@ -114,7 +114,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   /** Topics requested with GetForumTopic after a message in a topic missing from the loaded list. */
   private final java.util.Set<Integer> requestedMissingTopicIds = new java.util.HashSet<>();
   private boolean isSubscribedToUpdates;
-  private boolean knownIsForum = true, knownHasForumTabs;
+  private boolean knownIsForum = true;
   private String currentSearchQuery;
   private boolean searchInMessages = true; // Toggle between topic name search and message search (default: messages)
   private List<TopicMessageSearchResult> messageSearchResults = new ArrayList<>();
@@ -785,7 +785,6 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chatId);
       if (supergroup != null) {
         knownIsForum = supergroup.isForum;
-        knownHasForumTabs = supergroup.hasForumTabs;
       }
       if (ChatId.isSupergroup(chatId)) {
         tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
@@ -1785,21 +1784,12 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   public void onSupergroupUpdated (TdApi.Supergroup supergroup) {
     tdlib.ui().post(() -> {
       if (ChatId.toSupergroupId(chatId) == supergroup.id && !isDestroyed()) {
-        // Reopen the chat only when forum mode or the tabs layout actually changes, not on any supergroup update
-        final boolean wasForum = knownIsForum, hadForumTabs = knownHasForumTabs;
+        // Reopen the chat only when forum mode is turned off, not on any supergroup update.
+        // The layout set by the admins (hasForumTabs) is ignored: the user chooses it here.
+        final boolean wasForum = knownIsForum;
         knownIsForum = supergroup.isForum;
-        knownHasForumTabs = supergroup.hasForumTabs;
         if (wasForum && !supergroup.isForum && chat != null) {
           // Forum mode was disabled - navigate to regular chat view
-          navigateBack();
-          tdlib.ui().post(() -> {
-            if (!isDestroyed()) {
-              tdlib.ui().openChat(this, chat.id, new TdlibUi.ChatOpenParameters().keepStack());
-            }
-          });
-        } else if (supergroup.isForum && supergroup.hasForumTabs && !hadForumTabs && chat != null &&
-          tdlib.settings().getForumViewPreference(chatId) != TdlibSettingsManager.FORUM_VIEW_TOPICS) {
-          // Tabs layout was enabled - switch to tabs controller
           navigateBack();
           tdlib.ui().post(() -> {
             if (!isDestroyed()) {
