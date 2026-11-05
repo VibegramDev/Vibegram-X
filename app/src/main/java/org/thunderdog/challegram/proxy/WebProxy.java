@@ -121,8 +121,9 @@ public final class WebProxy {
   }
 
   /**
-   * Resolves a proxy for a short-lived use (e.g. ping).
-   * The returned handle must be closed when the work is done.
+   * Resolves a proxy for a short-lived use (e.g. ping). For a WEB proxy that isn't active this starts its whole
+   * transport, including the hidden WebView, so callers shouldn't lease many of them at once.
+   * The returned handle must be released when the work is done.
    */
   @AnyThread
   public static @NonNull Lease lease (@Nullable TdApi.Proxy proxy) {
@@ -135,7 +136,7 @@ public final class WebProxy {
     return new Lease(loopback(proxy, port), port != 0 ? address : null, secret);
   }
 
-  /** Resolves a proxy without starting anything. Only suitable for validation */
+  /** Loopback MTProto proxy served by the transport on the port; the discard port, if the transport isn't running */
   private static TdApi.Proxy loopback (@NonNull TdApi.Proxy proxy, int port) {
     return new TdApi.Proxy(LOOPBACK, port != 0 ? port : UNAVAILABLE_PORT, new TdApi.ProxyTypeMtproto(getSecret(proxy)));
   }

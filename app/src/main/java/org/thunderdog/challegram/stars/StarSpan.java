@@ -25,7 +25,16 @@ import androidx.annotation.Nullable;
 
 /** The gold star inside text of a {@link android.widget.TextView}, about the height of a capital letter. */
 public class StarSpan extends ReplacementSpan {
-  private final StarDrawable drawable = new StarDrawable();
+  // Spans are drawn on the main thread, and every draw sets the bounds and the alpha: one drawable serves all of them.
+  private static StarDrawable sharedDrawable;
+
+  private static StarDrawable drawable () {
+    if (sharedDrawable == null) {
+      sharedDrawable = new StarDrawable();
+    }
+    return sharedDrawable;
+  }
+
   private final float scale;
 
   public StarSpan () {
@@ -54,6 +63,7 @@ public class StarSpan extends ReplacementSpan {
     Paint.FontMetricsInt fm = paint.getFontMetricsInt();
     float centerY = y + (fm.ascent + fm.descent) / 2f;
     int drawTop = Math.round(centerY - size / 2f);
+    StarDrawable drawable = drawable();
     drawable.setAlpha(paint.getAlpha());
     drawable.setBounds(Math.round(x), drawTop, Math.round(x) + size, drawTop + size);
     drawable.draw(canvas);

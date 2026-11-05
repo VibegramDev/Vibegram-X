@@ -26,6 +26,7 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.telegram.AuthorizationListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.navigation.AlertPopup;
@@ -95,11 +96,15 @@ public final class DeleteMyMessages {
       pendingCounts.remove(key);
       if (error != null) {
         UI.showToast(Lang.getString(R.string.vg_DeleteMyMessagesError, TD.toErrorString(error)), Toast.LENGTH_LONG);
-      } else if (found.messages.length == 0 && found.totalCount <= 0) {
-        UI.showToast(R.string.vg_DeleteMyMessagesNothing, Toast.LENGTH_SHORT);
-      } else if (!context.isDestroyed()) {
-        // TDLib may return fewer messages than asked: without the newest one, nothing is treated as sent later.
-        confirmStart(context, chatId, found.totalCount, found.messages.length > 0 ? found.messages[0].id : Long.MAX_VALUE);
+      } else {
+        // TDLib may return fewer messages than asked: without the newest one, the last message of the chat is the bound.
+        TdApi.Chat chat = tdlib.chat(chatId);
+        long lastMessageId = found.messages.length > 0 ? found.messages[0].id : chat != null && chat.lastMessage != null ? chat.lastMessage.id : 0;
+        if (lastMessageId == 0 || found.totalCount <= 0 && found.messages.length == 0) {
+          UI.showToast(R.string.vg_DeleteMyMessagesNothing, Toast.LENGTH_SHORT);
+        } else if (!context.isDestroyed()) {
+          confirmStart(context, chatId, found.totalCount, lastMessageId);
+        }
       }
     }));
   }
@@ -175,7 +180,7 @@ public final class DeleteMyMessages {
   }
 
   /** One chat: pages of search results from the newest message to the oldest one, deleted as they come. */
-  private static final class Job {
+  private static final class Job implements AuthorizationListener {
     private final Tdlib tdlib;
     private final long chatId;
     private final String key;
@@ -205,10 +210,23 @@ public final class DeleteMyMessages {
 
     void start () {
       jobs.put(key, this);
+      tdlib.listeners().addAuthorizationChangeListener(this);
       UI.showToast(R.string.vg_DeleteMyMessagesStarted, Toast.LENGTH_SHORT);
       search();
     }
 
+    @Override
+    public void onAuthorizationStateChanged (TdApi.AuthorizationState authorizationState) {
+      switch (authorizationState.getConstructor()) {
+        case TdApi.AuthorizationStateLoggingOut.CONSTRUCTOR:
+        case TdApi.AuthorizationStateClosing.CONSTRUCTOR:
+        case TdApi.AuthorizationStateClosed.CONSTRUCTOR:
+          UI.post(this::cancel);
+          break;
+      }
+    }
+
+    /** Finishes the job at once: a request in flight may never return, its late result is ignored. */
     void cancel () {
       if (isFinished) {
         return;
@@ -217,9 +235,8 @@ public final class DeleteMyMessages {
       if (pendingStep != null) {
         UI.cancel(pendingStep);
         pendingStep = null;
-        finish(null);
       }
-      // Otherwise the request in flight finishes the job when it returns.
+      finish(null);
     }
 
     private void schedule (Runnable step, long delayMs) {
@@ -298,6 +315,10 @@ public final class DeleteMyMessages {
         messageIds[i] = messages.get(i).id;
       }
       tdlib.send(new TdApi.DeleteMessages(chatId, messageIds, true), (ok, error) -> UI.post(() -> {
+        if (isFinished) {
+          // Cancelled meanwhile: the result has already been reported.
+          return;
+        }
         if (error != null) {
           // TDLib drops the messages locally even when the server refuses, so after a flood wait the same page is
           // searched again: the messages come back from the server and get deleted then.
@@ -343,14 +364,19 @@ public final class DeleteMyMessages {
       }
       if (nextFromMessageId != 0 && (fromMessageId == 0 || nextFromMessageId < fromMessageId)) {
         fromMessageId = nextFromMessageId;
-        search();
+        if (pass > 1) {
+          // Repeated passes mostly page through handled messages: paced, so that searches don't hit flood waits.
+          schedule(this::search, BATCH_DELAY_MS);
+        } else {
+          search();
+        }
       } else if (foundInPass && pass < MAX_PASSES) {
         // Search results can end before the oldest message (the plugin restarts from the oldest date for the same
         // reason): start over from the newest message while a pass still finds messages.
         pass++;
         foundInPass = false;
         fromMessageId = 0;
-        search();
+        schedule(this::search, BATCH_DELAY_MS);
       } else {
         finish(null);
       }
@@ -381,6 +407,7 @@ public final class DeleteMyMessages {
       }
       isFinished = true;
       jobs.remove(key);
+      tdlib.listeners().removeAuthorizationChangeListener(this);
       final String text;
       if (error != null) {
         String errorText = Lang.getString(R.string.vg_DeleteMyMessagesError, TD.toErrorString(error));

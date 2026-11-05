@@ -36,6 +36,7 @@ import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.proxy.WebProxy;
+import org.thunderdog.challegram.proxy.WebProxyTransport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibContext;
 import org.thunderdog.challegram.theme.ColorId;
@@ -370,6 +371,14 @@ public class EditProxyController extends EditBaseController<EditProxyController.
           .builder(getDoneButton())
           .icon(R.drawable.baseline_warning_24)
           .show(tdlib, Lang.getString(R.string.WebProxyInvalid))
+          .hideDelayed();
+        return false;
+      }
+      if (!WebProxyTransport.isSupported()) {
+        context.tooltipManager()
+          .builder(getDoneButton())
+          .icon(R.drawable.baseline_warning_24)
+          .show(tdlib, Lang.getString(R.string.vg_WebProxyUnsupported))
           .hideDelayed();
         return false;
       }

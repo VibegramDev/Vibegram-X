@@ -18,7 +18,6 @@ package org.thunderdog.challegram.stars;
 
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
-import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
@@ -148,7 +147,7 @@ public final class StarsBuySheet {
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         if (item.getData() instanceof TdApi.StarPaymentOption) {
           TdApi.StarPaymentOption option = (TdApi.StarPaymentOption) item.getData();
-          view.setIconDrawable(new StarStackDrawable(Math.min(item.getIntValue(), 6)));
+          view.setIconDrawable(StarStackDrawable.get(item.getIntValue()));
           view.setData(CurrencyUtils.buildAmount(option.currency, option.amount));
         }
       }
@@ -183,13 +182,27 @@ public final class StarsBuySheet {
 
   /** 1…6 overlapping stars: bigger packages show more of them, as in the official app. */
   static final class StarStackDrawable extends Drawable {
-    private final int count;
-    private final StarDrawable star = new StarDrawable();
-    private final Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private static final int MAX_COUNT = 6;
+    // Stateless apart from the bounds, which every draw sets: shared by all rows (drawn on the main thread only).
+    private static final StarStackDrawable[] cache = new StarStackDrawable[MAX_COUNT];
+    private static StarDrawable star;
 
-    StarStackDrawable (int count) {
-      this.count = Math.max(1, count);
-      outline.setStyle(Paint.Style.FILL);
+    /** The stack of 1…6 stars: shared, rows are bound without allocations. */
+    static StarStackDrawable get (int count) {
+      int index = Math.max(1, Math.min(count, MAX_COUNT)) - 1;
+      if (cache[index] == null) {
+        cache[index] = new StarStackDrawable(index + 1);
+      }
+      return cache[index];
+    }
+
+    private final int count;
+
+    private StarStackDrawable (int count) {
+      this.count = count;
+      if (star == null) {
+        star = new StarDrawable();
+      }
     }
 
     private int size () {

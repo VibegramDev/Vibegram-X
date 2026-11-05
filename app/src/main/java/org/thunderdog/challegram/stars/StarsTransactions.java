@@ -64,6 +64,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.Destroyable;
 
 /**
  * Telegram Stars transactions of the current user or of a bot, as in the official app: «All Transactions /
@@ -317,7 +318,7 @@ public final class StarsTransactions {
    * circle, title (body large), counterpart and date (body medium), signed amount and status at the end. Texts are
    * drawn by the {@link Text} engine, colours are read when drawing.
    */
-  static final class TransactionView extends View {
+  static final class TransactionView extends View implements Destroyable {
     private static final float AVATAR_SIZE = 40f, PADDING = 16f;
     private static TextStyleProvider titleStyle, subtitleStyle, statusStyle;
 
@@ -447,6 +448,11 @@ public final class StarsTransactions {
       super.onDetachedFromWindow();
       avatarReceiver.detach();
     }
+
+    @Override
+    public void performDestroy () {
+      avatarReceiver.destroy();
+    }
   }
 
   // Details
@@ -508,7 +514,7 @@ public final class StarsTransactions {
     private SettingsAdapter adapter;
     private int direction; // 0: all, 1: incoming, 2: outgoing
     private @Nullable String nextOffset;
-    private boolean isLoading;
+    private boolean isLoading, isRefreshing, refreshAgain;
     private int requestId;
     private final List<TdApi.StarTransaction> transactions = new ArrayList<>();
     private @Nullable ViewPagerTopView tabsView;
@@ -593,6 +599,7 @@ public final class StarsTransactions {
 
     public View newTransactionView (Context ctx) {
       TransactionView view = new TransactionView(ctx);
+      context.addDestroyListener(view);
       view.setOnClickListener(v -> {
         Object data = v.getTag(R.id.vg_tagTransaction);
         if (data instanceof TdApi.StarTransaction) {
@@ -635,6 +642,68 @@ public final class StarsTransactions {
       }
       adapter.addItems(from, new ListItem(ListItem.TYPE_PROGRESS, R.id.btn_vgStarsProgress));
       loadMore();
+    }
+
+    /**
+     * Adds the transactions that appeared since the first page was loaded on top of the list, keeping the loaded
+     * pages and the scroll position. Falls back to {@link #reload()} when the gap doesn't fit into one page.
+     */
+    public void refresh () {
+      if (isRefreshing) {
+        refreshAgain = true;
+        return;
+      }
+      if (adapter == null || transactions.isEmpty() || adapter.indexOfViewById(R.id.btn_vgStarsListTop) == -1) {
+        if (!isLoading) {
+          reload();
+        }
+        return;
+      }
+      isRefreshing = true;
+      final int currentRequestId = requestId;
+      final String knownId = transactions.get(0).id;
+      tdlib.send(new TdApi.GetStarTransactions(ownerId, "", directionObject(), "", PAGE_SIZE), (result, error) -> UI.post(() -> {
+        isRefreshing = false;
+        if (context.isDestroyed()) {
+          return;
+        }
+        if (refreshAgain) {
+          refreshAgain = false;
+          if (currentRequestId == requestId) {
+            // A newer change has come meanwhile: one more request covers both.
+            refresh();
+            return;
+          }
+        }
+        if (currentRequestId != requestId || error != null) {
+          return;
+        }
+        if (transactions.isEmpty() || !knownId.equals(transactions.get(0).id)) {
+          return;
+        }
+        int knownIndex = -1;
+        for (int i = 0; i < result.transactions.length; i++) {
+          if (knownId.equals(result.transactions[i].id)) {
+            knownIndex = i;
+            break;
+          }
+        }
+        if (knownIndex == -1) {
+          reload();
+          return;
+        }
+        int topIndex = adapter.indexOfViewById(R.id.btn_vgStarsListTop);
+        if (knownIndex == 0 || topIndex == -1) {
+          return;
+        }
+        List<ListItem> newItems = new ArrayList<>(knownIndex * 2);
+        for (int i = 0; i < knownIndex; i++) {
+          newItems.add(new ListItem(LIST_TYPE_TRANSACTION, R.id.btn_vgStarsTransaction).setData(result.transactions[i]));
+          newItems.add(new ListItem(ListItem.TYPE_SEPARATOR));
+          transactions.add(i, result.transactions[i]);
+        }
+        adapter.addItems(topIndex + 1, newItems.toArray(new ListItem[0]));
+      }));
     }
 
     private TdApi.TransactionDirection directionObject () {

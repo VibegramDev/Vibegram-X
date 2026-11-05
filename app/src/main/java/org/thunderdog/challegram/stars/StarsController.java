@@ -128,46 +128,48 @@ public class StarsController extends RecyclerViewController<Void> implements Vie
   /** Users earn Stars too (paid messages, gifts); the revenue screen appears when there is something to withdraw. */
   private void loadRevenue () {
     tdlib.send(new TdApi.GetStarRevenueStatistics(new TdApi.MessageSenderUser(tdlib.myUserId()), org.thunderdog.challegram.theme.Theme.isDark()), (statistics, error) -> runOnUiThreadOptional(() -> {
-      if (statistics == null || statistics.status == null) {
-        return;
+      if (statistics != null && statistics.status != null) {
+        setRevenueStatus(statistics.status);
       }
-      boolean hadRevenue = revenueStatus != null;
-      revenueStatus = statistics.status;
-      if (!Stars.isPositive(revenueStatus.totalAmount)) {
-        return;
-      }
-      if (hadRevenue) {
-        adapter.updateValuedSettingById(R.id.btn_vgStarsRevenue);
-        return;
-      }
-      int index = adapter.indexOfViewById(R.id.btn_vgStarsBuy);
-      if (index == -1) {
-        index = adapter.indexOfViewById(R.id.btn_vgStarsHeader);
-      }
-      if (index == -1) {
-        return;
-      }
-      adapter.addItems(index + 1,
-        new ListItem(ListItem.TYPE_SHADOW_TOP),
-        new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStarsRevenue, R.drawable.baseline_account_balance_wallet_24, R.string.vg_StarsRevenueSelf),
-        new ListItem(ListItem.TYPE_SHADOW_BOTTOM)
-      );
     }));
+  }
+
+  private void setRevenueStatus (TdApi.StarRevenueStatus status) {
+    revenueStatus = status;
+    if (adapter.indexOfViewById(R.id.btn_vgStarsRevenue) != -1) {
+      adapter.updateValuedSettingById(R.id.btn_vgStarsRevenue);
+      return;
+    }
+    if (!Stars.isPositive(status.totalAmount)) {
+      return;
+    }
+    int index = adapter.indexOfViewById(R.id.btn_vgStarsBuy);
+    if (index == -1) {
+      index = adapter.indexOfViewById(R.id.btn_vgStarsHeader);
+    }
+    if (index == -1) {
+      return;
+    }
+    adapter.addItems(index + 1,
+      new ListItem(ListItem.TYPE_SHADOW_TOP),
+      new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStarsRevenue, R.drawable.baseline_account_balance_wallet_24, R.string.vg_StarsRevenueSelf),
+      new ListItem(ListItem.TYPE_SHADOW_BOTTOM)
+    );
   }
 
   @Override
   public void onOwnedStarCountChanged (TdApi.StarAmount starAmount) {
     runOnUiThreadOptional(() -> {
       adapter.updateValuedSettingById(R.id.btn_vgStarsHeader);
-      // New purchases and payments show up in the list.
-      transactions.reload();
+      // New purchases and payments show up on top of the list.
+      transactions.refresh();
     });
   }
 
   @Override
   public void onStarRevenueStatusUpdated (TdApi.MessageSender ownerId, TdApi.StarRevenueStatus status) {
     if (tdlib.isSelfSender(ownerId)) {
-      runOnUiThreadOptional(this::loadRevenue);
+      runOnUiThreadOptional(() -> setRevenueStatus(status));
     }
   }
 
