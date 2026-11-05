@@ -92,6 +92,5 @@
 -dontwarn com.google.firebase.analytics.connector.AnalyticsConnector
 # Vibegram X: voice transcription (JNI reads/writes sherpa-onnx config fields by name)
 -keep class com.k2fsa.sherpa.onnx.** { *; }
--keep class org.thunderdog.challegram.stt.WhisperNative { *; }
--keep interface org.thunderdog.challegram.stt.WhisperNative$ProgressListener { *; }
--keep class * implements org.thunderdog.challegram.stt.WhisperNative$ProgressListener { void onProgress(int); void onSegment(byte[]); void onLive(byte[]); }
+# WhisperNative needs no rules here: its native methods are kept by "Keep native methods" above, and
+# ProgressListener (called back from JNI by method name) is annotated with @Keep.

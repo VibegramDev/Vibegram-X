@@ -25,11 +25,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.stt.SttManager;
-import org.thunderdog.challegram.ui.SettingsVoiceTranscriptionController;
-import org.thunderdog.challegram.tool.Drawables;
-import org.thunderdog.challegram.telegram.Tdlib;
-import android.graphics.drawable.Drawable;
-import me.vkryl.core.StringUtils;
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
@@ -59,7 +54,7 @@ import me.vkryl.core.MathUtils;
 import me.vkryl.core.lambda.CancellableRunnable;
 import tgx.td.Td;
 
-public class TGMessageMedia extends TGMessage implements SttManager.TranscriptionListener {
+public class TGMessageMedia extends TGMessage implements SttBlock.Host {
   // private MediaWrapper mediaWrapper;
   private @Nullable TextWrapper wrapper;
 
@@ -236,9 +231,8 @@ public class TGMessageMedia extends TGMessage implements SttManager.Transcriptio
 
   @Override
   protected void onMessageContainerDestroyed () {
-    if (sttListening) {
-      sttListening = false;
-      SttManager.instance().removeTranscriptionListener(this);
+    if (stt != null) {
+      stt.destroy();
     }
     mosaicWrapper.destroy();
     cancelScheduledHotOpening(null, false);
@@ -446,9 +440,7 @@ public class TGMessageMedia extends TGMessage implements SttManager.Transcriptio
     if (checkCommonCaption()) {
       changed |= FLAG_CHANGED_SIMPLY;
     }
-    String oldSttKey = sttKey;
-    checkSttKey();
-    if (!java.util.Objects.equals(oldSttKey, sttKey)) {
+    if (checkSttKey()) {
       changed |= FLAG_CHANGED_SIMPLY;
     }
 
@@ -581,7 +573,7 @@ public class TGMessageMedia extends TGMessage implements SttManager.Transcriptio
   @Override
   protected int getBottomLineContentWidth () {
     if (wrapper == null && hasSttBlock()) {
-      int lastLineWidth = sttStatusText != null ? sttStatusText.getWidth() : sttText != null ? sttText.getLastLineWidth() : 0;
+      int lastLineWidth = Math.max(0, stt.getLastLineWidth());
       return lastLineWidth + (xBubblePaddingSmall + xBubblePadding) * 2;
     }
     return wrapper != null && Lang.rtl() == wrapper.getLastLineIsRtl() ? wrapper.getLastLineWidth() + (xBubblePaddingSmall + xBubblePadding) * 2 : BOTTOM_LINE_EXPAND_HEIGHT;
@@ -1024,17 +1016,8 @@ public class TGMessageMedia extends TGMessage implements SttManager.Transcriptio
   // Vibegram X: on-device transcription of the audio of a video (the button over the video, the text under it).
 
   private static final float STT_BUTTON_SIZE = 28f, STT_BUTTON_MARGIN = 8f, STT_STATUS_ROW = 20f;
-  /** The whole audio track is decoded into memory (at the source rate first): keeps it within ~60 MB. */
-  private static final int STT_MAX_DURATION = 5 * 60;
 
-  private @Nullable String sttKey;
-  private boolean sttListening;
-  private @Nullable Text sttText, sttStatusText;
-  private @Nullable String sttTextSource, sttStatusSource;
-  private final RectF sttButtonRect = new RectF();
-  private boolean sttCaught;
-  private boolean sttInvalidatePending;
-  private long sttLastProgressUpdate;
+  private @Nullable SttBlock stt;
 
   private @Nullable TdApi.Video getSttVideo () {
     if (mosaicWrapper == null || !mosaicWrapper.isSingular() || msg.content.getConstructor() != TdApi.MessageVideo.CONSTRUCTOR) {
@@ -1043,119 +1026,54 @@ public class TGMessageMedia extends TGMessage implements SttManager.Transcriptio
     return ((TdApi.MessageVideo) msg.content).video;
   }
 
-  private void checkSttKey () {
+  /** @return true when the transcribed file changed */
+  private boolean checkSttKey () {
     TdApi.Video video = getSttVideo();
-    boolean canTranscribe = video != null && msg.chatId != 0 && !isHot() && !isSponsoredMessage();
-    if (canTranscribe && !sttListening) {
-      sttListening = true;
-      SttManager.instance().addTranscriptionListener(this);
+    boolean canTranscribe = video != null && msg.chatId != 0 && !isHot() && !isSponsoredMessage() && !isDestroyed() && SttManager.isSupported();
+    if (!canTranscribe) {
+      return stt != null && stt.setFile(null, 0, 0, 0, false);
     }
-    this.sttKey = canTranscribe ?
-      SttManager.key(video.video.id, video.video.remote != null ? video.video.remote.uniqueId : null) : null;
+    if (stt == null) {
+      stt = new SttBlock(this, this, TEXT_MARGIN, STT_STATUS_ROW);
+    }
+    // the whole audio track is decoded into memory: longer videos are not transcribed
+    return stt.setFile(video.video, video.duration, SttManager.MAX_VIDEO_SECONDS, R.string.vg_SttVideoTooLong, false);
   }
 
   private boolean hasSttBlock () {
-    return sttText != null || sttStatusText != null;
+    return stt != null && stt.hasText();
   }
 
   private int getSttBlockHeight () {
-    int height = 0;
-    if (sttText != null) {
-      height += Screen.dp(TEXT_MARGIN) + sttText.getHeight();
-    }
-    if (sttStatusText != null) {
-      height += Screen.dp(TEXT_MARGIN) + Screen.dp(STT_STATUS_ROW);
-    }
-    return height;
+    return stt != null ? stt.getTextHeight() : 0;
   }
 
   private int getSttTextWidth () {
     return mosaicWrapper == null ? 0 : useBubbles() ? mosaicWrapper.getWidth() - xBubblePadding * 2 : mosaicWrapper.getWidth();
   }
 
-  private @Nullable String getSttDisplayText () {
-    if (sttKey == null) {
-      return null;
-    }
-    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
-    if (!t.expanded) {
-      return null;
-    }
-    switch (t.state) {
-      case SttManager.STATE_RUNNING:
-        return StringUtils.isEmpty(t.text) ? null : t.text;
-      case SttManager.STATE_DONE:
-        return StringUtils.isEmpty(t.text) ? Lang.getString(R.string.vg_SttEmpty) : t.text;
-      case SttManager.STATE_FAILED:
-        return Lang.getString(R.string.vg_SttFailed);
-    }
-    return null;
-  }
-
-  private @Nullable String getSttStatus () {
-    if (sttKey == null) {
-      return null;
-    }
-    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
-    if (!t.expanded || t.state != SttManager.STATE_RUNNING) {
-      return null;
-    }
-    float progress = t.getDisplayProgress();
-    if (progress < 0) {
-      return Lang.getString(R.string.vg_SttQueued);
-    }
-    if (t.preparing) {
-      return Lang.getString(R.string.vg_SttPreparing);
-    }
-    return Lang.getString(R.string.vg_SttProgress, (int) (progress * 100));
-  }
-
   private void buildSttText () {
-    int width = getSttTextWidth();
-    String text = width > 0 ? getSttDisplayText() : null;
-    if (text == null) {
-      sttText = null;
-      sttTextSource = null;
-    } else if (sttText == null || !text.equals(sttTextSource) || sttText.getMaxWidth() != width) {
-      sttTextSource = text;
-      sttText = new Text.Builder(text, width, getTextStyleProvider(), getTextColorSet()).build();
-    }
-    String status = width > 0 ? getSttStatus() : null;
-    if (status == null) {
-      sttStatusText = null;
-      sttStatusSource = null;
-    } else if (sttStatusText == null || !status.equals(sttStatusSource) || sttStatusText.getMaxWidth() != width) {
-      sttStatusSource = status;
-      sttStatusText = new Text.Builder(status, width, getTextStyleProvider(), getDecentColorSet()).singleLine().build();
+    if (stt != null) {
+      stt.buildText(stt.isEnabled() ? getSttTextWidth() : 0);
     }
   }
 
   @Override
-  public void onTranscriptionStateChanged (String key) {
-    if (isDestroyed() || (key != null && (sttKey == null || !sttKey.equals(key)))) {
+  public void onSttStateChanged (SttBlock block) {
+    if (isDestroyed()) {
       return;
     }
-    String oldKey = sttKey;
     int oldHeight = getSttBlockHeight();
-    checkSttKey();
     buildSttText();
-    if (oldHeight != getSttBlockHeight() || !java.util.Objects.equals(oldKey, sttKey)) {
+    if (oldHeight != getSttBlockHeight()) {
       rebuildAndUpdateContent();
     }
     invalidate();
   }
 
-  /** Refreshes the percentage twice a second while the transcription is running. */
-  private void updateSttProgressText () {
-    long now = SystemClock.uptimeMillis();
-    if (now - sttLastProgressUpdate < 500) {
-      return;
-    }
-    sttLastProgressUpdate = now;
-    String status = getSttStatus();
-    if (status != null && !status.equals(sttStatusSource)) {
-      UI.post(() -> onTranscriptionStateChanged(sttKey));
-    }
+  @Override
+  public void onSttInvalidate (SttBlock block) {
+    invalidate();
   }
 
   private void drawSttText (Canvas c, int top) {
@@ -1163,150 +1081,25 @@ public class TGMessageMedia extends TGMessage implements SttManager.Transcriptio
       return;
     }
     int x = useBubbles() ? (useForward() ? getContentX() : getContentX() + xBubblePadding) : getRealContentX();
-    if (sttText != null) {
-      top += Screen.dp(TEXT_MARGIN);
-      sttText.draw(c, x, x + sttText.getWidth(), 0, top);
-      top += sttText.getHeight();
-    }
-    if (sttStatusText != null) {
-      float cy = top + Screen.dp(TEXT_MARGIN) + Screen.dp(STT_STATUS_ROW) / 2f;
-      sttStatusText.draw(c, x, x + sttStatusText.getWidth(), 0, (int) (cy - sttStatusText.getHeight() / 2f));
-    }
+    stt.drawText(c, x, top, 1f);
   }
 
   /** Round button in the bottom left corner of the video: transcribe, stop, show or hide the text. */
   private void drawVideoSttButton (Canvas c) {
-    MediaWrapper item = sttKey != null ? mosaicWrapper.getSingularItem() : null;
+    MediaWrapper item = stt != null && stt.isEnabled() ? mosaicWrapper.getSingularItem() : null;
     if (item == null) {
-      sttButtonRect.setEmpty();
+      if (stt != null) {
+        stt.clearButton();
+      }
       return;
     }
     float radius = Screen.dp(STT_BUTTON_SIZE) / 2f;
     float cx = item.getCellLeft() + Screen.dp(STT_BUTTON_MARGIN) + radius;
     float cy = item.getCellBottom() - Screen.dp(STT_BUTTON_MARGIN) - radius;
-    sttButtonRect.set(cx - radius, cy - radius, cx + radius, cy + radius);
-    c.drawCircle(cx, cy, radius, Paints.fillingPaint(0x99000000));
-    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
-    if (t.state == SttManager.STATE_RUNNING) {
-      float r = Screen.dp(8f);
-      RectF arc = Paints.getRectF(cx - r, cy - r, cx + r, cy + r);
-      float progress = t.getDisplayProgress();
-      float angle = (SystemClock.uptimeMillis() % 1500L) / 1500f * 360f;
-      if (progress < 0) {
-        c.drawArc(arc, angle, 270f, false, Paints.getProgressPaint(0xffffffff, Screen.dp(2f)));
-      } else {
-        c.drawArc(arc, 0, 360f, false, Paints.getProgressPaint(0x40ffffff, Screen.dp(2f)));
-        c.drawArc(arc, angle - 90f, Math.max(36f, 360f * progress), false, Paints.getProgressPaint(0xffffffff, Screen.dp(2f)));
-      }
-      float half = Screen.dp(3f);
-      c.drawRect(cx - half, cy - half, cx + half, cy + half, Paints.fillingPaint(0xffffffff));
-      updateSttProgressText();
-      if (!sttInvalidatePending) {
-        // 30 frames per second are enough for the ring and leave the CPU to the recognition
-        sttInvalidatePending = true;
-        UI.post(() -> {
-          sttInvalidatePending = false;
-          invalidate();
-        }, 33);
-      }
-    } else {
-      boolean shown = t.expanded && (t.state == SttManager.STATE_DONE || t.state == SttManager.STATE_FAILED);
-      Drawable icon = Drawables.get(shown ? R.drawable.baseline_keyboard_arrow_up_24 : R.drawable.vg_speech_to_text_24);
-      c.save();
-      if (!shown) {
-        c.scale(.75f, .75f, cx, cy);
-      }
-      Drawables.drawCentered(c, icon, cx, cy, Paints.getPorterDuffPaint(0xffffffff));
-      c.restore();
-    }
+    stt.drawCircleButton(c, cx, cy, STT_BUTTON_SIZE, 0x99000000, 0xffffffff, .75f, 1f);
   }
 
   private boolean onSttTouchEvent (MotionEvent e) {
-    if (sttKey == null) {
-      return false;
-    }
-    switch (e.getAction()) {
-      case MotionEvent.ACTION_DOWN: {
-        float slop = Screen.dp(6f);
-        sttCaught = !sttButtonRect.isEmpty() &&
-          e.getX() >= sttButtonRect.left - slop && e.getX() <= sttButtonRect.right + slop &&
-          e.getY() >= sttButtonRect.top - slop && e.getY() <= sttButtonRect.bottom + slop;
-        return sttCaught;
-      }
-      case MotionEvent.ACTION_UP: {
-        if (sttCaught) {
-          sttCaught = false;
-          onSttButtonClick();
-          performClickSoundFeedback();
-          return true;
-        }
-        break;
-      }
-      case MotionEvent.ACTION_CANCEL: {
-        if (sttCaught) {
-          sttCaught = false;
-          return true;
-        }
-        break;
-      }
-      default: {
-        return sttCaught;
-      }
-    }
-    return false;
-  }
-
-  private void onSttButtonClick () {
-    if (sttKey == null) {
-      return;
-    }
-    SttManager manager = SttManager.instance();
-    SttManager.Transcription t = manager.getTranscription(sttKey);
-    if (t.state == SttManager.STATE_RUNNING) {
-      manager.cancelTranscription(sttKey);
-      return;
-    }
-    if (t.state == SttManager.STATE_DONE || t.state == SttManager.STATE_FAILED) {
-      if (t.state == SttManager.STATE_FAILED && !t.expanded) {
-        startTranscription();
-      } else {
-        manager.setExpanded(sttKey, !t.expanded);
-      }
-      return;
-    }
-    startTranscription();
-  }
-
-  private void startTranscription () {
-    final TdApi.Video video = getSttVideo();
-    if (video == null || sttKey == null) {
-      return;
-    }
-    if (video.duration > STT_MAX_DURATION) {
-      UI.showToast(R.string.vg_SttVideoTooLong, android.widget.Toast.LENGTH_SHORT);
-      return;
-    }
-    final Tdlib tdlib = this.tdlib;
-    // The audio track is decoded right from the video file, which has to be downloaded first.
-    boolean started = SttManager.instance().transcribe(sttKey, () -> {
-      TdApi.File file = video.video;
-      if (file.local != null && file.local.isDownloadingCompleted && new java.io.File(file.local.path).exists()) {
-        return file.local.path;
-      }
-      final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-      final String[] path = new String[1];
-      tdlib.send(new TdApi.DownloadFile(file.id, 32, 0, 0, true), (result, error) -> {
-        if (result != null && result.local != null && result.local.isDownloadingCompleted) {
-          path[0] = result.local.path;
-        }
-        latch.countDown();
-      });
-      latch.await(5, java.util.concurrent.TimeUnit.MINUTES);
-      return path[0];
-    }, null);
-    if (!started) {
-      UI.showToast(R.string.vg_SttNoModel, android.widget.Toast.LENGTH_SHORT);
-      controller().navigateTo(new SettingsVoiceTranscriptionController(controller().context(), tdlib));
-    }
+    return stt != null && stt.onTouchEvent(e, 6f);
   }
 }

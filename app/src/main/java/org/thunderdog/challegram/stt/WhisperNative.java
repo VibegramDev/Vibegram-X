@@ -55,7 +55,7 @@ public final class WhisperNative {
     for (String name : candidates) {
       try {
         System.loadLibrary(name);
-        android.util.Log.i("VgStt", "loaded " + name);
+        org.thunderdog.challegram.Log.i(org.thunderdog.challegram.Log.TAG_VOICE, "STT: loaded %s", name);
         return;
       } catch (UnsatisfiedLinkError e) {
         lastError = e;

@@ -18,7 +18,6 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.Interpolator;
@@ -29,14 +28,16 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BaseActivity;
+import org.thunderdog.challegram.Log;
+import org.thunderdog.challegram.N;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.component.chat.MessageView;
 import org.thunderdog.challegram.component.chat.MessageViewGroup;
 import org.thunderdog.challegram.component.chat.MessagesManager;
 import org.thunderdog.challegram.component.chat.Waveform;
-import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.config.Config;
+import org.thunderdog.challegram.core.Background;
 import org.thunderdog.challegram.loader.DoubleImageReceiver;
 import org.thunderdog.challegram.loader.ImageFile;
 import org.thunderdog.challegram.loader.ImageFileLocal;
@@ -47,6 +48,7 @@ import org.thunderdog.challegram.mediaview.disposable.DisposableMediaViewControl
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.player.RoundVideoController;
 import org.thunderdog.challegram.player.TGPlayerController;
+import org.thunderdog.challegram.stt.AudioDecoder;
 import org.thunderdog.challegram.stt.SttManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibFilesManager;
@@ -59,7 +61,6 @@ import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.ui.MessagesController;
-import org.thunderdog.challegram.ui.SettingsVoiceTranscriptionController;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.widget.FileProgressComponent;
@@ -73,7 +74,7 @@ import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 
-public class TGMessageVideo extends TGMessage implements FileProgressComponent.SimpleListener, TGPlayerController.TrackListener, SttManager.TranscriptionListener {
+public class TGMessageVideo extends TGMessage implements FileProgressComponent.SimpleListener, TGPlayerController.TrackListener, SttBlock.Host {
   private TdApi.VideoNote videoNote;
   private boolean notViewed;
 
@@ -126,14 +127,13 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     this.sourceDuration = videoNote.duration;
 
     // Vibegram X: transcription, the same as for voice messages (not for view-once videos)
-    boolean allowStt = getChatId() != 0 && !TD.isSelfDestructTypeImmediately(getMessage());
-    String newSttKey = allowStt ? SttManager.key(videoNote.video.id, videoNote.video.remote != null ? videoNote.video.remote.uniqueId : null) : null;
-    if (sttKey == null && newSttKey != null) {
-      SttManager.instance().addTranscriptionListener(this);
-    } else if (sttKey != null && newSttKey == null) {
-      SttManager.instance().removeTranscriptionListener(this);
+    boolean allowStt = getChatId() != 0 && !TD.isSelfDestructTypeImmediately(getMessage()) && SttManager.isSupported();
+    if (allowStt && stt == null) {
+      stt = new SttBlock(this, this, STT_TEXT_GAP, STT_STATUS_ROW);
     }
-    this.sttKey = newSttKey;
+    if (stt != null) {
+      stt.setFile(allowStt ? videoNote.video : null, videoNote.duration, SttManager.MAX_VOICE_SECONDS, 0, true);
+    }
     this.waveform = new Waveform(videoNote.waveform, Waveform.MODE_BITMAP, isOutgoingBubble());
     this.compact = computeCompact();
 
@@ -483,7 +483,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
 
   @Override
   protected int getContentHeight () {
-    return compact ? videoSize + getSttTextHeight() : videoSize;
+    return compact ? videoSize + (stt != null ? stt.getTextHeight() : 0) : videoSize;
   }
 
   // The video player is laid out over the round only, not over the transcription under it
@@ -534,13 +534,8 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     if (!compact) {
       return super.getBottomLineContentWidth();
     }
-    if (sttStatusText != null) {
-      return sttStatusText.getWidth();
-    }
-    if (sttText != null) {
-      return sttText.getLastLineWidth();
-    }
-    return BOTTOM_LINE_KEEP_WIDTH;
+    int lastLineWidth = stt != null ? stt.getLastLineWidth() : -1;
+    return lastLineWidth >= 0 ? lastLineWidth : BOTTOM_LINE_KEEP_WIDTH;
   }
 
   @Override
@@ -658,17 +653,20 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     int textY = receiver.getBottom() - getBubbleTimePartHeight() - Screen.dp(8f);
     boolean useBubbles = useBubbles();
     // The transcription button goes at the bottom left of the round, the duration right after it
-    final float sttAlpha = sttKey != null ? (1f - unmuteFactor) : 0f;
-    final int sttSpace = sttKey != null ? Screen.dp(STT_ROUND_BUTTON + STT_ROUND_GAP) : 0;
-    if (sttKey != null) {
+    final boolean hasStt = hasStt();
+    final float sttAlpha = hasStt ? (1f - unmuteFactor) : 0f;
+    final int sttSpace = hasStt ? Screen.dp(STT_ROUND_BUTTON + STT_ROUND_GAP) : 0;
+    if (hasStt) {
       int pillWidth = contentWidth + (useBubbles ? Screen.dp(6f) * 2 : 0);
       x = Math.max(x, receiver.getLeft() + sttSpace + pillWidth);
       int pillLeft = x - pillWidth;
       float buttonCy = useBubbles ? textY - Screen.dp(3.5f) + Screen.dp(21f) / 2f : textY + Screen.dp(10.5f);
       if (sttAlpha > 0f) {
-        drawRoundSttButton(c, pillLeft - Screen.dp(STT_ROUND_GAP) - Screen.dp(STT_ROUND_BUTTON) / 2f, buttonCy, sttAlpha, useBubbles);
+        // same look as the duration next to it
+        stt.drawCircleButton(c, pillLeft - Screen.dp(STT_ROUND_GAP) - Screen.dp(STT_ROUND_BUTTON) / 2f, buttonCy, STT_ROUND_BUTTON,
+          useBubbles ? getBubbleTimeColor() : 0x40000000, useBubbles ? getBubbleTimeTextColor() : 0xffffffff, .75f, sttAlpha);
       } else {
-        sttButtonRect.setEmpty();
+        stt.clearButton();
       }
     }
     if (useBubbles) {
@@ -754,7 +752,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   private static final float STT_STATUS_ROW = 24f;
   private static final float COMPACT_PREVIEW_OFFSET = 12f, COMPACT_DURATION_GAP = 12f;
 
-  private @Nullable String sttKey;
+  private @Nullable SttBlock stt;
   /** The transcription is shown: the message is drawn as a bubble with a small round. */
   private boolean compact;
   private Waveform waveform;
@@ -762,12 +760,6 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   private int compactWidth;
   private int compactDurationWidth;
   private @Nullable Text compactDurationText;
-  private @Nullable Text sttText, sttStatusText;
-  private @Nullable String sttTextSource, sttStatusSource;
-  private final RectF sttButtonRect = new RectF();
-  private boolean sttCaught;
-  private boolean sttInvalidatePending;
-  private long sttLastProgressUpdate;
 
   /** The transcription is shown: the round is small and stays in place while playing. */
   public boolean isTranscriptionShown () {
@@ -778,32 +770,38 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     return Screen.dp(FileProgressComponent.DEFAULT_FILE_RADIUS) * 2;
   }
 
-  private boolean computeCompact () {
-    if (sttKey == null) {
-      return false;
-    }
-    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
-    return t.expanded && t.state != SttManager.STATE_NONE;
+  private boolean hasStt () {
+    return stt != null && stt.isEnabled();
   }
 
-  /** Round videos come without a waveform (TDLib leaves it empty), so it is computed from the audio track once. */
+  private boolean computeCompact () {
+    return hasStt() && stt.isOpen();
+  }
+
+  /**
+   * Round videos come without a waveform (TDLib leaves it empty), so it is computed from the audio track once.
+   * An empty array marks a file whose audio could not be read, so it is not decoded again on every layout.
+   */
   private static final java.util.Map<String, byte[]> GENERATED_WAVEFORMS = java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, byte[]>(16, .75f, true) {
     @Override
     protected boolean removeEldestEntry (java.util.Map.Entry<String, byte[]> eldest) {
       return size() > 64;
     }
   });
-  private static final java.util.concurrent.ExecutorService WAVEFORM_EXECUTOR = java.util.concurrent.Executors.newSingleThreadExecutor();
+  /** Video messages are at most a minute long; the limit only guards against broken metadata. */
+  private static final int WAVEFORM_MAX_SECONDS = 5 * 60;
   private boolean waveformRequested;
 
   private void checkGeneratedWaveform () {
-    if (sttKey == null || (videoNote.waveform != null && videoNote.waveform.length > 0)) {
+    final String key = stt != null ? stt.getKey() : null;
+    if (key == null || (videoNote.waveform != null && videoNote.waveform.length > 0)) {
       return;
     }
-    final String key = sttKey;
     byte[] cached = GENERATED_WAVEFORMS.get(key);
     if (cached != null) {
-      waveform.setData(cached);
+      if (cached.length > 0) {
+        waveform.setData(cached);
+      }
       return;
     }
     TdApi.File file = videoNote.video;
@@ -812,30 +810,20 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     }
     waveformRequested = true;
     final String path = file.local.path;
-    WAVEFORM_EXECUTOR.execute(() -> {
+    Background.instance().post(() -> {
       byte[] data = null;
       try {
-        float[] samples = org.thunderdog.challegram.stt.AudioDecoder.decode(path, null);
-        // peaks of 1024 equal parts, the same input the voice recorder gives to the encoder
-        short[] peaks = new short[1024];
-        if (samples.length > 0) {
-          for (int i = 0; i < peaks.length; i++) {
-            int from = (int) ((long) samples.length * i / peaks.length);
-            int to = Math.max(from + 1, (int) ((long) samples.length * (i + 1) / peaks.length));
-            float peak = 0f;
-            for (int j = from; j < to && j < samples.length; j++) {
-              peak = Math.max(peak, Math.abs(samples[j]));
-            }
-            peaks[i] = (short) Math.min(32767, (int) (peak * 32767f));
-          }
-          data = org.thunderdog.challegram.N.getWaveform2(peaks, peaks.length);
+        // peaks of 1024 equal parts at the source rate, the same input the voice recorder gives to the encoder
+        short[] peaks = AudioDecoder.decodePeaks(path, 1024, WAVEFORM_MAX_SECONDS, null);
+        if (peaks != null) {
+          data = N.getWaveform2(peaks, peaks.length);
         }
       } catch (Throwable e) {
-        android.util.Log.w("VgStt", "Round waveform failed", e);
+        Log.w(Log.TAG_VOICE, "STT: round waveform failed", e);
       }
-      if (data != null && data.length > 0) {
-        final byte[] result = data;
-        GENERATED_WAVEFORMS.put(key, result);
+      final byte[] result = data != null ? data : new byte[0];
+      GENERATED_WAVEFORMS.put(key, result);
+      if (result.length > 0) {
         UI.post(() -> {
           if (!isDestroyed()) {
             waveform.setData(result);
@@ -864,83 +852,21 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     compactDurationText = new Text.Builder(durationStr, maxWidth, Paints.getSubtitleStyleProvider(), getDecentColorSet()).singleLine().build();
   }
 
-  private @Nullable String getSttDisplayText () {
-    if (sttKey == null) {
-      return null;
-    }
-    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
-    if (!t.expanded) {
-      return null;
-    }
-    switch (t.state) {
-      case SttManager.STATE_RUNNING:
-        return StringUtils.isEmpty(t.text) ? null : t.text;
-      case SttManager.STATE_DONE:
-        return StringUtils.isEmpty(t.text) ? Lang.getString(R.string.vg_SttEmpty) : t.text;
-      case SttManager.STATE_FAILED:
-        return Lang.getString(R.string.vg_SttFailed);
-    }
-    return null;
-  }
-
-  private @Nullable String getSttStatus () {
-    if (sttKey == null) {
-      return null;
-    }
-    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
-    if (!t.expanded || t.state != SttManager.STATE_RUNNING) {
-      return null;
-    }
-    float progress = t.getDisplayProgress();
-    if (progress < 0) {
-      return Lang.getString(R.string.vg_SttQueued);
-    }
-    if (t.preparing) {
-      return Lang.getString(R.string.vg_SttPreparing);
-    }
-    return Lang.getString(R.string.vg_SttProgress, (int) (progress * 100));
-  }
-
   private void buildSttText () {
-    int width = compactWidth;
-    String text = compact && width > 0 ? getSttDisplayText() : null;
-    if (text == null) {
-      sttText = null;
-      sttTextSource = null;
-    } else if (sttText == null || !text.equals(sttTextSource) || sttText.getMaxWidth() != width) {
-      sttTextSource = text;
-      sttText = new Text.Builder(text, width, getTextStyleProvider(), getTextColorSet()).build();
+    if (stt != null) {
+      stt.buildText(compact ? compactWidth : 0);
     }
-    String status = compact && width > 0 ? getSttStatus() : null;
-    if (status == null) {
-      sttStatusText = null;
-      sttStatusSource = null;
-    } else if (sttStatusText == null || !status.equals(sttStatusSource) || sttStatusText.getMaxWidth() != width) {
-      sttStatusSource = status;
-      sttStatusText = new Text.Builder(status, width, getTextStyleProvider(), getDecentColorSet()).singleLine().build();
-    }
-  }
-
-  private int getSttTextHeight () {
-    int height = 0;
-    if (sttText != null) {
-      height += Screen.dp(STT_TEXT_GAP) + sttText.getHeight();
-    }
-    if (sttStatusText != null) {
-      height += Screen.dp(STT_TEXT_GAP + STT_STATUS_ROW);
-    }
-    return height;
   }
 
   @Override
-  public void onTranscriptionStateChanged (String key) {
-    if (sttKey == null || isDestroyed() || (key != null && !sttKey.equals(key))) {
+  public void onSttStateChanged (SttBlock block) {
+    if (isDestroyed()) {
       return;
     }
     boolean newCompact = computeCompact();
     if (newCompact != compact) {
       compact = newCompact;
-      sttButtonRect.setEmpty();
+      block.clearButton();
       // bubble, reply and time placement all change: lay the whole message out again
       rebuildLayout();
       requestLayout();
@@ -967,131 +893,13 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     invalidateOverlay();
   }
 
-  /** Refreshes the percentage twice a second while the transcription is running. */
-  private void updateSttProgressText () {
-    long now = SystemClock.uptimeMillis();
-    if (now - sttLastProgressUpdate < 500) {
-      return;
-    }
-    sttLastProgressUpdate = now;
-    String status = getSttStatus();
-    if (status != null && !status.equals(sttStatusSource)) {
-      UI.post(() -> onTranscriptionStateChanged(sttKey));
-    }
+  @Override
+  public void onSttInvalidate (SttBlock block) {
+    invalidate();
   }
 
   private boolean onSttTouchEvent (MotionEvent e) {
-    if (sttKey == null) {
-      return false;
-    }
-    switch (e.getAction()) {
-      case MotionEvent.ACTION_DOWN: {
-        float slop = Screen.dp(compact ? 6f : 8f);
-        sttCaught = !sttButtonRect.isEmpty() &&
-          e.getX() >= sttButtonRect.left - slop && e.getX() <= sttButtonRect.right + slop &&
-          e.getY() >= sttButtonRect.top - slop && e.getY() <= sttButtonRect.bottom + slop;
-        return sttCaught;
-      }
-      case MotionEvent.ACTION_UP: {
-        if (sttCaught) {
-          sttCaught = false;
-          onSttButtonClick();
-          performClickSoundFeedback();
-          return true;
-        }
-        break;
-      }
-      case MotionEvent.ACTION_CANCEL: {
-        if (sttCaught) {
-          sttCaught = false;
-          return true;
-        }
-        break;
-      }
-      default: {
-        return sttCaught;
-      }
-    }
-    return false;
-  }
-
-  private void onSttButtonClick () {
-    if (sttKey == null) {
-      return;
-    }
-    SttManager manager = SttManager.instance();
-    SttManager.Transcription t = manager.getTranscription(sttKey);
-    if (t.state == SttManager.STATE_RUNNING) {
-      manager.cancelTranscription(sttKey);
-      return;
-    }
-    if (t.state == SttManager.STATE_DONE || t.state == SttManager.STATE_FAILED) {
-      if (t.state == SttManager.STATE_FAILED && !t.expanded) {
-        startTranscription();
-      } else {
-        if (t.state == SttManager.STATE_DONE && !t.expanded) {
-          markViewed(this);
-        }
-        manager.setExpanded(sttKey, !t.expanded);
-      }
-      return;
-    }
-    startTranscription();
-  }
-
-  /** Reading the transcription counts as watching, the same as for voice messages. */
-  private static void markViewed (TGMessage message) {
-    if (!message.isOutgoing() && !message.isContentRead() && !TD.isSelfDestructTypeImmediately(message.getMessage())) {
-      message.readContent();
-    }
-  }
-
-  private void startTranscription () {
-    final TdApi.VideoNote videoNote = this.videoNote;
-    if (videoNote == null || sttKey == null) {
-      return;
-    }
-    final Tdlib tdlib = this.tdlib;
-    final TGMessage message = this;
-    // the audio track is decoded right from the mp4 of the round
-    boolean started = SttManager.instance().transcribe(sttKey, () -> {
-      TdApi.File file = videoNote.video;
-      if (file.local != null && file.local.isDownloadingCompleted && new File(file.local.path).exists()) {
-        return file.local.path;
-      }
-      final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-      final String[] path = new String[1];
-      tdlib.send(new TdApi.DownloadFile(file.id, 32, 0, 0, true), (result, error) -> {
-        if (result != null && result.local != null && result.local.isDownloadingCompleted) {
-          path[0] = result.local.path;
-        }
-        latch.countDown();
-      });
-      latch.await(2, java.util.concurrent.TimeUnit.MINUTES);
-      return path[0];
-    }, () -> markViewed(message));
-    if (!started) {
-      UI.showToast(R.string.vg_SttNoModel, android.widget.Toast.LENGTH_SHORT);
-      controller().navigateTo(new SettingsVoiceTranscriptionController(controller().context(), tdlib));
-    }
-  }
-
-  /** The button over the round: same look as the duration next to it. */
-  private void drawRoundSttButton (Canvas c, float cx, float cy, float alpha, boolean useBubbles) {
-    float radius = Screen.dp(STT_ROUND_BUTTON) / 2f;
-    sttButtonRect.set(cx - radius, cy - radius, cx + radius, cy + radius);
-    int backgroundColor = useBubbles ? getBubbleTimeColor() : 0x40000000;
-    int iconColor = useBubbles ? getBubbleTimeTextColor() : 0xffffffff;
-    c.drawCircle(cx, cy, radius, Paints.fillingPaint(ColorUtils.alphaColor(alpha, backgroundColor)));
-    Drawable icon = Drawables.get(R.drawable.vg_speech_to_text_24);
-    c.save();
-    c.scale(.75f, .75f, cx, cy);
-    Paint paint = Paints.getPorterDuffPaint(iconColor);
-    int oldAlpha = paint.getAlpha();
-    paint.setAlpha((int) (oldAlpha * alpha));
-    Drawables.drawCentered(c, icon, cx, cy, paint);
-    paint.setAlpha(oldAlpha);
-    c.restore();
+    return stt != null && stt.onTouchEvent(e, compact ? 6f : 8f);
   }
 
   private void drawCompactContent (Canvas c, int startX, int startY) {
@@ -1109,52 +917,11 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     if (compactDurationText != null) {
       compactDurationText.draw(c, textX, textX + compactDurationText.getWidth(), 0, cy - compactDurationText.getHeight() / 2);
     }
-    drawSttButton(c, textX + compactDurationWidth + Screen.dp(STT_BUTTON_GAP), cy);
-    int textTop = startY + roundSize;
-    if (sttText != null) {
-      sttText.draw(c, startX, startX + sttText.getWidth(), 0, textTop + Screen.dp(STT_TEXT_GAP));
-      textTop += Screen.dp(STT_TEXT_GAP) + sttText.getHeight();
-    }
-    if (sttStatusText != null) {
-      float statusCy = textTop + Screen.dp(STT_TEXT_GAP) + Screen.dp(STT_STATUS_ROW) / 2f;
-      sttStatusText.draw(c, startX, startX + sttStatusText.getWidth(), 0, (int) (statusCy - sttStatusText.getHeight() / 2f));
-    }
-  }
-
-  /** Same button as next to the waveform of a voice message. */
-  private void drawSttButton (Canvas c, int x, int cy) {
-    int activeColor = Theme.getColor(isOutgoingBubble() ? ColorId.bubbleOut_waveformActive : ColorId.waveformActive);
-    float width = Screen.dp(STT_BUTTON_WIDTH), height = Screen.dp(STT_BUTTON_HEIGHT);
-    sttButtonRect.set(x, cy - height / 2f, x + width, cy + height / 2f);
-    float radius = Screen.dp(8f);
-    c.drawRoundRect(sttButtonRect, radius, radius, Paints.fillingPaint(ColorUtils.alphaColor(.16f, activeColor)));
-    SttManager.Transcription t = SttManager.instance().getTranscription(sttKey);
-    float cx = sttButtonRect.centerX();
-    if (t.state == SttManager.STATE_RUNNING) {
-      float r = Screen.dp(8f);
-      RectF arc = Paints.getRectF(cx - r, cy - r, cx + r, cy + r);
-      float progress = t.getDisplayProgress();
-      float angle = (SystemClock.uptimeMillis() % 1500L) / 1500f * 360f;
-      if (progress < 0) {
-        c.drawArc(arc, angle, 270f, false, Paints.getProgressPaint(activeColor, Screen.dp(2f)));
-      } else {
-        c.drawArc(arc, 0, 360f, false, Paints.getProgressPaint(ColorUtils.alphaColor(.25f, activeColor), Screen.dp(2f)));
-        c.drawArc(arc, angle - 90f, Math.max(36f, 360f * progress), false, Paints.getProgressPaint(activeColor, Screen.dp(2f)));
-      }
-      float half = Screen.dp(3f);
-      c.drawRect(cx - half, cy - half, cx + half, cy + half, Paints.fillingPaint(activeColor));
-      updateSttProgressText();
-      if (!sttInvalidatePending) {
-        // 30 frames per second are enough for the ring and leave the CPU to the recognition
-        sttInvalidatePending = true;
-        UI.post(() -> {
-          sttInvalidatePending = false;
-          invalidate();
-        }, 33);
-      }
-    } else {
-      Drawable icon = Drawables.get(R.drawable.baseline_keyboard_arrow_up_24);
-      Drawables.drawCentered(c, icon, cx, cy, Paints.getPorterDuffPaint(activeColor));
+    if (stt != null) {
+      // same button as next to the waveform of a voice message
+      stt.drawPillButton(c, textX + compactDurationWidth + Screen.dp(STT_BUTTON_GAP), cy, STT_BUTTON_WIDTH, STT_BUTTON_HEIGHT,
+        Theme.getColor(isOutgoingBubble() ? ColorId.bubbleOut_waveformActive : ColorId.waveformActive));
+      stt.drawText(c, startX, startY + roundSize, 1f);
     }
   }
 
@@ -1180,8 +947,8 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   @Override
   protected void onMessageContainerDestroyed () {
     super.onMessageContainerDestroyed();
-    if (sttKey != null) {
-      SttManager.instance().removeTranscriptionListener(this);
+    if (stt != null) {
+      stt.destroy();
     }
   }
 }

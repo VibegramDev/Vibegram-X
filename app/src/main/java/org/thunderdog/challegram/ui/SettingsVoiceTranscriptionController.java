@@ -155,12 +155,17 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     view.invalidate();
   }
 
+  /** Downloaded, or a stopped download left files behind: the action deletes them. */
+  private static boolean canDelete (SttManager manager, SttModel model) {
+    return manager.isDownloaded(model) || manager.hasPartialDownload(model);
+  }
+
   private static @DrawableRes int actionIcon (SttModel model) {
     SttManager manager = SttManager.instance();
     if (manager.isDownloading(model)) {
       return R.drawable.baseline_close_24;
     }
-    if (manager.isDownloaded(model)) {
+    if (canDelete(manager, model)) {
       return R.drawable.baseline_delete_24;
     }
     return R.drawable.baseline_file_download_24;
@@ -184,12 +189,12 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
 
     void setModel (SttModel model) {
       this.model = model;
-      decoration.model = model;
+      decoration.setModel(model);
       SttManager manager = SttManager.instance();
       int description;
       if (manager.isDownloading(model)) {
         description = R.string.vg_SttCancelDownload;
-      } else if (manager.isDownloaded(model)) {
+      } else if (canDelete(manager, model)) {
         description = R.string.vg_SttDeleteAction;
       } else {
         description = R.string.vg_SttDownloadAction;
@@ -198,8 +203,33 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     }
   }
 
+  /** Draws the action icon and the stars. The state and the icons are resolved on bind, not while drawing. */
   private static final class RowDecoration implements DrawModifier {
     private SttModel model;
+    private @DrawableRes int iconRes;
+    private Drawable icon, starFilled, starEmpty;
+
+    void setModel (SttModel model) {
+      this.model = model;
+      int res = actionIcon(model);
+      if (icon == null || res != iconRes) {
+        iconRes = res;
+        icon = Drawables.get(res);
+      }
+    }
+
+    private Drawable star (boolean filled) {
+      if (filled) {
+        if (starFilled == null) {
+          starFilled = Drawables.get(R.drawable.baseline_star_20);
+        }
+        return starFilled;
+      }
+      if (starEmpty == null) {
+        starEmpty = Drawables.get(R.drawable.baseline_star_border_24);
+      }
+      return starEmpty;
+    }
 
     @Override
     public int getWidth () {
@@ -208,14 +238,13 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
 
     @Override
     public void afterDraw (View view, Canvas c) {
-      if (model == null) {
+      if (model == null || icon == null) {
         return;
       }
       boolean rtl = Lang.rtl();
       int width = view.getWidth();
       float centerY = view.getHeight() / 2f;
 
-      Drawable icon = Drawables.get(view.getResources(), actionIcon(model));
       float iconCenterX = Screen.dp(ACTION_MARGIN + ACTION_SIZE / 2f);
       if (!rtl) {
         iconCenterX = width - iconCenterX;
@@ -232,12 +261,11 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
         boolean filled = i < model.quality;
         // Stars fill from the start of the reading direction.
         float x = rtl ? starsStart - size - i * step : width - starsStart + i * step;
-        drawStar(view, c, filled, x, centerY - size / 2f, size);
+        drawStar(c, star(filled), filled, x, centerY - size / 2f, size);
       }
     }
 
-    private static void drawStar (View view, Canvas c, boolean filled, float x, float y, float size) {
-      Drawable star = Drawables.get(view.getResources(), filled ? R.drawable.baseline_star_20 : R.drawable.baseline_star_border_24);
+    private static void drawStar (Canvas c, Drawable star, boolean filled, float x, float y, float size) {
       float scale = size / star.getMinimumWidth();
       c.save();
       c.translate(x, y);
@@ -251,8 +279,10 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     SttManager manager = SttManager.instance();
     if (manager.isDownloading(model)) {
       manager.cancelDownload(model);
-    } else if (manager.isDownloaded(model)) {
-      showOptions(model.title, new int[] {R.id.btn_vgSttDelete}, new String[] {Lang.getString(R.string.vg_SttDelete, model.sizeText())}, new int[] {OptionColor.RED}, new int[] {R.drawable.baseline_delete_24}, (itemView, id) -> {
+    } else if (canDelete(manager, model)) {
+      // a partial download is deleted the same way: its .part files take space too
+      String title = manager.isDownloaded(model) ? Lang.getString(R.string.vg_SttDelete, model.sizeText()) : Lang.getString(R.string.vg_SttDeleteAction);
+      showOptions(model.title, new int[] {R.id.btn_vgSttDelete}, new String[] {title}, new int[] {OptionColor.RED}, new int[] {R.drawable.baseline_delete_24}, (itemView, id) -> {
         if (id == R.id.btn_vgSttDelete) {
           manager.delete(model);
         }
@@ -270,6 +300,15 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     }
     // The selection may move between models, so refresh every row.
     adapter.updateAllValuedSettingsById(R.id.btn_vgSttModel);
+  }
+
+  @Override
+  public void onModelDownloadProgress (SttModel model) {
+    if (adapter == null || isDestroyed()) {
+      return;
+    }
+    // only the percentage in this model's subtitle changed
+    adapter.updateValuedSettingByData(model);
   }
 
   @Override
