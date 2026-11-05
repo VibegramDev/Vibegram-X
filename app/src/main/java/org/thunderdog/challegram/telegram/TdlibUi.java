@@ -146,7 +146,6 @@ import org.thunderdog.challegram.util.OptionDelegate;
 import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.voip.VoIPLogs;
-import org.thunderdog.challegram.widget.CheckBoxView;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.InfiniteRecyclerView;
 import org.thunderdog.challegram.widget.PopupLayout;
@@ -3001,78 +3000,20 @@ public class TdlibUi extends Handler {
         }
         case TdApi.LoginUrlInfoRequestConfirmation.CONSTRUCTOR: {
           TdApi.LoginUrlInfoRequestConfirmation confirm = (TdApi.LoginUrlInfoRequestConfirmation) loginUrlInfo;
-          List<ListItem> items = new ArrayList<>();
-          items.add(new ListItem(ListItem.TYPE_CHECKBOX_OPTION_MULTILINE,
-            R.id.btn_signIn, 0,
-            Lang.getString(R.string.LogInAsOn,
-              (target, argStart, argEnd, argIndex, needFakeBold) -> argIndex == 1 ?
-                new CustomTypefaceSpan(null, ColorId.textLink) :
-                Lang.newBoldSpan(needFakeBold),
-              context.tdlib().accountName(),
-              confirm.domain),
-            true
-          ));
-          if (confirm.requestWriteAccess) {
-            items.add(new ListItem(ListItem.TYPE_CHECKBOX_OPTION_MULTILINE,
-              R.id.btn_allowWriteAccess,
-              0,
-              Lang.getString(R.string.AllowWriteAccess, Lang.boldCreator(), context.tdlib().cache().userName(confirm.botUserId)),
-              true
-            ));
-          }
-
-          ViewController<?> controller = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
-          if (controller != null && !controller.isDestroyed()) {
-            controller.showSettings(
-              new SettingsWrapBuilder(R.id.btn_open)
-                .addHeaderItem(Lang.getString(R.string.OpenLinkConfirm, (target, argStart, argEnd, spanIndex, needFakeBold) -> new CustomTypefaceSpan(null, ColorId.textLink), confirm.url))
-                .setRawItems(items)
-                .setIntDelegate((id, result) -> {
-                  boolean needSignIn = items.get(0).isSelected();
-                  boolean needWriteAccess = items.size() > 1 && items.get(1).isSelected();
-                  if (needSignIn) {
-                    context.tdlib().send(
-                      new TdApi.GetExternalLink(originalUrl, needWriteAccess), (httpUrl, error1) -> {
-                        String destinationUrl = error1 != null ? originalUrl : httpUrl.url;
-                        openUrlImpl(context, destinationUrl, options != null ? options.disableOpenPrompt() : null, after);
-                      });
-                  } else {
-                    openUrlImpl(context, originalUrl, options != null ? options.disableOpenPrompt() : null, after);
-                  }
+          post(() -> {
+            ViewController<?> controller = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
+            if (controller != null && !controller.isDestroyed()) {
+              // The login sheet of the official app («Log in to domain»); Decline closes it without opening the link.
+              org.thunderdog.challegram.ui.OAuthSheet.showLoginUrl(controller, context.tdlib(), confirm, false, allowWriteAccess ->
+                context.tdlib().send(new TdApi.GetExternalLink(originalUrl, allowWriteAccess), (httpUrl, error1) -> {
+                  String destinationUrl = error1 != null ? originalUrl : httpUrl.url;
+                  openUrlImpl(context, destinationUrl, options != null ? options.disableOpenPrompt() : null, after);
                 })
-                .setSettingProcessor((item, itemView, isUpdate) -> {
-                  switch (item.getViewType()) {
-                    case ListItem.TYPE_CHECKBOX_OPTION:
-                    case ListItem.TYPE_CHECKBOX_OPTION_MULTILINE:
-                    case ListItem.TYPE_CHECKBOX_OPTION_WITH_AVATAR:
-                      ((CheckBoxView) itemView.getChildAt(0)).setChecked(item.isSelected(), isUpdate);
-                      break;
-                  }
-                })
-                .setOnSettingItemClick(confirm.requestWriteAccess ? (itemView, settingsId, item, doneButton, settingsAdapter, window) -> {
-                  final int itemId = item.getId();
-                  if (itemId == R.id.btn_signIn) {
-                    boolean needSignIn = settingsAdapter.getCheckIntResults().get(R.id.btn_signIn) == R.id.btn_signIn;
-                    if (!needSignIn) {
-                      items.get(1).setSelected(false);
-                      settingsAdapter.updateValuedSettingById(R.id.btn_allowWriteAccess);
-                    }
-                  } else if (itemId == R.id.btn_allowWriteAccess) {
-                    boolean needWriteAccess = settingsAdapter.getCheckIntResults().get(R.id.btn_allowWriteAccess) == R.id.btn_allowWriteAccess;
-                    if (needWriteAccess) {
-                      items.get(0).setSelected(true);
-                      settingsAdapter.updateValuedSettingById(R.id.btn_signIn);
-                    }
-                  }
-                } : null)
-                .setSaveStr(R.string.Open)
-                .setRawItems(items)
-            );
-          } else {
-            if (after != null) {
+              );
+            } else if (after != null) {
               after.runWithBool(false);
             }
-          }
+          });
           break;
         }
         default: {
@@ -3694,6 +3635,33 @@ public class TdlibUi extends Handler {
         });
         break;
       }
+      case TdApi.InternalLinkTypeInvoice.CONSTRUCTOR: {
+        // Invoice links of bots (t.me/$name): the payment sheet in Stars or the checkout.
+        ViewController<?> c = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
+        if (c != null && !c.isDestroyed()) {
+          org.thunderdog.challegram.stars.StarsPaymentSheet.open(c, tdlib, new TdApi.InputInvoiceName(((TdApi.InternalLinkTypeInvoice) linkType).invoiceName), null, null);
+        } else {
+          unsupported.run();
+        }
+        break;
+      }
+      case TdApi.InternalLinkTypeStarPurchase.CONSTRUCTOR: {
+        // «Buy Stars» links of bots and mini apps: the packages that cover the needed Stars.
+        TdApi.InternalLinkTypeStarPurchase starPurchase = (TdApi.InternalLinkTypeStarPurchase) linkType;
+        ViewController<?> c = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
+        if (c != null && !c.isDestroyed()) {
+          TdApi.StarAmount balance = tdlib.ownedStarCount();
+          long missing = starPurchase.starCount - (balance != null ? balance.starCount : 0);
+          if (missing > 0) {
+            org.thunderdog.challegram.stars.StarsBuySheet.showNeeded(c, tdlib, missing, null, false, null);
+          } else {
+            org.thunderdog.challegram.stars.StarsBuySheet.show(c, tdlib, null);
+          }
+        } else {
+          unsupported.run();
+        }
+        break;
+      }
       case TdApi.InternalLinkTypeProxy.CONSTRUCTOR: {
         TdApi.Proxy proxy = ((TdApi.InternalLinkTypeProxy) linkType).proxy;
         if (proxy != null) {
@@ -4142,9 +4110,12 @@ public class TdlibUi extends Handler {
               result = new SettingsDataController(context.context(), context.tdlib());
               break;
             }
+            case TdApi.SettingsSectionMyStars.CONSTRUCTOR: {
+              result = new org.thunderdog.challegram.stars.StarsController(context.context(), context.tdlib());
+              break;
+            }
             case TdApi.SettingsSectionQrCode.CONSTRUCTOR:
             case TdApi.SettingsSectionSearch.CONSTRUCTOR:
-            case TdApi.SettingsSectionMyStars.CONSTRUCTOR:
             case TdApi.SettingsSectionMyGrams.CONSTRUCTOR:
             case TdApi.SettingsSectionPowerSaving.CONSTRUCTOR:
             case TdApi.SettingsSectionPremium.CONSTRUCTOR:
@@ -4202,8 +4173,6 @@ public class TdlibUi extends Handler {
       case TdApi.InternalLinkTypeWebApp.CONSTRUCTOR:
       case TdApi.InternalLinkTypeMainWebApp.CONSTRUCTOR:
 
-      case TdApi.InternalLinkTypeInvoice.CONSTRUCTOR:
-
       case TdApi.InternalLinkTypeRestorePurchases.CONSTRUCTOR:
       case TdApi.InternalLinkTypeChatBoost.CONSTRUCTOR:
       case TdApi.InternalLinkTypeGiftCollection.CONSTRUCTOR:
@@ -4221,17 +4190,29 @@ public class TdlibUi extends Handler {
       case TdApi.InternalLinkTypeNewGroupChat.CONSTRUCTOR:
       case TdApi.InternalLinkTypeNewPrivateChat.CONSTRUCTOR:
       case TdApi.InternalLinkTypeNewStory.CONSTRUCTOR:
-      case TdApi.InternalLinkTypeOauth.CONSTRUCTOR:
       case TdApi.InternalLinkTypePremiumFeaturesPage.CONSTRUCTOR:
       case TdApi.InternalLinkTypePremiumGiftPurchase.CONSTRUCTOR:
       case TdApi.InternalLinkTypeRequestManagedBot.CONSTRUCTOR:
       case TdApi.InternalLinkTypeSavedMessages.CONSTRUCTOR:
       case TdApi.InternalLinkTypeSearch.CONSTRUCTOR:
-      case TdApi.InternalLinkTypeStarPurchase.CONSTRUCTOR:
       case TdApi.InternalLinkTypeTextCompositionStyle.CONSTRUCTOR:
       case TdApi.InternalLinkTypeTonConnect.CONSTRUCTOR:
       case TdApi.InternalLinkTypeTonWalletTransfer.CONSTRUCTOR: {
         unsupported.run();
+        break;
+      }
+
+      case TdApi.InternalLinkTypeOauth.CONSTRUCTOR: {
+        // «Log in with Telegram»: only links that come from outside of the app (an intent, no message around them)
+        // may start a login, as TDLib requires; links inside chats are ignored.
+        String oauthUrl = ((TdApi.InternalLinkTypeOauth) linkType).url;
+        ViewController<?> c = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
+        boolean isExternal = openParameters == null && !(context instanceof ViewController<?>); // MainActivity: ACTION_VIEW intent
+        if (isExternal && c != null && !c.isDestroyed()) {
+          org.thunderdog.challegram.ui.OAuthSheet.openOauthLink(c, tdlib, oauthUrl, true);
+        } else {
+          unsupported.run();
+        }
         break;
       }
 

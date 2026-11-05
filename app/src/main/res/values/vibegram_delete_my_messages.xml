@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: «Delete my messages» in group chats (texts follow the exteragram plugin «Delete My Messages»). -->
+<resources>
+  <item type="id" name="btn_vgDeleteMyMessages" />
+  <item type="id" name="btn_vgDeleteMyMessagesStop" />
+
+  <string name="vg_DeleteMyMessages">Delete my messages</string>
+  <string name="vg_DeleteMyMessagesStop">Stop deleting my messages</string>
+  <string name="vg_DeleteMyMessagesTitle">Delete messages</string>
+  <string name="vg_DeleteMyMessagesConfirm">Are you sure you want to delete your messages in %1$s (%2$s)? They will be deleted for all members. This cannot be undone.</string>
+  <string name="vg_DeleteMyMessagesConfirmUnknown">Are you sure you want to delete your messages in %1$s? They will be deleted for all members. This cannot be undone.</string>
+  <string name="vg_DeleteMyMessagesStarted">Message deletion started…</string>
+  <string name="vg_DeleteMyMessagesNothing">You have no messages in this chat</string>
+  <string name="vg_DeleteMyMessagesProgress">Messages deleted: %1$s of %2$s</string>
+  <string name="vg_DeleteMyMessagesProgressShort">Messages deleted: %1$s</string>
+  <string name="vg_DeleteMyMessagesDone">All messages deleted: %1$s\nPeriod: %2$s — %3$s</string>
+  <string name="vg_DeleteMyMessagesDonePartial">Messages deleted: %1$s (%2$s — %3$s)\nCan\'t be deleted for everyone: %4$s</string>
+  <string name="vg_DeleteMyMessagesNotDeleted">Your messages can\'t be deleted for everyone: %1$s</string>
+  <string name="vg_DeleteMyMessagesStopConfirm">Messages deleted: %1$s. Stop deleting?</string>
+  <string name="vg_DeleteMyMessagesStopAction">Stop</string>
+  <string name="vg_DeleteMyMessagesStopped">Deletion stopped. Messages deleted: %1$s</string>
+  <string name="vg_DeleteMyMessagesFloodWait">Telegram limits deletions, continuing in %1$s</string>
+  <string name="vg_DeleteMyMessagesError">The operation failed: %1$s</string>
+</resources>

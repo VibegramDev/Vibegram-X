@@ -814,6 +814,32 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
       return true;
     }
 
+    if (action.startsWith(Intents.ACTION_OPEN_OAUTH)) {
+      // «Login Request» notification: the confirmation sheet of that account.
+      final int accountId = intent.getIntExtra("account_id", TdlibAccount.NO_ID);
+      final String oauthUrl = intent.getStringExtra("oauth_url");
+      if (accountId == TdlibAccount.NO_ID || StringUtils.isEmpty(oauthUrl) || !TdlibManager.instance().hasAccount(accountId)) {
+        return false;
+      }
+      final Tdlib oauthTdlib = TdlibManager.instanceForAccountId(accountId).account(accountId).tdlib();
+      oauthTdlib.awaitInitialization(() -> {
+        oauthTdlib.incrementUiReferenceCount();
+        handler.post(() -> {
+          if (navigation.isEmpty()) {
+            openMainController(accountId);
+          }
+          handler.post(() -> {
+            ViewController<?> c = navigation.getCurrentStackItem();
+            if (c != null && !c.isDestroyed()) {
+              org.thunderdog.challegram.ui.OAuthSheet.openOauthLink(c, oauthTdlib, oauthUrl, false);
+            }
+            oauthTdlib.decrementUiReferenceCount();
+          });
+        });
+      });
+      return true;
+    }
+
     if (action.startsWith(Intents.ACTION_OPEN_CHAT)) {
       int accountId = intent.getIntExtra("account_id", TdlibAccount.NO_ID);
       long chatId = intent.getLongExtra("chat_id", 0);

@@ -1825,6 +1825,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           TdApi.Chat cachedChat = tdlib.chat(chat.id);
           view.setIcon(tdlib.ui().getIconForSetting(cachedChat));
           tdlib.ui().setValueForSetting(view, chat.id);
+        } else if (itemId == R.id.btn_vgBotStars) {
+          TdApi.StarAmount amount = botStarAmount != null ? botStarAmount : new TdApi.StarAmount(0, 0);
+          view.setData(org.thunderdog.challegram.stars.Stars.withIcons(org.thunderdog.challegram.stars.Stars.STAR + " " + org.thunderdog.challegram.stars.Stars.formatShort(amount)));
         } else if (itemId == R.id.btn_groupsInCommon) {
           view.setData(Lang.plural(R.string.xGroups, userFull.groupInCommonCount));
         } else if (itemId == R.id.btn_encryptionKey) {
@@ -2558,6 +2561,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     addMediaItems(items);
 
     baseAdapter.setItems(items, false);
+    loadBotStars();
   }
 
   @WorkerThread
@@ -2682,6 +2686,72 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   private long personalChatId;
   private int personalChatRequestId;
   private boolean hasPersonalChatBlock;
+
+  // Telegram Stars of a bot owned by the current user: «Stars ⭐ 23.4K» of the official profile and bot editor,
+  // shown when the bot has Stars or Star transactions (BotStarsController.botHasStars of the official app).
+
+  private @Nullable TdApi.StarAmount botStarAmount;
+  private boolean botHasStarTransactions, botStarsLoaded;
+  private int botStarsRequestId;
+
+  private void loadBotStars () {
+    if (user == null || !TD.canEditBot(user) || (mode != Mode.USER && mode != Mode.EDIT_BOT_USER)) {
+      return;
+    }
+    final int requestId = ++botStarsRequestId;
+    tdlib.send(new TdApi.GetStarTransactions(new TdApi.MessageSenderUser(user.id), "", null, "", 1), (result, error) -> runOnUiThreadOptional(() -> {
+      if (requestId != botStarsRequestId || result == null) {
+        return;
+      }
+      botStarsLoaded = true;
+      botStarAmount = result.starAmount;
+      botHasStarTransactions = result.transactions.length > 0;
+      checkBotStarsRow();
+    }));
+  }
+
+  private void checkBotStarsRow () {
+    if (baseAdapter == null || !(org.thunderdog.challegram.stars.Stars.isPositive(botStarAmount) || botHasStarTransactions)) {
+      return;
+    }
+    int index = baseAdapter.indexOfViewById(R.id.btn_vgBotStars);
+    if (index != -1) {
+      baseAdapter.updateValuedSettingByPosition(index);
+      return;
+    }
+    List<ListItem> items = baseAdapter.getItems();
+    List<ListItem> block = new ArrayList<>(3);
+    int insertAt = -1;
+    if (mode == Mode.EDIT_BOT_USER) {
+      // The last row of the bot block: description, media, commands, settings.
+      for (int i = 0; i < items.size(); i++) {
+        final int id = items.get(i).getId();
+        if (id == R.id.btn_botDescription || id == R.id.btn_botEdit) {
+          insertAt = i + 1;
+        }
+      }
+      block.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      block.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgBotStars, R.drawable.vg_stars_outline_24, R.string.vg_BotBalanceStars));
+    } else {
+      // A block of its own below notifications, as the Stars card above the shared media of the official profile.
+      int notificationsIndex = baseAdapter.indexOfViewById(R.id.btn_notifications);
+      for (int i = notificationsIndex; notificationsIndex != -1 && i < items.size(); i++) {
+        if (items.get(i).getViewType() == ListItem.TYPE_SHADOW_BOTTOM) {
+          insertAt = i + 1;
+          break;
+        }
+      }
+      block.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+      block.add(new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_vgBotStars, R.drawable.vg_stars_outline_24, R.string.vg_BotBalanceStars));
+      block.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+    }
+    if (insertAt == -1) {
+      return;
+    }
+    items.addAll(insertAt, block);
+    baseAdapter.notifyItemRangeInserted(insertAt, block.size());
+    onItemsHeightProbablyChanged();
+  }
 
   /** Index of the first item of the info block (peer id, username, bio, phone...). */
   private int getTopItemsStart () {
@@ -4434,6 +4504,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       addMediaItems(items);
     }
     baseAdapter.setItems(items, false);
+    if (mode == Mode.EDIT_BOT_USER) {
+      loadBotStars();
+    }
 
     if (tdlib.canInviteUsers(chat)) {
       requestInviteLinks(TD.isCreator(myStatus));
@@ -5197,6 +5270,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       editUsername();
     } else if (viewId == R.id.btn_botDescription) {
       editDescription(true);
+    } else if (viewId == R.id.btn_vgBotStars) {
+      org.thunderdog.challegram.stars.BotStarsController.open(this, user.id);
     } else if (viewId == R.id.btn_botEdit) {
       TdApi.InternalLinkType internalLinkType = (TdApi.InternalLinkType) ((ListItem) v.getTag()).getData();
       tdlib.ui().openInternalLinkType(this, null, internalLinkType, new TdlibUi.UrlOpenParameters().ignoreExplicitUserInteraction(true), null);
@@ -5495,6 +5570,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     if (!oneShot) {
       oneShot = true;
       pagerAdapter.notifyDataSetChanged();
+    }
+    if (botStarsLoaded) {
+      loadBotStars();
     }
     if (!isEditing()) {
       ((ComplexRecyclerView) baseRecyclerView).setFactorLocked(false);

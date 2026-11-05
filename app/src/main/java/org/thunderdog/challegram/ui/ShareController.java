@@ -3637,7 +3637,18 @@ public class ShareController extends TelegramViewController<ShareController.Args
       }
     }
 
-    if (functions.size() == 1) {
+    // Chats that charge Stars for messages: the payment is confirmed on the screen below this sheet first.
+    boolean mayBePaid = false;
+    for (TdApi.Function<?> function : functions) {
+      if (org.thunderdog.challegram.stars.PaidMessages.mayBePaid(tdlib, org.thunderdog.challegram.stars.PaidMessages.chatIdOf(function))) {
+        mayBePaid = true;
+        break;
+      }
+    }
+    if (mayBePaid) {
+      ViewController<?> payContext = context().navigation().getCurrentStackItem();
+      org.thunderdog.challegram.stars.PaidMessages.send(payContext != null ? payContext : this, tdlib, functions);
+    } else if (functions.size() == 1) {
       tdlib.client().send(functions.get(0), tdlib.messageHandler());
     } else {
       tdlib.runOnTdlibThread(() -> {
@@ -3649,15 +3660,18 @@ public class ShareController extends TelegramViewController<ShareController.Args
 
     onSent();
 
+    // With paid chats the result is shown by the payment confirmation instead of «Done».
     if (isSingleTap) {
-      UI.showToast(R.string.DoneSave, Toast.LENGTH_SHORT);
+      if (!mayBePaid) {
+        UI.showToast(R.string.DoneSave, Toast.LENGTH_SHORT);
+      }
     } else if (selectedChats.size() == 1) {
       // Shared with one chat: that chat opens (it used to open only for content shared from other apps).
       ViewController<?> c = context().navigation().getCurrentStackItem();
       if (!(c instanceof MessagesController && ((MessagesController) c).compareChat(selectedChats.valueAt(0).getAnyId(), (TdApi.MessageTopic) null))) {
         UI.post(() -> tdlib.ui().openChat(ShareController.this, selectedChats.valueAt(0).getAnyId(), null), 250);
       }
-    } else {
+    } else if (!mayBePaid) {
       UI.showToast(R.string.Done, Toast.LENGTH_SHORT);
     }
 

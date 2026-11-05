@@ -36,6 +36,9 @@ import org.thunderdog.challegram.component.dialogs.SearchManager;
 import org.thunderdog.challegram.component.user.BubbleView;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
+import org.thunderdog.challegram.navigation.DialogLayout;
+import org.thunderdog.challegram.stars.Stars;
+import org.thunderdog.challegram.stars.StarsUi;
 import org.thunderdog.challegram.telegram.PrivacySettings;
 import org.thunderdog.challegram.telegram.PrivacySettingsListener;
 import org.thunderdog.challegram.telegram.Tdlib;
@@ -50,6 +53,9 @@ import org.thunderdog.challegram.util.NoUnderlineClickableSpan;
 import org.thunderdog.challegram.util.ProfilePhotoDrawModifier;
 import org.thunderdog.challegram.util.UserPickerMultiDelegate;
 import org.thunderdog.challegram.v.CustomRecyclerView;
+import org.thunderdog.challegram.widget.PopupLayout;
+import org.thunderdog.challegram.widget.SliderWrapView;
+import org.thunderdog.challegram.widget.VgSheets;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -281,22 +287,206 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
     return changedUnpaidRules != null ? changedUnpaidRules : unpaidRules;
   }
 
-  private TdApi.NewChatPrivacySettings currentNewChatPrivacySettings () {
-    boolean allowNewChatsFromUnknownUsers = currentRules().getMode() != PrivacySettings.Mode.CONTACTS;
-    long incomingMessageStarCount = 0;
-    if (currentRules().getMode() == PrivacySettings.Mode.NOBODY) {
-      // TODO
+  // Paid messages (Mode.INCOMING_MESSAGES_PRIVACY): «Charge for messages» is shown as the NOBODY mode.
+
+  /** Price per incoming message saved on the server; 0 when messages are free. */
+  private long paidStarCount;
+  /** Price chosen on the slider. */
+  private long selectedPaidStarCount;
+  /** The new price was confirmed twice (operations with Stars) and may be saved. */
+  private boolean paidPriceConfirmed;
+
+  private static final int[] PAID_MESSAGE_PRICE_STEPS = {1, 10, 50, 100, 200, 250, 400, 500, 1000, 2500, 5000, 7500, 9000, 10_000};
+
+  private long[] paidPriceSteps () {
+    long max = Math.max(1, tdlib.options().paidMessageStarCountMax);
+    LongList steps = new LongList(PAID_MESSAGE_PRICE_STEPS.length + 2);
+    for (int step : PAID_MESSAGE_PRICE_STEPS) {
+      if (step < max) {
+        steps.append(step);
+      }
     }
-    return new TdApi.NewChatPrivacySettings(allowNewChatsFromUnknownUsers, 0);
+    steps.append(max);
+    long current = selectedPaidStarCount();
+    long[] array = steps.get();
+    if (java.util.Arrays.binarySearch(array, current) < 0 && current >= 1 && current <= max) {
+      steps.append(current);
+      array = steps.get();
+      java.util.Arrays.sort(array);
+    }
+    return array;
+  }
+
+  private long selectedPaidStarCount () {
+    long max = Math.max(1, tdlib.options().paidMessageStarCountMax);
+    return Math.max(1, Math.min(max, selectedPaidStarCount > 0 ? selectedPaidStarCount : paidStarCount));
+  }
+
+  private boolean isPaidMode () {
+    return getArgumentsStrict().mode == Mode.INCOMING_MESSAGES_PRIVACY && privacyRules != null && currentRules().getMode() == PrivacySettings.Mode.NOBODY;
+  }
+
+  private boolean canChargeForMessages () {
+    return tdlib.options().canEnablePaidMessages || paidStarCount > 0;
+  }
+
+  /** Enabling the fee or changing it isn't saved until the user confirms it (back press). */
+  private boolean hasUnconfirmedPaidPrice () {
+    return isPaidMode() && selectedPaidStarCount() != paidStarCount && !paidPriceConfirmed;
+  }
+
+  private TdApi.NewChatPrivacySettings currentNewChatPrivacySettings () {
+    int mode = currentRules().getMode();
+    if (mode == PrivacySettings.Mode.NOBODY) {
+      return new TdApi.NewChatPrivacySettings(true, selectedPaidStarCount());
+    }
+    return new TdApi.NewChatPrivacySettings(mode != PrivacySettings.Mode.CONTACTS, 0);
   }
 
   private void setNewChatPrivacySettings (@NonNull TdApi.NewChatPrivacySettings newChatPrivacySettings, @NonNull TdApi.UserPrivacySettingRules unpaidRules) {
     this.unpaidRules = PrivacySettings.valueOf(unpaidRules);
-    if (newChatPrivacySettings.allowNewChatsFromUnknownUsers) {
+    this.paidStarCount = newChatPrivacySettings.incomingPaidMessageStarCount;
+    if (newChatPrivacySettings.incomingPaidMessageStarCount > 0) {
+      setPrivacyRules(new TdApi.UserPrivacySettingRules(new TdApi.UserPrivacySettingRule[] {new TdApi.UserPrivacySettingRuleRestrictAll()}));
+    } else if (newChatPrivacySettings.allowNewChatsFromUnknownUsers) {
       setPrivacyRules(new TdApi.UserPrivacySettingRules(new TdApi.UserPrivacySettingRule[] {new TdApi.UserPrivacySettingRuleAllowAll()}));
     } else {
       setPrivacyRules(new TdApi.UserPrivacySettingRules(new TdApi.UserPrivacySettingRule[] {new TdApi.UserPrivacySettingRuleAllowContacts(), new TdApi.UserPrivacySettingRuleAllowPremiumUsers()}));
     }
+    if (adapter != null) {
+      updatePaidSection();
+    }
+  }
+
+  private long[] priceSteps;
+
+  private List<ListItem> newPaidSectionItems () {
+    long[] steps = priceSteps = paidPriceSteps();
+    String[] labels = new String[steps.length];
+    int index = 0;
+    long selected = selectedPaidStarCount();
+    for (int i = 0; i < steps.length; i++) {
+      labels[i] = Lang.plural(R.string.vg_StarsCount, steps[i]);
+      if (steps[i] == selected) {
+        index = i;
+      }
+    }
+    return Arrays.asList(
+      new ListItem(ListItem.TYPE_HEADER, R.id.btn_vgMessagePriceHeader, 0, R.string.vg_StarsPriceHeader),
+      new ListItem(ListItem.TYPE_SHADOW_TOP),
+      new ListItem(ListItem.TYPE_SLIDER, R.id.btn_vgMessagePrice, 0, R.string.vg_StarsPricePerMessage).setSliderInfo(labels, index),
+      new ListItem(ListItem.TYPE_SHADOW_BOTTOM),
+      new ListItem(ListItem.TYPE_DESCRIPTION, R.id.btn_vgMessagePriceInfo, 0, paidPriceInfo(), false),
+      new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_StarsPaidExceptions),
+      new ListItem(ListItem.TYPE_SHADOW_TOP),
+      new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_alwaysAllow, 0, R.string.RemoveMessageFee),
+      new ListItem(ListItem.TYPE_SHADOW_BOTTOM),
+      new ListItem(ListItem.TYPE_DESCRIPTION, R.id.btn_vgMessagePriceExceptionsInfo, 0, R.string.RemoveMessageFeeHint)
+    );
+  }
+
+  /** «You will receive 85% of the selected fee (≈$0.13) for each incoming message.» */
+  private CharSequence paidPriceInfo () {
+    long perMille = tdlib.options().paidMessageEarningsPerMille;
+    long rate = tdlib.options().thousandStarToUsdRate; // US cents for 1000 Stars when they are withdrawn
+    double income = selectedPaidStarCount() * (perMille / 1000.0) * rate / 1000.0 / 100.0;
+    String percent = (perMille % 10 == 0 ? Long.toString(perMille / 10) : String.format(java.util.Locale.US, "%.1f", perMille / 10.0)) + "%";
+    return Lang.getString(R.string.vg_StarsPriceInfo, percent, String.format(java.util.Locale.US, "%.2f", income));
+  }
+
+  private void updatePaidSection () {
+    if (getArgumentsStrict().mode != Mode.INCOMING_MESSAGES_PRIVACY || adapter == null || privacyRules == null) {
+      return;
+    }
+    int headerIndex = adapter.indexOfViewById(R.id.btn_vgMessagePriceHeader);
+    boolean hasSection = headerIndex != -1;
+    boolean needSection = isPaidMode();
+    if (hasSection == needSection) {
+      if (needSection) {
+        int infoIndex = adapter.indexOfViewById(R.id.btn_vgMessagePriceInfo);
+        if (infoIndex != -1) {
+          adapter.getItems().get(infoIndex).setString(paidPriceInfo());
+          adapter.notifyItemChanged(infoIndex);
+        }
+        adapter.updateValuedSettingById(R.id.btn_alwaysAllow);
+      }
+      return;
+    }
+    if (needSection) {
+      List<ListItem> items = newPaidSectionItems();
+      int atIndex = adapter.indexOfViewById(R.id.btn_description) + 1;
+      if (atIndex <= 0) {
+        atIndex = adapter.getItems().size();
+      }
+      adapter.getItems().addAll(atIndex, items);
+      adapter.notifyItemRangeInserted(atIndex, items.size());
+    } else {
+      int endIndex = adapter.indexOfViewById(R.id.btn_vgMessagePriceExceptionsInfo);
+      if (endIndex != -1) {
+        adapter.removeRange(headerIndex, endIndex - headerIndex + 1);
+      }
+    }
+  }
+
+  private void onPaidPriceSelected (long price) {
+    if (selectedPaidStarCount != price) {
+      selectedPaidStarCount = price;
+      paidPriceConfirmed = false;
+      int infoIndex = adapter.indexOfViewById(R.id.btn_vgMessagePriceInfo);
+      if (infoIndex != -1) {
+        adapter.getItems().get(infoIndex).setString(paidPriceInfo());
+        adapter.notifyItemChanged(infoIndex);
+      }
+    }
+  }
+
+  /**
+   * «Apply Changes?» of the official app for the price of messages: Apply asks once more (operations with Stars,
+   * {@link StarsUi#confirmAgain}), Discard leaves the previous settings.
+   */
+  private void confirmPaidPrice (Runnable after) {
+    long price = selectedPaidStarCount();
+    DialogLayout dialog = new DialogLayout(context(), this, null);
+    dialog.setHeadline(Lang.getString(R.string.vg_ApplyChanges));
+    dialog.addMessageView(Stars.withIcons(VgSheets.markdown(Lang.getString(R.string.vg_StarsPriceConfirm, Stars.format(price), paidPriceInfo()))));
+    final PopupLayout[] popupLayout = new PopupLayout[1];
+    dialog.addButton(R.id.btn_cancel, Lang.getString(R.string.vg_Discard), v -> {
+      popupLayout[0].hideWindow(true);
+      selectedPaidStarCount = 0;
+      paidPriceConfirmed = false;
+      if (paidStarCount == 0) {
+        changedPrivacyRules = null;
+      }
+      after.run();
+    });
+    String applyLabel = Lang.getString(R.string.vg_Apply);
+    dialog.addButton(R.id.btn_done, applyLabel, v -> {
+      popupLayout[0].hideWindow(true);
+      StarsUi.confirmAgain(this, Lang.getString(R.string.vg_StarsConfirmAgainPrice, Stars.format(price)), applyLabel, confirmed -> {
+        if (confirmed) {
+          paidPriceConfirmed = true;
+          saveChanges();
+          after.run();
+        }
+      });
+    });
+    popupLayout[0] = VgSheets.showDialog(this, dialog);
+  }
+
+  @Override
+  public boolean performOnBackPressed (boolean fromTop, boolean commit) {
+    if (hasUnconfirmedPaidPrice()) {
+      if (commit) {
+        confirmPaidPrice(this::navigateBack);
+      }
+      return true;
+    }
+    return super.performOnBackPressed(fromTop, commit);
+  }
+
+  @Override
+  protected boolean swipeNavigationEnabled () {
+    return !hasUnconfirmedPaidPrice() && super.swipeNavigationEnabled();
   }
 
   private boolean needNobodyOption () {
@@ -330,7 +520,8 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
         return true;
       }
       case Mode.INCOMING_MESSAGES_PRIVACY:
-        return currentRules().getMode() == PrivacySettings.Mode.NOBODY;
+        // «Remove Fee» exceptions are a part of the paid section (updatePaidSection).
+        return false;
     }
     throw new UnsupportedOperationException();
   }
@@ -479,8 +670,10 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
     items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     if (args.mode == Mode.INCOMING_MESSAGES_PRIVACY) {
       items.add(new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_contacts, 0, Lang.getMarkdownString(this, R.string.MyContactsAndPremium), R.id.btn_privacyRadio, rulesType == PrivacySettings.Mode.CONTACTS));
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-      items.add(new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_nobody, 0, Lang.getMarkdownString(this, R.string.ChargeForMessages), R.id.btn_privacyRadio, rulesType == PrivacySettings.Mode.NOBODY));
+      if (canChargeForMessages()) {
+        items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+        items.add(new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_nobody, 0, Lang.getMarkdownString(this, R.string.ChargeForMessages), R.id.btn_privacyRadio, rulesType == PrivacySettings.Mode.NOBODY));
+      }
     } else {
       items.add(new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_contacts, 0, R.string.MyContacts, null, R.id.btn_privacyRadio, rulesType == PrivacySettings.Mode.CONTACTS));
       if (needNobodyOption() || rulesType == PrivacySettings.Mode.NOBODY) {
@@ -491,6 +684,9 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(hintItem);
+    if (isPaidMode()) {
+      items.addAll(newPaidSectionItems());
+    }
     if (needExceptions()) {
       items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.AddExceptions));
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
@@ -648,7 +844,7 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
         return false;
       }
       case Mode.INCOMING_MESSAGES_PRIVACY: {
-        return privacyRules.getMode() == PrivacySettings.Mode.NOBODY;
+        return false;
       }
     }
     throw new UnsupportedOperationException(Integer.toString(args.mode));
@@ -770,7 +966,11 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
       if (args.mode == Mode.USER_PRIVACY_SETTING && args.userPrivacySetting.getConstructor() == setting.getConstructor()) {
         setPrivacyRules(rules);
       } else if (args.mode == Mode.INCOMING_MESSAGES_PRIVACY && setting.getConstructor() == TdApi.UserPrivacySettingAllowUnpaidMessages.CONSTRUCTOR) {
-        setNewChatPrivacySettings(currentNewChatPrivacySettings(), rules);
+        // Only the «Remove Fee» exceptions: the price and the mode stay as they are on the screen.
+        this.unpaidRules = PrivacySettings.valueOf(rules);
+        if (adapter != null) {
+          adapter.updateValuedSettingById(R.id.btn_alwaysAllow);
+        }
       }
     });
   }
@@ -792,10 +992,21 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
     Args args = getArgumentsStrict();
     adapter = new SettingsAdapter(this) {
       @Override
+      protected void onSliderValueChanged (ListItem item, SliderWrapView view, int newValue, int oldValue) {
+        if (item.getId() == R.id.btn_vgMessagePrice && priceSteps != null && newValue >= 0 && newValue < priceSteps.length) {
+          onPaidPriceSelected(priceSteps[newValue]);
+        } else {
+          super.onSliderValueChanged(item, view, newValue, oldValue);
+        }
+      }
+
+      @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         final int itemId = item.getId();
         if (itemId == R.id.btn_alwaysAllow) {
-          int count = currentRules().getPlusTotalCount(tdlib);
+          int count = args.mode == Mode.INCOMING_MESSAGES_PRIVACY ?
+            (currentUnpaidRules() != null ? currentUnpaidRules().getPlusTotalCount(tdlib) : 0) :
+            currentRules().getPlusTotalCount(tdlib);
           view.setData(count > 0 ? Lang.plural(R.string.xUsers, count) : Lang.getString(R.string.PrivacyAddUsers));
         } else if (itemId == R.id.btn_neverAllow) {
           int count = currentRules().getMinusTotalCount(tdlib);
@@ -933,7 +1144,8 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
   }
 
   private boolean nothingChanged () {
-    return (changedPrivacyRules == null || changedPrivacyRules.equals(privacyRules)) && (changedUnpaidRules == null || changedUnpaidRules.equals(unpaidRules));
+    return (changedPrivacyRules == null || changedPrivacyRules.equals(privacyRules)) && (changedUnpaidRules == null || changedUnpaidRules.equals(unpaidRules)) &&
+      !(isPaidMode() && selectedPaidStarCount() != paidStarCount);
   }
 
   private void saveChanges () {
@@ -948,10 +1160,25 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
         break;
       }
       case Mode.INCOMING_MESSAGES_PRIVACY: {
-        TdApi.NewChatPrivacySettings newChatPrivacySettings = currentNewChatPrivacySettings();
-        tdlib.send(new TdApi.SetNewChatPrivacySettings(newChatPrivacySettings), tdlib.typedOkHandler(() ->
-          tdlib.listeners().updateNewChatPrivacySettings(newChatPrivacySettings))
-        );
+        if (changedUnpaidRules != null && !changedUnpaidRules.equals(unpaidRules)) {
+          TdApi.UserPrivacySettingRules newUnpaidRules = changedUnpaidRules.toRules();
+          tdlib.send(new TdApi.SetUserPrivacySettingRules(new TdApi.UserPrivacySettingAllowUnpaidMessages(), newUnpaidRules), tdlib.typedOkHandler());
+          unpaidRules = changedUnpaidRules;
+          changedUnpaidRules = null;
+        }
+        if (hasUnconfirmedPaidPrice()) {
+          // A new price for messages is saved only after its confirmation (confirmPaidPrice).
+          break;
+        }
+        boolean modeChanged = changedPrivacyRules != null && !changedPrivacyRules.equals(privacyRules);
+        boolean priceChanged = isPaidMode() && selectedPaidStarCount() != paidStarCount;
+        if (modeChanged || priceChanged) {
+          TdApi.NewChatPrivacySettings newChatPrivacySettings = currentNewChatPrivacySettings();
+          paidStarCount = newChatPrivacySettings.incomingPaidMessageStarCount;
+          tdlib.send(new TdApi.SetNewChatPrivacySettings(newChatPrivacySettings), tdlib.typedOkHandler(() ->
+            tdlib.listeners().updateNewChatPrivacySettings(newChatPrivacySettings))
+          );
+        }
         break;
       }
     }
@@ -968,6 +1195,9 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
 
   @Override
   public long[] getAlreadySelectedChatIds () {
+    if (userPickMode == R.id.btn_alwaysAllow && getArgumentsStrict().mode == Mode.INCOMING_MESSAGES_PRIVACY) {
+      return currentUnpaidRules() != null ? currentUnpaidRules().getAllPlusIds() : null;
+    }
     if (userPickMode == R.id.btn_alwaysAllow) {
       return currentRules().getAllPlusIds();
     } else if (userPickMode == R.id.btn_neverAllow) {
@@ -977,6 +1207,14 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
   }
 
   private void setAllowUsers (long[] userIds, long[] chatIds) {
+    if (getArgumentsStrict().mode == Mode.INCOMING_MESSAGES_PRIVACY) {
+      // «Remove Fee»: users who can write for free (userPrivacySettingAllowUnpaidMessages).
+      if (currentUnpaidRules() != null) {
+        changedUnpaidRules = PrivacySettings.valueOf(currentUnpaidRules().allowExceptions(userIds, chatIds));
+      }
+      adapter.updateValuedSettingById(R.id.btn_alwaysAllow);
+      return;
+    }
     changedPrivacyRules = PrivacySettings.valueOf(currentRules().allowExceptions(userIds, chatIds));
     adapter.updateValuedSettingById(R.id.btn_alwaysAllow);
     adapter.updateValuedSettingById(R.id.btn_neverAllow);
@@ -1071,6 +1309,7 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
         }
         changedPrivacyRules = PrivacySettings.valueOf(currentRules().toggleGlobal(desiredMode, plusPremium, plusOrMinusBots));
         updateRulesState(changedPrivacyRules);
+        updatePaidSection();
       }
     } else if (viewId == R.id.btn_togglePermission) {
       switch (args.userPrivacySetting.getConstructor()) {

@@ -469,6 +469,10 @@ public class SettingsController extends ViewController<Void> implements
           view.setData(Lang.getString(R.string.ViewSourceCodeChangesSince, Lang.codeCreator(), previousVersionName, previousBuildInfo.getCommit()));
         } else if (itemId == R.id.btn_copyDebug) {
           view.setData(R.string.CopyReportDataInfo);
+        } else if (itemId == R.id.btn_vgStars) {
+          TdApi.StarAmount stars = tdlib.ownedStarCount();
+          view.setIcon(org.thunderdog.challegram.stars.StarsUi.goldStarIcon(view.getResources()));
+          view.setData(stars != null ? org.thunderdog.challegram.stars.Stars.format(stars) : Lang.getString(R.string.vg_StarsBalance));
         } else if (itemId == R.id.btn_devices) {
           if (sessions == null) {
             view.setData(R.string.LoadingInformation);
@@ -614,6 +618,9 @@ public class SettingsController extends ViewController<Void> implements
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    // «My Stars» of the official app (balance, purchases, transactions): the first row of the block with «Ask a Question».
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStars, R.drawable.vg_stars_24, R.string.vg_TelegramStars));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_help, R.drawable.baseline_live_help_24, R.string.AskAQuestion));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_faq, R.drawable.baseline_help_24, R.string.TelegramFAQ));
@@ -864,6 +871,15 @@ public class SettingsController extends ViewController<Void> implements
       }
       for (TdApi.SuggestedAction action : removedActions) {
         removeSuggestionFromList(action);
+      }
+    });
+  }
+
+  @Override
+  public void onOwnedStarCountChanged (TdApi.StarAmount starAmount) {
+    runOnUiThreadOptional(() -> {
+      if (adapter != null) {
+        adapter.updateValuedSettingById(R.id.btn_vgStars);
       }
     });
   }
@@ -1173,6 +1189,8 @@ public class SettingsController extends ViewController<Void> implements
       navigateTo(new SettingsLanguageController(context, tdlib));
     } else if (viewId == R.id.btn_notificationSettings) {
       navigateTo(new SettingsNotificationController(context, tdlib));
+    } else if (viewId == R.id.btn_vgStars) {
+      navigateTo(new org.thunderdog.challegram.stars.StarsController(context, tdlib));
     } else if (viewId == R.id.btn_devices) {
       navigateTo(new SettingsSessionsController(context, tdlib));
     } else if (viewId == R.id.btn_checkUpdates) {

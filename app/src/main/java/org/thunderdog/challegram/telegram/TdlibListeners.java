@@ -1743,6 +1743,12 @@ public class TdlibListeners {
     );
   }
 
+  void updateOwnedStarCount (TdApi.UpdateOwnedStarCount update) {
+    runUpdate(optionListeners, listener ->
+      listener.onOwnedStarCountChanged(update.starAmount)
+    );
+  }
+
   void updateStarRevenueStatus (TdApi.UpdateStarRevenueStatus update) {
     runUpdate(optionListeners, listener ->
       listener.onStarRevenueStatusUpdated(update.ownerId, update.status)

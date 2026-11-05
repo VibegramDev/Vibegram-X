@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: Telegram Stars, paid messages and payments.
+     Texts follow the official Telegram Android app (not in the TGX cloud language pack). -->
+<resources>
+  <item type="id" name="btn_vgBotStars" />
+  <item type="id" name="btn_vgBotStarsAvailable" />
+  <item type="id" name="btn_vgBotStarsBalance" />
+  <item type="id" name="btn_vgBotStarsCurrent" />
+  <item type="id" name="btn_vgBotStarsTotal" />
+  <item type="id" name="btn_vgCardSave" />
+  <item type="id" name="btn_vgMessagePrice" />
+  <item type="id" name="btn_vgMessagePriceExceptionsInfo" />
+  <item type="id" name="btn_vgMessagePriceHeader" />
+  <item type="id" name="btn_vgMessagePriceInfo" />
+  <item type="id" name="btn_vgOrderEmail" />
+  <item type="id" name="btn_vgOrderName" />
+  <item type="id" name="btn_vgOrderPhone" />
+  <item type="id" name="btn_vgPaymentMethod" />
+  <item type="id" name="btn_vgPaymentNewCard" />
+  <item type="id" name="btn_vgPaymentProduct" />
+  <item type="id" name="btn_vgPaymentProvider" />
+  <item type="id" name="btn_vgPaymentTerms" />
+  <item type="id" name="btn_vgPaymentTermsOpen" />
+  <item type="id" name="btn_vgRemoveFee" />
+  <item type="id" name="btn_vgStars" />
+  <item type="id" name="btn_vgStarsEmpty" />
+  <item type="id" name="btn_vgStarsHeader" />
+  <item type="id" name="btn_vgStarsListBottom" />
+  <item type="id" name="btn_vgStarsListTop" />
+  <item type="id" name="btn_vgStarsProgress" />
+  <item type="id" name="btn_vgStarsRevenue" />
+  <item type="id" name="btn_vgStarsTabs" />
+  <item type="id" name="btn_vgStarsTransaction" />
+  <item type="id" name="controller_vgBotStars" />
+  <item type="id" name="controller_vgCard" />
+  <item type="id" name="controller_vgCheckout" />
+  <item type="id" name="controller_vgPaymentWeb" />
+  <item type="id" name="controller_vgStars" />
+  <item type="id" name="edit_vgCardCountry" />
+  <item type="id" name="edit_vgCardCvc" />
+  <item type="id" name="edit_vgCardExpiry" />
+  <item type="id" name="edit_vgCardName" />
+  <item type="id" name="edit_vgCardNumber" />
+  <item type="id" name="edit_vgCardZip" />
+  <item type="id" name="vg_starsRevenueChart" />
+  <item type="id" name="vg_tagFormatter" />
+  <item type="id" name="vg_tagTransaction" />
+  <string name="vg_Apply">Apply</string>
+  <string name="vg_ApplyChanges">Apply Changes?</string>
+  <string name="vg_BotBalanceStars">Stars</string>
+  <string name="vg_BotStarsAvailableBalance">Available balance</string>
+  <string name="vg_BotStarsButtonWithdrawShortAll">Withdraw all</string>
+  <string name="vg_BotStarsButtonWithdrawShortUntil">Withdraw</string>
+  <string name="vg_BotStarsChartRevenue">Revenue</string>
+  <string name="vg_BotStarsOverview">Proceeds overview</string>
+  <string name="vg_BotStarsOverviewAvailableBalance">Available balance</string>
+  <string name="vg_BotStarsOverviewInfo">Stars from your total balance become available for spending on ads and rewards 21 days after they are earned.</string>
+  <string name="vg_BotStarsOverviewTotalBalance">Total balance</string>
+  <string name="vg_BotStarsOverviewTotalProceeds">Total lifetime proceeds</string>
+  <string name="vg_BotStarsTitle">Stars Balance</string>
+  <string name="vg_BotStarsWithdrawConfirm">Withdraw **%1$s** via Fragment? You will need to enter your 2-Step Verification password.</string>
+  <string name="vg_BotStarsWithdrawPlaceholder">Enter amount to withdraw</string>
+  <string name="vg_BotStarsWithdrawTitle">Withdraw Stars</string>
+  <string name="vg_BotStarsWithdrawTooMuch">You can’t withdraw more than your available balance.</string>
+  <string name="vg_BotStarsWithdrawalToast">Next withdrawal will be available in **%1$s**.</string>
+  <string name="vg_Discard">Discard</string>
+  <string name="vg_EditAdminTransferAlertText1">Enabled **2-Step Verification** more than **7 days** ago.</string>
+  <string name="vg_EditAdminTransferAlertText2">Logged in on this device more than **24 hours** ago.</string>
+  <string name="vg_EditAdminTransferAlertText3">Please come back later.</string>
+  <string name="vg_EditAdminTransferAlertTitle">Security Check</string>
+  <string name="vg_EditAdminTransferSetPassword">Set Password</string>
+  <string name="vg_MonetizationStarsAds">Buy Ads</string>
+  <string name="vg_MonetizationWithdraw">Withdraw via Fragment</string>
+  <string name="vg_PaymentAcceptTerms">Please accept the Terms of Service of %1$s.</string>
+  <string name="vg_PaymentAppNotFound">No app can open this link.</string>
+  <string name="vg_PaymentCardCountryCode">Country code (US, DE…)</string>
+  <string name="vg_PaymentCardCvv">Security Code (CVV)</string>
+  <string name="vg_PaymentCardExpireDate">MM/YY</string>
+  <string name="vg_PaymentCardGeneric">Card</string>
+  <string name="vg_PaymentCardInfo">Payment info</string>
+  <string name="vg_PaymentCardName">First and Last Name</string>
+  <string name="vg_PaymentCardNumber">Card Number</string>
+  <string name="vg_PaymentCardSaveNeedPassword">To save the card, turn on 2-Step Verification.</string>
+  <string name="vg_PaymentCardSavePaymentInformation">Save Payment Information</string>
+  <string name="vg_PaymentCardSavePaymentInformationInfo">You can save your payment info for future use.</string>
+  <string name="vg_PaymentCardSecurityInfo">Card details go straight to the payment provider over a secure connection. Neither Telegram nor Vibegram X store them.</string>
+  <string name="vg_PaymentCardTitle">Payment card</string>
+  <string name="vg_PaymentCheckout">Checkout</string>
+  <string name="vg_PaymentCheckoutAccept">I accept the Terms of Service of %1$s.</string>
+  <string name="vg_PaymentCheckoutEmail">Contact address</string>
+  <string name="vg_PaymentCheckoutMethod">Payment method</string>
+  <string name="vg_PaymentCheckoutMethodAdd">Add payment method</string>
+  <string name="vg_PaymentCheckoutMethodNewCard">New card</string>
+  <string name="vg_PaymentCheckoutName">Name</string>
+  <string name="vg_PaymentCheckoutPay">PAY %1$s</string>
+  <string name="vg_PaymentCheckoutPhoneNumber">Phone number</string>
+  <string name="vg_PaymentCheckoutProvider">Payment provider</string>
+  <string name="vg_PaymentConnectionFailed">Unable to reach payment server. Please check your internet connection and try again.</string>
+  <string name="vg_PaymentOrderInfoRequired">Please fill in the required information.</string>
+  <string name="vg_PaymentPasswordRequired">Paying with a saved card requires 2-Step Verification. Add a new card or turn on the password in Privacy and Security.</string>
+  <string name="vg_PaymentProcessing">The payment is being processed. Your balance will be updated shortly.</string>
+  <string name="vg_PaymentShippingEmailPlaceholder">Email</string>
+  <string name="vg_PaymentShippingName">Full Name</string>
+  <string name="vg_PaymentShippingPhoneNumber">Phone Number</string>
+  <string name="vg_PaymentShippingUnsupported">Orders with delivery aren’t supported yet.</string>
+  <string name="vg_PaymentShippingZipPlaceholder">Postcode</string>
+  <string name="vg_PaymentSuccessfullyPaid">You have just successfully transferred %1$s to %2$s for %3$s</string>
+  <string name="vg_PaymentTermsOfService">Terms of Service</string>
+  <string name="vg_PaymentTestInvoice">TEST INVOICE</string>
+  <string name="vg_PaymentTransactionTotal">Total</string>
+  <string name="vg_PaymentVerification">Payment verification</string>
+  <string name="vg_PaymentWarningText">Neither Telegram, nor %1$s will have access to your credit card information. Credit card details will be handled only by the payment system, %2$s.\n\nPayments will go directly to the developer of %1$s. Telegram cannot provide any guarantees, so proceed at your own risk. In case of problems, please contact the developer of %1$s or your bank.</string>
+  <string name="vg_SelfStarsOverviewInfo">Stars from your total balance will become available 21 days after they are earned.</string>
+  <string name="vg_StarMediaPurchase">Media Purchase</string>
+  <string name="vg_StarMediaSale">Media Sale</string>
+  <string name="vg_StarsAcquired">Stars Acquired!</string>
+  <string name="vg_StarsBalance">Balance</string>
+  <string name="vg_StarsBuyMore">Buy More Stars</string>
+  <string name="vg_StarsConfirmAgainBuy">Do you really want to pay **%1$s** for **%2$s**?</string>
+  <string name="vg_StarsConfirmAgainPay">Do you really want to pay **⭐ %1$s** to **%2$s**?</string>
+  <string name="vg_StarsConfirmAgainPrice">Do you really want to charge **⭐ %1$s** for each message from users who are not your contacts?</string>
+  <string name="vg_StarsConfirmAgainRefund">Do you really want to refund **⭐ %1$s** to **%2$s**?</string>
+  <string name="vg_StarsConfirmAgainRemoveFee">Do you really want to let **%1$s** message you for free?</string>
+  <string name="vg_StarsConfirmAgainTitle">Confirm again</string>
+  <string name="vg_StarsConfirmAgainWithdraw">Do you really want to withdraw **⭐ %1$s** via Fragment?</string>
+  <string name="vg_StarsConfirmPurchaseTOS">By purchasing you agree to the **Terms of Service**.</string>
+  <string name="vg_StarsConfirmPurchaseTitle">Confirm Your Purchase</string>
+  <string name="vg_StarsConfirmSubscriptionTOS">By subscribing you agree to the **Terms of Service**.</string>
+  <string name="vg_StarsConfirmSubscriptionTitle">Confirm Your Subscription</string>
+  <string name="vg_StarsFailed">Failed</string>
+  <string name="vg_StarsGiftReceived">Received Gift</string>
+  <string name="vg_StarsGiveawayPrizeReceived">Received Prize</string>
+  <string name="vg_StarsMoreOptions">More Options</string>
+  <string name="vg_StarsNeededText">Buy **Stars** and use them on **%1$s** and other miniapps.</string>
+  <string name="vg_StarsNeededTextMessage">Buy **Stars** to send message to **%1$s** and others.</string>
+  <string name="vg_StarsPaidExceptions">Exceptions</string>
+  <string name="vg_StarsPaidMessageConfirmTitle">Confirm Payment</string>
+  <string name="vg_StarsPay">Pay</string>
+  <string name="vg_StarsPending">Pending</string>
+  <string name="vg_StarsPriceConfirm">Users who are not your contacts will pay **⭐ %1$s** for each message they send you.\n\n%2$s</string>
+  <string name="vg_StarsPriceHeader">Set your price per message</string>
+  <string name="vg_StarsPriceInfo">You will receive %1$s of the selected fee (~%2$s$) for each incoming message.</string>
+  <string name="vg_StarsPricePerMessage">Price per message</string>
+  <string name="vg_StarsPurchaseCompleted">Purchase Completed!</string>
+  <string name="vg_StarsPurchaseUnavailable">Purchasing stars is not available at this time.</string>
+  <string name="vg_StarsReactionsSent">Star Reaction</string>
+  <string name="vg_StarsRefundAction">Refund</string>
+  <string name="vg_StarsRefunded">Refund</string>
+  <string name="vg_StarsRemoveFeeAction">Remove Fee</string>
+  <string name="vg_StarsRemoveFeeDone">%1$s can now message you for free.</string>
+  <string name="vg_StarsRemoveFeeMessage">Are you sure you want to allow **%1$s** to message you for free?</string>
+  <string name="vg_StarsRemoveFeeShort">Remove Fee</string>
+  <string name="vg_StarsRemoveFeeTitle">Remove Fee</string>
+  <string name="vg_StarsRevenueSelf">Stars Revenue</string>
+  <string name="vg_StarsSubscriptionCompleted">Subscription successful!</string>
+  <string name="vg_StarsSubscriptionTitle">Subscription</string>
+  <string name="vg_StarsTOS">By proceeding and purchasing Stars, you agree with the **Terms and Conditions**.</string>
+  <string name="vg_StarsTransactionAds">Ads</string>
+  <string name="vg_StarsTransactionAffiliate">Affiliate Program</string>
+  <string name="vg_StarsTransactionDate">Date</string>
+  <string name="vg_StarsTransactionFloodskip">Paid Broadcast</string>
+  <string name="vg_StarsTransactionFragment">Purchase from Fragment</string>
+  <string name="vg_StarsTransactionGift">Gift</string>
+  <string name="vg_StarsTransactionID">Transaction ID</string>
+  <string name="vg_StarsTransactionIDCopied">Transaction ID is copied to clipboard</string>
+  <string name="vg_StarsTransactionLiveFee">Live Stream Fee</string>
+  <string name="vg_StarsTransactionPostSearch">Post Search</string>
+  <string name="vg_StarsTransactionPremiumBot">Premium Bot</string>
+  <string name="vg_StarsTransactionRecipient">From</string>
+  <string name="vg_StarsTransactionSubscriptionMonthly">Monthly subscription fee</string>
+  <string name="vg_StarsTransactionSuggestedPost">Suggested Post</string>
+  <string name="vg_StarsTransactionTOS">Review the **Terms of Service** for Stars.</string>
+  <string name="vg_StarsTransactionTo">To</string>
+  <string name="vg_StarsTransactionTopUp">Stars Top-Up</string>
+  <string name="vg_StarsTransactionTransfer">Stars Transfer</string>
+  <string name="vg_StarsTransactionUnsupported">In-App Purchase</string>
+  <string name="vg_StarsTransactionWithdrawFragment">Withdraw to Fragment</string>
+  <string name="vg_StarsTransactions">Transactions</string>
+  <string name="vg_StarsTransactionsAll">All Transactions</string>
+  <string name="vg_StarsTransactionsEmpty">No transactions yet</string>
+  <string name="vg_StarsTransactionsIncoming">Incoming</string>
+  <string name="vg_StarsTransactionsOutgoing">Outgoing</string>
+  <string name="vg_StarsTypeMessageFor">Message for ⭐️%1$s</string>
+  <string name="vg_StarsYourBalance">Your balance: %1$s</string>
+  <string name="vg_StarsYourBalanceLabel">Your balance</string>
+  <string name="vg_TelegramStars">Telegram Stars</string>
+  <string name="vg_TelegramStarsChoose">Choose package</string>
+  <string name="vg_TelegramStarsInfo">Buy Stars to unlock content and services\nin miniapps on Telegram. **More about Stars >**</string>
+</resources>

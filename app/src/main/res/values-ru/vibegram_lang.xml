@@ -17,6 +17,29 @@
     <item>ChatContentChecklistTasksDone</item>
     <item>ChatContentChecklistTasksNotDone</item>
     <item>ChatContentChecklistTasksToggled</item>
+    <item>vg_BotStarsButtonWithdrawShort</item>
+    <item>vg_BotStarsWithdrawInfo</item>
+    <item>vg_BotStarsWithdrawMinLimit</item>
+    <item>vg_SelfStarsWithdrawInfo</item>
+    <item>vg_StarsAcquiredInfo</item>
+    <item>vg_StarsConfirmPurchaseButton</item>
+    <item>vg_StarsConfirmPurchaseText</item>
+    <item>vg_StarsConfirmSubscriptionButton</item>
+    <item>vg_StarsConfirmSubscriptionText</item>
+    <item>vg_StarsCount</item>
+    <item>vg_StarsNeededTitle</item>
+    <item>vg_StarsPaidMessageCharges</item>
+    <item>vg_StarsPaidMessageChats</item>
+    <item>vg_StarsPaidMessageCount</item>
+    <item>vg_StarsPaidMessageMultiChats</item>
+    <item>vg_StarsPaidMessagePayButton</item>
+    <item>vg_StarsPaidMessagePayMany</item>
+    <item>vg_StarsPaidMessagePayOne</item>
+    <item>vg_StarsPurchaseCompletedInfo</item>
+    <item>vg_StarsRemoveFeeRefund</item>
+    <item>vg_StarsSubscriptionCompletedText</item>
+    <item>vg_StarsTransactionMessageFee</item>
+    <item>vg_StarsTransactionMessages</item>
   </string-array>
   <string name="Mute">Выключить уведомления</string>
   <string name="Unmute">Включить уведомления</string>

@@ -5047,7 +5047,8 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   public void sendMessage (long chatId, @Nullable TdApi.MessageTopic topicId, @Nullable TdApi.InputMessageReplyTo replyTo, TdApi.MessageSendOptions options, TdApi.InputMessageContent inputMessageContent, @Nullable RunnableData<TdApi.Message> after) {
-    client().send(new TdApi.SendMessage(chatId, topicId, replyTo, options, null, inputMessageContent), after != null ? result -> {
+    // Chats that charge Stars for messages: the user confirms the payment first (PaidMessages).
+    org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.SendMessage(chatId, topicId, replyTo, options, null, inputMessageContent), after != null ? result -> {
       messageHandler.onResult(result);
       after.runWithData(result instanceof TdApi.Message ? (TdApi.Message) result : null);
     } : messageHandler());
@@ -5370,11 +5371,11 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   public void forwardMessage (long chatId, @Nullable TdApi.MessageTopic topicId, long fromChatId, long messageId, TdApi.MessageSendOptions options) {
-    client().send(new TdApi.ForwardMessages(chatId, topicId, fromChatId, new long[] {messageId}, options, false, false), messageHandler());
+    org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.ForwardMessages(chatId, topicId, fromChatId, new long[] {messageId}, options, false, false), messageHandler());
   }
 
   public void sendInlineQueryResult (long chatId, @Nullable TdApi.MessageTopic topicId, @Nullable TdApi.InputMessageReplyTo replyTo, TdApi.MessageSendOptions options, long queryId, String resultId) {
-    client().send(new TdApi.SendInlineQueryResultMessage(chatId, topicId, replyTo, options, queryId, resultId, false), messageHandler());
+    org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.SendInlineQueryResultMessage(chatId, topicId, replyTo, options, queryId, resultId, false), messageHandler());
   }
 
   public void sendBotStartMessage (long botUserId, long chatId, String parameter) {
@@ -9239,6 +9240,12 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   @TdlibThread
+  private void updateNewOauthRequest (TdApi.UpdateNewOauthRequest update) {
+    // «Log in with Telegram» request of a website or an app: a notification that opens the confirmation sheet.
+    org.thunderdog.challegram.ui.OAuthSheet.showNotification(this, update);
+  }
+
+  @TdlibThread
   private void updateUnconfirmedSession (TdApi.UpdateUnconfirmedSession update) {
     // TODO
   }
@@ -9897,9 +9904,17 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     // TODO ?
   }
 
+  private volatile @Nullable TdApi.StarAmount ownedStarCount;
+
+  /** Telegram Stars owned by the current user; null until TDLib reports them (updateOwnedStarCount). */
+  public @Nullable TdApi.StarAmount ownedStarCount () {
+    return ownedStarCount;
+  }
+
   @TdlibThread
   private void updateOwnedStarCount (TdApi.UpdateOwnedStarCount update) {
-    // TODO(stars)
+    this.ownedStarCount = update.starAmount;
+    listeners.updateOwnedStarCount(update);
   }
 
   @TdlibThread
@@ -10692,6 +10707,10 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         updateOption(context, (TdApi.UpdateOption) update);
         break;
       }
+      case TdApi.UpdateNewOauthRequest.CONSTRUCTOR: {
+        updateNewOauthRequest((TdApi.UpdateNewOauthRequest) update);
+        break;
+      }
       case TdApi.UpdateOwnedStarCount.CONSTRUCTOR: {
         updateOwnedStarCount((TdApi.UpdateOwnedStarCount) update);
         break;
@@ -10867,7 +10886,6 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       case TdApi.UpdateGiftAuctionState.CONSTRUCTOR:
       case TdApi.UpdateActiveGiftAuctions.CONSTRUCTOR:
       case TdApi.UpdateStakeDiceState.CONSTRUCTOR:
-      case TdApi.UpdateNewOauthRequest.CONSTRUCTOR:
       case TdApi.UpdateTextCompositionStyles.CONSTRUCTOR:
       case TdApi.UpdateAllowedBotUsernamePremiumSuffixes.CONSTRUCTOR:
       case TdApi.UpdateTonWalletGaslessTransfersInfo.CONSTRUCTOR:
