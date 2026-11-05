@@ -118,7 +118,19 @@ public class DirectMessagesTabsController extends ViewPagerController<DirectMess
   @Override
   protected void onCreateView (Context context, FrameLayoutFix contentView, ViewPager pager) {
     tdlib.listeners().subscribeToChatUpdates(chatId, this);
-    DirectMessagesTopicsController.loadTopics(tdlib, chatId);
+    topicsLoader = new DirectMessagesTopicsController.TopicsLoader(tdlib, chatId);
+    topicsLoader.loadMore();
+  }
+
+  private DirectMessagesTopicsController.TopicsLoader topicsLoader;
+
+  @Override
+  public void onPageScrolled (int position, int actualPosition, float positionOffset, int positionOffsetPixels) {
+    super.onPageScrolled(position, actualPosition, positionOffset, positionOffsetPixels);
+    // Load more topics when the last loaded tabs are near
+    if (topicsLoader != null && actualPosition >= getPagerItemCount() - 5) {
+      topicsLoader.loadMore();
+    }
   }
 
   @Override
@@ -144,11 +156,30 @@ public class DirectMessagesTabsController extends ViewPagerController<DirectMess
         if (isDestroyed()) {
           return;
         }
+        List<TdApi.DirectMessagesChatTopic> newTopics = tdlib.directMessagesChatTopics(this.chatId);
+        boolean tabsChanged = !sameTabs(topics, newTopics);
         topics.clear();
-        topics.addAll(tdlib.directMessagesChatTopics(this.chatId));
-        notifyPagerItemPositionsChanged();
+        topics.addAll(newTopics);
+        if (tabsChanged) {
+          // Most updates change only the last message of a conversation: the tabs are rebuilt only when they change
+          notifyPagerItemPositionsChanged();
+        }
       }, null, 300);
     });
+  }
+
+  /** Same tabs: the same conversations in the same order with the same counters. */
+  private static boolean sameTabs (List<TdApi.DirectMessagesChatTopic> a, List<TdApi.DirectMessagesChatTopic> b) {
+    if (a.size() != b.size()) {
+      return false;
+    }
+    for (int i = 0; i < a.size(); i++) {
+      TdApi.DirectMessagesChatTopic x = a.get(i), y = b.get(i);
+      if (x.id != y.id || x.unreadCount != y.unreadCount || x.isMarkedAsUnread != y.isMarkedAsUnread) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @Override

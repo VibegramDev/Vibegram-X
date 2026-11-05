@@ -345,12 +345,19 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
     }
   }
 
+  // Inputs of the current text layouts: rebinding a row with unchanged texts doesn't lay them out again
+  private int layoutAvailWidth = -1;
+  private String layoutTitle, layoutHighlight, layoutSender, layoutPreview;
+  private TdApi.FormattedText layoutFormattedPreview;
+  private boolean layoutShowingDraft;
+
   private void buildTextLayouts () {
     int width = getMeasuredWidth();
     if (width <= 0 || topic == null) {
       displayTitle = null;
       displaySender = null;
       displayPreview = null;
+      layoutAvailWidth = -1;
       return;
     }
 
@@ -379,6 +386,23 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
     }
 
     int availWidth = textRight - textLeft - reservedRightWidth;
+
+    if (layoutAvailWidth == availWidth &&
+      StringUtils.equalsOrBothEmpty(layoutTitle, titleText) &&
+      StringUtils.equalsOrBothEmpty(layoutHighlight, highlightQuery) &&
+      StringUtils.equalsOrBothEmpty(layoutSender, senderText) &&
+      layoutShowingDraft == showingDraft &&
+      StringUtils.equalsOrBothEmpty(layoutPreview, previewText) &&
+      Td.equalsTo(layoutFormattedPreview, previewFormattedText)) {
+      return;
+    }
+    layoutAvailWidth = availWidth;
+    layoutTitle = titleText;
+    layoutHighlight = highlightQuery;
+    layoutSender = senderText;
+    layoutShowingDraft = showingDraft;
+    layoutPreview = previewText;
+    layoutFormattedPreview = previewFormattedText;
 
     // Build title Text with emoji support (4-parameter constructor for String)
     if (!StringUtils.isEmpty(titleText)) {
@@ -776,10 +800,11 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
     // For General topic (id = 1), show hash symbol "#" instead of letter
     // This matches Telegram for Android (TGA) behavior
     String displayChar;
-    if (topic.info.forumTopicId == 1) {
+    if (topic.info.isGeneral) {
       displayChar = "#";
     } else if (!StringUtils.isEmpty(topic.info.name)) {
-      displayChar = topic.info.name.substring(0, 1).toUpperCase();
+      // The whole first code point: substring(0, 1) splits surrogate pairs (emoji)
+      displayChar = topic.info.name.substring(0, Character.charCount(topic.info.name.codePointAt(0))).toUpperCase();
     } else {
       return;
     }

@@ -22,6 +22,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
+import androidx.collection.LongSparseArray;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -60,14 +61,32 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
     }
   }
 
-  /** Loads the topic list: the topics arrive as updateDirectMessagesChatTopic until TDLib returns 404. */
-  static void loadTopics (Tdlib tdlib, long chatId) {
-    tdlib.send(new TdApi.LoadDirectMessagesChatTopics(chatId, 100), (ok, error) -> {
-      if (ok != null) {
-        loadTopics(tdlib, chatId);
+  /** Topic list loader: topics arrive as updateDirectMessagesChatTopic, TDLib returns 404 when all of them are loaded. */
+  static class TopicsLoader {
+    private final Tdlib tdlib;
+    private final long chatId;
+    private boolean isLoading, isEndReached;
+
+    TopicsLoader (Tdlib tdlib, long chatId) {
+      this.tdlib = tdlib;
+      this.chatId = chatId;
+    }
+
+    void loadMore () {
+      if (isLoading || isEndReached) {
+        return;
       }
-    });
+      isLoading = true;
+      tdlib.send(new TdApi.LoadDirectMessagesChatTopics(chatId, 100), (ok, error) -> tdlib.ui().post(() -> {
+        isLoading = false;
+        if (ok == null) {
+          isEndReached = true;
+        }
+      }));
+    }
   }
+
+  private TopicsLoader topicsLoader;
 
   private TdApi.Chat chat;
   private long chatId;
@@ -112,15 +131,33 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
 
   private final List<Row> rows = new ArrayList<>();
   private RowsAdapter adapter;
+  /** Rows of topics by topic id, reused while their topic doesn't change. */
+  private final LongSparseArray<Row> topicRows = new LongSparseArray<>();
+  /** Topics changed since the last update of the list. */
+  private final java.util.Set<Long> changedTopicIds = new java.util.HashSet<>();
+  private boolean needRebuildAllRows;
+  /** Users for whom CreatePrivateChat was already sent. */
+  private final java.util.Set<Long> requestedPrivateChatUserIds = new java.util.HashSet<>();
 
   @Override
   protected void onCreateView (Context context, CustomRecyclerView recyclerView) {
     adapter = new RowsAdapter();
-    recyclerView.setLayoutManager(new LinearLayoutManager(context, RecyclerView.VERTICAL, false));
+    LinearLayoutManager manager = new LinearLayoutManager(context, RecyclerView.VERTICAL, false);
+    recyclerView.setLayoutManager(manager);
     recyclerView.setAdapter(adapter);
-    buildRows();
+    recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+      @Override
+      public void onScrolled (@NonNull RecyclerView recyclerView, int dx, int dy) {
+        if (manager.findLastVisibleItemPosition() >= rows.size() - 10) {
+          topicsLoader.loadMore();
+        }
+      }
+    });
+    needRebuildAllRows = true;
+    updateRows();
     tdlib.listeners().subscribeToChatUpdates(chatId, this);
-    loadTopics(tdlib, chatId);
+    topicsLoader = new TopicsLoader(tdlib, chatId);
+    topicsLoader.loadMore();
   }
 
   @Override
@@ -135,8 +172,9 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
       case TdApi.MessageSenderUser.CONSTRUCTOR: {
         long userId = ((TdApi.MessageSenderUser) sender).userId;
         TdApi.Chat senderChat = tdlib.chat(userId);
-        if (senderChat == null) {
+        if (senderChat == null && requestedPrivateChatUserIds.add(userId)) {
           // Local only: creates the chat object for the row, nothing is sent to the user.
+          // Rows without a sender chat are added on the next list update.
           tdlib.send(new TdApi.CreatePrivateChat(userId, true), (result, error) -> {
             if (result != null) {
               onDirectMessagesChatTopicUpdated(chatId, null);
@@ -167,32 +205,81 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
     return new TGChat(this, ChatPosition.CHAT_LIST_MAIN, displayChat, true);
   }
 
-  private void buildRows () {
-    rows.clear();
+  private static long rowId (Row row) {
+    return row.topic != null ? row.topic.id : -1;
+  }
+
+  /** Updates the list: only rows of changed topics are rebuilt, the adapter gets the exact changes. */
+  private void updateRows () {
+    final boolean rebuildAll = needRebuildAllRows;
+    needRebuildAllRows = false;
+    List<Row> oldRows = new ArrayList<>(rows);
+    java.util.Set<Long> changedRowIds = new java.util.HashSet<>(changedTopicIds);
+    changedTopicIds.clear();
+
+    List<Row> newRows = new ArrayList<>();
+    // The whole chat row: its counters change with any topic, rebuilt each time (a single row)
     TdApi.Chat currentChat = tdlib.chat(chatId);
     if (currentChat != null) {
       chat = currentChat;
     }
     TdApi.Chat allChat = Td.copyOf(chat);
     allChat.positions = new TdApi.ChatPosition[0];
-    rows.add(new Row(null, new TGChat(this, ChatPosition.CHAT_LIST_MAIN, allChat, true)));
+    newRows.add(new Row(null, new TGChat(this, ChatPosition.CHAT_LIST_MAIN, allChat, true)));
+    LongSparseArray<Row> newTopicRows = new LongSparseArray<>();
     for (TdApi.DirectMessagesChatTopic topic : tdlib.directMessagesChatTopics(chatId)) {
-      TdApi.Chat senderChat = findSenderChat(topic.senderId);
-      if (senderChat != null) {
-        rows.add(new Row(topic, newTopicRow(senderChat, topic)));
+      Row row = topicRows.get(topic.id);
+      if (row == null || rebuildAll || changedRowIds.contains(topic.id)) {
+        TdApi.Chat senderChat = findSenderChat(topic.senderId);
+        row = senderChat != null ? new Row(topic, newTopicRow(senderChat, topic)) : null;
+        changedRowIds.add(topic.id);
+      }
+      if (row != null) {
+        newRows.add(row);
+        newTopicRows.put(topic.id, row);
       }
     }
-    if (adapter != null) {
-      adapter.notifyDataSetChanged();
+    topicRows.clear();
+    for (int i = 0; i < newTopicRows.size(); i++) {
+      topicRows.put(newTopicRows.keyAt(i), newTopicRows.valueAt(i));
     }
+    rows.clear();
+    rows.addAll(newRows);
+    if (adapter == null) {
+      return;
+    }
+    androidx.recyclerview.widget.DiffUtil.calculateDiff(new androidx.recyclerview.widget.DiffUtil.Callback() {
+      @Override
+      public int getOldListSize () {
+        return oldRows.size();
+      }
+
+      @Override
+      public int getNewListSize () {
+        return newRows.size();
+      }
+
+      @Override
+      public boolean areItemsTheSame (int oldItemPosition, int newItemPosition) {
+        return rowId(oldRows.get(oldItemPosition)) == rowId(newRows.get(newItemPosition));
+      }
+
+      @Override
+      public boolean areContentsTheSame (int oldItemPosition, int newItemPosition) {
+        return oldRows.get(oldItemPosition) == newRows.get(newItemPosition);
+      }
+    }).dispatchUpdatesTo(adapter);
   }
 
   private boolean rowsUpdatePending;
 
-  /** Topics come one update each (hundreds while loading): the list is rebuilt at most every 300 ms. */
+  /** Topics come one update each (hundreds while loading): the list is updated at most every 300 ms. */
   @Override
   public void onDirectMessagesChatTopicUpdated (long chatId, TdApi.DirectMessagesChatTopic topic) {
     runOnUiThreadOptional(() -> {
+      if (topic != null) {
+        changedTopicIds.add(topic.id);
+      }
       if (rowsUpdatePending) {
         return;
       }
@@ -200,7 +287,7 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
       runOnUiThreadOptional(() -> {
         rowsUpdatePending = false;
         if (!isDestroyed()) {
-          buildRows();
+          updateRows();
         }
       }, null, 300);
     });

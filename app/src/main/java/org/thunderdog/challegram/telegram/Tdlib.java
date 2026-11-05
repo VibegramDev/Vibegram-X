@@ -438,13 +438,14 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   private final SparseIntArray storyListChatCount = new SparseIntArray();
   private final SparseArrayCompat<StoryList> storyLists = new SparseArrayCompat<>();
   private final HashMap<String, TdApi.ForumTopicInfo> forumTopicInfos = new HashMap<>();
-  private final HashMap<Long, Integer> forumUnreadTopicCounts = new HashMap<>();
+  private final HashMap<Long, ForumUnreadTopics> forumUnreadTopics = new HashMap<>();
   private final HashMap<Long, List<TdApi.ForumTopic>> forumTopicsCache = new HashMap<>();
   /** Topics of administered channel direct messages chats (updateDirectMessagesChatTopic), by chat and topic id. */
   private final HashMap<Long, HashMap<Long, TdApi.DirectMessagesChatTopic>> directMessagesChatTopics = new HashMap<>();
+  /** Own notification settings of forum topics by topic key. A null value: TDLib failed to return the topic. */
   private final HashMap<String, TdApi.ChatNotificationSettings> forumTopicNotificationSettings = new HashMap<>();
-  /** Elapsed realtime of the last GetForumTopic made for a notification, by topic key. */
-  private final HashMap<String, Long> forumTopicNotificationSettingsFetchTime = new HashMap<>();
+  /** Notifications waiting for the settings of their topic, {notificationGroupId, notificationId}, by topic key. */
+  private final HashMap<String, List<int[]>> pendingForumTopicNotifications = new HashMap<>();
   private final HashMap<String, TdlibChatList> chatLists = new HashMap<>();
   private final StickerSet
     animatedTgxEmoji = new StickerSet(AnimatedEmojiListener.TYPE_TGX, "AnimatedTgxEmojies", false),
@@ -2694,69 +2695,27 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     });
   }
 
-  public @Nullable TdApi.ForumTopicInfo forumTopicInfo (long chatId, long messageThreadId) {
-    String cacheKey = chatId + "_" + messageThreadId;
+  public @Nullable TdApi.ForumTopicInfo forumTopicInfo (long chatId, long forumTopicId) {
     synchronized (dataLock) {
-      return forumTopicInfos.get(cacheKey);
+      return forumTopicInfos.get(forumTopicKey(chatId, forumTopicId));
     }
-  }
-
-  /**
-   * Get a ForumTopic by chat ID and topic ID from cache.
-   */
-  public @Nullable TdApi.ForumTopic forumTopic (long chatId, long topicId) {
-    synchronized (dataLock) {
-      List<TdApi.ForumTopic> topics = forumTopicsCache.get(chatId);
-      if (topics != null) {
-        for (TdApi.ForumTopic topic : topics) {
-          if (topic.info.forumTopicId == topicId) {
-            return topic;
-          }
-        }
-      }
-    }
-    return null;
   }
 
   private static String forumTopicKey (long chatId, long topicId) {
     return chatId + "_" + topicId;
   }
 
-  private void putForumTopicNotificationSettings (long chatId, long topicId, @Nullable TdApi.ChatNotificationSettings settings) {
-    if (settings == null) {
-      return;
-    }
-    synchronized (dataLock) {
-      forumTopicNotificationSettings.put(forumTopicKey(chatId, topicId), settings);
-    }
-  }
-
-  private void putForumTopicNotificationSettings (long chatId, @Nullable TdApi.ForumTopic[] topics) {
-    if (topics == null) {
-      return;
-    }
+  private void putForumTopics (long chatId, List<TdApi.ForumTopic> topics) {
     synchronized (dataLock) {
       for (TdApi.ForumTopic topic : topics) {
         String key = forumTopicKey(chatId, topic.info.forumTopicId);
+        forumTopicInfos.put(key, topic.info);
         if (topic.notificationSettings != null) {
           forumTopicNotificationSettings.put(key, topic.notificationSettings);
         }
-        forumTopicInfos.put(key, topic.info);
       }
     }
   }
-
-  private void putForumTopicInfo (@Nullable TdApi.ForumTopicInfo info) {
-    if (info == null) {
-      return;
-    }
-    synchronized (dataLock) {
-      forumTopicInfos.put(forumTopicKey(info.chatId, info.forumTopicId), info);
-    }
-  }
-
-  /** How long the topic settings fetched for a notification are trusted before asking TDLib again. */
-  private static final long FORUM_TOPIC_SETTINGS_TTL_MS = 60_000L;
 
   /**
    * True, if notifications for the topic are explicitly muted by the topic's own settings.
@@ -2766,51 +2725,52 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     return settings != null && !settings.useDefaultMuteFor && settings.muteFor > 0;
   }
 
-  public boolean isForumTopicMuted (long chatId, long topicId) {
-    return isForumTopicMuted(chatId, topicId, false);
-  }
-
   /**
-   * Checks whether a forum topic is muted.
-   *
-   * @param allowFetch Load the topic from TDLib when its settings are not cached yet.
-   *                   Blocks the current thread for a short time, so must not be used on the UI or TDLib thread.
+   * Checks whether a notification comes from a topic muted by its own settings (TDLib applies only chat-level ones).
+   * Settings come from updateForumTopic and loaded topic lists. The notification queue is shared by all accounts
+   * and must not wait for TDLib, so a topic that TDLib hasn't reported yet is requested asynchronously,
+   * and its notifications are removed afterwards if it turns out to be muted.
    */
-  public boolean isForumTopicMuted (long chatId, long topicId, boolean allowFetch) {
+  boolean isForumTopicNotificationMuted (long chatId, int topicId, int notificationGroupId, int notificationId) {
     final String key = forumTopicKey(chatId, topicId);
-    TdApi.ChatNotificationSettings settings;
-    Long fetchTime;
     synchronized (dataLock) {
-      settings = forumTopicNotificationSettings.get(key);
-      fetchTime = forumTopicNotificationSettingsFetchTime.get(key);
-    }
-    if (settings == null) {
-      TdApi.ForumTopic topic = forumTopic(chatId, topicId);
-      if (topic != null) {
-        settings = topic.notificationSettings;
+      if (forumTopicNotificationSettings.containsKey(key)) {
+        return isForumTopicMuted(forumTopicNotificationSettings.get(key));
+      }
+      List<int[]> pendingNotifications = pendingForumTopicNotifications.get(key);
+      boolean needRequest = pendingNotifications == null;
+      if (needRequest) {
+        pendingNotifications = new ArrayList<>();
+        pendingForumTopicNotifications.put(key, pendingNotifications);
+      }
+      pendingNotifications.add(new int[] {notificationGroupId, notificationId});
+      if (!needRequest) {
+        return false;
       }
     }
-    // Cached settings may be stale (topic muted on another device while TDLib didn't know the topic),
-    // so notifications ask TDLib for the topic again, at most once a minute per topic.
-    long now = SystemClock.elapsedRealtime();
-    boolean needFetch = allowFetch && !inTdlibThread() && (fetchTime == null || now - fetchTime >= FORUM_TOPIC_SETTINGS_TTL_MS);
-    if (needFetch) {
-      // Right after a start or a push wake-up TDLib may need a few seconds (topic not cached, network).
-      TdApi.Object result = clientExecute(new TdApi.GetForumTopic(chatId, (int) topicId), 10_000L);
-      if (result instanceof TdApi.ForumTopic) {
+    client().send(new TdApi.GetForumTopic(chatId, topicId), result -> {
+      TdApi.ChatNotificationSettings settings = null;
+      if (result.getConstructor() == TdApi.ForumTopic.CONSTRUCTOR) {
         TdApi.ForumTopic topic = (TdApi.ForumTopic) result;
         settings = topic.notificationSettings;
-        putForumTopicNotificationSettings(chatId, topicId, settings);
-        putForumTopicInfo(topic.info);
-        synchronized (dataLock) {
-          forumTopicNotificationSettingsFetchTime.put(key, now);
+        putForumTopics(chatId, Collections.singletonList(topic));
+      } else {
+        TDLib.Tag.notifications("GetForumTopic failed for chatId=%d topicId=%d: %s", chatId, topicId, TD.toErrorString(result));
+      }
+      List<int[]> pendingNotifications;
+      synchronized (dataLock) {
+        if (!forumTopicNotificationSettings.containsKey(key)) {
+          forumTopicNotificationSettings.put(key, settings);
+        }
+        pendingNotifications = pendingForumTopicNotifications.remove(key);
+      }
+      if (pendingNotifications != null && isForumTopicMuted(settings)) {
+        for (int[] notification : pendingNotifications) {
+          client().send(new TdApi.RemoveNotification(notification[0], notification[1]), okHandler());
         }
       }
-      if (!(result instanceof TdApi.ForumTopic)) {
-        TDLib.Tag.notifications("GetForumTopic failed for chatId=%d topicId=%d: %s", chatId, topicId, result != null ? TD.toErrorString(result) : "timeout");
-      }
-    }
-    return isForumTopicMuted(settings);
+    });
+    return false;
   }
 
   public @Nullable TdApi.Chat chat (long chatId) {
@@ -3516,114 +3476,195 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     return supergroup != null && supergroup.isForum;
   }
 
+  private static class ForumUnreadTopics {
+    /** Unread visible topics among the first page of the topic list: topic id → id of the last known unread message. */
+    final HashMap<Integer, Long> topics = new HashMap<>();
+    boolean isLoaded, isLoading, needReload, reloadScheduled;
+  }
+
+  private static final double FORUM_UNREAD_TOPICS_RELOAD_DELAY = 2.0;
+
   /**
-   * Returns the cached unread topic count for a forum chat.
-   * @return unread topic count, or -1 if not yet loaded
+   * Number of unread topics of a forum, shown in chat lists instead of the number of unread messages,
+   * or -1 while it is unknown (see {@link #loadForumUnreadTopicCount}).
    */
   public int forumUnreadTopicCount (long chatId) {
     synchronized (dataLock) {
-      Integer count = forumUnreadTopicCounts.get(chatId);
-      return count != null ? count : -1;
+      ForumUnreadTopics unreadTopics = forumUnreadTopics.get(chatId);
+      return unreadTopics != null && unreadTopics.isLoaded ? unreadTopics.topics.size() : -1;
     }
   }
 
-  /**
-   * Fetches forum topics and updates the unread topic count cache.
-   * @param chatId The forum chat ID
-   * @param callback Called on UI thread when complete (may be null)
-   */
-  public void fetchForumUnreadTopicCount (long chatId, @Nullable Runnable callback) {
-    if (!isForum(chatId)) {
-      if (callback != null) {
-        ui().post(callback);
+  /** Counter of a chat in chat lists: unread topics for forums, unread messages for other chats. */
+  public int chatListUnreadCount (TdApi.Chat chat) {
+    int unreadCount = chat.unreadCount;
+    if (isForum(chat.id)) {
+      int unreadTopicCount = forumUnreadTopicCount(chat.id);
+      if (unreadTopicCount == -1) {
+        return chat.unreadCount > 0 || chat.isMarkedAsUnread ? CHAT_MARKED_AS_UNREAD : 0;
       }
+      unreadCount = unreadTopicCount;
+    }
+    return unreadCount > 0 ? unreadCount : chat.isMarkedAsUnread ? CHAT_MARKED_AS_UNREAD : 0;
+  }
+
+  /** Loads the number of unread topics of a forum once, afterwards it is kept up to date by updates. */
+  public void loadForumUnreadTopicCount (long chatId) {
+    if (!isForum(chatId)) {
       return;
     }
+    synchronized (dataLock) {
+      if (forumUnreadTopics.containsKey(chatId)) {
+        return;
+      }
+      ForumUnreadTopics unreadTopics = new ForumUnreadTopics();
+      unreadTopics.isLoading = true;
+      forumUnreadTopics.put(chatId, unreadTopics);
+    }
+    fetchForumUnreadTopics(chatId);
+  }
+
+  private void fetchForumUnreadTopics (long chatId) {
     client().send(new TdApi.GetForumTopics(chatId, "", 0, 0, 0, 100), result -> {
-      if (result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR) {
-        TdApi.ForumTopics topics = (TdApi.ForumTopics) result;
-        int unreadCount = 0;
-        for (TdApi.ForumTopic topic : topics.topics) {
-          // Exclude hidden topics (like the hidden General topic)
-          if (topic.unreadCount > 0 && !topic.info.isHidden) {
-            unreadCount++;
+      final TdApi.ForumTopics forumTopics = result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR ? (TdApi.ForumTopics) result : null;
+      if (forumTopics != null) {
+        putForumTopics(chatId, Arrays.asList(forumTopics.topics));
+      }
+      final int count;
+      final boolean needReload;
+      synchronized (dataLock) {
+        ForumUnreadTopics unreadTopics = forumUnreadTopics.get(chatId);
+        if (unreadTopics == null) {
+          return;
+        }
+        unreadTopics.isLoading = false;
+        needReload = unreadTopics.needReload;
+        unreadTopics.needReload = false;
+        // On error the chat keeps showing its previous counter until the next change of its topics.
+        if (forumTopics != null) {
+          unreadTopics.isLoaded = true;
+          unreadTopics.topics.clear();
+          for (TdApi.ForumTopic topic : forumTopics.topics) {
+            if (topic.unreadCount > 0 && !topic.info.isHidden) {
+              unreadTopics.topics.put(topic.info.forumTopicId, topic.lastMessage != null ? topic.lastMessage.id : Long.MAX_VALUE);
+            }
           }
         }
-        synchronized (dataLock) {
-          forumUnreadTopicCounts.put(chatId, unreadCount);
-          forumTopicsCache.put(chatId, new java.util.ArrayList<>(java.util.Arrays.asList(topics.topics)));
-        }
-        putForumTopicNotificationSettings(chatId, topics.topics);
-        listeners().updateForumUnreadTopicCount(chatId, unreadCount);
+        count = unreadTopics.isLoaded ? unreadTopics.topics.size() : -1;
       }
-      if (callback != null) {
-        ui().post(callback);
+      if (needReload) {
+        invalidateForumUnreadTopics(chatId);
+      }
+      if (count != -1) {
+        listeners.updateForumUnreadTopicCount(chatId, count);
       }
     });
   }
 
-  /**
-   * Updates the cached unread topic count when a topic's unread state changes.
-   * Called when we get fresh topic data via GetForumTopic.
-   */
-  public void updateForumTopicUnreadCount (long chatId, int topicId, int newUnreadCount) {
+  /** Reloads the counter a bit later: updates don't tell whether a partially read topic still has unread messages. */
+  private void invalidateForumUnreadTopics (long chatId) {
     synchronized (dataLock) {
-      List<TdApi.ForumTopic> topics = forumTopicsCache.get(chatId);
-      if (topics != null) {
-        int oldUnreadTopics = 0;
-        int newUnreadTopics = 0;
-        boolean found = false;
-        for (int i = 0; i < topics.size(); i++) {
-          TdApi.ForumTopic topic = topics.get(i);
-          if (topic.info.forumTopicId == topicId) {
-            found = true;
-            if (topic.unreadCount > 0) oldUnreadTopics++;
-            if (newUnreadCount > 0) newUnreadTopics++;
-            topic.unreadCount = newUnreadCount;
-          } else {
-            if (topic.unreadCount > 0) {
-              oldUnreadTopics++;
-              newUnreadTopics++;
-            }
-          }
-        }
-        if (found) {
-          // Recalculate total unread topics (exclude hidden topics)
-          int totalUnread = 0;
-          for (TdApi.ForumTopic topic : topics) {
-            if (topic.unreadCount > 0 && !topic.info.isHidden) {
-              totalUnread++;
-            }
-          }
-          Integer oldCount = forumUnreadTopicCounts.get(chatId);
-          if (oldCount == null || oldCount != totalUnread) {
-            forumUnreadTopicCounts.put(chatId, totalUnread);
-            listeners().updateForumUnreadTopicCount(chatId, totalUnread);
-          }
-        }
+      ForumUnreadTopics unreadTopics = forumUnreadTopics.get(chatId);
+      if (unreadTopics == null || unreadTopics.reloadScheduled) {
+        return;
       }
+      if (unreadTopics.isLoading) {
+        unreadTopics.needReload = true;
+        return;
+      }
+      unreadTopics.reloadScheduled = true;
+    }
+    runOnTdlibThread(() -> {
+      synchronized (dataLock) {
+        ForumUnreadTopics unreadTopics = forumUnreadTopics.get(chatId);
+        if (unreadTopics == null || !unreadTopics.reloadScheduled) {
+          return;
+        }
+        unreadTopics.reloadScheduled = false;
+        unreadTopics.isLoading = true;
+      }
+      fetchForumUnreadTopics(chatId);
+    }, FORUM_UNREAD_TOPICS_RELOAD_DELAY, false);
+  }
+
+  private void updateForumUnreadTopics (TdApi.Message message) {
+    if (message.isOutgoing || message.topicId == null || message.topicId.getConstructor() != TdApi.MessageTopicForum.CONSTRUCTOR) {
+      return;
+    }
+    final int topicId = ((TdApi.MessageTopicForum) message.topicId).forumTopicId;
+    final int count;
+    synchronized (dataLock) {
+      ForumUnreadTopics unreadTopics = forumUnreadTopics.get(message.chatId);
+      if (unreadTopics == null || !unreadTopics.isLoaded) {
+        return;
+      }
+      TdApi.ForumTopicInfo info = forumTopicInfos.get(forumTopicKey(message.chatId, topicId));
+      if (info != null && info.isHidden) {
+        return;
+      }
+      Long lastUnreadMessageId = unreadTopics.topics.get(topicId);
+      if (lastUnreadMessageId != null && lastUnreadMessageId >= message.id) {
+        return;
+      }
+      unreadTopics.topics.put(topicId, message.id);
+      if (lastUnreadMessageId != null) {
+        return;
+      }
+      count = unreadTopics.topics.size();
+    }
+    listeners.updateForumUnreadTopicCount(message.chatId, count);
+  }
+
+  private void updateForumUnreadTopics (TdApi.UpdateForumTopic update) {
+    final int count;
+    synchronized (dataLock) {
+      ForumUnreadTopics unreadTopics = forumUnreadTopics.get(update.chatId);
+      Long lastUnreadMessageId = unreadTopics != null && unreadTopics.isLoaded ? unreadTopics.topics.get(update.forumTopicId) : null;
+      if (lastUnreadMessageId == null) {
+        return;
+      }
+      if (update.lastReadInboxMessageId < lastUnreadMessageId) {
+        count = -1;
+      } else {
+        unreadTopics.topics.remove(update.forumTopicId);
+        count = unreadTopics.topics.size();
+      }
+    }
+    if (count == -1) {
+      invalidateForumUnreadTopics(update.chatId);
+    } else {
+      listeners.updateForumUnreadTopicCount(update.chatId, count);
     }
   }
 
-  /**
-   * Returns cached forum topics for the given chat, or null if not cached.
-   * Use this to show topics instantly while refreshing from network.
-   */
+  private static TdApi.ForumTopic copyOf (TdApi.ForumTopic topic) {
+    return new TdApi.ForumTopic(topic.info, topic.lastMessage, topic.order, topic.isPinned, topic.unreadCount, topic.lastReadInboxMessageId, topic.lastReadOutboxMessageId, topic.unreadMentionCount, topic.unreadReactionCount, topic.unreadPollVoteCount, topic.notificationSettings, topic.draftMessage);
+  }
+
+  /** Topics to show right away while the topic list of a forum is being loaded. Copies: callers modify their topics. */
   public @Nullable List<TdApi.ForumTopic> getCachedForumTopics (long chatId) {
     synchronized (dataLock) {
       List<TdApi.ForumTopic> cached = forumTopicsCache.get(chatId);
-      return cached != null ? new java.util.ArrayList<>(cached) : null;
+      if (cached == null) {
+        return null;
+      }
+      List<TdApi.ForumTopic> topics = new ArrayList<>(cached.size());
+      for (TdApi.ForumTopic topic : cached) {
+        topics.add(copyOf(topic));
+      }
+      return topics;
     }
   }
 
-  /**
-   * Updates the forum topics cache with fresh data.
-   */
   public void updateForumTopicsCache (long chatId, List<TdApi.ForumTopic> topics) {
-    synchronized (dataLock) {
-      forumTopicsCache.put(chatId, new java.util.ArrayList<>(topics));
+    List<TdApi.ForumTopic> cached = new ArrayList<>(topics.size());
+    for (TdApi.ForumTopic topic : topics) {
+      cached.add(copyOf(topic));
     }
-    putForumTopicNotificationSettings(chatId, topics.toArray(new TdApi.ForumTopic[0]));
+    synchronized (dataLock) {
+      forumTopicsCache.put(chatId, cached);
+    }
+    putForumTopics(chatId, cached);
   }
 
   public @Nullable TdApi.BlockList chatBlockList (TdApi.Chat chat) {
@@ -7563,6 +7604,14 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     cachedReactions.clear();
     activeEmojiReactions = null;
     closeBirthdayUsers = null;
+    synchronized (dataLock) {
+      forumTopicInfos.clear();
+      forumUnreadTopics.clear();
+      forumTopicsCache.clear();
+      directMessagesChatTopics.clear();
+      forumTopicNotificationSettings.clear();
+      pendingForumTopicNotifications.clear();
+    }
   }
 
   private void resetOptions () {
@@ -7811,6 +7860,8 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     }
 
     listeners.updateNewMessage(update);
+
+    updateForumUnreadTopics(update.message);
 
     notificationManager.onUpdateNewMessage(update);
 
@@ -8625,6 +8676,9 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       chatLists = chatListsImpl(chat.positions);
     }
     listeners.updateChatReadInbox(update, availabilityChanged, chat, chatLists);
+    if (update.unreadCount == 0 && forumUnreadTopicCount(update.chatId) > 0) {
+      invalidateForumUnreadTopics(update.chatId);
+    }
   }
 
   @TdlibThread
@@ -8710,14 +8764,25 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
 
   @TdlibThread
   private void updateForumTopicInfo (TdApi.UpdateForumTopicInfo update) {
-    putForumTopicInfo(update.info);
+    TdApi.ForumTopicInfo prevInfo;
+    synchronized (dataLock) {
+      prevInfo = forumTopicInfos.put(forumTopicKey(update.info.chatId, update.info.forumTopicId), update.info);
+    }
+    if (prevInfo != null && prevInfo.isHidden != update.info.isHidden) {
+      invalidateForumUnreadTopics(update.info.chatId);
+    }
     topics.updateForumTopicInfo(update);
     listeners.updateForumTopicInfo(update);
   }
 
   @TdlibThread
   private void updateForumTopic (TdApi.UpdateForumTopic update) {
-    putForumTopicNotificationSettings(update.chatId, update.forumTopicId, update.notificationSettings);
+    if (update.notificationSettings != null) {
+      synchronized (dataLock) {
+        forumTopicNotificationSettings.put(forumTopicKey(update.chatId, update.forumTopicId), update.notificationSettings);
+      }
+    }
+    updateForumUnreadTopics(update);
     topics.updateForumTopic(update);
     listeners.updateForumTopic(update);
   }

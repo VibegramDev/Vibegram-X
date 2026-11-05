@@ -2,7 +2,6 @@
 <!-- Vibegram X: strings missing from the cloud language pack. Lang reads them in the app language
      (values-ru with the Russian pack), not in the system locale. -->
 <resources>
-  <string name="ScrollToTop">Наверх</string>
   <string name="ChatFoldersPositionSide">Сбоку</string>
   <string name="ChatFoldersPositionBelowSearch">Под поиском</string>
   <string name="TabletFoldersSide">Планшет: папки сбоку</string>
@@ -73,9 +72,9 @@
   <string name="ViewAsTopics">Показать темы списком</string>
   <string name="ViewAsTabs">Показать темы вкладками</string>
   <string name="FilterByTopic">Фильтр по теме</string>
-  <string name="SearchForMessages">Поиск сообщений</string>
   <string name="NoMessagesFound">Сообщения не найдены</string>
   <string name="ChangeTopicIcon">Изменить значок темы</string>
+  <string name="format_topicIconNumber">Значок %1$d</string>
   <string name="ResetTopicIcon">Сбросить значок темы</string>
 
   <!-- Checklists: texts of the official Android app (translations.telegram.org) -->

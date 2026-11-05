@@ -2811,6 +2811,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private ThreadInfo messageThread;
   private TdApi.MessageTopic messageTopicId;
   private TdApi.ForumTopic forumTopic;
+  /** Last known Supergroup.isForum of the chat, to react only to forum mode being enabled. */
+  private boolean knownSupergroupIsForum;
   private boolean areScheduled;
   private Referrer referrer;
   private TdApi.InternalLinkTypeVideoChat voiceChatInvitation;
@@ -2844,6 +2846,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     this.messageThread = args.messageThread;
     this.messageTopicId = args.messageTopicId;
     this.forumTopic = args.forumTopic;
+    this.knownSupergroupIsForum = args.chat != null && tdlib.isForum(args.chat.id);
     this.openedFromChatList = args.chatList;
     this.linkedChatId = 0;
     this.areScheduled = args.areScheduled;
@@ -12042,23 +12045,30 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       // Update draft message (topic-scoped)
       forumTopic.draftMessage = draftMessage;
-      // Also update the messageThread if present so TGMessage.isUnread() works correctly
+      // Keep messageThread in sync so TGMessage.isUnread() works; read receipts reach MessagesManager
+      // through MessageThreadListener.onMessageThreadReadOutbox.
       if (messageThread != null) {
         messageThread.updateReadInbox(lastReadInboxMessageId);
         messageThread.updateReadOutbox(lastReadOutboxMessageId);
-        // Update message views to show read receipts (double ticks)
-        manager.updateChatReadOutbox(lastReadOutboxMessageId);
       }
-      // Calculate new unread count
-      if (lastReadInboxMessageId > oldLastReadInboxMessageId) {
-        // Messages were read
+      if (lastReadInboxMessageId > oldLastReadInboxMessageId && forumTopic.unreadCount > 0) {
         if (forumTopic.lastMessage != null && lastReadInboxMessageId >= forumTopic.lastMessage.id) {
-          // All messages read
           forumTopic.unreadCount = 0;
-        } else if (forumTopic.unreadCount > 0) {
-          // Estimate: decrease unread count (may not be exact)
-          // A more accurate approach would be to count visible messages between old and new read position
-          forumTopic.unreadCount = Math.max(0, forumTopic.unreadCount - 1);
+        } else {
+          // updateForumTopic has no unreadCount: request the exact one
+          final TdApi.ForumTopic requestedTopic = forumTopic;
+          tdlib.client().send(new TdApi.GetForumTopic(chatId, (int) messageThreadId), result -> {
+            if (result.getConstructor() != TdApi.ForumTopic.CONSTRUCTOR) {
+              return;
+            }
+            final int unreadCount = ((TdApi.ForumTopic) result).unreadCount;
+            tdlib.ui().post(() -> {
+              if (forumTopic == requestedTopic && !isDestroyed()) {
+                forumTopic.unreadCount = unreadCount;
+                updateCounters(true);
+              }
+            });
+          });
         }
       }
       updateCounters(true);
@@ -12246,9 +12256,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
     tdlib.ui().post(() -> {
       if (ChatId.toSupergroupId(getChatId()) == supergroup.id) {
         updateBottomBar(true);
-        // Check if forum mode was enabled externally (by another admin)
-        // Only redirect if we're viewing unified chat (not a specific topic)
-        if (supergroup.isForum && forumTopic == null && messageThread == null && chat != null) {
+        // Forum mode was enabled by another admin: reopen the chat as a forum.
+        // Only on the actual false → true change, a forum opened as a chat ("view as chat") stays as is.
+        final boolean wasForum = knownSupergroupIsForum;
+        knownSupergroupIsForum = supergroup.isForum;
+        if (supergroup.isForum && !wasForum && forumTopic == null && messageThread == null && chat != null) {
           // Forum mode was enabled - navigate to topics view
           navigateBack();
           tdlib.ui().post(() -> {
