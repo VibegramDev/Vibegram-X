@@ -15,6 +15,19 @@ import android.view.ViewOutlineProvider;
 
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Screen;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.ui.SettingsAdapter;
+import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.v.CustomRecyclerView;
+
 
 /**
  * M3 modal bottom sheet geometry (m3.material.io/components/bottom-sheets › Specs):
@@ -50,6 +63,28 @@ public final class M3Sheets {
     }
     int size = View.MeasureSpec.getSize(widthMeasureSpec);
     return View.MeasureSpec.makeMeasureSpec(width(size), View.MeasureSpec.EXACTLY);
+  }
+
+  /**
+   * Shows the rows of a {@link SettingsAdapter} in an M3 bottom sheet: the Telegram X options sheet
+   * ({@link ViewController#showPopup}) with a list instead of the options. The adapter's theme provider recolours the
+   * rows on theme changes.
+   */
+  public static @Nullable PopupLayout showList (@NonNull ViewController<?> context, @NonNull SettingsAdapter adapter) {
+    return context.showPopup(null, false, Text.LINE_COUNT_UNLIMITED, (popupLayout, optionsLayout) -> {
+      CustomRecyclerView list = new CustomRecyclerView(optionsLayout.getContext());
+      list.setLayoutManager(new LinearLayoutManager(optionsLayout.getContext(), RecyclerView.VERTICAL, false));
+      list.setOverScrollMode(View.OVER_SCROLL_NEVER);
+      list.setItemAnimator(null);
+      list.setPadding(0, 0, 0, Screen.dp(16f));
+      list.setClipToPadding(false);
+      list.setAdapter(adapter);
+      list.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+      optionsLayout.addView(list);
+      int width = width(Screen.currentWidth());
+      list.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+      return list.getMeasuredHeight();
+    }, null);
   }
 
   public static float radius () {

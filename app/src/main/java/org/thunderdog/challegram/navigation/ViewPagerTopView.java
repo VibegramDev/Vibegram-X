@@ -676,13 +676,27 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     }
   }
 
-  // Chip style (navigation style "dock"): every item is a separate floating pill, the selected one is filled.
+  // Chip style: every item is an M3 filter chip (m3.material.io/components/chips, "Filter chip measurements"):
+  // container height 32dp, 8dp corner radius, left/right padding 16dp, 8dp between chips. Colours ("Filter chip
+  // colour roles"): selected — secondary container / on secondary container; unselected — outline variant stroke and
+  // on surface variant label, or surface container low when the chip is elevated (floating over content).
 
-  public static final float CHIP_HEIGHT = 40f;
+  public static final float CHIP_HEIGHT = 32f;
+  public static final float CHIP_CORNER = 8f;
   /** Half of the gap between two chips. */
-  public static final float CHIP_INSET = 3f;
+  public static final float CHIP_INSET = 4f;
   /** Horizontal padding of the label inside a chip (plus the inset). */
-  public static final float CHIP_ITEM_PADDING = 14f + CHIP_INSET;
+  public static final float CHIP_ITEM_PADDING = 16f + CHIP_INSET;
+
+  private boolean chipElevated;
+
+  /** Elevated filter chips: for chips floating over content (dock), where an outline alone gets lost. */
+  public void setChipElevated (boolean chipElevated) {
+    if (this.chipElevated != chipElevated) {
+      this.chipElevated = chipElevated;
+      invalidate();
+    }
+  }
 
   private boolean chipStyle;
 
@@ -735,6 +749,38 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     rect.set(left + inset, top, right - inset, top + height);
   }
 
+  private Paint chipShadowPaint;
+
+  /** M3 filter chip container; {@code selection} 0 — unselected, 1 — selected. */
+  private void drawChip (Canvas c, float left, float right, int viewHeight, float selection) {
+    RectF rect = Paints.getRectF();
+    setChipRect(rect, left, right, viewHeight);
+    float radius = Screen.dp(CHIP_CORNER);
+    int unselectedFill = chipElevated ? M3.surfaceContainerLow() : 0;
+    int fill = ColorUtils.fromToArgb(unselectedFill, M3.secondaryContainer(), selection);
+    if (chipElevated) {
+      // Elevation level 1: a soft key shadow under the container.
+      if (chipShadowPaint == null) {
+        chipShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        chipShadowPaint.setStyle(Paint.Style.FILL);
+      }
+      chipShadowPaint.setColor(fill);
+      chipShadowPaint.setShadowLayer(Screen.dp(2f), 0, Screen.dp(1f), ColorUtils.alphaColor(Theme.isDark() ? .45f : .22f, 0xff000000));
+      c.drawRoundRect(rect, radius, radius, chipShadowPaint);
+    } else {
+      if (Color.alpha(fill) != 0) {
+        c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(fill));
+      }
+      if (selection < 1f) {
+        // Outline variant stroke, 1dp, inside the container.
+        float half = Screen.dp(.5f);
+        rect.inset(half, half);
+        Paint stroke = Paints.getProgressPaint(ColorUtils.alphaColor(1f - selection, M3.outlineVariant()), Screen.dp(1f));
+        c.drawRoundRect(rect, radius - half, radius - half, stroke);
+      }
+    }
+  }
+
   /** Opaque chip shape: masks the pressed ripple of an item. */
   private static class ChipMask extends Drawable {
     @Override
@@ -743,7 +789,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       RectF rect = Paints.getRectF();
       setChipRect(rect, bounds.left, bounds.right, bounds.height());
       rect.offset(0, bounds.top);
-      float radius = rect.height() / 2f;
+      float radius = Screen.dp(CHIP_CORNER);
       c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(0xffffffff));
     }
 
@@ -1421,7 +1467,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     final boolean wrapContent = shouldWrapContent();
 
     if (overlayFactor != 1f) {
-      int textToColor = chipStyle ? M3.onPrimary() : primaryTabsStyle ? M3.primary() : Theme.getColor(toTextColorId);
+      int textToColor = chipStyle ? M3.onSecondaryContainer() : primaryTabsStyle ? M3.primary() : Theme.getColor(toTextColorId);
       int textFromColor = chipStyle || primaryTabsStyle ? M3.onSurfaceVariant() : fromTextColorId != ColorId.NONE ?
         ColorUtils.alphaColor(fromTextColorAlphaId != PropertyId.NONE ? Theme.getProperty(fromTextColorAlphaId) : 1f, Theme.getColor(fromTextColorId)) :
         ColorUtils.alphaColor(Theme.getSubtitleAlpha(), Theme.getColor(ColorId.headerText));
@@ -1480,15 +1526,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
         if (rtl)
           cx -= itemWidth;
         if (chipStyle && !item.hidden) {
-          // M3 filter chip look: surfaceContainerHigh pill, the selected one is filled with primary.
-          RectF chipRect = Paints.getRectF();
-          setChipRect(chipRect, cx, cx + itemWidth, viewHeight);
-          float chipRadius = chipRect.height() / 2f;
-          float chipSelection = itemSelectionFactor * (1f - disabledFactor);
-          c.drawRoundRect(chipRect, chipRadius, chipRadius, Paints.fillingPaint(ColorUtils.fromToArgb(M3.surfaceContainerHigh(), M3.primary(), chipSelection)));
-          if (Theme.isDark() && chipSelection < 1f) {
-            c.drawRoundRect(chipRect, chipRadius, chipRadius, Paints.strokeSmallPaint(ColorUtils.alphaColor(1f - chipSelection, M3.outlineVariant())));
-          }
+          drawChip(c, cx, cx + itemWidth, viewHeight, itemSelectionFactor * (1f - disabledFactor));
         }
         if (!item.hidden) {
           int contentWidth = Math.min(item.getContentWidth(labelFactor), item.getWidth(labelFactor));

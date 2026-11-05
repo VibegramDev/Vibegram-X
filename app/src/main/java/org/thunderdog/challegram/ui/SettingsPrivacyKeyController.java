@@ -35,8 +35,8 @@ import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.component.dialogs.SearchManager;
 import org.thunderdog.challegram.component.user.BubbleView;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.ActivityResultHandler;
-import org.thunderdog.challegram.navigation.DialogLayout;
 import org.thunderdog.challegram.stars.Stars;
 import org.thunderdog.challegram.stars.StarsUi;
 import org.thunderdog.challegram.telegram.PrivacySettings;
@@ -53,9 +53,7 @@ import org.thunderdog.challegram.util.NoUnderlineClickableSpan;
 import org.thunderdog.challegram.util.ProfilePhotoDrawModifier;
 import org.thunderdog.challegram.util.UserPickerMultiDelegate;
 import org.thunderdog.challegram.v.CustomRecyclerView;
-import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.SliderWrapView;
-import org.thunderdog.challegram.widget.VgSheets;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -446,31 +444,28 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
    */
   private void confirmPaidPrice (Runnable after) {
     long price = selectedPaidStarCount();
-    DialogLayout dialog = new DialogLayout(context(), this, null);
-    dialog.setHeadline(Lang.getString(R.string.vg_ApplyChanges));
-    dialog.addMessageView(Stars.withIcons(VgSheets.markdown(Lang.getString(R.string.vg_StarsPriceConfirm, Stars.format(price), paidPriceInfo()))));
-    final PopupLayout[] popupLayout = new PopupLayout[1];
-    dialog.addButton(R.id.btn_cancel, Lang.getString(R.string.vg_Discard), v -> {
-      popupLayout[0].hideWindow(true);
-      selectedPaidStarCount = 0;
-      paidPriceConfirmed = false;
-      if (paidStarCount == 0) {
-        changedPrivacyRules = null;
-      }
-      after.run();
-    });
     String applyLabel = Lang.getString(R.string.vg_Apply);
-    dialog.addButton(R.id.btn_done, applyLabel, v -> {
-      popupLayout[0].hideWindow(true);
-      StarsUi.confirmAgain(this, Lang.getString(R.string.vg_StarsConfirmAgainPrice, Stars.format(price)), applyLabel, confirmed -> {
-        if (confirmed) {
-          paidPriceConfirmed = true;
-          saveChanges();
-          after.run();
+    new AlertPopup.Builder(context())
+      .setController(this)
+      .setTitle(Lang.getString(R.string.vg_ApplyChanges))
+      .setMessage(StarsUi.markdownSpans(this, Lang.getString(R.string.vg_StarsPriceConfirm, Stars.format(price), paidPriceInfo())))
+      .setNegativeButton(Lang.getString(R.string.vg_Discard), (dialog, which) -> {
+        selectedPaidStarCount = 0;
+        paidPriceConfirmed = false;
+        if (paidStarCount == 0) {
+          changedPrivacyRules = null;
         }
-      });
-    });
-    popupLayout[0] = VgSheets.showDialog(this, dialog);
+        after.run();
+      })
+      .setPositiveButton(applyLabel, (dialog, which) ->
+        StarsUi.confirmAgain(this, Lang.getString(R.string.vg_StarsConfirmAgainPrice, Stars.format(price)), applyLabel, confirmed -> {
+          if (confirmed) {
+            paidPriceConfirmed = true;
+            saveChanges();
+            after.run();
+          }
+        }))
+      .show();
   }
 
   @Override

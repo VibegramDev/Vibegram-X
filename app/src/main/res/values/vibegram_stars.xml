@@ -24,7 +24,21 @@
   <item type="id" name="btn_vgRemoveFee" />
   <item type="id" name="btn_vgStars" />
   <item type="id" name="btn_vgStarsEmpty" />
+  <item type="id" name="btn_vgStarsBuy" />
   <item type="id" name="btn_vgStarsHeader" />
+  <item type="id" name="btn_vgOAuthAllowMessages" />
+  <item type="id" name="btn_vgOAuthDecline" />
+  <item type="id" name="btn_vgOAuthLogin" />
+  <item type="id" name="btn_vgBotStarsAds" />
+  <item type="id" name="btn_vgBotStarsWithdraw" />
+  <item type="id" name="btn_vgBotStarsAmount" />
+  <item type="id" name="btn_vgPaymentPrice" />
+  <item type="id" name="btn_vgStarsRefund" />
+  <item type="id" name="btn_vgStarsRemoveFee" />
+  <item type="id" name="btn_vgStarsBalance" />
+  <item type="id" name="btn_vgStarsPay" />
+  <item type="id" name="btn_vgStarsMoreOptions" />
+  <item type="id" name="btn_vgStarsOption" />
   <item type="id" name="btn_vgStarsListBottom" />
   <item type="id" name="btn_vgStarsListTop" />
   <item type="id" name="btn_vgStarsProgress" />

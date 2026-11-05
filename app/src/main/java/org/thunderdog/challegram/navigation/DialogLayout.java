@@ -233,9 +233,18 @@ public class DialogLayout extends LinearLayout implements RootFrameLayout.Margin
 
   /** A destructive action («Delete»): the error role for its label and its pressed state layer. */
   public void setButtonDestructive (TextView button) {
+    destructiveButtons.add(button);
     button.setTextColor(role(M3.ERROR));
     ViewUtils.setBackground(button, new M3StateLayerDrawable(null, new RoundMask(Screen.dp(20f)), ColorUtils.alphaColor(M3.STATE_PRESSED, role(M3.ERROR))));
   }
+
+  /** Disabled text button: label onSurface 38% (M3 disabled state), no touches. */
+  public void setButtonEnabled (TextView button, boolean isEnabled) {
+    button.setEnabled(isEnabled);
+    button.setTextColor(isEnabled ? role(destructiveButtons.contains(button) ? M3.ERROR : M3.PRIMARY) : ColorUtils.alphaColor(.38f, role(M3.ON_SURFACE)));
+  }
+
+  private final java.util.Set<TextView> destructiveButtons = new java.util.HashSet<>();
 
   private TextView newButton (int id, CharSequence text, View.OnClickListener onClickListener) {
     TextView button = new NoScrollTextView(getContext());

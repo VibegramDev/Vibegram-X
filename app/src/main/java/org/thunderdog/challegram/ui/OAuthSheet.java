@@ -22,14 +22,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
-import android.text.style.ForegroundColorSpan;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.TextView;
+import android.text.TextUtils;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -42,26 +35,24 @@ import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.MainActivity;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.navigation.DialogLayout;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibManager;
-import org.thunderdog.challegram.theme.M3;
-import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Intents;
-import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
-import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.AppContext;
-import org.thunderdog.challegram.widget.AvatarView;
-import org.thunderdog.challegram.widget.M3StateLayerDrawable;
-import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.PopupLayout;
-import org.thunderdog.challegram.widget.VgSheets;
+import org.thunderdog.challegram.component.base.SettingView;
+import org.thunderdog.challegram.data.TD;
+import org.thunderdog.challegram.navigation.AlertPopup;
+import org.thunderdog.challegram.widget.InfoHeaderView;
+import org.thunderdog.challegram.widget.M3ButtonView;
+import org.thunderdog.challegram.widget.M3Sheets;
 
-import me.vkryl.core.ColorUtils;
+import java.util.ArrayList;
+
 import me.vkryl.core.StringUtils;
 
 /**
@@ -257,78 +248,33 @@ public final class OAuthSheet {
 
   // Main sheet
 
-  /** «Log in to domain» with the domain in the primary colour, as the link-coloured domain of the official app. */
-  private static CharSequence buildTitle (Request request) {
-    String name = request.displayName();
-    SpannableStringBuilder b = new SpannableStringBuilder(Lang.getString(R.string.vg_BotAuthTitle, name).replace("**", ""));
-    int index = b.toString().lastIndexOf(name);
-    if (index != -1 && !name.isEmpty()) {
-      b.setSpan(new ForegroundColorSpan(M3.primary()), index, index + name.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-    }
-    return b;
-  }
-
   private static void showMainSheet (ViewController<?> context, Request request, @Nullable LoginUrlCallback loginUrlCallback) {
     final Tdlib tdlib = request.tdlib;
     final boolean[] processing = new boolean[1];
     final boolean[] processed = new boolean[1];
-    final TextView[] buttons = new TextView[2];
-    PopupLayout sheet = VgSheets.showSheet(context, popupLayout -> {
-      Context ctx = context.context();
-      LinearLayout content = VgSheets.newContent(ctx);
-
-      AvatarView avatarView = new AvatarView(ctx);
-      avatarView.setUser(tdlib, request.botUserId, false);
-      content.addView(avatarView, VgSheets.centered(Screen.dp(80f), 12f, 16f));
-
-      TextView titleView = VgSheets.newTitle(ctx, buildTitle(request));
-      content.addView(titleView, VgSheets.wide(0, 8f));
-
-      int subtitleRes = request.fromApp ? R.string.vg_BotAuthAppSubtitle : request.fromBotButton ? R.string.vg_BotAuthBotSubtitle : R.string.vg_BotAuthSiteSubtitle;
-      TextView subtitleView = VgSheets.newBody(ctx, VgSheets.markdown(Lang.getString(subtitleRes)), true);
-      content.addView(subtitleView, VgSheets.wide(0, 20f));
-
-      if (request.hasDeviceInfo()) {
-        LinearLayout card = VgSheets.newCard(ctx);
-        if (!StringUtils.isEmpty(request.platform) || !StringUtils.isEmpty(request.browser)) {
-          card.addView(VgSheets.newCardRow(ctx, R.drawable.baseline_devices_other_24,
-            StringUtils.isEmpty(request.platform) ? "—" : request.platform,
-            StringUtils.isEmpty(request.browser) ? "—" : request.browser));
-        }
-        if (!StringUtils.isEmpty(request.location) || !StringUtils.isEmpty(request.ipAddress)) {
-          card.addView(VgSheets.newCardRow(ctx, R.drawable.baseline_language_24,
-            StringUtils.isEmpty(request.location) ? "—" : request.location,
-            StringUtils.isEmpty(request.ipAddress) ? "—" : Lang.getString(R.string.vg_BotAuthBasedOnIP, request.ipAddress)));
-        }
-        content.addView(card, VgSheets.wide(0, 6f));
-        TextView info = VgSheets.newCaption(ctx, Lang.getString(R.string.vg_BotAuthInfo), false);
-        info.setPadding(Screen.dp(16f), 0, Screen.dp(16f), 0);
-        content.addView(info, VgSheets.wide(0, 20f));
+    final PopupLayout[] sheet = new PopupLayout[1];
+    final SettingsAdapter[] adapterRef = new SettingsAdapter[1];
+    final Runnable updateButtons = () -> {
+      adapterRef[0].updateValuedSettingById(R.id.btn_vgOAuthLogin);
+      adapterRef[0].updateValuedSettingById(R.id.btn_vgOAuthDecline);
+    };
+    SettingsAdapter adapter = new SettingsAdapter(context, v -> {
+      final int id = v.getId();
+      if (id == R.id.btn_vgOAuthAllowMessages) {
+        request.allowWriteAccess = adapterRef[0].toggleView(v);
+        return;
       }
-
-      if (request.requestWriteAccess) {
-        request.allowWriteAccess = true;
-        FrameLayout switchCard = VgSheets.newSwitchCard(ctx, Lang.getString(R.string.vg_BotAuthAllowMessages), true, isEnabled -> request.allowWriteAccess = isEnabled);
-        content.addView(switchCard, VgSheets.wide(0, 6f));
-        TextView info = VgSheets.newCaption(ctx, Lang.getString(R.string.vg_BotAuthAllowMessagesInfo, tdlib.cache().userName(request.botUserId)), false);
-        info.setPadding(Screen.dp(16f), 0, Screen.dp(16f), 0);
-        content.addView(info, VgSheets.wide(0, 20f));
+      if (processing[0] || sheet[0] == null) {
+        return;
       }
-
-      TextView decline = VgSheets.newDestructiveButton(ctx, Lang.getString(R.string.vg_Decline), v -> {
-        if (processing[0]) {
-          return;
-        }
+      PopupLayout popupLayout = sheet[0];
+      if (id == R.id.btn_vgOAuthDecline) {
         processed[0] = true;
         popupLayout.hideWindow(true);
         if (request.isOauth) {
           decline(request);
         }
-      });
-      TextView login = VgSheets.newFilledButton(ctx, Lang.getString(R.string.vg_BotAuthLogin), v -> {
-        if (processing[0]) {
-          return;
-        }
+      } else if (id == R.id.btn_vgOAuthLogin) {
         if (!request.isOauth) {
           processed[0] = true;
           popupLayout.hideWindow(true);
@@ -340,12 +286,10 @@ public final class OAuthSheet {
         Runnable accept = () -> beforeAccept(context, request, () -> {
           processing[0] = true;
           processed[0] = true;
-          VgSheets.setButtonEnabled(buttons[0], false);
-          VgSheets.setButtonEnabled(buttons[1], false);
+          updateButtons.run();
           accept(context, request, popupLayout, () -> {
             processing[0] = false;
-            VgSheets.setButtonEnabled(buttons[0], true);
-            VgSheets.setButtonEnabled(buttons[1], true);
+            updateButtons.run();
           });
         });
         if (request.requestPhoneNumberAccess) {
@@ -353,15 +297,64 @@ public final class OAuthSheet {
         } else {
           accept.run();
         }
-      });
-      buttons[0] = decline;
-      buttons[1] = login;
-      content.addView(VgSheets.newButtonRow(ctx, decline, login), VgSheets.wide(4f, 0));
-      return content;
-    });
-    if (sheet != null && request.isOauth) {
+      }
+    }, context) {
+      @Override
+      protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
+        view.setAvatar(tdlib, new TdApi.MessageSenderUser(request.botUserId), 80f);
+        int subtitleRes = request.fromApp ? R.string.vg_BotAuthAppSubtitle : request.fromBotButton ? R.string.vg_BotAuthBotSubtitle : R.string.vg_BotAuthSiteSubtitle;
+        TdApi.FormattedText subtitle = TD.toFormattedText(Lang.getString(subtitleRes), false);
+        TD.parseMarkdownWithEntities(subtitle);
+        view.setTexts(tdlib, Lang.getString(R.string.vg_BotAuthTitle, request.displayName()).replace("**", ""), subtitle);
+      }
+
+      @Override
+      protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
+        if (item.getId() == R.id.btn_vgOAuthAllowMessages) {
+          view.getToggler().setRadioEnabled(request.allowWriteAccess, isUpdate);
+        } else {
+          view.setData(item.getStringValue());
+        }
+      }
+
+      @Override
+      protected void setM3Button (ListItem item, M3ButtonView view, boolean isUpdate) {
+        super.setM3Button(item, view, isUpdate);
+        view.setEnabled(!processing[0]);
+      }
+    };
+    adapterRef[0] = adapter;
+    adapter.setSegmented();
+
+    ArrayList<ListItem> items = new ArrayList<>();
+    items.add(new ListItem(ListItem.TYPE_INFO_HEADER));
+    if (request.hasDeviceInfo()) {
+      boolean hasDevice = !StringUtils.isEmpty(request.platform) || !StringUtils.isEmpty(request.browser);
+      if (hasDevice) {
+        items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, 0, R.drawable.baseline_devices_other_24, StringUtils.isEmpty(request.platform) ? "—" : request.platform, false)
+          .setStringValue(StringUtils.isEmpty(request.browser) ? "—" : request.browser));
+      }
+      if (!StringUtils.isEmpty(request.location) || !StringUtils.isEmpty(request.ipAddress)) {
+        if (hasDevice) {
+          items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+        }
+        items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, 0, R.drawable.baseline_language_24, StringUtils.isEmpty(request.location) ? "—" : request.location, false)
+          .setStringValue(StringUtils.isEmpty(request.ipAddress) ? "—" : Lang.getString(R.string.vg_BotAuthBasedOnIP, request.ipAddress)));
+      }
+      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_BotAuthInfo));
+    }
+    if (request.requestWriteAccess) {
+      request.allowWriteAccess = true;
+      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgOAuthAllowMessages, 0, R.string.vg_BotAuthAllowMessages, R.id.btn_vgOAuthAllowMessages, true));
+      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, Lang.getString(R.string.vg_BotAuthAllowMessagesInfo, tdlib.cache().userName(request.botUserId)), false));
+    }
+    items.add(new ListItem(ListItem.TYPE_M3_BUTTON, R.id.btn_vgOAuthLogin, 0, R.string.vg_BotAuthLogin));
+    items.add(new ListItem(ListItem.TYPE_M3_BUTTON, R.id.btn_vgOAuthDecline, 0, R.string.vg_Decline).setIntValue(M3ButtonView.STYLE_TEXT));
+    adapter.setItems(items, false);
+    sheet[0] = M3Sheets.showList(context, adapter);
+    if (sheet[0] != null && request.isOauth) {
       // Closing the sheet without an answer declines the request, as in the official app.
-      sheet.setDismissListener(new PopupLayout.DismissListener() {
+      sheet[0].setDismissListener(new PopupLayout.DismissListener() {
         @Override
         public void onPopupDismissPrepare (PopupLayout popup) {
           if (!processed[0] && !request.handedOff) {
@@ -380,21 +373,19 @@ public final class OAuthSheet {
     TdApi.User self = request.tdlib.myUser();
     String phone = self != null ? Strings.formatPhone(self.phoneNumber) : "";
     String name = request.fromBotButton && !request.fromApp ? request.tdlib.cache().userName(request.botUserId) : request.displayName();
-    DialogLayout dialog = new DialogLayout(context.context(), context, null);
-    dialog.setHeadline(Lang.getString(R.string.vg_BotAuthPhoneNumber));
-    dialog.addMessageView(VgSheets.markdown(Lang.getString(R.string.vg_BotAuthPhoneNumberText, name, phone)));
-    final PopupLayout[] popupLayout = new PopupLayout[1];
-    dialog.addButton(R.id.btn_cancel, Lang.getString(R.string.vg_BotAuthPhoneNumberDeny), v -> {
-      popupLayout[0].hideWindow(true);
-      request.allowPhoneNumberAccess = false;
-      after.run();
-    });
-    dialog.addButton(R.id.btn_done, Lang.getString(R.string.vg_BotAuthPhoneNumberAccept), v -> {
-      popupLayout[0].hideWindow(true);
-      request.allowPhoneNumberAccess = true;
-      after.run();
-    });
-    popupLayout[0] = VgSheets.showDialog(context, dialog);
+    new AlertPopup.Builder(context.context())
+      .setController(context)
+      .setTitle(Lang.getString(R.string.vg_BotAuthPhoneNumber))
+      .setMessage(Strings.buildMarkdown(context, Lang.getString(R.string.vg_BotAuthPhoneNumberText, name, phone)))
+      .setNegativeButton(Lang.getString(R.string.vg_BotAuthPhoneNumberDeny), (dialog, which) -> {
+        request.allowPhoneNumberAccess = false;
+        after.run();
+      })
+      .setPositiveButton(Lang.getString(R.string.vg_BotAuthPhoneNumberAccept), (dialog, which) -> {
+        request.allowPhoneNumberAccess = true;
+        after.run();
+      })
+      .show();
   }
 
   private static void beforeAccept (ViewController<?> context, Request request, Runnable accept) {
@@ -485,58 +476,29 @@ public final class OAuthSheet {
 
   private static void showMatchCodeSheet (ViewController<?> context, Request request, boolean isCancel, CodeCallback onSelected, @Nullable Runnable onCancel) {
     final boolean[] chosen = new boolean[1];
-    PopupLayout popup = VgSheets.showSheet(context, popupLayout -> {
-      Context ctx = context.context();
-      LinearLayout content = VgSheets.newContent(ctx);
-      boolean emoji = isEmojiCodes(request.matchCodes);
-      TextView titleView = VgSheets.newTitle(ctx, Lang.getString(emoji ? R.string.vg_BotAuthSelectEmoji : R.string.vg_BotAuthSelectCode));
-      titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20f);
-      content.addView(titleView, VgSheets.wide(12f, 24f));
-
-      LinearLayout row = new LinearLayout(ctx);
-      row.setOrientation(LinearLayout.HORIZONTAL);
-      row.setGravity(Gravity.CENTER);
-      for (int i = 0; i < request.matchCodes.length; i++) {
-        final String code = request.matchCodes[i];
-        TextView button = new NoScrollTextView(ctx);
-        button.setGravity(Gravity.CENTER);
-        button.setTypeface(Fonts.getRobotoMedium());
-        button.setTextColor(M3.onSurface());
-        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, emoji ? 34f : 22f);
-        button.setSingleLine(true);
-        button.setText(code);
-        android.graphics.drawable.GradientDrawable oval = new android.graphics.drawable.GradientDrawable();
-        oval.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        oval.setColor(M3.surfaceContainerHigh());
-        android.graphics.drawable.GradientDrawable mask = new android.graphics.drawable.GradientDrawable();
-        mask.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        mask.setColor(0xffffffff);
-        button.setBackground(new M3StateLayerDrawable(oval, mask, ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface())));
-        button.setOnClickListener(v -> {
-          if (!chosen[0]) {
-            chosen[0] = true;
-            popupLayout.hideWindow(true);
-            onSelected.onCode(code);
-          }
-        });
-        Views.setClickable(button);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(Screen.dp(72f), Screen.dp(72f));
-        if (i > 0) {
-          params.leftMargin = Screen.dp(20f);
-        }
-        row.addView(button, params);
+    // Telegram X options sheet: the codes, then Cancel (back to the request) or Decline.
+    boolean emoji = isEmojiCodes(request.matchCodes);
+    int count = request.matchCodes.length;
+    int[] ids = new int[count + 1];
+    String[] titles = new String[count + 1];
+    int[] colors = new int[count + 1];
+    for (int i = 0; i < count; i++) {
+      ids[i] = i + 1;
+      titles[i] = request.matchCodes[i];
+      colors[i] = ViewController.OptionColor.NORMAL;
+    }
+    ids[count] = R.id.btn_cancel;
+    titles[count] = Lang.getString(isCancel ? R.string.Cancel : R.string.vg_Decline);
+    colors[count] = isCancel ? ViewController.OptionColor.NORMAL : ViewController.OptionColor.RED;
+    CharSequence info = TextUtils.concat(
+      Lang.getString(emoji ? R.string.vg_BotAuthSelectEmoji : R.string.vg_BotAuthSelectCode), "\n",
+      Strings.buildMarkdown(context, Lang.getString(R.string.vg_BotAuthLoginRequestFrom, request.displayName())));
+    PopupLayout popup = context.showOptions(info, ids, titles, colors, null, (view, id) -> {
+      if (id >= 1 && id <= count && !chosen[0]) {
+        chosen[0] = true;
+        onSelected.onCode(request.matchCodes[id - 1]);
       }
-      content.addView(row, VgSheets.wide(0, 24f));
-
-      SpannableStringBuilder footer = new SpannableStringBuilder(VgSheets.markdown(Lang.getString(R.string.vg_BotAuthLoginRequestFrom, request.displayName())));
-      TextView footerView = VgSheets.newCaption(ctx, footer, true);
-      content.addView(footerView, VgSheets.wide(0, 16f));
-
-      TextView cancel = isCancel ?
-        VgSheets.newTonalButton(ctx, Lang.getString(R.string.Cancel), v -> popupLayout.hideWindow(true)) :
-        VgSheets.newDestructiveButton(ctx, Lang.getString(R.string.vg_Decline), v -> popupLayout.hideWindow(true));
-      content.addView(cancel, VgSheets.buttonParams(0));
-      return content;
+      return true;
     });
     if (popup != null && onCancel != null) {
       popup.setDismissListener(new PopupLayout.DismissListener() {

@@ -18,19 +18,14 @@ package org.thunderdog.challegram.stars;
 
 import android.content.Context;
 import android.text.InputType;
-import android.text.TextUtils;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.recyclerview.widget.RecyclerView;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.R;
@@ -39,18 +34,20 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.M3;
-import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.ListItem;
 import org.thunderdog.challegram.ui.PasswordController;
 import org.thunderdog.challegram.ui.RecyclerViewController;
-import org.thunderdog.challegram.ui.SettingHolder;
 import org.thunderdog.challegram.ui.SettingsAdapter;
 import org.thunderdog.challegram.v.CustomRecyclerView;
-import org.thunderdog.challegram.widget.AvatarView;
-import org.thunderdog.challegram.widget.NoScrollTextView;
-import org.thunderdog.challegram.widget.VgSheets;
+import org.thunderdog.challegram.widget.InfoHeaderView;
+import org.thunderdog.challegram.widget.M3ButtonView;
+import org.thunderdog.challegram.util.DrawModifier;
+import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.util.text.TextColorSets;
+import org.thunderdog.challegram.tool.Paints;
+import android.graphics.Canvas;
 
 import java.util.ArrayList;
 
@@ -126,8 +123,6 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
     return Lang.getString(R.string.vg_PaymentCheckout);
   }
 
-  private static final int VIEW_PRODUCT = 1, VIEW_PRICE = 2;
-
   private SettingsAdapter adapter;
   private TdApi.PaymentFormTypeRegular regular;
 
@@ -142,7 +137,7 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   private boolean termsAccepted;
   private boolean isPaying;
 
-  private TextView payButton;
+  private M3ButtonView payButton;
 
   private boolean hasTerms () {
     return !StringUtils.isEmpty(regular.invoice.termsOfServiceUrl) || !StringUtils.isEmpty(regular.invoice.recurringPaymentTermsOfServiceUrl);
@@ -204,35 +199,24 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
 
     adapter = new SettingsAdapter(this) {
       @Override
-      protected SettingHolder initCustom (ViewGroup parent, int customViewType) {
-        if (customViewType == VIEW_PRODUCT) {
-          return new SettingHolder(newProductView(parent.getContext()));
+      protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
+        TdApi.ProductInfo product = args.form.productInfo;
+        if (!view.setPhoto(tdlib, product != null ? product.photo : null, 88f, 12f)) {
+          if (args.starOption != null) {
+            view.setIcon(new StarDrawable(Screen.dp(88f)), 88f);
+          } else {
+            view.setAvatar(tdlib, new TdApi.MessageSenderUser(args.form.sellerBotUserId), 88f);
+          }
         }
-        if (customViewType == VIEW_PRICE) {
-          return new SettingHolder(newPriceView(parent.getContext()));
-        }
-        return super.initCustom(parent, customViewType);
-      }
-
-      @Override
-      protected void modifyCustom (SettingHolder holder, int position, ListItem item, int customViewType, View view, boolean isUpdate) {
-        if (customViewType == VIEW_PRICE) {
-          PriceLine line = (PriceLine) item.getData();
-          LinearLayout layout = (LinearLayout) view;
-          TextView label = (TextView) layout.getChildAt(0);
-          TextView amount = (TextView) layout.getChildAt(1);
-          label.setText(line.label);
-          amount.setText(line.amount);
-          label.setTypeface(line.isTotal ? Fonts.getRobotoMedium() : Fonts.getRobotoRegular());
-          amount.setTypeface(line.isTotal ? Fonts.getRobotoMedium() : Fonts.getRobotoRegular());
-          label.setTextColor(line.isTotal ? M3.onSurface() : M3.onSurfaceVariant());
-          amount.setTextColor(line.isTotal ? M3.onSurface() : M3.onSurfaceVariant());
-        }
+        view.setTexts(tdlib, product != null ? product.title : "", product != null ? product.description : null);
+        view.setCaption(botName());
       }
 
       @Override
       protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         final int itemId = item.getId();
+        // Rows are recycled between the receipt and the other settings.
+        view.setDrawModifier(item.getData() instanceof PriceLine ? (PriceLine) item.getData() : null);
         if (itemId == R.id.btn_vgPaymentMethod) {
           String title = savedCredentials != null ? savedCredentials.title : newCredentialsTitle != null ? newCredentialsTitle : Lang.getString(R.string.vg_PaymentCheckoutMethodAdd);
           view.setName(title);
@@ -254,19 +238,22 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
         }
       }
     };
-    adapter.setSegmented(ListItem.TYPE_CUSTOM - VIEW_PRODUCT, ListItem.TYPE_CUSTOM - VIEW_PRICE);
+    adapter.setSegmented();
 
     ArrayList<ListItem> items = new ArrayList<>();
-    items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET_SMALL));
-    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    items.add(new ListItem(ListItem.TYPE_CUSTOM - VIEW_PRODUCT, R.id.btn_vgPaymentProduct));
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+    items.add(new ListItem(ListItem.TYPE_INFO_HEADER, R.id.btn_vgPaymentProduct));
 
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    boolean first = true;
     for (TdApi.LabeledPricePart part : regular.invoice.priceParts) {
-      items.add(new ListItem(ListItem.TYPE_CUSTOM - VIEW_PRICE).setData(new PriceLine(part.label, CurrencyUtils.buildAmount(regular.invoice.currency, part.amount), false)));
+      if (!first) {
+        items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      }
+      first = false;
+      items.add(newPriceItem(new PriceLine(part.label, CurrencyUtils.buildAmount(regular.invoice.currency, part.amount), false)));
     }
-    items.add(new ListItem(ListItem.TYPE_CUSTOM - VIEW_PRICE).setData(new PriceLine(Lang.getString(R.string.vg_PaymentTransactionTotal), totalText(), true)));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+    items.add(newPriceItem(new PriceLine(Lang.getString(R.string.vg_PaymentTransactionTotal), totalText(), true)));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
@@ -315,71 +302,47 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
     return str != null ? str : "";
   }
 
-  private static final class PriceLine {
+  private static ListItem newPriceItem (PriceLine line) {
+    return new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgPaymentPrice, 0, line.label, false).setData(line);
+  }
+
+  /**
+   * Line of the receipt: label as the row name, amount drawn at the end of the Telegram X row
+   * (M3 list item: trailing supporting text); the total in bold.
+   */
+  private static final class PriceLine implements DrawModifier {
     final String label, amount;
     final boolean isTotal;
+    private @Nullable Text text;
 
     PriceLine (String label, String amount, boolean isTotal) {
       this.label = label;
       this.amount = amount;
       this.isTotal = isTotal;
     }
-  }
 
-  private View newPriceView (Context context) {
-    LinearLayout row = new LinearLayout(context);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setGravity(Gravity.CENTER_VERTICAL);
-    row.setMinimumHeight(Screen.dp(48f));
-    row.setPadding(Screen.dp(16f), 0, Screen.dp(16f), 0);
-    TextView label = VgSheets.newBody(context, "", false);
-    label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-    row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-    TextView amount = VgSheets.newBody(context, "", false);
-    amount.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-    row.addView(amount, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    row.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    return row;
-  }
-
-  private View newProductView (Context context) {
-    Args args = getArgumentsStrict();
-    LinearLayout row = new LinearLayout(context);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setPadding(Screen.dp(16f), Screen.dp(16f), Screen.dp(16f), Screen.dp(16f));
-    TdApi.ProductInfo product = args.form.productInfo;
-    View photoView = StarsUi.newPhotoView(context, tdlib, product != null ? product.photo : null, 88f, 12f);
-    if (photoView == null) {
-      if (args.starOption != null) {
-        photoView = StarsUi.newStarIcon(context, 88f);
-      } else {
-        AvatarView avatarView = new AvatarView(context);
-        avatarView.setUser(tdlib, args.form.sellerBotUserId, false);
-        photoView = avatarView;
+    private Text text () {
+      if (text == null) {
+        Text.Builder b = new Text.Builder(amount, Screen.currentWidth() / 2, Paints.robotoStyleProvider(16f), isTotal ? TextColorSets.Regular.NORMAL : TextColorSets.Regular.LIGHT).singleLine();
+        if (isTotal) {
+          b.allBold();
+        }
+        text = b.build();
       }
+      return text;
     }
-    row.addView(photoView, new LinearLayout.LayoutParams(Screen.dp(88f), Screen.dp(88f)));
 
-    LinearLayout texts = new LinearLayout(context);
-    texts.setOrientation(LinearLayout.VERTICAL);
-    TextView title = VgSheets.newBody(context, product != null ? product.title : "", false);
-    title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17f);
-    title.setTypeface(Fonts.getRobotoMedium());
-    texts.addView(title);
-    String description = product != null && product.description != null ? product.description.text : "";
-    if (!StringUtils.isEmpty(description)) {
-      TextView descriptionView = VgSheets.newBody(context, description, false);
-      descriptionView.setMaxLines(4);
-      descriptionView.setEllipsize(TextUtils.TruncateAt.END);
-      texts.addView(descriptionView, VgSheets.wide(2f, 0));
+    @Override
+    public int getWidth () {
+      return text().getWidth() + Screen.dp(16f);
     }
-    TextView bot = VgSheets.newCaption(context, botName(), false);
-    texts.addView(bot, VgSheets.wide(6f, 0));
-    LinearLayout.LayoutParams textsParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-    textsParams.leftMargin = Screen.dp(16f);
-    row.addView(texts, textsParams);
-    row.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    return row;
+
+    @Override
+    public void afterDraw (View view, Canvas c) {
+      Text text = text();
+      int x = Lang.rtl() ? Screen.dp(16f) : view.getWidth() - Screen.dp(16f) - text.getWidth();
+      text.draw(c, x, (view.getHeight() - text.getHeight()) / 2);
+    }
   }
 
   // PAY button
@@ -387,13 +350,8 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   @Override
   protected View onCreateView (Context context) {
     FrameLayout wrap = (FrameLayout) super.onCreateView(context);
-    payButton = new NoScrollTextView(context);
-    payButton.setGravity(Gravity.CENTER);
-    payButton.setTypeface(Fonts.getRobotoMedium());
-    payButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-    payButton.setAllCaps(true);
-    payButton.setTextColor(M3.onPrimary());
-    payButton.setBackground(new org.thunderdog.challegram.widget.M3StateLayerDrawable(VgSheets.roundRect(M3.primary(), 28f), VgSheets.roundRect(0xffffffff, 28f), me.vkryl.core.ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onPrimary())));
+    payButton = new M3ButtonView(context, M3ButtonView.STYLE_FILLED, M3ButtonView.SIZE_MEDIUM);
+    payButton.addThemeListeners(this);
     payButton.setOnClickListener(v -> onPayClick());
     FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(56f), Gravity.BOTTOM);
     params.leftMargin = params.rightMargin = Screen.dp(16f);
@@ -418,9 +376,8 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
       return;
     }
     payButton.setText(Lang.getString(R.string.vg_PaymentCheckoutPay, totalText()));
+    // As in the official checkout: active while not paying, a tap tells what's missing (opens the payment method).
     payButton.setEnabled(!isPaying);
-    // As in the official checkout: dimmed until the payment method and the terms are set, a tap tells what's missing.
-    payButton.setAlpha(!isPaying && hasPaymentMethod() && termsAccepted && isOrderInfoComplete() ? 1f : .5f);
   }
 
   private void onPayClick () {

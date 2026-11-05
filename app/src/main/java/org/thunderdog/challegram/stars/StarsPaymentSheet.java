@@ -16,13 +16,6 @@
  */
 package org.thunderdog.challegram.stars;
 
-import android.content.Context;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -33,11 +26,16 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
-import org.thunderdog.challegram.tool.Fonts;
-import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
-import org.thunderdog.challegram.widget.AvatarView;
-import org.thunderdog.challegram.widget.VgSheets;
+import org.thunderdog.challegram.component.base.SettingView;
+import org.thunderdog.challegram.ui.ListItem;
+import org.thunderdog.challegram.ui.SettingsAdapter;
+import org.thunderdog.challegram.widget.InfoHeaderView;
+import org.thunderdog.challegram.widget.M3ButtonView;
+import org.thunderdog.challegram.widget.M3Sheets;
+import org.thunderdog.challegram.widget.PopupLayout;
+
+import java.util.ArrayList;
 
 import me.vkryl.core.StringUtils;
 
@@ -90,89 +88,79 @@ public final class StarsPaymentSheet {
     final String botName = form.sellerBotUserId != 0 ? tdlib.cache().userName(form.sellerBotUserId) : "";
     final String productTitle = form.productInfo != null ? form.productInfo.title : "";
     final boolean[] paying = new boolean[1];
-    VgSheets.showSheet(context, popupLayout -> {
-      Context ctx = context.context();
-      LinearLayout content = VgSheets.newContent(ctx);
-
-      // Balance (top right, as the balance cloud of the official app)
-      LinearLayout balance = new LinearLayout(ctx);
-      balance.setOrientation(LinearLayout.VERTICAL);
-      balance.setGravity(Gravity.END);
-      TextView balanceAmount = VgSheets.newBody(ctx, StarsUi.ownBalance(tdlib), false);
-      balanceAmount.setTypeface(Fonts.getRobotoMedium());
-      balanceAmount.setGravity(Gravity.END);
-      balance.addView(balanceAmount);
-      TextView balanceLabel = VgSheets.newCaption(ctx, Lang.getString(R.string.vg_StarsBalance), false);
-      balanceLabel.setGravity(Gravity.END);
-      balance.addView(balanceLabel);
-      LinearLayout.LayoutParams balanceParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-      balanceParams.gravity = Gravity.END;
-      content.addView(balance, balanceParams);
-
-      // Product photo or the bot
-      FrameLayout imageWrap = new FrameLayout(ctx);
-      View photoView = StarsUi.newPhotoView(ctx, tdlib, form.productInfo != null ? form.productInfo.photo : null, 96f, 16f);
-      if (photoView != null) {
-        imageWrap.addView(photoView, new FrameLayout.LayoutParams(Screen.dp(96f), Screen.dp(96f)));
-      } else {
-        AvatarView avatarView = new AvatarView(ctx);
-        avatarView.setUser(tdlib, form.sellerBotUserId, false);
-        imageWrap.addView(avatarView, new FrameLayout.LayoutParams(Screen.dp(96f), Screen.dp(96f)));
+    final PopupLayout[] popup = new PopupLayout[1];
+    final SettingsAdapter[] adapterRef = new SettingsAdapter[1];
+    SettingsAdapter adapter = new SettingsAdapter(context, v -> {
+      if (v.getId() != R.id.btn_vgStarsPay || paying[0]) {
+        return;
       }
-      View badge = StarsUi.newStarIcon(ctx, 28f);
-      FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(Screen.dp(28f), Screen.dp(28f), Gravity.BOTTOM | Gravity.END);
-      imageWrap.addView(badge, badgeParams);
-      content.addView(imageWrap, VgSheets.centered(Screen.dp(100f), 0, 16f));
-
-      TextView titleView = VgSheets.newTitle(ctx, Lang.getString(isSubscription ? R.string.vg_StarsConfirmSubscriptionTitle : R.string.vg_StarsConfirmPurchaseTitle));
-      content.addView(titleView, VgSheets.wide(0, 8f));
-
-      CharSequence text = VgSheets.markdown(isSubscription ?
-        Lang.plural(R.string.vg_StarsConfirmSubscriptionText, starCount, productTitle, botName) :
-        Lang.plural(R.string.vg_StarsConfirmPurchaseText, starCount, productTitle, botName));
-      content.addView(VgSheets.newBody(ctx, text, true), VgSheets.wide(0, 20f));
-
-      CharSequence label = Stars.withIcons(isSubscription ?
-        Lang.plural(R.string.vg_StarsConfirmSubscriptionButton, starCount) :
-        Lang.plural(R.string.vg_StarsConfirmPurchaseButton, starCount));
-      TextView button = VgSheets.newFilledButton(ctx, label, v -> {
-        if (paying[0]) {
+      StarsUi.confirmAgain(context, Lang.getString(R.string.vg_StarsConfirmAgainPay, Stars.format(starCount), botName), Lang.getString(R.string.vg_StarsPay), confirmed -> {
+        if (!confirmed || paying[0]) {
           return;
         }
-        StarsUi.confirmAgain(context, Lang.getString(R.string.vg_StarsConfirmAgainPay, Stars.format(starCount), botName), Lang.getString(R.string.vg_StarsPay), confirmed -> {
-          if (!confirmed || paying[0]) {
+        if (!StarsUi.checkBalance(context, tdlib, starCount, botName, false)) {
+          if (popup[0] != null) {
+            popup[0].hideWindow(true);
+          }
+          return;
+        }
+        paying[0] = true;
+        adapterRef[0].updateValuedSettingById(R.id.btn_vgStarsPay);
+        tdlib.send(new TdApi.SendPaymentForm(invoice, form.id, "", "", null, 0), (result, error) -> UI.post(() -> {
+          paying[0] = false;
+          if (popup[0] != null) {
+            popup[0].hideWindow(true);
+          }
+          if (error != null) {
+            UI.showError(error);
             return;
           }
-          if (!StarsUi.checkBalance(context, tdlib, starCount, botName, false)) {
-            popupLayout.hideWindow(true);
-            return;
+          if (!StringUtils.isEmpty(result.verificationUrl)) {
+            StarsUi.openUrl(context, result.verificationUrl);
           }
-          paying[0] = true;
-          VgSheets.setButtonEnabled(v, false);
-          tdlib.send(new TdApi.SendPaymentForm(invoice, form.id, "", "", null, 0), (result, error) -> UI.post(() -> {
-            paying[0] = false;
-            popupLayout.hideWindow(true);
-            if (error != null) {
-              UI.showError(error);
-              return;
-            }
-            if (!StringUtils.isEmpty(result.verificationUrl)) {
-              StarsUi.openUrl(context, result.verificationUrl);
-            }
-            showPurchaseCompleted(productTitle, botName, starCount, isSubscription);
-            if (onPaid != null) {
-              onPaid.run();
-            }
-          }));
-        });
+          showPurchaseCompleted(productTitle, botName, starCount, isSubscription);
+          if (onPaid != null) {
+            onPaid.run();
+          }
+        }));
       });
-      content.addView(button, VgSheets.buttonParams(0));
+    }, context) {
+      @Override
+      protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
+        if (!view.setPhoto(tdlib, form.productInfo != null ? form.productInfo.photo : null, 96f, 16f)) {
+          view.setAvatar(tdlib, new TdApi.MessageSenderUser(form.sellerBotUserId), 96f);
+        }
+        view.setTexts(tdlib,
+          Lang.getString(isSubscription ? R.string.vg_StarsConfirmSubscriptionTitle : R.string.vg_StarsConfirmPurchaseTitle),
+          StarsUi.markdownText(isSubscription ?
+            Lang.plural(R.string.vg_StarsConfirmSubscriptionText, starCount, productTitle, botName) :
+            Lang.plural(R.string.vg_StarsConfirmPurchaseText, starCount, productTitle, botName)));
+      }
 
-      TextView terms = VgSheets.newCaption(ctx, StarsUi.linkified(context, Lang.getString(isSubscription ? R.string.vg_StarsConfirmSubscriptionTOS : R.string.vg_StarsConfirmPurchaseTOS), StarsUi.TERMS_URL), true);
-      VgSheets.setLinksClickable(terms);
-      content.addView(terms, VgSheets.wide(12f, 0));
-      return content;
-    });
+      @Override
+      protected void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
+        if (item.getId() == R.id.btn_vgStarsBalance) {
+          view.setData(StarsUi.ownBalance(tdlib));
+        }
+      }
+
+      @Override
+      protected void setM3Button (ListItem item, M3ButtonView view, boolean isUpdate) {
+        super.setM3Button(item, view, isUpdate);
+        view.setEnabled(!paying[0]);
+      }
+    };
+    adapterRef[0] = adapter;
+    adapter.setSegmented();
+    ArrayList<ListItem> items = new ArrayList<>();
+    items.add(new ListItem(ListItem.TYPE_INFO_HEADER));
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStarsBalance, R.drawable.baseline_account_balance_wallet_24, R.string.vg_StarsBalance));
+    items.add(new ListItem(ListItem.TYPE_M3_BUTTON, R.id.btn_vgStarsPay, 0, isSubscription ?
+      Lang.plural(R.string.vg_StarsConfirmSubscriptionButton, starCount) :
+      Lang.plural(R.string.vg_StarsConfirmPurchaseButton, starCount), false));
+    items.add(new ListItem(ListItem.TYPE_DESCRIPTION_CENTERED, 0, 0, StarsUi.linkified(context, Lang.getString(isSubscription ? R.string.vg_StarsConfirmSubscriptionTOS : R.string.vg_StarsConfirmPurchaseTOS), StarsUi.TERMS_URL), false));
+    adapter.setItems(items, false);
+    popup[0] = M3Sheets.showList(context, adapter);
   }
 
   private static void showPurchaseCompleted (String productTitle, String botName, long starCount, boolean isSubscription) {

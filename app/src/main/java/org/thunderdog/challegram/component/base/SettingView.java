@@ -364,6 +364,12 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
     }
   }
 
+  /** Vibegram X: a drawn icon in the leading slot (drawn as is, without the icon tint). */
+  public void setIconDrawable (@Nullable Drawable drawable) {
+    lastIconResource = 0;
+    setIconInternal(drawable);
+  }
+
   public void setIcon (Bitmap bitmap) {
     lastIconResource = 0;
     setIconInternal(Drawables.bitmapDrawable(getContext(), bitmap));
