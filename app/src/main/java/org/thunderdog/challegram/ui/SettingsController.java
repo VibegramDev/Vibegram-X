@@ -469,6 +469,9 @@ public class SettingsController extends ViewController<Void> implements
           view.setData(Lang.getString(R.string.ViewSourceCodeChangesSince, Lang.codeCreator(), previousVersionName, previousBuildInfo.getCommit()));
         } else if (itemId == R.id.btn_copyDebug) {
           view.setData(R.string.CopyReportDataInfo);
+        } else if (itemId == R.id.btn_vgStars) {
+          TdApi.StarAmount stars = tdlib.ownedStarCount();
+          view.setData(stars != null ? org.thunderdog.challegram.stars.Stars.withIcons(org.thunderdog.challegram.stars.Stars.amount(stars)) : Lang.getString(R.string.vg_StarsBalance));
         } else if (itemId == R.id.btn_devices) {
           if (sessions == null) {
             view.setData(R.string.LoadingInformation);
@@ -586,6 +589,9 @@ public class SettingsController extends ViewController<Void> implements
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgAccount, R.drawable.baseline_account_circle_24, R.string.vg_Account));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_devices, R.drawable.baseline_devices_other_24, R.string.Devices));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
+    // «My Stars» of the official app: balance, purchases and transactions.
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStars, R.drawable.baseline_stars_24, R.string.vg_TelegramStars));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
 
     checkErrors(false);
@@ -864,6 +870,15 @@ public class SettingsController extends ViewController<Void> implements
       }
       for (TdApi.SuggestedAction action : removedActions) {
         removeSuggestionFromList(action);
+      }
+    });
+  }
+
+  @Override
+  public void onOwnedStarCountChanged (TdApi.StarAmount starAmount) {
+    runOnUiThreadOptional(() -> {
+      if (adapter != null) {
+        adapter.updateValuedSettingById(R.id.btn_vgStars);
       }
     });
   }
@@ -1173,6 +1188,8 @@ public class SettingsController extends ViewController<Void> implements
       navigateTo(new SettingsLanguageController(context, tdlib));
     } else if (viewId == R.id.btn_notificationSettings) {
       navigateTo(new SettingsNotificationController(context, tdlib));
+    } else if (viewId == R.id.btn_vgStars) {
+      navigateTo(new org.thunderdog.challegram.stars.StarsController(context, tdlib));
     } else if (viewId == R.id.btn_devices) {
       navigateTo(new SettingsSessionsController(context, tdlib));
     } else if (viewId == R.id.btn_checkUpdates) {

@@ -4309,6 +4309,11 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_botEdit, R.drawable.dotvhs_baseline_settings_24, R.string.EditBotSettings)
             .setData(userFull.botInfo.editSettingsLink));
         }
+        if (userFull.botInfo.canGetRevenueStatistics) {
+          // «Balance» of the official bot editor: Stars earned by the bot, withdrawal and transactions.
+          items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+          items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgBotStars, R.drawable.baseline_stars_24, R.string.vg_BotBalance));
+        }
       }
       added = true;
     }
@@ -5197,6 +5202,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       editUsername();
     } else if (viewId == R.id.btn_botDescription) {
       editDescription(true);
+    } else if (viewId == R.id.btn_vgBotStars) {
+      org.thunderdog.challegram.stars.BotStarsController.open(this, user.id);
     } else if (viewId == R.id.btn_botEdit) {
       TdApi.InternalLinkType internalLinkType = (TdApi.InternalLinkType) ((ListItem) v.getTag()).getData();
       tdlib.ui().openInternalLinkType(this, null, internalLinkType, new TdlibUi.UrlOpenParameters().ignoreExplicitUserInteraction(true), null);

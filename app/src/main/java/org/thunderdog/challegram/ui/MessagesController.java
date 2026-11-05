@@ -299,6 +299,7 @@ import me.vkryl.core.lambda.Future;
 import me.vkryl.core.lambda.RunnableBool;
 import me.vkryl.core.lambda.RunnableData;
 import tgx.td.ChatId;
+import org.thunderdog.challegram.stars.PaidMessages;
 import tgx.td.MessageId;
 import tgx.td.Td;
 import tgx.td.TdConstants;
@@ -2338,7 +2339,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
         }
       };
 
-      UI.post(clearInputRunnable, MathUtils.clamp(50 * selectedItems.size(), 200, 500));
+      if (!PaidMessages.mayBePaid(tdlib, chatId)) {
+        // Not while the payment for the messages may still be asked.
+        UI.post(clearInputRunnable, MathUtils.clamp(50 * selectedItems.size(), 200, 500));
+      }
 
       final List<TdApi.Function<?>> musicFunctions = getSendMusicFunctions(sendButton, musicEntries, true, !musicEntries.isEmpty(), caption, sendOptions);
       sendFiles(sendButton, files, true, true, !musicEntries.isEmpty() && !files.isEmpty() ? null : caption, sendOptions, filesFunctions -> {
@@ -2353,7 +2357,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
             clearInputAfterSend(true, true, replyTo, true);
           }
           UI.cancel(clearInputRunnable);
-        }));
+        }), () -> {
+          // Payment declined: the files and the caption stay in the input.
+          UI.cancel(clearInputRunnable);
+          if (!isTimeout[0] && getChatId() == chatId) {
+            clearInputAfterSend(false, true, replyTo, true);
+          }
+        });
       });
     } else {
       sendText(applyMarkdown, sendOptions);
@@ -4222,7 +4232,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       for (int i = 0; i < messageIds.length; i++) {
         messageIds[i] = selectedMessageIds.keyAt(i);
       }
-      tdlib.resendMessages(getChatId(), messageIds);
+      PaidMessages.resend(this, tdlib, getChatId(), messageIds);
     }
   }
 
@@ -6176,7 +6186,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         showCallOptions(contact.phoneNumber, contact.userId);
         return true;
       } else if (id == R.id.btn_messageResend) {
-        tdlib.resendMessages(selectedMessage.getChatId(), selectedMessage.getIds());
+        PaidMessages.resend(this, tdlib, selectedMessage.getChatId(), selectedMessage.getIds());
         return true;
       } else if (id == R.id.btn_messageSendNow) {
         cancelSheduledKeyboardOpeningAndHideAllKeyboards();
@@ -8792,6 +8802,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (!StringUtils.isEmpty(customCaptionPlaceholder)) {
       return customCaptionPlaceholder;
     }
+    if (chat != null && !isEditingMessage()) {
+      // «Message for ⭐10» in chats that charge Stars for messages, as in the official app.
+      return PaidMessages.inputPlaceholder(tdlib, chat.id);
+    }
     return null;
   }
 
@@ -9191,6 +9205,14 @@ public class MessagesController extends ViewController<MessagesController.Argume
           throw Td.unsupported(actionBar);
         }
       }
+    }
+    long paidUserId = tdlib.chatUserId(chatId);
+    TdApi.UserFullInfo paidUserFull = paidUserId != 0 && !tdlib.isSelfUserId(paidUserId) ? tdlib.cache().userFull(paidUserId) : null;
+    if (paidUserFull != null && paidUserFull.incomingPaidMessageStarCount > 0) {
+      // The user pays Stars for messages to the current user: «Remove Fee», as in the official app.
+      items.add(new TopBarView.Item(R.id.btn_vgRemoveFee, R.string.vg_StarsRemoveFeeShort, v ->
+        PaidMessages.showRemoveFee(this, tdlib, paidUserId)
+      ).setNoDismiss());
     }
     if (ChatId.isSecret(chatId)) {
       TdApi.SecretChat secretChat = tdlib.chatToSecretChat(chatId);
@@ -10868,9 +10890,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         clearInputAfterSend(success, allowReply, replyInfo, allowLinkPreview);
       });
     } else {
-      for (TdApi.Function<?> function : functions) {
-        tdlib.client().send(function, tdlib.messageHandler());
-      }
+      PaidMessages.send(this, tdlib, functions);
     }
   }
 
@@ -10895,6 +10915,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private void executeSendMessageFunctions (List<TdApi.Function<?>> functions, List<TdApi.Message> sentMessages, final boolean isSchedule, RunnableBool onDone) {
+    executeSendMessageFunctions(functions, sentMessages, isSchedule, onDone, () -> onDone.runWithBool(false));
+  }
+
+  /** Chats that charge Stars for messages: the payment is confirmed before anything is sent ({@link PaidMessages}). */
+  private void executeSendMessageFunctions (List<TdApi.Function<?>> functions, List<TdApi.Message> sentMessages, final boolean isSchedule, RunnableBool onDone, Runnable onDeclined) {
+    PaidMessages.confirm(this, tdlib, functions, confirmed -> {
+      if (confirmed) {
+        executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
+      } else {
+        onDeclined.run();
+      }
+    });
+  }
+
+  private void executeSendMessageFunctionsImpl (List<TdApi.Function<?>> functions, List<TdApi.Message> sentMessages, final boolean isSchedule, RunnableBool onDone) {
     final int expectedCount = functions.size();
     final int[] sentFunctionsCount = new int[1];
 
@@ -11117,9 +11152,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (functions == null) {
       return;
     }
-    for (TdApi.Function<?> function : functions) {
-      tdlib.client().send(function, tdlib.messageHandler());
-    }
+    PaidMessages.send(this, tdlib, functions);
   }
 
   private List<TdApi.Function<?>> getSendMusicFunctions (View view, List<MediaBottomFilesController.MusicEntry> musicFiles, boolean needGroupMedia, boolean allowReply, @Nullable TdApi.FormattedText lastFileCaption, TdApi.MessageSendOptions initialSendOptions) {
@@ -11344,9 +11377,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (functions == null) {
         return;
       }
-      for (TdApi.Function<?> function : functions) {
-        tdlib.client().send(function, tdlib.messageHandler());
-      }
+      PaidMessages.send(this, tdlib, functions);
     });
   }
 
@@ -11548,9 +11579,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         i++;
       }
       List<TdApi.Function<?>> functions = TD.toFunctions(chatId, topicId, replyTo, finalSendOptions, inputContent, needGroupMedia);
-      for (TdApi.Function<?> function : functions) {
-        tdlib.client().send(function, tdlib.messageHandler());
-      }
+      PaidMessages.send(this, tdlib, functions);
     });
 
     return true;
@@ -12156,6 +12185,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
     tdlib.ui().post(() -> {
       if (chat != null && TD.getUserId(chat) == userId) {
         updateBottomBar(true);
+        updateInputHint();
+        if (needActionBar()) {
+          checkActionBar();
+        }
       }
     });
   }
@@ -12212,6 +12245,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         if (messageSenderButton != null) {
           messageSenderButton.setInSlowMode(tdlib.inSlowMode(getChatId()));
         }
+        updateInputHint();
       }
     });
   }

@@ -1,0 +1,121 @@
+/*
+ * This file is a part of Vibegram X, a fork of Telegram X
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.thunderdog.challegram.stars;
+
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+
+import androidx.annotation.Nullable;
+
+import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.core.Lang;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+/** Formatting of Telegram Star amounts. */
+public final class Stars {
+  private Stars () { }
+
+  /** Currency code of invoices paid in Telegram Stars. */
+  public static final String CURRENCY = "XTR";
+  /** The star in string resources; {@link #withIcons} draws it as the gold star in TextViews. */
+  public static final String STAR = "⭐";
+
+  public static boolean isStarCurrency (@Nullable String currency) {
+    return CURRENCY.equals(currency);
+  }
+
+  public static String format (long count) {
+    return Lang.formatNumber(count);
+  }
+
+  /** 12, 1 234, 0.5: a fractional part only when there are nanostars. */
+  public static String format (@Nullable TdApi.StarAmount amount) {
+    if (amount == null) {
+      return format(0);
+    }
+    if (amount.nanostarCount == 0) {
+      return format(amount.starCount);
+    }
+    BigDecimal value = BigDecimal.valueOf(amount.starCount).add(BigDecimal.valueOf(amount.nanostarCount, 9));
+    value = value.setScale(2, RoundingMode.DOWN).stripTrailingZeros();
+    return Lang.formatNumber(value.doubleValue());
+  }
+
+  public static boolean isPositive (@Nullable TdApi.StarAmount amount) {
+    return amount != null && (amount.starCount > 0 || (amount.starCount == 0 && amount.nanostarCount > 0));
+  }
+
+  public static boolean isNegative (@Nullable TdApi.StarAmount amount) {
+    return amount != null && (amount.starCount < 0 || (amount.starCount == 0 && amount.nanostarCount < 0));
+  }
+
+  public static TdApi.StarAmount abs (TdApi.StarAmount amount) {
+    return isNegative(amount) ? new TdApi.StarAmount(-amount.starCount, -amount.nanostarCount) : amount;
+  }
+
+  /** «⭐ 1 234» */
+  public static String amount (long count) {
+    return STAR + " " + format(count);
+  }
+
+  public static String amount (TdApi.StarAmount amount) {
+    return STAR + " " + format(amount);
+  }
+
+  /** Signed amount of a transaction: «+⭐ 50» / «−⭐ 50». */
+  public static String signedAmount (TdApi.StarAmount amount) {
+    boolean negative = isNegative(amount);
+    return (negative ? "−" : "+") + format(abs(amount)) + " " + STAR;
+  }
+
+  /** Replaces every {@link #STAR} (with or without the emoji variation selector) by the gold star span. */
+  public static CharSequence withIcons (@Nullable CharSequence text) {
+    return withIcons(text, 1.05f);
+  }
+
+  public static CharSequence withIcons (@Nullable CharSequence text, float scale) {
+    if (text == null) {
+      return null;
+    }
+    SpannableStringBuilder b = null;
+    String str = text.toString();
+    int index = str.indexOf(STAR);
+    while (index != -1) {
+      int end = index + STAR.length();
+      if (end < str.length() && str.charAt(end) == '\uFE0F') {
+        end++;
+      }
+      if (b == null) {
+        b = text instanceof SpannableStringBuilder ? (SpannableStringBuilder) text : new SpannableStringBuilder(text);
+      }
+      b.setSpan(new StarSpan(scale), index, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+      index = str.indexOf(STAR, end);
+    }
+    return b != null ? b : text;
+  }
+
+  /** Approximate price in US dollars of {@code starCount} stars; the rate is USD cents per 1000 stars. */
+  public static String usd (long starCount, long thousandStarToUsdRate) {
+    if (thousandStarToUsdRate <= 0) {
+      return null;
+    }
+    double usd = starCount * (double) thousandStarToUsdRate / 1000.0 / 100.0;
+    return "≈$" + BigDecimal.valueOf(usd).setScale(2, RoundingMode.HALF_UP).toPlainString();
+  }
+}

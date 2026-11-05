@@ -6026,4 +6026,52 @@
   <string name="RestrictedContent">Restricted Content</string>
   <string name="SensitiveContent">Sensitive Content</string>
 
+  <!-- Telegram Stars and paid messages: plural strings (Vibegram X, texts of the official Android app; the rest is in vibegram_stars.xml) -->
+  <string name="vg_BotStarsButtonWithdrawShort_one">Withdraw ⭐️%1$s</string>
+  <string name="vg_BotStarsButtonWithdrawShort_other">Withdraw ⭐️%1$s</string>
+  <string name="vg_BotStarsWithdrawInfo_one">You can withdraw Stars using Fragment, or use Stars to advertise your bot. The minimum withdrawal is %1$s Star.</string>
+  <string name="vg_BotStarsWithdrawInfo_other">You can withdraw Stars using Fragment, or use Stars to advertise your bot. The minimum withdrawal is %1$s Stars.</string>
+  <string name="vg_BotStarsWithdrawMinLimit_one">You cannot withdraw less than **%1$s stars.**</string>
+  <string name="vg_BotStarsWithdrawMinLimit_other">You cannot withdraw less than **%1$s stars.**</string>
+  <string name="vg_SelfStarsWithdrawInfo_one">You can withdraw from %1$s Star using Fragment.</string>
+  <string name="vg_SelfStarsWithdrawInfo_other">You can withdraw from %1$s Stars using Fragment.</string>
+  <string name="vg_StarsAcquiredInfo_one">**%1$s Stars** added to your balance.</string>
+  <string name="vg_StarsAcquiredInfo_other">**%1$s Stars** added to your balance.</string>
+  <string name="vg_StarsConfirmPurchaseButton_one">Confirm and Pay ⭐️ %1$s Star</string>
+  <string name="vg_StarsConfirmPurchaseButton_other">Confirm and Pay ⭐️ %1$s Stars</string>
+  <string name="vg_StarsConfirmPurchaseText_one">Do you want to buy **%2$s** in **%3$s** for **%1$s** star?</string>
+  <string name="vg_StarsConfirmPurchaseText_other">Do you want to buy **%2$s** in **%3$s** for **%1$s** stars?</string>
+  <string name="vg_StarsConfirmSubscriptionButton_one">Subscribe for ⭐️ %1$s / month</string>
+  <string name="vg_StarsConfirmSubscriptionButton_other">Subscribe for ⭐️ %1$s / month</string>
+  <string name="vg_StarsConfirmSubscriptionText_one">Do you want to subscribe to **%2$s** in **%3$s** for **%1$s** star per month?</string>
+  <string name="vg_StarsConfirmSubscriptionText_other">Do you want to subscribe to **%2$s** in **%3$s** for **%1$s** stars per month?</string>
+  <string name="vg_StarsCount_one">%1$s Star</string>
+  <string name="vg_StarsCount_other">%1$s Stars</string>
+  <string name="vg_StarsNeededTitle_one">%1$s Star Needed</string>
+  <string name="vg_StarsNeededTitle_other">%1$s Stars Needed</string>
+  <string name="vg_StarsPaidMessageCharges_one">**%2$s** charges **%1$s** Star per message.</string>
+  <string name="vg_StarsPaidMessageCharges_other">**%2$s** charges **%1$s** Stars per message.</string>
+  <string name="vg_StarsPaidMessageChats_one">%1$s chat</string>
+  <string name="vg_StarsPaidMessageChats_other">%1$s chats</string>
+  <string name="vg_StarsPaidMessageCount_one">to send %1$s message?</string>
+  <string name="vg_StarsPaidMessageCount_other">to send %1$s messages?</string>
+  <string name="vg_StarsPaidMessageMultiChats_one">You selected **%1$s** chat that charge Stars for messages.</string>
+  <string name="vg_StarsPaidMessageMultiChats_other">You selected **%1$s** chats that charge Stars for messages.</string>
+  <string name="vg_StarsPaidMessagePayButton_one">Pay for %1$s Message</string>
+  <string name="vg_StarsPaidMessagePayButton_other">Pay for %1$s Messages</string>
+  <string name="vg_StarsPaidMessagePayMany_one">Would you like to pay **%1$s** Star</string>
+  <string name="vg_StarsPaidMessagePayMany_other">Would you like to pay **%1$s** Stars</string>
+  <string name="vg_StarsPaidMessagePayOne_one">Would you like to pay **%1$s** Star to send one message?</string>
+  <string name="vg_StarsPaidMessagePayOne_other">Would you like to pay **%1$s** Stars to send one message?</string>
+  <string name="vg_StarsPurchaseCompletedInfo_one">You acquired "**%2$s**" in **%3$s** for **%1$s Stars**.</string>
+  <string name="vg_StarsPurchaseCompletedInfo_other">You acquired "**%2$s**" in **%3$s** for **%1$s Stars**.</string>
+  <string name="vg_StarsRemoveFeeRefund_one">Refund already paid %1$s Star</string>
+  <string name="vg_StarsRemoveFeeRefund_other">Refund already paid %1$s Stars</string>
+  <string name="vg_StarsSubscriptionCompletedText_one">%1$s Star transferred to **%2$s**.</string>
+  <string name="vg_StarsSubscriptionCompletedText_other">%1$s Stars transferred to **%2$s**.</string>
+  <string name="vg_StarsTransactionMessageFee_one">Fee for %1$s Message</string>
+  <string name="vg_StarsTransactionMessageFee_other">Fee for %1$s Messages</string>
+  <string name="vg_StarsTransactionMessages_one">%1$s message</string>
+  <string name="vg_StarsTransactionMessages_other">%1$s messages</string>
+
 </resources>

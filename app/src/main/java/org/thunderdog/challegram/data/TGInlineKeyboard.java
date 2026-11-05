@@ -1249,7 +1249,20 @@ public class TGInlineKeyboard {
       }
 
       switch (type.getConstructor()) {
-        case TdApi.InlineKeyboardButtonTypeBuy.CONSTRUCTOR:
+        case TdApi.InlineKeyboardButtonTypeBuy.CONSTRUCTOR: {
+          // «Pay» button of an invoice: the payment sheet in Stars (with its confirmations) or the checkout.
+          makeActive();
+          showProgressDelayed();
+          org.thunderdog.challegram.stars.StarsPaymentSheet.open(context.context.controller(), context.context.tdlib(),
+            new TdApi.InputInvoiceMessage(parent.getChatId(), context.messageId), null,
+            () -> parent.executeOnUiThreadOptional(() -> {
+              if (currentContextId == contextId) {
+                makeInactive();
+              }
+            })
+          );
+          break;
+        }
         case TdApi.InlineKeyboardButtonTypeCopyText.CONSTRUCTOR:
         case TdApi.InlineKeyboardButtonTypeWebApp.CONSTRUCTOR:
           // TODO

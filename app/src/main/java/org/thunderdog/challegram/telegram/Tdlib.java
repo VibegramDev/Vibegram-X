@@ -5047,7 +5047,8 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   public void sendMessage (long chatId, @Nullable TdApi.MessageTopic topicId, @Nullable TdApi.InputMessageReplyTo replyTo, TdApi.MessageSendOptions options, TdApi.InputMessageContent inputMessageContent, @Nullable RunnableData<TdApi.Message> after) {
-    client().send(new TdApi.SendMessage(chatId, topicId, replyTo, options, null, inputMessageContent), after != null ? result -> {
+    // Chats that charge Stars for messages: the user confirms the payment first (PaidMessages).
+    org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.SendMessage(chatId, topicId, replyTo, options, null, inputMessageContent), after != null ? result -> {
       messageHandler.onResult(result);
       after.runWithData(result instanceof TdApi.Message ? (TdApi.Message) result : null);
     } : messageHandler());
@@ -5370,11 +5371,11 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   public void forwardMessage (long chatId, @Nullable TdApi.MessageTopic topicId, long fromChatId, long messageId, TdApi.MessageSendOptions options) {
-    client().send(new TdApi.ForwardMessages(chatId, topicId, fromChatId, new long[] {messageId}, options, false, false), messageHandler());
+    org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.ForwardMessages(chatId, topicId, fromChatId, new long[] {messageId}, options, false, false), messageHandler());
   }
 
   public void sendInlineQueryResult (long chatId, @Nullable TdApi.MessageTopic topicId, @Nullable TdApi.InputMessageReplyTo replyTo, TdApi.MessageSendOptions options, long queryId, String resultId) {
-    client().send(new TdApi.SendInlineQueryResultMessage(chatId, topicId, replyTo, options, queryId, resultId, false), messageHandler());
+    org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.SendInlineQueryResultMessage(chatId, topicId, replyTo, options, queryId, resultId, false), messageHandler());
   }
 
   public void sendBotStartMessage (long botUserId, long chatId, String parameter) {
@@ -9903,9 +9904,17 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     // TODO ?
   }
 
+  private volatile @Nullable TdApi.StarAmount ownedStarCount;
+
+  /** Telegram Stars owned by the current user; null until TDLib reports them (updateOwnedStarCount). */
+  public @Nullable TdApi.StarAmount ownedStarCount () {
+    return ownedStarCount;
+  }
+
   @TdlibThread
   private void updateOwnedStarCount (TdApi.UpdateOwnedStarCount update) {
-    // TODO(stars)
+    this.ownedStarCount = update.starAmount;
+    listeners.updateOwnedStarCount(update);
   }
 
   @TdlibThread

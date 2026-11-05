@@ -3635,6 +3635,33 @@ public class TdlibUi extends Handler {
         });
         break;
       }
+      case TdApi.InternalLinkTypeInvoice.CONSTRUCTOR: {
+        // Invoice links of bots (t.me/$name): the payment sheet in Stars or the checkout.
+        ViewController<?> c = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
+        if (c != null && !c.isDestroyed()) {
+          org.thunderdog.challegram.stars.StarsPaymentSheet.open(c, tdlib, new TdApi.InputInvoiceName(((TdApi.InternalLinkTypeInvoice) linkType).invoiceName), null, null);
+        } else {
+          unsupported.run();
+        }
+        break;
+      }
+      case TdApi.InternalLinkTypeStarPurchase.CONSTRUCTOR: {
+        // «Buy Stars» links of bots and mini apps: the packages that cover the needed Stars.
+        TdApi.InternalLinkTypeStarPurchase starPurchase = (TdApi.InternalLinkTypeStarPurchase) linkType;
+        ViewController<?> c = context instanceof ViewController<?> ? (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
+        if (c != null && !c.isDestroyed()) {
+          TdApi.StarAmount balance = tdlib.ownedStarCount();
+          long missing = starPurchase.starCount - (balance != null ? balance.starCount : 0);
+          if (missing > 0) {
+            org.thunderdog.challegram.stars.StarsBuySheet.showNeeded(c, tdlib, missing, null, false, null);
+          } else {
+            org.thunderdog.challegram.stars.StarsBuySheet.show(c, tdlib, null);
+          }
+        } else {
+          unsupported.run();
+        }
+        break;
+      }
       case TdApi.InternalLinkTypeProxy.CONSTRUCTOR: {
         TdApi.Proxy proxy = ((TdApi.InternalLinkTypeProxy) linkType).proxy;
         if (proxy != null) {
@@ -4083,9 +4110,12 @@ public class TdlibUi extends Handler {
               result = new SettingsDataController(context.context(), context.tdlib());
               break;
             }
+            case TdApi.SettingsSectionMyStars.CONSTRUCTOR: {
+              result = new org.thunderdog.challegram.stars.StarsController(context.context(), context.tdlib());
+              break;
+            }
             case TdApi.SettingsSectionQrCode.CONSTRUCTOR:
             case TdApi.SettingsSectionSearch.CONSTRUCTOR:
-            case TdApi.SettingsSectionMyStars.CONSTRUCTOR:
             case TdApi.SettingsSectionMyGrams.CONSTRUCTOR:
             case TdApi.SettingsSectionPowerSaving.CONSTRUCTOR:
             case TdApi.SettingsSectionPremium.CONSTRUCTOR:
@@ -4143,8 +4173,6 @@ public class TdlibUi extends Handler {
       case TdApi.InternalLinkTypeWebApp.CONSTRUCTOR:
       case TdApi.InternalLinkTypeMainWebApp.CONSTRUCTOR:
 
-      case TdApi.InternalLinkTypeInvoice.CONSTRUCTOR:
-
       case TdApi.InternalLinkTypeRestorePurchases.CONSTRUCTOR:
       case TdApi.InternalLinkTypeChatBoost.CONSTRUCTOR:
       case TdApi.InternalLinkTypeGiftCollection.CONSTRUCTOR:
@@ -4167,7 +4195,6 @@ public class TdlibUi extends Handler {
       case TdApi.InternalLinkTypeRequestManagedBot.CONSTRUCTOR:
       case TdApi.InternalLinkTypeSavedMessages.CONSTRUCTOR:
       case TdApi.InternalLinkTypeSearch.CONSTRUCTOR:
-      case TdApi.InternalLinkTypeStarPurchase.CONSTRUCTOR:
       case TdApi.InternalLinkTypeTextCompositionStyle.CONSTRUCTOR:
       case TdApi.InternalLinkTypeTonConnect.CONSTRUCTOR:
       case TdApi.InternalLinkTypeTonWalletTransfer.CONSTRUCTOR: {
