@@ -151,7 +151,9 @@ public class EditText extends android.widget.EditText {
   /**
    * Keyboards (e.g. the clipboard strip of Gboard) paste the plain text of the clipboard through
    * {@link InputConnection#commitText}, losing formatting and custom emoji. When the committed text is exactly
-   * the plain text of a formatted clip, paste the formatted version instead, as the "Paste" context menu does.
+   * the plain text of the last formatted clip copied in the app, paste the formatted version instead, as the "Paste"
+   * context menu does. Typed text is compared in memory only ({@link U#getRichPasteText}); keyboard paste actions
+   * ({@link InputConnection#performContextMenuAction}) go through {@link #onTextContextMenuItem}.
    */
   private static class RichPasteConnectionWrapper extends InputConnectionWrapper {
     private final EditText editText;

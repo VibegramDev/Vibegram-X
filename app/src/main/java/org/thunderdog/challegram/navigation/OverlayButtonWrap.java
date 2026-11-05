@@ -254,6 +254,12 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
 
   /** FAB menu item: 56dp pill, primaryContainer, 24dp icon, TitleMedium label, Level3. */
   private static final class MenuItemView extends NoScrollTextView implements ForegroundCompat.Host {
+    private final Drawable icon;
+    private final GradientDrawable rippleMask;
+    private final M3StateLayerDrawable ripple;
+    private int textColor, rippleColor;
+
+    // A TextView, so not ForegroundCompat.HostView: the same forwarding (API < 23).
     private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
 
     @Nullable
@@ -298,10 +304,6 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
         foregroundCompat.jumpDrawablesToCurrentState();
       }
     }
-    private final Drawable icon;
-    private final GradientDrawable rippleMask;
-    private final M3StateLayerDrawable ripple;
-    private int textColor, rippleColor;
 
     MenuItemView (Context context, @DrawableRes int iconRes) {
       super(context);

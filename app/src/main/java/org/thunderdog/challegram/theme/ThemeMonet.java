@@ -13,18 +13,22 @@
 package org.thunderdog.challegram.theme;
 
 import android.content.Context;
+import android.content.res.Resources;
 import android.graphics.Color;
+import android.os.Build;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.Log;
+import org.thunderdog.challegram.unsorted.AppContext;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,6 +41,7 @@ import java.util.regex.Pattern;
  * Colors are described by an asset template (assets/monet/*.monet) that refers to the tonal
  * palettes of the device, so the theme follows the system wallpaper colors. Everything the template
  * does not define (and all properties) comes from the statically baked theme with the same id.
+ * Templates are parsed once per process; a palette change only re-resolves the parsed values.
  */
 public final class ThemeMonet implements ThemeDelegate {
   private static final Pattern MIX = Pattern.compile("^mix\\((.+),(.+),(\\d+)\\)$");
@@ -44,7 +49,7 @@ public final class ThemeMonet implements ThemeDelegate {
   private static final Pattern SYS = Pattern.compile("^sys\\((\\w+),(.+)\\)$");
   private static final Pattern ALPHA = Pattern.compile("^[0-9A-Fa-f]{2}$");
 
-  private static Map<String, Integer> colorIdsByName;
+  private static final Map<String, Template> templates = new HashMap<>();
 
   private final ThemeDelegate base;
   private final int[] colors = new int[ThemeColors.COUNT + 1];
@@ -52,21 +57,15 @@ public final class ThemeMonet implements ThemeDelegate {
 
   public ThemeMonet (@NonNull ThemeDelegate base, @NonNull String template, @Nullable Context context) {
     this.base = base;
+    if (context == null) {
+      return;
+    }
     final int[][] palette = MonetPalette.get(context);
-    final Map<String, String> values = loadTemplate(context, template);
-    final Map<String, Integer> ids = colorIds();
-    for (Map.Entry<String, String> entry : values.entrySet()) {
-      Integer colorId = ids.get(entry.getKey());
-      if (colorId == null) {
-        Log.w("Unknown color in Monet template %s: %s", template, entry.getKey());
-        continue;
-      }
-      try {
-        colors[colorId] = resolve(entry.getValue(), palette);
-        hasColor[colorId] = true;
-      } catch (IllegalArgumentException e) {
-        Log.w("Bad value in Monet template %s: %s: %s", template, entry.getKey(), entry.getValue());
-      }
+    final Template parsed = template(context, template);
+    for (int i = 0; i < parsed.colorIds.length; i++) {
+      int colorId = parsed.colorIds[i];
+      colors[colorId] = parsed.values[i].resolve(palette);
+      hasColor[colorId] = true;
     }
   }
 
@@ -113,22 +112,51 @@ public final class ThemeMonet implements ThemeDelegate {
 
   // Templates
 
-  private static synchronized Map<String, Integer> colorIds () {
-    if (colorIdsByName == null) {
-      Map<String, Integer> map = new HashMap<>(ThemeColors.COUNT * 2);
-      for (int colorId = 1; colorId <= ThemeColors.COUNT; colorId++) {
-        map.put(ThemeColors.getName(colorId), colorId);
-      }
-      colorIdsByName = map;
-    }
-    return colorIdsByName;
+  private interface Value {
+    @ColorInt int resolve (int[][] palette);
   }
 
-  private static Map<String, String> loadTemplate (@Nullable Context context, String name) {
-    Map<String, String> values = new LinkedHashMap<>();
-    if (context == null) {
-      return values;
+  private static final class Template {
+    final int[] colorIds;
+    final Value[] values;
+
+    Template (int[] colorIds, Value[] values) {
+      this.colorIds = colorIds;
+      this.values = values;
     }
+  }
+
+  private static synchronized Template template (@NonNull Context context, String name) {
+    Template template = templates.get(name);
+    if (template != null) {
+      return template;
+    }
+    final Map<String, String> source = new LinkedHashMap<>();
+    loadTemplate(context, name, source);
+    final Map<String, Integer> ids = ThemeColors.getMap();
+    final int[] colorIds = new int[source.size()];
+    final Value[] values = new Value[source.size()];
+    int count = 0;
+    for (Map.Entry<String, String> entry : source.entrySet()) {
+      Integer colorId = ids.get(entry.getKey());
+      if (colorId == null) {
+        Log.w("Unknown color in Monet template %s: %s", name, entry.getKey());
+        continue;
+      }
+      try {
+        values[count] = parse(entry.getValue());
+        colorIds[count] = colorId;
+        count++;
+      } catch (IllegalArgumentException e) {
+        Log.w("Bad value in Monet template %s: %s: %s", name, entry.getKey(), entry.getValue());
+      }
+    }
+    template = new Template(Arrays.copyOf(colorIds, count), Arrays.copyOf(values, count));
+    templates.put(name, template);
+    return template;
+  }
+
+  private static void loadTemplate (@NonNull Context context, String name, Map<String, String> out) {
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(context.getAssets().open("monet/" + name + ".monet"), StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
@@ -143,40 +171,42 @@ public final class ThemeMonet implements ThemeDelegate {
         String key = line.substring(0, i).trim();
         String value = line.substring(i + 1).trim();
         if ("include".equals(key)) {
-          values.putAll(loadTemplate(context, value));
+          loadTemplate(context, value, out);
         } else {
-          values.put(key, value);
+          out.put(key, value);
         }
       }
     } catch (IOException e) {
       Log.e("Cannot load Monet template %s", e, name);
     }
-    return values;
   }
 
   // Values
 
-  static @ColorInt int resolve (String value, int[][] palette) {
+  private static Value parse (String value) {
     value = value.trim();
     Matcher sys = SYS.matcher(value);
     if (sys.matches()) {
-      int color = systemRole(sys.group(1));
-      return color != 0 ? color : resolve(sys.group(2), palette);
+      final int resId = systemRoleId(sys.group(1));
+      final Value fallback = parse(sys.group(2));
+      if (resId == 0) {
+        return fallback;
+      }
+      return palette -> {
+        int color = systemColor(resId);
+        return color != 0 ? color : fallback.resolve(palette);
+      };
     }
     Matcher mix = MIX.matcher(value);
     if (mix.matches()) {
-      int a = resolve(mix.group(1), palette);
-      int b = resolve(mix.group(2), palette);
-      float p = Integer.parseInt(mix.group(3)) / 100f;
-      return Color.argb(
-        lerp(Color.alpha(a), Color.alpha(b), p),
-        lerp(Color.red(a), Color.red(b), p),
-        lerp(Color.green(a), Color.green(b), p),
-        lerp(Color.blue(a), Color.blue(b), p)
-      );
+      final Value a = parse(mix.group(1));
+      final Value b = parse(mix.group(2));
+      final float p = Integer.parseInt(mix.group(3)) / 100f;
+      return palette -> mix(a.resolve(palette), b.resolve(palette), p);
     }
     if (value.startsWith("#")) {
-      return parseLiteral(value.substring(1));
+      final int color = parseLiteral(value.substring(1));
+      return palette -> color;
     }
     if (value.length() > 3 && value.charAt(2) == '_') {
       for (int paletteIndex = 0; paletteIndex < MonetPalette.NAMES.length; paletteIndex++) {
@@ -198,30 +228,47 @@ public final class ThemeMonet implements ThemeDelegate {
           }
         }
         if (bestTone != -1) {
-          int color = palette[paletteIndex][bestTone];
-          String alpha = rest.substring(Integer.toString(MonetPalette.TONES[bestTone]).length());
-          return alpha.isEmpty() ? color : (color & 0x00FFFFFF) | (Integer.parseInt(alpha, 16) << 24);
+          final int p = paletteIndex, t = bestTone;
+          final String alpha = rest.substring(Integer.toString(MonetPalette.TONES[bestTone]).length());
+          if (alpha.isEmpty()) {
+            return palette -> palette[p][t];
+          }
+          final int alphaMask = Integer.parseInt(alpha, 16) << 24;
+          return palette -> (palette[p][t] & 0x00FFFFFF) | alphaMask;
         }
       }
     }
     throw new IllegalArgumentException(value);
   }
 
+  private static @ColorInt int mix (int a, int b, float p) {
+    return Color.argb(
+      lerp(Color.alpha(a), Color.alpha(b), p),
+      lerp(Color.red(a), Color.red(b), p),
+      lerp(Color.green(a), Color.green(b), p),
+      lerp(Color.blue(a), Color.blue(b), p)
+    );
+  }
+
   private static int lerp (int a, int b, float p) {
     return Math.round(a + (b - a) * p);
   }
 
-  /** Material 3 dynamic color role from the system (Android 14+), or 0 when unavailable. */
-  private static @ColorInt int systemRole (String role) {
-    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+  /** Resource id of a Material 3 dynamic color role of the system (Android 14+), or 0 when unavailable. */
+  private static int systemRoleId (String role) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      return 0;
+    }
+    return AppContext.get().getResources().getIdentifier("system_" + role, "color", "android");
+  }
+
+  private static @ColorInt int systemColor (int resId) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       return 0;
     }
     try {
-      Context context = org.thunderdog.challegram.unsorted.AppContext.get();
-      android.content.res.Resources res = context.getResources();
-      int id = res.getIdentifier("system_" + role, "color", "android");
-      return id != 0 ? res.getColor(id, null) | 0xFF000000 : 0;
-    } catch (Throwable t) {
+      return AppContext.get().getResources().getColor(resId, null) | 0xFF000000;
+    } catch (Resources.NotFoundException e) {
       return 0;
     }
   }

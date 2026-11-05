@@ -22,6 +22,8 @@ import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.SystemClock;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -48,6 +50,7 @@ import org.thunderdog.challegram.loader.gif.GifReceiver;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeDelegate;
 import org.thunderdog.challegram.tool.Drawables;
@@ -97,6 +100,34 @@ public class TooltipOverlayView extends ViewGroup {
   private static final float PIVOT_HEIGHT = 5f;
   private static final float PIVOT_WIDTH = 10f;
   private static final float BACKGROUND_RADIUS = 6f;
+
+  // Material 3 plain tooltip (m3.material.io/components/tooltips, compose PlainTooltipTokens): inverseSurface
+  // container, CornerExtraSmall, one line of BodySmall in inverseOnSurface, at least 40×24dp, 4dp from the element.
+  private static final float PLAIN_PADDING_HORIZONTAL = 8f, PLAIN_PADDING_VERTICAL = 4f;
+  private static final float PLAIN_MIN_WIDTH = 40f, PLAIN_MIN_HEIGHT = 24f, PLAIN_GAP = 4f;
+  private static final float PLAIN_TEXT_SIZE = 12f, PLAIN_LINE_HEIGHT = 16f, PLAIN_MAX_WIDTH = 200f;
+
+  private static final ColorProvider PLAIN_COLORS = new ColorProvider() {
+    @Override
+    public int tooltipColor () {
+      return M3.inverseSurface();
+    }
+
+    @Override
+    public int tooltipOutlineColor () {
+      return 0;
+    }
+
+    @Override
+    public int defaultTextColorId () {
+      return ColorId.tooltip_text;
+    }
+
+    @Override
+    public int defaultTextColor () {
+      return M3.inverseOnSurface();
+    }
+  };
 
   public TooltipContentView newContent (Tdlib tdlib, CharSequence text, int textFlags) {
     TdApi.FormattedText formattedText = new TdApi.FormattedText(text.toString(), TD.toEntities(text, false));
@@ -258,6 +289,60 @@ public class TooltipOverlayView extends ViewGroup {
     }
   }
 
+  /** Text of the plain tooltip: a single ellipsized line ("Avoid wrapping text"). */
+  private static class TooltipContentViewPlain extends TooltipContentView {
+    private final CharSequence source;
+    private String text;
+    private int textWidth, maxWidth = -1;
+
+    private TooltipContentViewPlain (TooltipOverlayView parentView, CharSequence text) {
+      super(parentView);
+      this.source = text;
+    }
+
+    @Override
+    public boolean layout (TooltipInfo info, int parentWidth, int parentHeight, int maxWidth) {
+      if (this.maxWidth == maxWidth) {
+        return false;
+      }
+      this.maxWidth = maxWidth;
+      TextPaint paint = Paints.getRegularTextPaint(PLAIN_TEXT_SIZE);
+      text = TextUtils.ellipsize(source, paint, Math.max(0, maxWidth), TextUtils.TruncateAt.END).toString();
+      textWidth = (int) Math.ceil(U.measureText(text, paint));
+      return true;
+    }
+
+    @Override
+    public int getWidth () {
+      return textWidth;
+    }
+
+    @Override
+    public int getHeight () {
+      return Screen.dp(PLAIN_LINE_HEIGHT);
+    }
+
+    @Override
+    public boolean onTouchEvent (TooltipInfo info, View view, MotionEvent e) {
+      return false;
+    }
+
+    @Override
+    public void requestIcons (ComplexReceiver iconReceiver) {
+      iconReceiver.clear();
+    }
+
+    @Override
+    public void draw (Canvas c, ColorProvider colorProvider, int left, int top, int right, int bottom, float alpha, ComplexReceiver iconReceiver) {
+      if (text == null) {
+        return;
+      }
+      TextPaint paint = Paints.getRegularTextPaint(PLAIN_TEXT_SIZE, ColorUtils.alphaColor(alpha, colorProvider.defaultTextColor()));
+      Paint.FontMetricsInt fm = Paints.getFontMetricsInt(paint);
+      c.drawText(text, (left + right - textWidth) / 2f, (top + bottom) / 2f - (fm.ascent + fm.descent) / 2f, paint);
+    }
+  }
+
   public static class TooltipLanguageSelectorView extends TooltipContentView {
     private final View.OnClickListener listener;
     private final Drawable arrow;
@@ -330,6 +415,9 @@ public class TooltipOverlayView extends ViewGroup {
   public static final int FLAG_NEED_BLINK = 1 << 4;
   public static final int FLAG_HANDLE_BACK_PRESS = 1 << 5;
   public static final int FLAG_IGNORE_VIEW_SCALE = 1 << 6;
+  public static final int FLAG_PLAIN = 1 << 7;
+  /** Below the element whenever it fits (e.g. app bar: "the plain tooltip appears below the element"). */
+  public static final int FLAG_ALIGN_BOTTOM = 1 << 8;
 
   public interface OffsetProvider {
     void onProvideOffset (RectF rect);
@@ -688,7 +776,7 @@ public class TooltipOverlayView extends ViewGroup {
 
     private void buildPath (Path backgroundPath, RectF contentRect) {
       int pivotWidth = Screen.dp(PIVOT_WIDTH);
-      int backgroundRadius = Screen.dp(BACKGROUND_RADIUS);
+      int backgroundRadius = Screen.dp(BitwiseUtils.hasFlag(flags, FLAG_PLAIN) ? M3.CORNER_EXTRA_SMALL : BACKGROUND_RADIUS);
       int pivotHeight = Screen.dp(PIVOT_HEIGHT);
 
       backgroundPath.reset();
@@ -866,9 +954,10 @@ public class TooltipOverlayView extends ViewGroup {
       }
 
       boolean hasIcon = hasIcon();
-      int innerPaddingLeft = Screen.dp(hasIcon ? INNER_PADDING_LEFT_WITH_ICON : INNER_PADDING_LEFT);
-      int innerPaddingRight = Screen.dp(hasIcon ? INNER_PADDING_RIGHT_WITH_ICON : INNER_PADDING_RIGHT);
-      int innerPaddingVertical = Screen.dp(hasIcon ? INNER_PADDING_VERTICAL_WITH_ICON : INNER_PADDING_VERTICAL);
+      boolean plain = BitwiseUtils.hasFlag(flags, FLAG_PLAIN);
+      int innerPaddingLeft = Screen.dp(plain ? PLAIN_PADDING_HORIZONTAL : hasIcon ? INNER_PADDING_LEFT_WITH_ICON : INNER_PADDING_LEFT);
+      int innerPaddingRight = Screen.dp(plain ? PLAIN_PADDING_HORIZONTAL : hasIcon ? INNER_PADDING_RIGHT_WITH_ICON : INNER_PADDING_RIGHT);
+      int innerPaddingVertical = Screen.dp(plain ? PLAIN_PADDING_VERTICAL : hasIcon ? INNER_PADDING_VERTICAL_WITH_ICON : INNER_PADDING_VERTICAL);
       int verticalOffset = 0;
       int horizontalMargin = Screen.dp(8f);
       int iconOffset = hasIcon ? Screen.dp(ICON_SIZE) + Screen.dp(ICON_HORIZONTAL_MARGIN) : 0;
@@ -883,11 +972,12 @@ public class TooltipOverlayView extends ViewGroup {
       int triangleHeight = Screen.dp(12f);
       int totalHeight = popupView.getHeight() + innerPaddingVertical * 2 + triangleHeight;
 
-      this.alignBottom = position[1] + innerRect.top - totalHeight < HeaderView.getTopOffset() && position[1] + innerRect.bottom + totalHeight < parentHeight;
+      boolean fitsBelow = position[1] + innerRect.bottom + totalHeight < parentHeight;
+      this.alignBottom = fitsBelow && (BitwiseUtils.hasFlag(flags, FLAG_ALIGN_BOTTOM) || position[1] + innerRect.top - totalHeight < HeaderView.getTopOffset());
       this.pivotX = position[0] + innerRect.centerX();
       this.pivotY = alignBottom ? position[1] + innerRect.bottom : position[1] + innerRect.top;
 
-      int pivotHeight = BitwiseUtils.hasFlag(flags, FLAG_NO_PIVOT) ? horizontalMargin : Screen.dp(PIVOT_HEIGHT);
+      int pivotHeight = plain ? Screen.dp(PLAIN_GAP) : BitwiseUtils.hasFlag(flags, FLAG_NO_PIVOT) ? horizontalMargin : Screen.dp(PIVOT_HEIGHT);
 
       int contentWidth = innerPaddingLeft + innerPaddingRight + popupView.getWidth() + iconOffset;
       int contentHeight = innerPaddingVertical * 2 + popupView.getHeight();
@@ -895,6 +985,10 @@ public class TooltipOverlayView extends ViewGroup {
       if (hasIcon) {
         contentWidth = Math.max(contentWidth, innerPaddingLeft * 2 + Screen.dp(ICON_SIZE));
         contentHeight = Math.max(contentHeight, innerPaddingVertical * 2 + Screen.dp(ICON_SIZE));
+      }
+      if (plain) {
+        contentWidth = Math.max(contentWidth, Screen.dp(PLAIN_MIN_WIDTH));
+        contentHeight = Math.max(contentHeight, Screen.dp(PLAIN_MIN_HEIGHT));
       }
 
       if (fillWidth) {
@@ -1005,9 +1099,10 @@ public class TooltipOverlayView extends ViewGroup {
           // TODO
         }
       } else {
-        innerPaddingLeft = Screen.dp(INNER_PADDING_LEFT);
-        innerPaddingRight = Screen.dp(INNER_PADDING_RIGHT);
-        innerPaddingVertical = Screen.dp(INNER_PADDING_VERTICAL);
+        boolean plain = BitwiseUtils.hasFlag(flags, FLAG_PLAIN);
+        innerPaddingLeft = Screen.dp(plain ? PLAIN_PADDING_HORIZONTAL : INNER_PADDING_LEFT);
+        innerPaddingRight = Screen.dp(plain ? PLAIN_PADDING_HORIZONTAL : INNER_PADDING_RIGHT);
+        innerPaddingVertical = Screen.dp(plain ? PLAIN_PADDING_VERTICAL : INNER_PADDING_VERTICAL);
         iconOffset = verticalOffset = 0;
       }
       popupView.draw(c, colorProvider, (int) (contentRect.left + innerPaddingLeft + iconOffset), (int) (contentRect.top + innerPaddingVertical + verticalOffset), (int) (contentRect.right - innerPaddingRight), (int) (contentRect.bottom - innerPaddingVertical), alpha, iconReceiver);
@@ -1274,6 +1369,10 @@ public class TooltipOverlayView extends ViewGroup {
       return flag(FLAG_IGNORE_VIEW_SCALE, ignoreViewScale);
     }
 
+    public TooltipBuilder alignBottom (boolean alignBottom) {
+      return flag(FLAG_ALIGN_BOTTOM, alignBottom);
+    }
+
     public TooltipBuilder flag (int flag, boolean enabled) {
       this.flags = BitwiseUtils.setFlag(flags, flag, enabled);
       return this;
@@ -1307,6 +1406,13 @@ public class TooltipOverlayView extends ViewGroup {
 
     public TooltipInfo show (TextWrapper textWrapper) {
       return show(new TooltipContentViewTextWrapper(parentView, textWrapper));
+    }
+
+    /** Material 3 plain tooltip: a short label of the element, without an arrow. */
+    public TooltipInfo showPlain (CharSequence text) {
+      this.colorProvider = PLAIN_COLORS;
+      this.maxWidthDp = PLAIN_MAX_WIDTH;
+      return flag(FLAG_PLAIN, true).noPivot(true).show(new TooltipContentViewPlain(parentView, text));
     }
 
     public TooltipInfo show (TGMessage message, View.OnClickListener listener) {

@@ -8,6 +8,7 @@
  */
 package org.thunderdog.challegram.widget;
 
+import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -25,6 +26,58 @@ import androidx.annotation.Nullable;
 public final class ForegroundCompat {
   public interface Host {
     @Nullable ForegroundCompat foregroundCompat ();
+  }
+
+  /** Plain {@link View} with a foreground on every API level (the forwarding boilerplate of {@link Host} in one place). */
+  public static class HostView extends View implements Host {
+    private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
+
+    public HostView (Context context) {
+      super(context);
+    }
+
+    @Nullable
+    @Override
+    public final ForegroundCompat foregroundCompat () {
+      return foregroundCompat;
+    }
+
+    @Override
+    public void draw (@NonNull Canvas c) {
+      super.draw(c);
+      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        foregroundCompat.draw(c);
+      }
+    }
+
+    @Override
+    protected boolean verifyDrawable (@NonNull Drawable who) {
+      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+    }
+
+    @Override
+    protected void drawableStateChanged () {
+      super.drawableStateChanged();
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableStateChanged();
+      }
+    }
+
+    @Override
+    public void drawableHotspotChanged (float x, float y) {
+      super.drawableHotspotChanged(x, y);
+      if (foregroundCompat != null) {
+        foregroundCompat.drawableHotspotChanged(x, y);
+      }
+    }
+
+    @Override
+    public void jumpDrawablesToCurrentState () {
+      super.jumpDrawablesToCurrentState();
+      if (foregroundCompat != null) {
+        foregroundCompat.jumpDrawablesToCurrentState();
+      }
+    }
   }
 
   public static void set (@NonNull View view, @Nullable Drawable drawable) {

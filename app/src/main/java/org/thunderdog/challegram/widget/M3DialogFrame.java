@@ -68,10 +68,6 @@ public class M3DialogFrame extends FrameLayoutFix {
     addView(card);
   }
 
-  public View getCard () {
-    return card;
-  }
-
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
     int margin = Screen.dp(WINDOW_MARGIN) * 2;

@@ -51,7 +51,7 @@ headerText: #000000
 headerIcon: #435E91
 headerTabActive: #435E91
 headerTabActiveText: #435E91
-headerTabInactiveText: #3F4759
+headerTabInactiveText: #44474F
 headerLightBackground: #FFFFFF
 headerLightText: #435E91
 headerLightIcon: #435E91
@@ -184,12 +184,12 @@ chatListIcon: #435E91
 chatListVerify: #435E91
 ticks: #435E91
 ticksRead: #435E91
-badge: #5D77AC
+badge: #435E91
 badgeText: #F2F0F4
 badgeFailed: #715574
 badgeFailedText: #F2F0F4
-badgeMuted: #8991A5
-badgeMutedText: #F2F0F4
+badgeMuted: #BFC6DC
+badgeMutedText: #131B2C
 chatSendButton: #435E91
 chatKeyboard: #FAF8FC
 chatKeyboardButton: #FFFFFF

@@ -40,6 +40,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.emoji.EmojiInfo;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.telegram.TGLegacyManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.theme.Theme;
@@ -57,7 +58,7 @@ import me.vkryl.core.lambda.Destroyable;
  * Without a status (or without Telegram Premium) a rocket is shown instead.
  * The status (and the rocket for Premium users) opens the emoji status picker.
  */
-public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyUserDataChangeListener, TextColorSet {
+public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyUserDataChangeListener, TextColorSet, TGLegacyManager.EmojiLoadListener {
   /** M3 small app bar: title large, emphasized for the brand name. */
   private static final float TITLE_SIZE = 22f;
   private static final float MIN_TITLE_SIZE = 18f;
@@ -74,7 +75,7 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
   private final @Nullable Delegate delegate;
   /** Default emoji when the user has no emoji status. */
   private static final String DEFAULT_EMOJI = "\uD83D\uDE80"; // 🚀
-  private final @Nullable EmojiInfo defaultEmoji = Emoji.instance().getEmojiInfo(DEFAULT_EMOJI);
+  private @Nullable EmojiInfo defaultEmoji = Emoji.instance().getEmojiInfo(DEFAULT_EMOJI);
   private boolean hasEmojiStatus, isPremium;
   private final Rect defaultEmojiRect = new Rect();
   private boolean defaultEmojiPressed;
@@ -99,7 +100,19 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
     setContentDescription(title);
     themeProvider.addThemeInvalidateListener(this);
     tdlib.cache().addMyUserListener(this);
+    TGLegacyManager.instance().addEmojiListener(this);
     setUser(tdlib.myUser());
+  }
+
+  /** Emoji bitmaps loaded (or the emoji pack switched): the rocket can be drawn now. */
+  @Override
+  public void onEmojiUpdated (boolean isPackSwitch) {
+    if (isPackSwitch) {
+      defaultEmoji = Emoji.instance().getEmojiInfo(DEFAULT_EMOJI);
+      layoutWidth = -1;
+      requestLayout();
+    }
+    invalidate();
   }
 
   private void setUser (@Nullable TdApi.User user) {
@@ -139,8 +152,40 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
     return Theme.headerTextColor();
   }
 
-  private TextPaint titlePaint () {
-    return Paints.getMediumTextPaint(TITLE_SIZE, Theme.headerTextColor(), false);
+  private TextPaint titlePaint (float size) {
+    return Paints.getMediumTextPaint(size, Theme.headerTextColor(), false);
+  }
+
+  // Layout of the title for the measured width, so that drawing does not measure text.
+  private int layoutWidth = -1, layoutEmojiWidth;
+  private float titleWidth, titleSize = TITLE_SIZE;
+  private boolean titleVisible, emojiFits;
+
+  private float fullTitleWidth () {
+    return titlePaint(TITLE_SIZE).measureText(title);
+  }
+
+  private void layoutTitle (int width) {
+    int emojiWidth = emojiWidth();
+    if (layoutWidth == width && layoutEmojiWidth == emojiWidth) {
+      return;
+    }
+    layoutWidth = width;
+    layoutEmojiWidth = emojiWidth;
+    float fullWidth = fullTitleWidth();
+    emojiFits = emojiWidth > 0 && Screen.dp(START_PADDING) + fullWidth + Screen.dp(EMOJI_GAP) + emojiWidth + Screen.dp(END_PADDING) <= width;
+    titleSize = TITLE_SIZE;
+    titleWidth = fullWidth;
+    // Narrow app bar: no emoji, then the title is ellipsized.
+    float maxTextWidth = width - Screen.dp(START_PADDING) - Screen.dp(END_PADDING);
+    titleVisible = maxTextWidth > 0;
+    if (titleVisible && !emojiFits && fullWidth > maxTextWidth) {
+      // Then a smaller title size, down to title medium-like 18sp, and only then the title is ellipsized.
+      titleSize = Math.max(MIN_TITLE_SIZE, TITLE_SIZE * maxTextWidth / fullWidth);
+      titleWidth = titlePaint(titleSize).measureText(title);
+      // Very narrow app bar: a cut "Vibe…" is worse than no title, the actions take the app bar.
+      titleVisible = titleWidth <= maxTextWidth;
+    }
   }
 
   private boolean drawEmojiStatus () {
@@ -170,8 +215,8 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
 
   /** Whether the emoji fits next to the title in the current width (it is dropped first when space is short). */
   private boolean emojiFits (int width) {
-    int emojiWidth = emojiWidth();
-    return emojiWidth > 0 && Screen.dp(START_PADDING) + titlePaint().measureText(title) + Screen.dp(EMOJI_GAP) + emojiWidth + Screen.dp(END_PADDING) <= width;
+    layoutTitle(width);
+    return emojiFits;
   }
 
   private static int emojiSize () {
@@ -181,7 +226,7 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
     int emojiWidth = emojiWidth();
-    int width = Screen.dp(START_PADDING) + (int) Math.ceil(titlePaint().measureText(title)) + (emojiWidth > 0 ? Screen.dp(EMOJI_GAP) + emojiWidth : 0) + Screen.dp(END_PADDING);
+    int width = Screen.dp(START_PADDING) + (int) Math.ceil(fullTitleWidth()) + (emojiWidth > 0 ? Screen.dp(EMOJI_GAP) + emojiWidth : 0) + Screen.dp(END_PADDING);
     int maxWidth = MeasureSpec.getSize(widthMeasureSpec);
     if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && maxWidth > 0) {
       int availWidth = Math.max(0, maxWidth - getActionsWidth());
@@ -189,30 +234,21 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
       width = Settings.instance().needCenterTitles() ? availWidth : Math.min(width, availWidth);
     }
     super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(Size.getHeaderPortraitSize(), MeasureSpec.EXACTLY));
+    layoutTitle(getMeasuredWidth());
   }
 
   @Override
   protected void onDraw (@NonNull Canvas c) {
-    TextPaint paint = titlePaint();
     boolean rtl = Lang.rtl();
     int width = getMeasuredWidth();
-    boolean emojiFits = emojiFits(width);
-    // Narrow app bar: no emoji, then the title is ellipsized.
-    float maxTextWidth = width - Screen.dp(START_PADDING) - Screen.dp(END_PADDING);
-    if (maxTextWidth <= 0) {
+    layoutTitle(width);
+    if (!titleVisible) {
+      defaultEmojiRect.setEmpty();
       return;
     }
-    if (!emojiFits && paint.measureText(title) > maxTextWidth) {
-      // Then a smaller title size, down to title medium-like 18sp, and only then the title is ellipsized.
-      float size = Math.max(MIN_TITLE_SIZE, TITLE_SIZE * maxTextWidth / paint.measureText(title));
-      paint = Paints.getMediumTextPaint(size, Theme.headerTextColor(), false);
-      if (paint.measureText(title) > maxTextWidth) {
-        // Very narrow app bar: a cut "Vibe…" is worse than no title, the actions take the app bar.
-        return;
-      }
-    }
+    TextPaint paint = titlePaint(titleSize);
     CharSequence text = title;
-    float textWidth = paint.measureText(text, 0, text.length());
+    float textWidth = titleWidth;
     int cy = getMeasuredHeight() / 2;
     float baseline = cy - (paint.ascent() + paint.descent()) / 2f;
     float textLeft = rtl ? width - Screen.dp(START_PADDING) - textWidth : Screen.dp(START_PADDING);
@@ -237,10 +273,8 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
         defaultEmojiRect.set(emojiLeft, cy - emojiSize / 2, emojiLeft + emojiSize, cy - emojiSize / 2 + emojiSize);
         Rect rect = Paints.getRect();
         rect.set(defaultEmojiRect);
-        if (!Emoji.instance().draw(c, defaultEmoji, rect)) {
-          // Emoji bitmaps are still loading.
-          postInvalidateDelayed(100);
-        }
+        // While emoji bitmaps are loading nothing is drawn, onEmojiUpdated invalidates.
+        Emoji.instance().draw(c, defaultEmoji, rect);
       }
     }
   }
@@ -306,6 +340,7 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
   public void performDestroy () {
     isDestroyed = true;
     tdlib.cache().removeMyUserListener(this);
+    TGLegacyManager.instance().removeEmojiListener(this);
     emojiStatusHelper.performDestroy();
   }
 }

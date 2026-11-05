@@ -21,7 +21,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -33,9 +32,9 @@ import android.widget.Button;
 
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.RippleSupport;
@@ -128,58 +127,13 @@ public class M3SearchBarView extends FrameLayoutFix {
     barView.setOnClickListener(listener);
   }
 
-  /** Call when colors returned by the provider change (e.g. app bar on scroll). */
-  public void invalidateColors () {
-    barView.invalidate();
-  }
-
-  private class BarView extends View implements ForegroundCompat.Host {
-    private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
-
-    @Nullable
-    @Override
-    public ForegroundCompat foregroundCompat () {
-      return foregroundCompat;
-    }
-
-    @Override
-    public void draw (@NonNull Canvas c) {
-      super.draw(c);
-      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-        foregroundCompat.draw(c);
-      }
-    }
-
-    @Override
-    protected boolean verifyDrawable (@NonNull Drawable who) {
-      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
-    }
-
-    @Override
-    protected void drawableStateChanged () {
-      super.drawableStateChanged();
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableStateChanged();
-      }
-    }
-
-    @Override
-    public void drawableHotspotChanged (float x, float y) {
-      super.drawableHotspotChanged(x, y);
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableHotspotChanged(x, y);
-      }
-    }
-
-    @Override
-    public void jumpDrawablesToCurrentState () {
-      super.jumpDrawablesToCurrentState();
-      if (foregroundCompat != null) {
-        foregroundCompat.jumpDrawablesToCurrentState();
-      }
-    }
+  private class BarView extends ForegroundCompat.HostView {
     private final Drawable icon;
     private final String label;
+    // Ellipsized label for the current width.
+    private String text;
+    private float textWidth;
+    private int textMaxWidth = -1;
 
     public BarView (Context context, CharSequence label) {
       super(context);
@@ -219,11 +173,14 @@ public class M3SearchBarView extends FrameLayoutFix {
       if (maxWidth <= 0) {
         return;
       }
-      CharSequence text = TextUtils.ellipsize(label, paint, maxWidth, TextUtils.TruncateAt.END);
-      float textWidth = paint.measureText(text, 0, text.length());
+      if (textMaxWidth != (int) maxWidth) {
+        textMaxWidth = (int) maxWidth;
+        text = TextUtils.ellipsize(label, paint, maxWidth, TextUtils.TruncateAt.END).toString();
+        textWidth = U.measureText(text, paint);
+      }
       float baseline = cy - (paint.ascent() + paint.descent()) / 2f;
       float x = rtl ? width - labelStart - textWidth : labelStart;
-      c.drawText(text, 0, text.length(), x, baseline, paint);
+      c.drawText(text, x, baseline, paint);
     }
   }
 }

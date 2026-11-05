@@ -24,8 +24,9 @@ public final class ThemeCustom implements ThemeDelegate {
   private final ThemeProperties properties;
   private final ThemeColors colors;
 
-  @Nullable
-  private ThemeDelegate parentTheme;
+  // By id: built-in Monet themes are rebuilt when the system palette changes (ThemeSet.resetMonetThemes).
+  @ThemeId
+  private int parentThemeId = ThemeId.NONE;
 
   public ThemeCustom (@ThemeId int id) {
     this.id = id;
@@ -38,7 +39,7 @@ public final class ThemeCustom implements ThemeDelegate {
     this.wallpaper = copy.wallpaper;
     this.properties = new ThemeProperties(copy.properties);
     this.colors = new ThemeColors(copy.colors);
-    this.parentTheme = copy.parentTheme;
+    this.parentThemeId = copy.parentThemeId;
   }
 
   public void setId (int id) {
@@ -49,8 +50,9 @@ public final class ThemeCustom implements ThemeDelegate {
     this.wallpaper = wallpaper;
   }
 
+  @Nullable
   public ThemeDelegate getParentTheme () {
-    return parentTheme;
+    return parentThemeId != ThemeId.NONE ? ThemeSet.getBuiltinTheme(parentThemeId) : null;
   }
 
   @ColorId
@@ -68,18 +70,20 @@ public final class ThemeCustom implements ThemeDelegate {
 
   public boolean hasColor (@ColorId int colorId, boolean onlyModified) {
     Integer color = colors.get(colorId);
-    return color != null && (!onlyModified || parentTheme == null || color != parentTheme.getRawColor(colorId));
+    ThemeDelegate parentTheme = onlyModified ? getParentTheme() : null;
+    return color != null && (parentTheme == null || color != parentTheme.getRawColor(colorId));
   }
 
   public boolean hasProperty (@PropertyId int propertyId, boolean onlyModified) {
     Float property = properties.get(propertyId);
-    return property != null && (!onlyModified || parentTheme == null || property != parentTheme.getProperty(propertyId));
+    ThemeDelegate parentTheme = onlyModified ? getParentTheme() : null;
+    return property != null && (parentTheme == null || property != parentTheme.getProperty(propertyId));
   }
 
   private void setParentThemeImpl (@ThemeId int id) {
-    this.parentTheme = ThemeSet.getBuiltinTheme(id);
-    if (this.parentTheme == null)
+    if (ThemeSet.getBuiltinTheme(id) == null)
       throw new IllegalArgumentException("Invalid themeId: " + id);
+    this.parentThemeId = id;
   }
 
   public void setProperty (@PropertyId int propertyId, @Nullable Float value) {
@@ -95,6 +99,13 @@ public final class ThemeCustom implements ThemeDelegate {
     return id;
   }
 
+  /** A color set in the theme editor (or imported) wins over the Material 3 role that {@link ThemeDelegate#getColor} maps it to. */
+  @Override
+  public int getColor (int colorId) {
+    Integer color = colors.get(colorId);
+    return color != null ? color : ThemeDelegate.super.getColor(colorId);
+  }
+
   @Override
   public int getRawColor (int colorId) {
     Integer color = colors.get(colorId);
@@ -107,6 +118,7 @@ public final class ThemeCustom implements ThemeDelegate {
         return color;
       fallbackColorId = FallbackColorId.get(fallbackColorId);
     }
+    ThemeDelegate parentTheme = getParentTheme();
     if (parentTheme != null)
       return parentTheme.getRawColor(colorId);
     throw Theme.newError(colorId, "colorId");
@@ -114,9 +126,15 @@ public final class ThemeCustom implements ThemeDelegate {
 
   // Recomputed after edits (theme editor): surface follows an edited filling, etc.
   private final M3.Roles roles = new M3.Roles(false);
+  private ThemeDelegate rolesParentTheme;
 
   @Override
   public int getRoleColor (int role) {
+    ThemeDelegate parentTheme = getParentTheme();
+    if (rolesParentTheme != parentTheme) {
+      rolesParentTheme = parentTheme;
+      roles.invalidate();
+    }
     return roles.get(this, role);
   }
 
@@ -125,6 +143,7 @@ public final class ThemeCustom implements ThemeDelegate {
     Float property = properties.get(propertyId);
     if (property != null)
       return property;
+    ThemeDelegate parentTheme = getParentTheme();
     if (parentTheme != null)
       return parentTheme.getProperty(propertyId);
     throw Theme.newError(propertyId, "propertyId");
@@ -140,6 +159,7 @@ public final class ThemeCustom implements ThemeDelegate {
       if (wallpaper != null)
         return wallpaper;
     }
+    ThemeDelegate parentTheme = getParentTheme();
     if (parentTheme != null)
       return parentTheme.getDefaultWallpaper();
     throw Theme.newError(0, "wallpaper");

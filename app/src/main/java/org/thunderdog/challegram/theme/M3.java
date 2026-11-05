@@ -19,6 +19,7 @@ import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -30,6 +31,8 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
 import org.thunderdog.challegram.tool.UI;
+
+import java.util.Arrays;
 
 import me.vkryl.core.ColorUtils;
 
@@ -52,10 +55,7 @@ public final class M3 {
   public static final float CORNER_SMALL = 8f;
   public static final float CORNER_MEDIUM = 12f;
   public static final float CORNER_LARGE = 16f;
-  public static final float CORNER_LARGE_INCREASED = 20f;
   public static final float CORNER_EXTRA_LARGE = 28f;
-  public static final float CORNER_EXTRA_LARGE_INCREASED = 32f;
-  public static final float CORNER_EXTRA_EXTRA_LARGE = 48f;
 
   // Elevation levels (ElevationTokens), dp
   public static final float ELEVATION_LEVEL1 = 1f;
@@ -72,29 +72,27 @@ public final class M3 {
     SURFACE = 0,
     ON_SURFACE = 1,
     ON_SURFACE_VARIANT = 2,
-    SURFACE_CONTAINER_LOWEST = 3,
-    SURFACE_CONTAINER_LOW = 4,
-    SURFACE_CONTAINER = 5,
-    SURFACE_CONTAINER_HIGH = 6,
-    SURFACE_CONTAINER_HIGHEST = 7,
-    PRIMARY = 8,
-    ON_PRIMARY = 9,
-    PRIMARY_CONTAINER = 10,
-    ON_PRIMARY_CONTAINER = 11,
-    SECONDARY = 12,
-    SECONDARY_CONTAINER = 13,
-    ON_SECONDARY_CONTAINER = 14,
-    OUTLINE = 15,
-    OUTLINE_VARIANT = 16,
-    ERROR = 17,
-    ON_ERROR = 18,
-    INVERSE_SURFACE = 19,
-    INVERSE_ON_SURFACE = 20,
-    INVERSE_PRIMARY = 21,
-    ROLE_COUNT = 22;
+    SURFACE_CONTAINER_LOW = 3,
+    SURFACE_CONTAINER = 4,
+    SURFACE_CONTAINER_HIGH = 5,
+    SURFACE_CONTAINER_HIGHEST = 6,
+    PRIMARY = 7,
+    ON_PRIMARY = 8,
+    PRIMARY_CONTAINER = 9,
+    ON_PRIMARY_CONTAINER = 10,
+    SECONDARY = 11,
+    SECONDARY_CONTAINER = 12,
+    ON_SECONDARY_CONTAINER = 13,
+    OUTLINE = 14,
+    OUTLINE_VARIANT = 15,
+    ERROR = 16,
+    ON_ERROR = 17,
+    INVERSE_SURFACE = 18,
+    INVERSE_ON_SURFACE = 19,
+    INVERSE_PRIMARY = 20,
+    ROLE_COUNT = 21;
 
   public static @ColorInt int surface () { return get(SURFACE); }
-  public static @ColorInt int surfaceContainerLowest () { return get(SURFACE_CONTAINER_LOWEST); }
   public static @ColorInt int onSurface () { return get(ON_SURFACE); }
   public static @ColorInt int onSurfaceVariant () { return get(ON_SURFACE_VARIANT); }
   public static @ColorInt int surfaceContainerLow () { return get(SURFACE_CONTAINER_LOW); }
@@ -160,23 +158,36 @@ public final class M3 {
       if (this.topRadius != topRadius || this.bottomRadius != bottomRadius) {
         this.topRadius = topRadius;
         this.bottomRadius = bottomRadius;
+        buildPath();
         invalidateSelf();
+      }
+    }
+
+    @Override
+    protected void onBoundsChange (@NonNull Rect bounds) {
+      rect.set(bounds);
+      buildPath();
+    }
+
+    private void buildPath () {
+      path.reset();
+      if (topRadius != bottomRadius) {
+        radii[0] = radii[1] = radii[2] = radii[3] = topRadius;
+        radii[4] = radii[5] = radii[6] = radii[7] = bottomRadius;
+        path.addRoundRect(rect, radii, Path.Direction.CW);
       }
     }
 
     @Override
     public void draw (@NonNull Canvas c) {
       paint.setColor(get(role));
-      if (topRadius == 0f && bottomRadius == 0f) {
-        c.drawRect(getBounds(), paint);
-        return;
+      if (topRadius != bottomRadius) {
+        c.drawPath(path, paint);
+      } else if (topRadius != 0f) {
+        c.drawRoundRect(rect, topRadius, topRadius, paint);
+      } else {
+        c.drawRect(rect, paint);
       }
-      rect.set(getBounds());
-      radii[0] = radii[1] = radii[2] = radii[3] = topRadius;
-      radii[4] = radii[5] = radii[6] = radii[7] = bottomRadius;
-      path.reset();
-      path.addRoundRect(rect, radii, Path.Direction.CW);
-      c.drawPath(path, paint);
     }
 
     @Override
@@ -202,10 +213,32 @@ public final class M3 {
   }
 
   private static volatile int systemRolesVersion;
+  private static int systemRolesSignature;
+  private static boolean systemRolesLoaded;
 
-  /** System color roles may change without a palette change (e.g. contrast level): system roles are re-read. */
-  public static void invalidateSystemRoles () {
-    systemRolesVersion++;
+  /**
+   * Re-reads the system color roles (Android 14+), which may change without a palette change (e.g. contrast level).
+   * Returns true when they differ from the previously read ones.
+   */
+  static boolean refreshSystemRoles () {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      return false;
+    }
+    final int[] light = new int[ROLE_COUNT], dark = new int[ROLE_COUNT];
+    try {
+      computeSystem(light, false, false);
+      computeSystem(dark, true, false);
+    } catch (Throwable ignored) {
+      return false;
+    }
+    int signature = 31 * Arrays.hashCode(light) + Arrays.hashCode(dark);
+    boolean changed = systemRolesLoaded && signature != systemRolesSignature;
+    systemRolesLoaded = true;
+    systemRolesSignature = signature;
+    if (changed) {
+      systemRolesVersion++;
+    }
+    return changed;
   }
 
   /**
@@ -252,14 +285,13 @@ public final class M3 {
     return cache;
   }
 
-  @androidx.annotation.RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
   private static void computeSystem (int[] cache, boolean dark, boolean black) {
     Resources r = UI.getContext().getResources();
     if (dark) {
       cache[SURFACE] = c(r, android.R.color.system_surface_dark);
       cache[ON_SURFACE] = c(r, android.R.color.system_on_surface_dark);
       cache[ON_SURFACE_VARIANT] = c(r, android.R.color.system_on_surface_variant_dark);
-      cache[SURFACE_CONTAINER_LOWEST] = c(r, android.R.color.system_surface_container_lowest_dark);
       cache[SURFACE_CONTAINER_LOW] = c(r, android.R.color.system_surface_container_low_dark);
       cache[SURFACE_CONTAINER] = c(r, android.R.color.system_surface_container_dark);
       cache[SURFACE_CONTAINER_HIGH] = c(r, android.R.color.system_surface_container_high_dark);
@@ -283,7 +315,6 @@ public final class M3 {
       cache[SURFACE] = c(r, android.R.color.system_surface_light);
       cache[ON_SURFACE] = c(r, android.R.color.system_on_surface_light);
       cache[ON_SURFACE_VARIANT] = c(r, android.R.color.system_on_surface_variant_light);
-      cache[SURFACE_CONTAINER_LOWEST] = c(r, android.R.color.system_surface_container_lowest_light);
       cache[SURFACE_CONTAINER_LOW] = c(r, android.R.color.system_surface_container_low_light);
       cache[SURFACE_CONTAINER] = c(r, android.R.color.system_surface_container_light);
       cache[SURFACE_CONTAINER_HIGH] = c(r, android.R.color.system_surface_container_high_light);
@@ -305,9 +336,8 @@ public final class M3 {
       cache[INVERSE_PRIMARY] = c(r, android.R.color.system_primary_dark);
     }
     if (black) {
-      // AMOLED variant: keep true-black surfaces, containers stay tonal.
+      // AMOLED variant: keep a true-black surface, containers stay tonal.
       cache[SURFACE] = 0xFF000000;
-      cache[SURFACE_CONTAINER_LOWEST] = 0xFF000000;
     }
   }
 
@@ -326,12 +356,9 @@ public final class M3 {
     cache[ON_SURFACE_VARIANT] = onSurfaceVariant;
     // Tonal surface containers: surface tinted towards on-surface with a hint of primary.
     int tint = ColorUtils.fromToArgb(onSurface, primary, .35f);
-    float[] steps = dark ? new float[] {-.04f, .04f, .07f, .10f, .14f} : new float[] {.0f, .03f, .05f, .07f, .09f};
-    for (int i = 0; i < 5; i++) {
-      float step = steps[i];
-      cache[SURFACE_CONTAINER_LOWEST + i] = step < 0 ?
-        ColorUtils.fromToArgb(surface, 0xFF000000, -step) :
-        ColorUtils.fromToArgb(surface, tint, step);
+    float[] steps = dark ? new float[] {.04f, .07f, .10f, .14f} : new float[] {.03f, .05f, .07f, .09f};
+    for (int i = 0; i < steps.length; i++) {
+      cache[SURFACE_CONTAINER_LOW + i] = ColorUtils.fromToArgb(surface, tint, steps[i]);
     }
     cache[PRIMARY] = primary;
     cache[ON_PRIMARY] = contrast(primary);
@@ -356,16 +383,8 @@ public final class M3 {
 
   // Motion: spring schemes (StandardMotionTokens / ExpressiveMotionTokens)
 
-  public static final float SPRING_FAST_SPATIAL_STIFFNESS = 800f, SPRING_FAST_SPATIAL_DAMPING = .6f;
-  public static final float SPRING_DEFAULT_SPATIAL_STIFFNESS = 380f, SPRING_DEFAULT_SPATIAL_DAMPING = .8f;
-  public static final float SPRING_DEFAULT_EFFECTS_STIFFNESS = 1600f, SPRING_DEFAULT_EFFECTS_DAMPING = 1f;
-
   /** Expressive "fast spatial" spring: small, snappy elements (indicators, toggles). */
-  public static final Spring FAST_SPATIAL = new Spring(SPRING_FAST_SPATIAL_STIFFNESS, SPRING_FAST_SPATIAL_DAMPING);
-  /** Expressive "default spatial" spring: medium elements (FAB menu, sheets). */
-  public static final Spring DEFAULT_SPATIAL = new Spring(SPRING_DEFAULT_SPATIAL_STIFFNESS, SPRING_DEFAULT_SPATIAL_DAMPING);
-  /** "Default effects" spring: color and opacity, no overshoot. */
-  public static final Spring DEFAULT_EFFECTS = new Spring(SPRING_DEFAULT_EFFECTS_STIFFNESS, SPRING_DEFAULT_EFFECTS_DAMPING);
+  public static final Spring FAST_SPATIAL = new Spring(800f, .6f);
   /** Expressive "fast effects" spring: color and opacity of small components, no overshoot. */
   public static final Spring FAST_EFFECTS = new Spring(3800f, 1f);
 

@@ -33,6 +33,7 @@ public interface ThemeDelegate {
    *   <li>floating chat buttons (scroll down, mentions, reactions, collapsed mute bell, camera): secondaryContainer
    *   with an onSecondaryContainer icon (FAB: "Ensure the icon has a minimum 3:1 contrast ratio with the container").</li>
    * </ul>
+   * Custom themes keep the colors set in the theme editor over these roles ({@link ThemeCustom#getColor}).
    */
   @ColorInt
   default int getColor (@ColorId int colorId) {

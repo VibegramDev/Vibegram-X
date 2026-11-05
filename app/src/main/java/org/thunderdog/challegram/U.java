@@ -3458,51 +3458,30 @@ public class U {
   }
 
   /**
-   * @return formatted clipboard text when {@code plainText} is exactly the plain text of a formatted (HTML) clip,
-   * {@code null} otherwise
+   * Keyboards paste their clipboard strip through {@link android.view.inputmethod.InputConnection#commitText}, as plain
+   * text. Called for every committed text (typing included), so it never touches the clipboard unless
+   * {@code plainText} is exactly the plain text of the last formatted clip copied by {@link #copyText}: then one
+   * description query (no clipboard read, no "pasted" notice) confirms that the clip is still ours.
+   * Formatted clips of other apps are pasted with formatting by the "Paste" context menu ({@link #getPasteText}).
+   *
+   * @return formatted text of our last clip, {@code null} otherwise
    */
   @Nullable
   public static CharSequence getRichPasteText (Context context, CharSequence plainText) {
+    final String lastPlain = lastCopiedPlainText, lastHtml = lastCopiedHtmlText;
+    if (lastPlain == null || lastHtml == null || plainText.length() != lastPlain.length() || !lastPlain.contentEquals(plainText)) {
+      return null;
+    }
     if (plainText instanceof Spanned && ((Spanned) plainText).getSpans(0, plainText.length(), Object.class).length > 0) {
       return null;
     }
     android.content.ClipboardManager clipboard = (android.content.ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-    if (clipboard == null || !clipboard.hasPrimaryClip()) {
+    android.content.ClipDescription description = clipboard != null ? clipboard.getPrimaryClipDescription() : null;
+    if (description == null || !description.hasMimeType("text/html") || description.getLabel() == null || !BuildConfig.PROJECT_NAME.contentEquals(description.getLabel())) {
+      // Something else was copied since (possibly the same text without formatting).
       return null;
     }
-    android.content.ClipDescription description = clipboard.getPrimaryClipDescription();
-    if (description == null || !description.hasMimeType("text/html")) {
-      return null;
-    }
-    String plain = plainText.toString();
-    // Our own clip: no need to read the clipboard (reading shows the system "pasted from clipboard" notice).
-    String lastPlain = lastCopiedPlainText, lastHtml = lastCopiedHtmlText;
-    if (lastPlain != null && lastHtml != null && plain.equals(lastPlain) && description.getLabel() != null && BuildConfig.PROJECT_NAME.contentEquals(description.getLabel())) {
-      return TD.htmlToCharSequence(lastHtml);
-    }
-    if (plain.length() < 16) {
-      // Typed or autocorrected words are committed the same way; don't read the clipboard for each of them.
-      return null;
-    }
-    android.content.ClipData clipData = clipboard.getPrimaryClip();
-    if (clipData == null || clipData.getItemCount() != 1) {
-      return null;
-    }
-    String htmlText = clipData.getItemAt(0).getHtmlText();
-    if (StringUtils.isEmpty(htmlText)) {
-      return null;
-    }
-    CharSequence richText = TD.htmlToCharSequence(htmlText);
-    if (!(richText instanceof Spanned) || ((Spanned) richText).getSpans(0, richText.length(), Object.class).length == 0) {
-      return null;
-    }
-    if (!plain.equals(richText.toString())) {
-      CharSequence clipText = clipData.getItemAt(0).getText();
-      if (clipText == null || !plain.equals(clipText.toString())) {
-        return null;
-      }
-    }
-    return richText;
+    return TD.htmlToCharSequence(lastHtml);
   }
 
   @SuppressWarnings("deprecation")

@@ -62,6 +62,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.text.DateFormatSymbols;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Formatter;
@@ -342,14 +343,19 @@ public class Lang {
   private static final class LanguageResources {
     final String packId;
     final Resources resources;
-    final String[] localKeys;
-    final String[] localPlurals;
+    // Looked up for every string of the pack.
+    final Set<String> localKeys;
+    final Set<String> localPlurals;
 
     LanguageResources (String packId, Resources resources, String[] localKeys, String[] localPlurals) {
       this.packId = packId;
       this.resources = resources;
-      this.localKeys = localKeys;
-      this.localPlurals = localPlurals;
+      this.localKeys = toSet(localKeys);
+      this.localPlurals = toSet(localPlurals);
+    }
+
+    private static Set<String> toSet (String[] keys) {
+      return keys.length == 0 ? Collections.<String>emptySet() : new HashSet<>(Arrays.asList(keys));
     }
   }
 
@@ -387,13 +393,11 @@ public class Lang {
   }
 
   private static boolean isLocalKey (@NonNull TdApi.LanguagePackInfo languagePackInfo, String key) {
-    String[] localKeys = getLanguageResources(languagePackInfo).localKeys;
-    return localKeys.length > 0 && ArrayUtils.indexOf(localKeys, key) >= 0;
+    return getLanguageResources(languagePackInfo).localKeys.contains(key);
   }
 
   private static boolean isLocalPlural (@NonNull TdApi.LanguagePackInfo languagePackInfo, String key) {
-    String[] localPlurals = getLanguageResources(languagePackInfo).localPlurals;
-    return localPlurals.length > 0 && ArrayUtils.indexOf(localPlurals, key) >= 0;
+    return getLanguageResources(languagePackInfo).localPlurals.contains(key);
   }
 
   private static final int FLAG_LOWERCASE = 1;
@@ -3878,7 +3882,8 @@ public class Lang {
 
   /**
    * Cloud language packs are authored for the upstream app name.
-   * Replaces it with the name this build is branded with.
+   * Replaces it with the name this build is branded with. Applied before strings are cached
+   * ({@link #getStringValue}, {@link #putCachedStrings}), so cached reads don't allocate.
    */
   private static @Nullable TdApi.LanguagePackStringValueOrdinary rebrand (@Nullable TdApi.LanguagePackStringValueOrdinary string) {
     if (string == null || string.value == null || BuildConfig.PROJECT_NAME.equals(UPSTREAM_APP_NAME) || !string.value.contains(UPSTREAM_APP_NAME)) {
@@ -3888,10 +3893,6 @@ public class Lang {
   }
 
   public static @Nullable TdApi.LanguagePackStringValueOrdinary getStringValue (String key, @NonNull TdApi.LanguagePackInfo language) {
-    return rebrand(getStringValueImpl(key, language));
-  }
-
-  private static @Nullable TdApi.LanguagePackStringValueOrdinary getStringValueImpl (String key, @NonNull TdApi.LanguagePackInfo language) {
     String cacheKey = null;
     if (packId().equals(language.id)) {
       cacheKey = makeStringCacheKey(language.id, key);
@@ -3906,6 +3907,7 @@ public class Lang {
     TdApi.LanguagePackStringValueOrdinary string = queryTdlibStringValue(key, language.id);
     if (string == null && !StringUtils.isEmpty(language.baseLanguagePackId))
       string = queryTdlibStringValue(key, language.baseLanguagePackId);
+    string = rebrand(string);
     if (cacheKey != null) {
       putCachedString(cacheKey, string);
     }
@@ -4278,6 +4280,8 @@ public class Lang {
         if (cachedStrings.containsKey(cacheKey)) {
           if (string.value.getConstructor() == TdApi.LanguagePackStringValueDeleted.CONSTRUCTOR) {
             cachedStrings.put(cacheKey, STRING_DELETED());
+          } else if (string.value instanceof TdApi.LanguagePackStringValueOrdinary) {
+            cachedStrings.put(cacheKey, rebrand((TdApi.LanguagePackStringValueOrdinary) string.value));
           } else {
             cachedStrings.put(cacheKey, string.value);
           }

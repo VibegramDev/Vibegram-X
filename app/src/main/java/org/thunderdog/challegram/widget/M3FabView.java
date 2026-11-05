@@ -41,51 +41,7 @@ import me.vkryl.core.MathUtils;
  * Closed: baseline FAB, 56dp, CornerLarge (16dp), primaryContainer / onPrimaryContainer, 24dp icon, Level3.
  * Open: CornerFull, primary / onPrimary, 20dp close icon (FabMenuBaselineTokens.CloseButton*).
  */
-public class M3FabView extends View implements ForegroundCompat.Host {
-  private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
-
-  @Nullable
-  @Override
-  public ForegroundCompat foregroundCompat () {
-    return foregroundCompat;
-  }
-
-  @Override
-  public void draw (@NonNull Canvas c) {
-    super.draw(c);
-    if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-      foregroundCompat.draw(c);
-    }
-  }
-
-  @Override
-  protected boolean verifyDrawable (@NonNull Drawable who) {
-    return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
-  }
-
-  @Override
-  protected void drawableStateChanged () {
-    super.drawableStateChanged();
-    if (foregroundCompat != null) {
-      foregroundCompat.drawableStateChanged();
-    }
-  }
-
-  @Override
-  public void drawableHotspotChanged (float x, float y) {
-    super.drawableHotspotChanged(x, y);
-    if (foregroundCompat != null) {
-      foregroundCompat.drawableHotspotChanged(x, y);
-    }
-  }
-
-  @Override
-  public void jumpDrawablesToCurrentState () {
-    super.jumpDrawablesToCurrentState();
-    if (foregroundCompat != null) {
-      foregroundCompat.jumpDrawablesToCurrentState();
-    }
-  }
+public class M3FabView extends ForegroundCompat.HostView {
   public static final float SIZE = 56f;
   private static final float ICON_SIZE = 24f;
   private static final float CLOSE_ICON_SIZE = 20f;

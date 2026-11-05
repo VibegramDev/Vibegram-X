@@ -64,6 +64,10 @@ def parse_literal(h):
 
 def resolve(value):
   value = value.strip()
+  # sys(role,F): system color role on Android 14+ (ThemeMonet), F everywhere else, so F is baked.
+  m = re.match(r"^sys\((\w+),(.+)\)$", value)
+  if m:
+    return resolve(m.group(2))
   m = re.match(r"^mix\((.+),(.+),(\d+)\)$", value)
   if m:
     a, b, p = resolve(m.group(1)), resolve(m.group(2)), int(m.group(3)) / 100

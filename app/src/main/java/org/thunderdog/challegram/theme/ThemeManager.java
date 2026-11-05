@@ -34,6 +34,7 @@ import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.tool.UI;
+import org.thunderdog.challegram.unsorted.AppContext;
 import org.thunderdog.challegram.unsorted.Settings;
 
 import java.util.ArrayList;
@@ -681,21 +682,32 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
   }
 
   /**
-   * Re-reads the Material You palette of the system. If it has changed (wallpaper, accent or style),
-   * Monet themes are rebuilt and the current one is re-applied.
+   * Re-reads the Material You palette and the color roles of the system. If either has changed (wallpaper, accent,
+   * style or contrast), Monet themes are rebuilt and the current one is re-applied, also when it is a custom theme
+   * based on a Monet theme.
    */
   public void checkMonetPalette () {
-    // System color roles may change with the palette or the contrast level.
-    M3.invalidateSystemRoles();
-    if (!MonetPalette.refresh(org.thunderdog.challegram.unsorted.AppContext.get())) {
+    boolean rolesChanged = M3.refreshSystemRoles();
+    boolean paletteChanged = MonetPalette.refresh(AppContext.get());
+    if (!rolesChanged && !paletteChanged) {
       return;
     }
     ThemeSet.resetMonetThemes();
     ThemeDelegate current = currentThemeImpl(true);
-    if (current != null && ThemeSet.isMonetTheme(current.getId())) {
-      this._currentTheme = ThemeSet.getBuiltinTheme(current.getId());
-      notifyThemeColorsChanged(false, null);
+    if (current == null) {
+      return;
     }
+    if (ThemeSet.isMonetTheme(current.getId())) {
+      this._currentTheme = ThemeSet.getBuiltinTheme(current.getId());
+    } else if (current instanceof ThemeCustom) {
+      ThemeDelegate parentTheme = ((ThemeCustom) current).getParentTheme();
+      if (parentTheme == null || !ThemeSet.isMonetTheme(parentTheme.getId())) {
+        return;
+      }
+    } else {
+      return;
+    }
+    notifyThemeColorsChanged(false, null);
   }
 
   public void notifyColorChanged (@ThemeId int themeId, @NonNull ColorState colorState, boolean isTemporaryChange) {
