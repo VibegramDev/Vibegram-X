@@ -276,9 +276,9 @@ attachText: #2A4678
 fileAttach: #E3E2E6
 file: #435E91
 bubbleOut_file: #435E91
-fileYellow: #565E71
-fileGreen: #715574
-fileRed: #B3261E
+fileYellow: #435E91
+fileGreen: #435E91
+fileRed: #435E91
 waveformActive: #435E91
 waveformInactive: #C4C6D0
 iv_pageTitle: #1B1B1F
