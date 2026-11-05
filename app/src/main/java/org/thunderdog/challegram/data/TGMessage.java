@@ -232,6 +232,8 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   protected TGSource forwardInfo;
   protected ReplyComponent replyData;
   protected TGInlineKeyboard inlineKeyboard;
+  /** «Continue last thread» under the newest message of the whole chat with a bot with topics. */
+  private TGInlineKeyboard continueThreadKeyboard;
   protected final TGReactions messageReactions;
   protected final TGCommentButton commentButton;
   protected MessageQuickActionSwipeHelper swipeHelper;
@@ -1401,7 +1403,68 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       return Screen.dp(7f);
     }
 
-    return (flags & FLAG_EXTRA_PADDING) != 0 ? Screen.dp(7f) + (messagesController().needExtraBigPadding() ? Screen.dp(48f) : 0) : 0;
+    if ((flags & FLAG_EXTRA_PADDING) == 0) {
+      return 0;
+    }
+    int padding = Screen.dp(7f) + (messagesController().needExtraBigPadding() ? Screen.dp(48f) : 0);
+    if (needContinueThreadButton()) {
+      padding += TGInlineKeyboard.getButtonHeight() + TGInlineKeyboard.getButtonSpacing();
+    }
+    return padding;
+  }
+
+  /**
+   * As in the official app, the newest message of the whole chat with a bot with topics offers to
+   * continue its topic. The newest message is the one with the extra bottom padding.
+   */
+  private boolean needContinueThreadButton () {
+    return (flags & FLAG_EXTRA_PADDING) != 0 && forumTopicKey != null &&
+      messagesController().isBotForumWholeChat();
+  }
+
+  private void buildContinueThreadButton () {
+    if (!needContinueThreadButton()) {
+      return;
+    }
+    if (continueThreadKeyboard == null) {
+      continueThreadKeyboard = new TGInlineKeyboard(this, false);
+      continueThreadKeyboard.setViewProvider(currentViews);
+      continueThreadKeyboard.setLocalClickListener((view, keyboard, button) ->
+        messagesController().openBotForumTopic(forumTopicKey.forumTopicId)
+      );
+    }
+    TdApi.InlineKeyboardButton button = new TdApi.InlineKeyboardButton(
+      Lang.getString(R.string.vg_BotForumContinueThread),
+      0,
+      new TdApi.ButtonStyleDefault(),
+      new TdApi.InlineKeyboardButtonTypeCallback(new byte[0])
+    );
+    TdApi.ReplyMarkupInlineKeyboard markup = new TdApi.ReplyMarkupInlineKeyboard(
+      new TdApi.InlineKeyboardButton[][] {{button}}, false
+    );
+    if (useBubbles() && useBubble()) {
+      int width = getActualRightContentEdge() - getActualLeftContentEdge();
+      int maxWidth = pRealContentMaxWidth + getBubblePaddingLeft() + getBubblePaddingRight();
+      continueThreadKeyboard.set(msg.id, markup, width, maxWidth);
+    } else {
+      continueThreadKeyboard.set(msg.id, markup, getContentWidth(), pRealContentMaxWidth);
+    }
+    continueThreadKeyboard.firstButton().setCustomIcon(R.drawable.round_keyboard_arrow_right_18);
+    continueThreadKeyboard.firstButton().setCustomIconReverse(true);
+  }
+
+  private boolean hasContinueThreadButton () {
+    return continueThreadKeyboard != null && !continueThreadKeyboard.isEmpty() &&
+      needContinueThreadButton();
+  }
+
+  private int measureContinueThreadButtonLeft () {
+    if (!useBubbles()) {
+      return pRealContentX;
+    }
+    return alignBubbleRight() ?
+      getActualRightContentEdge() - continueThreadKeyboard.getWidth() :
+      getActualLeftContentEdge();
   }
 
   public int computeHeight () {
@@ -2274,6 +2337,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     if (inlineKeyboard != null && !inlineKeyboard.isEmpty()) {
       inlineKeyboard.draw(view, c, measureKeyboardLeft(), measureKeyboardTop());
     }
+    if (hasContinueThreadButton()) {
+      int top = findBottomEdge() + TGInlineKeyboard.getButtonSpacing();
+      continueThreadKeyboard.draw(view, c, measureContinueThreadButtonLeft(), top);
+    }
 
     // Reaction bubbles
     if (useReactionBubbles) {
@@ -3073,6 +3140,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     if (!isEventLog() && inlineKeyboard != null && !inlineKeyboard.isEmpty() && inlineKeyboard.onTouchEvent(view, e)) {
       return true;
     }
+    if (hasContinueThreadButton() && continueThreadKeyboard.onTouchEvent(view, e)) {
+      return true;
+    }
     if (useReactionBubbles()) {
       if (messageReactions.onTouchEvent(view, e)) {
         return true;
@@ -3208,6 +3278,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     } else if (inlineKeyboard != null) {
       inlineKeyboard.clear();
     }
+    buildContinueThreadButton();
     if (UI.inUiThread()) {
       performWithViews(this::requestInlineKeyboardMedia);
     }
@@ -6295,6 +6366,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       if ((flags & FLAG_EXTRA_PADDING) == 0) {
         flags |= FLAG_EXTRA_PADDING;
         if ((flags & FLAG_LAYOUT_BUILT) != 0) {
+          buildContinueThreadButton();
           height = computeHeight();
         }
       }
@@ -6361,6 +6433,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     messageReactions.performDestroy();
     if (inlineKeyboard != null) {
       inlineKeyboard.performDestroy();
+    }
+    if (continueThreadKeyboard != null) {
+      continueThreadKeyboard.performDestroy();
     }
     setViewAttached(false);
     onMessageContainerDestroyed();

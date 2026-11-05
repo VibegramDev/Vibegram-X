@@ -3,4 +3,5 @@
 <resources>
   <string name="vg_BotForumNewThread">New Thread</string>
   <string name="vg_BotForumNewThreadText">Type any message to create a new thread.</string>
+  <string name="vg_BotForumContinueThread">Continue last thread</string>
 </resources>

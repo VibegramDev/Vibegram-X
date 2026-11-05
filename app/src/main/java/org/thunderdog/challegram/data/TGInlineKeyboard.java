@@ -213,6 +213,12 @@ public class TGInlineKeyboard {
   }
 
   private boolean isCustom, disableCustomPadding;
+  /** Buttons that the app adds to a message itself: clicks go here instead of the bot. */
+  private @Nullable ClickListener localClickListener;
+
+  public void setLocalClickListener (@Nullable ClickListener listener) {
+    this.localClickListener = listener;
+  }
 
   public void setCustom (int iconRes, String text, int maxWidth, boolean disableCustomPadding, ClickListener listener) {
     this.maxWidth = maxWidth;
@@ -696,6 +702,10 @@ public class TGInlineKeyboard {
         }
         forceHideProgress();
       }
+    }
+
+    public void setCustomIcon (@DrawableRes int iconRes) {
+      this.customIconRes = iconRes;
     }
 
     public void setCustomIconReverse (boolean customIconReverse) {
@@ -1287,6 +1297,11 @@ public class TGInlineKeyboard {
 
     private void performAction (View view, boolean needVerify) {
       if (isActive()) {
+        return;
+      }
+
+      if (!isCustom && context.localClickListener != null) {
+        context.localClickListener.onClick(view, context, this);
         return;
       }
 

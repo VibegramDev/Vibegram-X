@@ -613,6 +613,10 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     headerCell.setInnerMargins(Screen.dp(56f), Screen.dp(104f));
     if (chat != null) {
       headerCell.setChat(tdlib, chat, null, null);
+      if (isBotForum) {
+        // Bots type in topics, and the topic rows already show it
+        headerCell.removeChatStatus();
+      }
     }
 
     topics = new ArrayList<>();
@@ -728,12 +732,8 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       });
       navigateTo(tabsController);
     } else if (id == R.id.btn_viewAsChat && isBotForum) {
-      // Chats with bots have no such setting: the whole chat opens above the topics, as «All» tab
-      MessagesController messagesController = new MessagesController(context, tdlib);
-      messagesController.setArguments(
-        new MessagesController.Arguments(null, chat, null, null, null, 0, null)
-      );
-      navigateTo(messagesController);
+      // Chats with bots have no such setting
+      openBotForumWholeChat();
     } else if (id == R.id.btn_viewAsChat) {
       // Set viewAsTopics to false and open as unified chat
       tdlib.client().send(new TdApi.ToggleChatViewAsTopics(chatId, false), result -> {
@@ -751,6 +751,18 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
         }
       });
     }
+  }
+
+  /**
+   * The whole chat with a bot opens above the topics, as the «All» tab: a message sent there
+   * starts a new topic.
+   */
+  private void openBotForumWholeChat () {
+    MessagesController messagesController = new MessagesController(context, tdlib);
+    messagesController.setArguments(
+      new MessagesController.Arguments(null, chat, null, null, null, 0, null)
+    );
+    navigateTo(messagesController);
   }
 
   @Override
@@ -897,7 +909,12 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   public void onClick (View v) {
     int id = v.getId();
     if (id == R.id.btn_createTopic) {
-      showCreateTopicDialog();
+      if (isBotForum) {
+        // As in the official app, a topic of a bot starts with the first message, not a name
+        openBotForumWholeChat();
+      } else {
+        showCreateTopicDialog();
+      }
       return;
     }
     if (id == R.id.btn_filterTopic) {

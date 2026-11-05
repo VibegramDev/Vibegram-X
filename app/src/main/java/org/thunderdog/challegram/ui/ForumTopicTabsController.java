@@ -381,6 +381,15 @@ public class ForumTopicTabsController
     });
   }
 
+  /** Opens the tab of the topic, once the topic is loaded if it isn't yet. */
+  public void selectTopic (int forumTopicId) {
+    pendingSelectTopicId = forumTopicId;
+    selectPendingTopic();
+    if (pendingSelectTopicId != 0) {
+      loadTopics();
+    }
+  }
+
   private void selectPendingTopic () {
     if (pendingSelectTopicId == 0) {
       return;

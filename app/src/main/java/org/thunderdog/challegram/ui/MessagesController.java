@@ -708,21 +708,51 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private static final int COMPOSER_INSET_PENDING = -2;
 
   private @Nullable BotForumThreadHint botForumThreadHint;
-  /** Chat for which {@link #needsBotForumThreadHint} was checked: it's asked on every frame. */
-  private long botForumThreadHintChatId;
-  private boolean needsBotForumThreadHint;
+  /** Chat for which the fields below were checked: they are asked on every frame. */
+  private long botForumCheckedChatId;
+  private boolean isBotForumChat, canManageBotForumTopics;
+
+  /** The whole chat with a bot that has topics, not one of its topics. */
+  public boolean isBotForumWholeChat () {
+    if (chat == null || previewMode != PREVIEW_MODE_NONE || isInForceTouchMode() ||
+      messageThread != null || messageTopicId != null) {
+      return false;
+    }
+    if (botForumCheckedChatId != chat.id) {
+      botForumCheckedChatId = chat.id;
+      isBotForumChat = tdlib.isBotForum(chat.id);
+      canManageBotForumTopics = tdlib.canManageBotForumTopics(chat.id);
+    }
+    return isBotForumChat;
+  }
+
+  /**
+   * In chats with bots that have topics, the pinned messages of the bot are shown only in the
+   * whole chat, where new topics start.
+   */
+  private boolean needPinnedMessages () {
+    if (inPreviewMode || isInForceTouchMode()) {
+      return false;
+    }
+    return messageTopicId == null || !tdlib.isBotForum(chat.id);
+  }
+
+  /** «Continue last thread»: the topic opens in the tabs, or on its own screen. */
+  public void openBotForumTopic (int forumTopicId) {
+    ViewController<?> parent = getParentOrSelf();
+    if (parent instanceof ForumTopicTabsController) {
+      ((ForumTopicTabsController) parent).selectTopic(forumTopicId);
+      return;
+    }
+    tdlib.ui().openChat(this, chat, new TdlibUi.ChatOpenParameters()
+      .messageTopic(new TdApi.MessageTopicForum(forumTopicId))
+      .keepStack()
+    );
+  }
 
   /** «New Thread» card of the whole chat with a bot whose users create topics, or null. */
   public @Nullable BotForumThreadHint getBotForumThreadHint () {
-    if (chat == null || previewMode != PREVIEW_MODE_NONE || isInForceTouchMode() ||
-      messageThread != null || messageTopicId != null) {
-      return null;
-    }
-    if (botForumThreadHintChatId != chat.id) {
-      botForumThreadHintChatId = chat.id;
-      needsBotForumThreadHint = tdlib.canManageBotForumTopics(chat.id);
-    }
-    if (!needsBotForumThreadHint) {
+    if (!isBotForumWholeChat() || !canManageBotForumTopics) {
       return null;
     }
     if (botForumThreadHint == null) {
@@ -3149,7 +3179,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     closeCommandsKeyboard(false);
 
     if (previewSearchSender == null) {
-      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled, !inPreviewMode && !isInForceTouchMode());
+      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled,
+        needPinnedMessages());
     }
 
     updateShadowColor();
@@ -13467,7 +13498,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void onSetSearchFilteredShowMode (boolean inSearchMode) {
     // Reopen chat if needed
     if (!inSearchMode && searchMessagesFilterMode) {
-      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled, !inPreviewMode && !isInForceTouchMode());
+      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled,
+        needPinnedMessages());
     } else if (inSearchMode && !searchMessagesFilterMode) {
       applyQueryForManagerInFilteredShowMode(getLastMessageSearchQuery());
     }
