@@ -1016,11 +1016,16 @@ public class TdlibFilesManager implements GlobalConnectionListener {
     return accountId != 0 ? key + "_" + accountId : key;
   }
 
+  /** Connection type for which the user turned the automatic data saver off; reset when the network changes. */
+  private int autoDataSaverSuppressedFor = -1;
+
+  /**
+   * Only the user's own "Turn on automatically" choice turns the data saver on, and the user can always turn it
+   * off: the system Data Saver (or restricted background data) no longer forces it.
+   */
   private boolean isDataSaverEventuallyEnabled (int connectionState) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-      if (tdlib.context().watchDog().isSystemDataSaverEnabled()) {
-        return true;
-      }
+    if (connectionState == autoDataSaverSuppressedFor) {
+      return false;
     }
     switch (connectionState) {
       case WatchDog.CONNECTION_TYPE_ROAMING: {
@@ -1268,6 +1273,12 @@ public class TdlibFilesManager implements GlobalConnectionListener {
   }
 
   public boolean setDataSaverEnabled (boolean isEnabled) {
+    int connectionType = tdlib.context().watchDog().getConnectionType();
+    if (isEnabled) {
+      autoDataSaverSuppressedFor = -1;
+    } else if (isDataSaverEventuallyEnabled(connectionType)) {
+      autoDataSaverSuppressedFor = connectionType;
+    }
     boolean nowEnabled = (datasaverFlags & DATASAVER_FLAG_ENABLED) != 0;
     if (nowEnabled != isEnabled) {
       datasaverFlags ^= DATASAVER_FLAG_ENABLED;
@@ -1477,15 +1488,14 @@ public class TdlibFilesManager implements GlobalConnectionListener {
 
   @Override
   public void onConnectionTypeChanged (int oldConnectionType, int connectionType) {
+    if (oldConnectionType != connectionType) {
+      autoDataSaverSuppressedFor = -1;
+    }
     if (!isDataSaverEventuallyEnabled(oldConnectionType) && isDataSaverEventuallyEnabled(connectionType)) {
       cancelAllPendingDownloads();
     }
   }
 
   @Override
-  public void onSystemDataSaverStateChanged (boolean isEnabled) {
-    if (isEnabled) {
-      cancelAllPendingDownloads();
-    }
-  }
+  public void onSystemDataSaverStateChanged (boolean isEnabled) { }
 }
