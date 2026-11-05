@@ -45,6 +45,8 @@ import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.widget.ProgressComponentView;
 import org.thunderdog.challegram.widget.ViewPager;
 
+import org.thunderdog.challegram.unsorted.Settings;
+import org.thunderdog.challegram.util.text.Counter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -235,19 +237,104 @@ public class ForumTopicTabsController
   protected @Nullable List<ViewPagerTopView.Item> getPagerSectionItems () {
     List<ViewPagerTopView.Item> items = new ArrayList<>();
     if (isBotForum) {
-      items.add(new ViewPagerTopView.Item(Lang.getString(R.string.DirectMessagesAll)));
+      // As in the official app, the whole chat of a bot is the tab where new topics start
+      items.add(new ViewPagerTopView.Item(R.drawable.baseline_add_comment_24));
       for (TdApi.ForumTopic topic : topics) {
-        items.add(new ViewPagerTopView.Item(topic.info.name));
+        items.add(newTopicItem(topic));
       }
     } else if (topics.isEmpty()) {
       // Return a "Loading..." placeholder to ensure tabs are created
       items.add(new ViewPagerTopView.Item(Lang.getString(R.string.LoadingTopics)));
     } else {
       for (TdApi.ForumTopic topic : topics) {
-        items.add(new ViewPagerTopView.Item(topic.info.name));
+        items.add(newTopicItem(topic));
       }
     }
     return items;
+  }
+
+  private static final String TOPIC_ICON_PLACEHOLDER = "\u2B50";
+
+  /** Tab of a topic: its custom emoji icon, name and unread counter, as in the official app. */
+  private ViewPagerTopView.Item newTopicItem (TdApi.ForumTopic topic) {
+    Counter counter = null;
+    if (topic.unreadCount > 0) {
+      counter = new Counter.Builder().textSize(12f).backgroundPadding(4f).build();
+      counter.setCount(topic.unreadCount, tdlib.forumTopicNeedsMuteIcon(chatId, topic), false);
+    }
+    long customEmojiId = topic.info.icon != null ? topic.info.icon.customEmojiId : 0;
+    if (customEmojiId == 0) {
+      return new ViewPagerTopView.Item(topic.info.name, counter);
+    }
+    String label = TOPIC_ICON_PLACEHOLDER + " " + topic.info.name;
+    TdApi.FormattedText text = new TdApi.FormattedText(label, new TdApi.TextEntity[] {
+      new TdApi.TextEntity(0, TOPIC_ICON_PLACEHOLDER.length(),
+        new TdApi.TextEntityTypeCustomEmoji(customEmojiId))
+    });
+    boolean animate = !Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
+    return new ViewPagerTopView.Item(label, counter).setCustomEmojiText(tdlib, text, animate);
+  }
+
+  private boolean tabsUpdatePending;
+
+  /** Counters change with every message: the tabs are rebuilt at most every 300 ms. */
+  private void scheduleTabsUpdate () {
+    if (tabsUpdatePending) {
+      return;
+    }
+    tabsUpdatePending = true;
+    runOnUiThreadOptional(() -> {
+      tabsUpdatePending = false;
+      notifyPagerItemPositionsChanged();
+    }, null, 300);
+  }
+
+  /** Read state of a topic changed: updateForumTopic has no unread count, so it's requested. */
+  @Override
+  public void onForumTopicUpdated (long chatId, long messageThreadId, boolean isPinned,
+    long lastReadInboxMessageId, long lastReadOutboxMessageId, int unreadMentionCount,
+    int unreadReactionCount, TdApi.ChatNotificationSettings notificationSettings,
+    @Nullable TdApi.DraftMessage draftMessage) {
+    if (chatId != this.chatId) {
+      return;
+    }
+    final int forumTopicId = (int) messageThreadId;
+    tdlib.ui().post(() -> {
+      int index = indexOfTopic(forumTopicId);
+      if (isDestroyed() || index == -1) {
+        return;
+      }
+      TdApi.ForumTopic topic = topics.get(index);
+      boolean readChanged = topic.lastReadInboxMessageId != lastReadInboxMessageId;
+      topic.lastReadInboxMessageId = lastReadInboxMessageId;
+      if (notificationSettings != null) {
+        // The counter turns grey in muted topics
+        topic.notificationSettings = notificationSettings;
+        scheduleTabsUpdate();
+      }
+      if (!readChanged || topic.unreadCount == 0) {
+        return;
+      }
+      if (topic.lastMessage != null && lastReadInboxMessageId >= topic.lastMessage.id) {
+        topic.unreadCount = 0;
+        scheduleTabsUpdate();
+        return;
+      }
+      tdlib.client().send(new TdApi.GetForumTopic(chatId, forumTopicId), result -> {
+        if (result.getConstructor() != TdApi.ForumTopic.CONSTRUCTOR) {
+          return;
+        }
+        int unreadCount = ((TdApi.ForumTopic) result).unreadCount;
+        tdlib.ui().post(() -> {
+          int freshIndex = indexOfTopic(forumTopicId);
+          if (!isDestroyed() && freshIndex != -1 &&
+            topics.get(freshIndex).unreadCount != unreadCount) {
+            topics.get(freshIndex).unreadCount = unreadCount;
+            scheduleTabsUpdate();
+          }
+        });
+      });
+    });
   }
 
   @Override
@@ -351,7 +438,17 @@ public class ForumTopicTabsController
     boolean isCreatedByUser = message.isOutgoing &&
       message.content.getConstructor() == TdApi.MessageForumTopicCreated.CONSTRUCTOR;
     tdlib.ui().post(() -> {
-      if (isDestroyed() || indexOfTopic(forumTopicId) != -1) {
+      if (isDestroyed()) {
+        return;
+      }
+      int index = indexOfTopic(forumTopicId);
+      if (index != -1) {
+        TdApi.ForumTopic topic = topics.get(index);
+        topic.lastMessage = message;
+        if (!message.isOutgoing && message.id > topic.lastReadInboxMessageId) {
+          topic.unreadCount++;
+          scheduleTabsUpdate();
+        }
         return;
       }
       if (isCreatedByUser) {
@@ -368,11 +465,11 @@ public class ForumTopicTabsController
             return;
           }
           // The topic has the newest message: it goes right after the pinned ones
-          int index = 0;
-          while (index < topics.size() && topics.get(index).isPinned) {
-            index++;
+          int insertIndex = 0;
+          while (insertIndex < topics.size() && topics.get(insertIndex).isPinned) {
+            insertIndex++;
           }
-          topics.add(index, topic);
+          topics.add(insertIndex, topic);
           tdlib.updateForumTopicsCache(chatId, topics);
           notifyPagerItemPositionsChanged();
           selectPendingTopic();
