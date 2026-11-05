@@ -637,6 +637,11 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
       return true;
     }
 
+    if (msg.isPendingMessage()) {
+      // The bot is still typing it: there's nothing to reply to, copy or forward yet
+      return false;
+    }
+
     /*if (ChatId.isMultiChat(msg.getChatId()) && !msg.isChannel()) {
       TdApi.ChatMemberStatus myStatus = msg.tdlib().chatStatus(msg.getChatId());
       if (myStatus != null && TD.isAdmin(myStatus)) {

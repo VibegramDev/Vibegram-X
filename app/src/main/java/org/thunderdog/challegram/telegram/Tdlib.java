@@ -8000,7 +8000,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   private void updatePendingMessage (TdApi.UpdatePendingMessage update) {
-
+    listeners.updatePendingMessage(update);
   }
 
   private void updateNewMessage (TdApi.UpdateNewMessage update, boolean isUpdate) {
@@ -10735,7 +10735,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         break;
       }
       case TdApi.UpdateStopMessageDraft.CONSTRUCTOR: {
-        // TODO?
+        listeners.updateStopMessageDraft((TdApi.UpdateStopMessageDraft) update);
         break;
       }
 

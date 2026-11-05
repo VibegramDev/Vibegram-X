@@ -4959,13 +4959,19 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     return new MessageId(msg.chatId, msg.id, getOtherMessageIds(msg.id));
   }
 
+  /** A reply that a bot types in real time ({@link TdApi.UpdatePendingMessage}), not sent yet. */
+  public final boolean isPendingMessage () {
+    return msg.id == MessagesManager.PENDING_MESSAGE_ID;
+  }
+
   public final boolean isRealMessage () {
     return msg != null && !isFakeMessage() && !isSponsoredMessage();
   }
 
   public boolean isFakeMessage () {
     //noinspection WrongConstant
-    if (msg.content.getConstructor() == TdApiExt.MessageChatEvent.CONSTRUCTOR) {
+    if (msg.content.getConstructor() == TdApiExt.MessageChatEvent.CONSTRUCTOR ||
+      isPendingMessage()) {
       return true;
     }
     return isDemoChat();

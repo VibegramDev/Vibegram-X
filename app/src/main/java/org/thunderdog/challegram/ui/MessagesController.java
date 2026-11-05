@@ -2328,7 +2328,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
       hideBottomHint();
       openMediaView(false, false);
     } else if (viewId == R.id.msg_send) {
-      if (!leaveInlineMode()) {
+      if (sendButton.inStopMode()) {
+        manager.stopPendingMessage(true);
+      } else if (!leaveInlineMode()) {
         if (inputView != null && !isSelfChat() && !tdlib.hasPremium() && inputView.hasOnlyPremiumFeatures()) {
           showBottomHint(Strings.buildMarkdown(this, Lang.getString(R.string.MessageContainsPremiumFeatures), null), false);
         } else if (isEditingMessage()) {
@@ -10589,7 +10591,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private void checkSendButton (boolean animated) {
-    setSendVisible(inputView.getText().length() > 0 || isEditingMessage() || hasAttachedFiles(), animated && getParentOrSelf().isAttachedToNavigationController());
+    boolean hasContent =
+      inputView.getText().length() > 0 || isEditingMessage() || hasAttachedFiles();
+    // As in the official app, the send button stops a reply that a bot types
+    boolean canStop = !hasContent && pendingMessageCanStop;
+    animated = animated && getParentOrSelf().isAttachedToNavigationController();
+    sendButton.setInStopMode(canStop, animated);
+    setSendVisible(hasContent || canStop, animated);
+  }
+
+  private boolean pendingMessageCanStop;
+
+  /** A bot types a reply: the send button stops it while the input is empty. */
+  public void setPendingMessageCanStop (boolean canStop) {
+    if (this.pendingMessageCanStop != canStop) {
+      this.pendingMessageCanStop = canStop;
+      if (inputView != null && sendButton != null) {
+        checkSendButton(true);
+      }
+    }
   }
 
   private void displaySendButton () {
