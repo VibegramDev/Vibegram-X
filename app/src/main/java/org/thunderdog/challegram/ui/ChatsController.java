@@ -483,35 +483,6 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
 
   private int navigationInset;
 
-  /** True when chats are scrolled under the app bar (the collapsed archive row does not count). */
-  public boolean isScrolledFromTop () {
-    if (chatsView == null || !(chatsView.getLayoutManager() instanceof LinearLayoutManager)) {
-      return false;
-    }
-    LinearLayoutManager manager = (LinearLayoutManager) chatsView.getLayoutManager();
-    int first = manager.findFirstVisibleItemPosition();
-    if (first == RecyclerView.NO_POSITION) {
-      return false;
-    }
-    int topPosition = 0;
-    if (hideArchive && adapter.hasArchive()) {
-      // Hidden archive: the list is at the top when the first chat after the archive is at the top,
-      // no matter whether the archive is collapsed or just scrolled out of view (it is "uncollapsed"
-      // after any scroll that ends at the top, so it can be pulled down).
-      int archivePosition = adapter.getArchiveItemPosition();
-      if (archivePosition != -1) {
-        if (first <= archivePosition) {
-          return false;
-        }
-        topPosition = archivePosition + 1;
-      }
-    }
-    if (first != topPosition) {
-      return first > topPosition;
-    }
-    View view = manager.findViewByPosition(first);
-    return view != null && view.getTop() < chatsView.getPaddingTop();
-  }
 
   /** Extra bottom scroll space, so the last chat can be scrolled above the main screen dock / FAB. */
   public void setNavigationInset (int inset) {
@@ -539,15 +510,6 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     });
     Views.applyBottomInset(chatsView, extraBottomInset + navigationInset);
     chatsView.setItemAnimator(null);
-    // M3 app bar: the main screen header changes to surfaceContainer while the list is scrolled under it.
-    chatsView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-      @Override
-      public void onScrolled (@NonNull RecyclerView recyclerView, int dx, int dy) {
-        if (parentController != null) {
-          parentController.onChatListScrolled(ChatsController.this);
-        }
-      }
-    });
     if (isInForceTouchMode()) {
       chatsView.setVerticalScrollBarEnabled(false);
     }
