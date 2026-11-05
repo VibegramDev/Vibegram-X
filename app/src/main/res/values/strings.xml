@@ -4228,7 +4228,6 @@
   <string name="DirectMessagesAll">All</string>
   <string name="QuoteSelection">Quote</string>
   <string name="NavigationStyle">Navigation</string>
-  <string name="NavigationStyleRail">Side rail</string>
   <string name="NavigationStyleDock">Bottom dock</string>
   <string name="NavigationStyleBar">Navigation bar</string>
 

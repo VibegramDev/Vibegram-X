@@ -201,8 +201,6 @@ public class ShareController extends TelegramViewController<ShareController.Args
 
     private TdApi.Sticker sticker;
 
-    private boolean needOpenChat;
-
     private boolean allowCopyLink;
 
     private boolean disallowReply;
@@ -328,11 +326,6 @@ public class ShareController extends TelegramViewController<ShareController.Args
 
     public Args setAfter (Runnable after) {
       this.after = after;
-      return this;
-    }
-
-    public Args setNeedOpenChat (boolean needOpenChat) {
-      this.needOpenChat = needOpenChat;
       return this;
     }
 
@@ -2479,6 +2472,26 @@ public class ShareController extends TelegramViewController<ShareController.Args
       dialogFrame.setTag(this);
     }
     context().addFullScreenView(this, false);
+    // The dialog used to appear only after TDLib returned the first portion of chats: right after the app wakes up
+    // (or while it syncs) that can take seconds, and sharing from another app looked like nothing happened.
+    // Show it anyway after a short wait, the chats appear in it as soon as they are loaded.
+    tdlib.ui().postDelayed(this::forceOpenAnimation, OPEN_WITHOUT_CHATS_DELAY_MS);
+  }
+
+  /** How long the dialog waits for the first portion of chats before it is shown without them, ms. */
+  private static final long OPEN_WITHOUT_CHATS_DELAY_MS = 250;
+
+  private void forceOpenAnimation () {
+    if (openLaunched || isDestroyed() || popupLayout == null) {
+      return;
+    }
+    if (recyclerView.getAdapter() == null) {
+      if (adapter.getItems().isEmpty()) {
+        adapter.setItems(Collections.singletonList(emptyItem()), false);
+      }
+      recyclerView.setAdapter(adapter);
+    }
+    launchOpenAnimation();
   }
 
   /** Tablet: the list is a basic dialog in the center of the screen, see {@link #show(boolean)}. */
@@ -3638,7 +3651,8 @@ public class ShareController extends TelegramViewController<ShareController.Args
 
     if (isSingleTap) {
       UI.showToast(R.string.DoneSave, Toast.LENGTH_SHORT);
-    } else if ((args.needOpenChat || forceGoToChat) && selectedChats.size() == 1) {
+    } else if (selectedChats.size() == 1) {
+      // Shared with one chat: that chat opens (it used to open only for content shared from other apps).
       ViewController<?> c = context().navigation().getCurrentStackItem();
       if (!(c instanceof MessagesController && ((MessagesController) c).compareChat(selectedChats.valueAt(0).getAnyId(), (TdApi.MessageTopic) null))) {
         UI.post(() -> tdlib.ui().openChat(ShareController.this, selectedChats.valueAt(0).getAnyId(), null), 250);

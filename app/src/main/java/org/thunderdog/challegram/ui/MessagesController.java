@@ -659,6 +659,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return composerFloating && bottomWrap != null ? bottomWrap.getMeasuredHeight() : 0;
   }
 
+  /**
+   * Top edge of the floating composer (reply bar included) in the coordinates of {@code view}, -1 without it.
+   * The round video player is an overlay above the whole chat: the list goes under the floating composer, so the
+   * player must be clipped at the composer, not at the bottom of the list (it was drawn over the input field).
+   */
+  public int getFloatingComposerTop (View view) {
+    if (!composerFloating || inputView == null || bottomWrap == null || bottomWrap.getVisibility() != View.VISIBLE || inputView.getVisibility() != View.VISIBLE || inputView.getHeight() == 0) {
+      return -1;
+    }
+    // Views.getLocationInWindow returns one shared array: copy the value before the second call.
+    final int inputTop = Views.getLocationInWindow(inputView)[1];
+    final int viewTop = Views.getLocationInWindow(view)[1];
+    return Math.round(inputTop - getReplyOffset()) - viewTop;
+  }
+
   /** Bounds of the floating composer (reply bar + input field) in the coordinates of the scrim. */
   private boolean getComposerShape (M3BottomScrimView view, RectF out) {
     if (!composerFloating || inputView == null || bottomWrap == null || bottomWrap.getVisibility() != View.VISIBLE || inputView.getVisibility() != View.VISIBLE || inputView.getWidth() == 0) {

@@ -228,7 +228,7 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
           v.getToggler().setRadioEnabled(Settings.instance().getNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS), isUpdate);
         } else if (itemId == R.id.btn_navigationStyle) {
           int navigationStyle = Settings.instance().getNavigationStyle();
-          v.setData(navigationStyle == Settings.NAVIGATION_STYLE_BAR ? R.string.NavigationStyleBar : navigationStyle == Settings.NAVIGATION_STYLE_DOCK ? R.string.NavigationStyleDock : R.string.NavigationStyleRail);
+          v.setData(navigationStyle == Settings.NAVIGATION_STYLE_BAR ? R.string.NavigationStyleBar : R.string.NavigationStyleDock);
         } else if (itemId == R.id.btn_compactChats) {
           v.getToggler().setRadioEnabled(Settings.instance().useCompactChats(), isUpdate);
         } else if (itemId == R.id.btn_centerTitles) {
@@ -1222,12 +1222,11 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
     } else if (viewId == R.id.btn_navigationStyle) {
       int style = Settings.instance().getNavigationStyle();
       showSettings(new SettingsWrapBuilder(R.id.btn_navigationStyle).setRawItems(new ListItem[] {
-        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleRail, 0, R.string.NavigationStyleRail, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_RAIL),
         new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleDock, 0, R.string.NavigationStyleDock, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_DOCK),
         new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleBar, 0, R.string.NavigationStyleBar, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_BAR),
       }).setIntDelegate((id, result) -> {
         int resultId = result.get(R.id.btn_navigationStyle);
-        Settings.instance().setNavigationStyle(resultId == R.id.btn_navigationStyleBar ? Settings.NAVIGATION_STYLE_BAR : resultId == R.id.btn_navigationStyleDock ? Settings.NAVIGATION_STYLE_DOCK : Settings.NAVIGATION_STYLE_RAIL);
+        Settings.instance().setNavigationStyle(resultId == R.id.btn_navigationStyleBar ? Settings.NAVIGATION_STYLE_BAR : Settings.NAVIGATION_STYLE_DOCK);
         adapter.updateValuedSettingById(R.id.btn_navigationStyle);
       }).setAllowResize(false));
     } else if (viewId == R.id.btn_compactChats) {

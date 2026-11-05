@@ -720,7 +720,7 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
   }
 
   private static final int PENDING_INTENT_DELAY_MS = 100;
-  private static final int PENDING_INTENT_MAX_ATTEMPTS = 50;
+  private static final int PENDING_INTENT_MAX_ATTEMPTS = 15;
 
   private @Nullable Intent pendingIntent;
   private int pendingIntentAttempts;
@@ -734,7 +734,7 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
     final boolean force = ++pendingIntentAttempts >= PENDING_INTENT_MAX_ATTEMPTS;
     if (force) {
-      // No transition lasts this long: a flag got stuck. Showing the share sheet anyway is better than nothing.
+      // No transition lasts this long (1.5 s): a flag got stuck. Showing the share sheet anyway is better than nothing.
       android.util.Log.w("VgIntent", "navigation stays busy, handling " + actionRaw + " anyway: " + describeNavigationBusy());
     }
     handler.postDelayed(() -> {
