@@ -613,12 +613,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
       items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, Lang.getMarkdownString(this, R.string.EditMarkdownHint2), false));
 
-      items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.VoiceMessages));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_earpieceMode, 0, R.string.EarpieceMode));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-
-      // Vibegram: video message settings moved to Settings → Video messages (SettingsRoundVideoController)
+      // Vibegram: voice and video message settings (earpiece of voice and video messages, HQ rounds, rear camera of rounds)
+      // moved to Settings → Video messages (SettingsRoundVideoController). Their handlers stay here untouched, unreachable.
 
       items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.Calls));
 
