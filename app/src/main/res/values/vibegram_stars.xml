@@ -47,7 +47,7 @@
   <item type="id" name="vg_tagTransaction" />
   <string name="vg_Apply">Apply</string>
   <string name="vg_ApplyChanges">Apply Changes?</string>
-  <string name="vg_BotBalance">Balance</string>
+  <string name="vg_BotBalanceStars">Stars</string>
   <string name="vg_BotStarsAvailableBalance">Available balance</string>
   <string name="vg_BotStarsButtonWithdrawShortAll">Withdraw all</string>
   <string name="vg_BotStarsButtonWithdrawShortUntil">Withdraw</string>

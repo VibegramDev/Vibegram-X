@@ -57,6 +57,32 @@ public final class Stars {
     return Lang.formatNumber(value.doubleValue());
   }
 
+  private static final String[] SHORT_SUFFIXES = {"", "K", "M", "G", "T", "P"};
+
+  /**
+   * Short amount of the official app (formatStarsAmountShort): up to 1000 in full, then 1.2K, 23.4K, 1.5M (whole
+   * tenths, never rounded up).
+   */
+  public static String formatShort (@Nullable TdApi.StarAmount amount) {
+    if (amount == null) {
+      return format(0);
+    }
+    TdApi.StarAmount abs = abs(amount);
+    if (abs.starCount <= 1000) {
+      return (isNegative(amount) ? "-" : "") + format(abs);
+    }
+    long count = abs.starCount;
+    long divider = 1;
+    int suffix = 0;
+    while (count / divider >= 1000 && suffix < SHORT_SUFFIXES.length - 1) {
+      divider *= 1000;
+      suffix++;
+    }
+    long tenths = count * 10 / divider;
+    String value = tenths % 10 == 0 ? Long.toString(tenths / 10) : (tenths / 10) + "." + (tenths % 10);
+    return (isNegative(amount) ? "-" : "") + value + SHORT_SUFFIXES[suffix];
+  }
+
   public static boolean isPositive (@Nullable TdApi.StarAmount amount) {
     return amount != null && (amount.starCount > 0 || (amount.starCount == 0 && amount.nanostarCount > 0));
   }

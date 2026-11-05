@@ -590,9 +590,6 @@ public class SettingsController extends ViewController<Void> implements
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_devices, R.drawable.baseline_devices_other_24, R.string.Devices));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-    // «My Stars» of the official app: balance, purchases and transactions.
-    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStars, R.drawable.baseline_stars_24, R.string.vg_TelegramStars));
-    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
 
     checkErrors(false);
 
@@ -620,6 +617,9 @@ public class SettingsController extends ViewController<Void> implements
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    // «My Stars» of the official app (balance, purchases, transactions): the first row of the block with «Ask a Question».
+    items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgStars, R.drawable.baseline_stars_24, R.string.vg_TelegramStars));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_help, R.drawable.baseline_live_help_24, R.string.AskAQuestion));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_faq, R.drawable.baseline_help_24, R.string.TelegramFAQ));

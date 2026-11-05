@@ -4,7 +4,7 @@
 <resources>
   <string name="vg_Apply">Применить</string>
   <string name="vg_ApplyChanges">Несохранённые изменения</string>
-  <string name="vg_BotBalance">Баланс</string>
+  <string name="vg_BotBalanceStars">Звёзды</string>
   <string name="vg_BotStarsAvailableBalance">Доступно</string>
   <string name="vg_BotStarsButtonWithdrawShort_one">Вывести ⭐️%1$s</string>
   <string name="vg_BotStarsButtonWithdrawShort_few">Вывести ⭐️%1$s</string>
