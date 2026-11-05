@@ -200,4 +200,5 @@
   <string name="vg_TelegramStars">Telegram Stars</string>
   <string name="vg_TelegramStarsChoose">Choose package</string>
   <string name="vg_TelegramStarsInfo">Buy Stars to unlock content and services\nin miniapps on Telegram. **More about Stars >**</string>
+  <string name="vg_WebProxyUnsupported">The WEB proxy needs a newer Android System WebView. Update it in Google Play and try again.</string>
 </resources>

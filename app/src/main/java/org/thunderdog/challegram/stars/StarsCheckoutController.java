@@ -34,6 +34,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.ListItem;
@@ -135,7 +136,7 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   private String orderName = "", orderPhone = "", orderEmail = "";
 
   private boolean termsAccepted;
-  private boolean isPaying;
+  private boolean isConfirming, isPaying, isPaid;
 
   private M3ButtonView payButton;
 
@@ -203,7 +204,7 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
         TdApi.ProductInfo product = args.form.productInfo;
         if (!view.setPhoto(tdlib, product != null ? product.photo : null, 88f, 12f)) {
           if (args.starOption != null) {
-            view.setIcon(new StarDrawable(Screen.dp(88f)), 88f);
+            view.setIcon(Drawables.get(R.drawable.vg_star_96), 88f);
           } else {
             view.setAvatar(tdlib, new TdApi.MessageSenderUser(args.form.sellerBotUserId), 88f);
           }
@@ -377,11 +378,11 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
     }
     payButton.setText(Lang.getString(R.string.vg_PaymentCheckoutPay, totalText()));
     // As in the official checkout: active while not paying, a tap tells what's missing (opens the payment method).
-    payButton.setEnabled(!isPaying);
+    payButton.setEnabled(!isPaying && !isPaid);
   }
 
   private void onPayClick () {
-    if (isPaying) {
+    if (isConfirming || isPaying || isPaid) {
       return;
     }
     if (!hasPaymentMethod()) {
@@ -400,8 +401,10 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
     String what = args.starOption != null ?
       Lang.plural(R.string.vg_StarsCount, args.starOption.starCount) :
       (args.form.productInfo != null ? args.form.productInfo.title : botName());
+    isConfirming = true;
     StarsUi.confirmAgain(this, Lang.getString(R.string.vg_StarsConfirmAgainBuy, totalText(), what), Lang.getString(R.string.vg_StarsPay), confirmed -> {
-      if (confirmed && !isDestroyed()) {
+      isConfirming = false;
+      if (confirmed && !isPaying && !isPaid && !isDestroyed()) {
         prepareCredentials();
       }
     });
@@ -411,8 +414,10 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
 
   private void setPaying (boolean isPaying) {
     this.isPaying = isPaying;
-    setStackLocked(isPaying);
-    updatePayButton();
+    if (!isDestroyed()) {
+      setStackLocked(isPaying);
+      updatePayButton();
+    }
   }
 
   /** A saved card needs a valid temporary password (2-Step Verification). */
@@ -480,24 +485,29 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   }
 
   private void pay (TdApi.InputCredentials credentials, String orderInfoId) {
-    Args args = getArgumentsStrict();
-    tdlib.send(new TdApi.SendPaymentForm(args.invoice, args.form.id, orderInfoId, "", credentials, 0), (result, error) -> runOnUiThreadOptional(() -> {
+    final Args args = getArgumentsStrict();
+    // The result is handled even when the screen is already destroyed: the payment is done anyway.
+    tdlib.send(new TdApi.SendPaymentForm(args.invoice, args.form.id, orderInfoId, "", credentials, 0), (result, error) -> UI.post(() -> {
+      if (error == null) {
+        isPaid = true;
+      }
       setPaying(false);
       if (error != null) {
         UI.showError(error);
         return;
       }
-      if (!StringUtils.isEmpty(result.verificationUrl)) {
+      if (!StringUtils.isEmpty(result.verificationUrl) && !isDestroyed()) {
         // 3-D Secure
-        PaymentWebController.openVerification(this, result.verificationUrl, completed -> onPaymentDone(completed));
+        // The bank page finishing (or being closed) doesn't prove the payment: it's reported as being processed.
+        PaymentWebController.openVerification(this, result.verificationUrl, completed -> onPaymentDone(args, false));
         return;
       }
-      onPaymentDone(result.success);
+      onPaymentDone(args, result.success);
     }));
   }
 
-  private void onPaymentDone (boolean success) {
-    Args args = getArgumentsStrict();
+  /** Runs even after the screen is destroyed: arguments are passed, as a destroyed controller has none. */
+  private void onPaymentDone (Args args, boolean success) {
     if (success) {
       if (args.starOption != null) {
         UI.showToast(Lang.getString(R.string.vg_StarsAcquired) + "\n" + Lang.plural(R.string.vg_StarsAcquiredInfo, args.starOption.starCount).replace("**", ""), Toast.LENGTH_LONG);
@@ -612,7 +622,7 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   @Override
   public void onClick (View v) {
     final int viewId = v.getId();
-    if (isPaying) {
+    if (isPaying || isPaid) {
       return;
     }
     if (viewId == R.id.btn_vgPaymentMethod) {

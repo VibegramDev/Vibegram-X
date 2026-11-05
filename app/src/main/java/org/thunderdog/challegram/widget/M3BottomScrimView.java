@@ -20,6 +20,7 @@ package org.thunderdog.challegram.widget;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -57,12 +58,17 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   /** Opacity of the surface at the top edge of the container and at the bottom of the view (as the phone dock). */
   private static final int ALPHA_AT_CONTAINER = 0xB3, ALPHA_AT_BOTTOM = 0xEB;
 
-  private final Paint fadePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  // The fade is two eased gradients of unit height (above / below the top edge of the container), stretched by a
+  // local matrix: the container moves on every frame of its animations, the shaders are created once per color.
+  // No anti-aliasing, so the two rects meet without a seam.
+  private final Paint fadeAbovePaint = new Paint(), fadeBelowPaint = new Paint();
+  private final Matrix fadeAboveMatrix = new Matrix(), fadeBelowMatrix = new Matrix();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF shape = new RectF();
   private @Nullable ShapeProvider provider;
   private float radius;
-  private int fadeColor, fadeHeight, fadeTotalHeight;
+  private int fadeColor;
+  private boolean fadeShadersReady, fadeAboveVisible;
   private boolean shadowOnly;
   private int fadeHeightOverride = -1;
 
@@ -113,20 +119,29 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     final int fade = fadeHeightOverride >= 0 ? fadeHeightOverride : getFadeHeight();
     final int width = getWidth();
     final float top = shape.top;
+    final boolean fadeAbove = fade > 0;
     // From the top of the fade to the bottom of the view: transparent -> 70% surface at the top edge of the container
     // -> 92% at the bottom (the content stays faintly visible below the container, as under the phone dock).
-    final int total = Math.max(fade + 1, Math.round(getHeight() - top) + fade);
-    if (fadeColor != surface || fadeHeight != fade || fadeTotalHeight != total) {
+    if (!fadeShadersReady || fadeColor != surface || fadeAboveVisible != fadeAbove) {
+      fadeShadersReady = true;
       fadeColor = surface;
-      fadeHeight = fade;
-      fadeTotalHeight = total;
+      fadeAboveVisible = fadeAbove;
       // No fade above the container (message composer): the surface starts from zero at its top edge.
-      fadePaint.setShader(newSmoothFade(total, surface, (float) fade / total, fade > 0 ? ALPHA_AT_CONTAINER : 0, ALPHA_AT_BOTTOM));
+      int alphaAtContainer = fadeAbove ? ALPHA_AT_CONTAINER : 0;
+      fadeAbovePaint.setShader(newEasedFade(surface, 0, alphaAtContainer));
+      fadeBelowPaint.setShader(newEasedFade(surface, alphaAtContainer, ALPHA_AT_BOTTOM));
     }
-    c.save();
-    c.translate(0, top - fade);
-    c.drawRect(0, 0, width, total, fadePaint);
-    c.restore();
+    if (fadeAbove) {
+      fadeAboveMatrix.setScale(1f, fade);
+      fadeAboveMatrix.postTranslate(0, top - fade);
+      fadeAbovePaint.getShader().setLocalMatrix(fadeAboveMatrix);
+      c.drawRect(0, top - fade, width, top, fadeAbovePaint);
+    }
+    final float below = Math.max(1f, getHeight() - top);
+    fadeBelowMatrix.setScale(1f, below);
+    fadeBelowMatrix.postTranslate(0, top);
+    fadeBelowPaint.getShader().setLocalMatrix(fadeBelowMatrix);
+    c.drawRect(0, top, width, top + below, fadeBelowPaint);
     drawShadow(c, shape, radius);
   }
 
@@ -153,6 +168,21 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
       positions[i] = upper ? split * t : split + (1f - split) * t;
     }
     return new LinearGradient(0, 0, 0, height, colors, positions, Shader.TileMode.CLAMP);
+  }
+
+  /** One eased part of {@link #newSmoothFade}: {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1. */
+  private static Shader newEasedFade (int color, int alphaFrom, int alphaTo) {
+    final int rgb = color & 0x00FFFFFF;
+    final int steps = SMOOTH_FADE_STEPS;
+    final int[] colors = new int[steps + 1];
+    final float[] positions = new float[steps + 1];
+    for (int i = 0; i <= steps; i++) {
+      float t = (float) i / steps;
+      float eased = t * t * (3f - 2f * t);
+      colors[i] = (Math.round(alphaFrom + (alphaTo - alphaFrom) * eased) << 24) | rgb;
+      positions[i] = t;
+    }
+    return new LinearGradient(0, 0, 0, 1, colors, positions, Shader.TileMode.CLAMP);
   }
 
   /** Soft elevation shadow (M3 level 2 look): a wide faint key shadow below and a tight ambient one around. */

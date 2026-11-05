@@ -723,7 +723,7 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
 
   @Override
   protected boolean needDrawer () {
-    return true;
+    return false;
   }
 
   // Viewing
@@ -748,13 +748,9 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     if (pendingIntent != intent) {
       pendingIntent = intent;
       pendingIntentAttempts = 0;
-      android.util.Log.i("VgIntent", "navigation is busy, postponing " + actionRaw + ": " + describeNavigationBusy());
     }
+    // No transition lasts this long (1.5 s): a flag got stuck. Showing the share sheet anyway is better than nothing.
     final boolean force = ++pendingIntentAttempts >= PENDING_INTENT_MAX_ATTEMPTS;
-    if (force) {
-      // No transition lasts this long (1.5 s): a flag got stuck. Showing the share sheet anyway is better than nothing.
-      android.util.Log.w("VgIntent", "navigation stays busy, handling " + actionRaw + " anyway: " + describeNavigationBusy());
-    }
     handler.postDelayed(() -> {
       if (pendingIntent == intent && !isFinishing()) {
         forceIntent = force;
@@ -1184,7 +1180,6 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
         main.shareIntent(account.tdlib(), action, intent);
       } else {
         // The chat list is not in the stack (it used to drop the shared content silently): bring it back first.
-        android.util.Log.w("VgIntent", "no chat list in the stack for " + action + ", stack size " + navigation.getStackSize());
         MainController c = new MainController(this, account.tdlib());
         c.shareIntent(account.tdlib(), action, intent);
         navigation.setControllerAnimated(c, false, false);

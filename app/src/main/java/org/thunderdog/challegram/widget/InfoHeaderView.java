@@ -32,9 +32,7 @@ import org.thunderdog.challegram.loader.ImageFile;
 import org.thunderdog.challegram.loader.ImageReceiver;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
-import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -66,7 +64,6 @@ public class InfoHeaderView extends View implements Destroyable {
   private int iconType = ICON_NONE;
   private int iconSize;
   private @Nullable Drawable iconDrawable;
-  private @DrawableRes int iconRes;
 
   private @Nullable CharSequence title, amount, caption;
   private @Nullable TdApi.FormattedText text;
@@ -97,7 +94,7 @@ public class InfoHeaderView extends View implements Destroyable {
   public void setIconSymbol (@DrawableRes int iconRes, float sizeDp) {
     clearIcon();
     iconType = ICON_SYMBOL;
-    this.iconRes = iconRes;
+    iconDrawable = Drawables.get(getResources(), iconRes);
     iconSize = Screen.dp(sizeDp);
     requestLayout();
   }
@@ -260,9 +257,8 @@ public class InfoHeaderView extends View implements Destroyable {
         case ICON_SYMBOL: {
           float radius = iconSize / 2f;
           c.drawCircle(left + radius, y + radius, radius, Paints.fillingPaint(M3.secondaryContainer()));
-          Drawable icon = Drawables.get(getResources(), iconRes);
-          if (icon != null) {
-            Drawables.drawCentered(c, icon, left + radius, y + radius, Paints.getPorterDuffPaint(M3.onSecondaryContainer()));
+          if (iconDrawable != null) {
+            Drawables.drawCentered(c, iconDrawable, left + radius, y + radius, Paints.getPorterDuffPaint(M3.onSecondaryContainer()));
           }
           break;
         }

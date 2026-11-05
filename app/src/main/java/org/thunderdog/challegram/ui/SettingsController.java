@@ -58,8 +58,8 @@ import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.stt.SttManager;
 import org.thunderdog.challegram.support.ViewSupport;
-import org.thunderdog.challegram.telegram.ConnectionListener;
 import org.thunderdog.challegram.telegram.GlobalTokenStateListener;
 import org.thunderdog.challegram.telegram.SessionListener;
 import org.thunderdog.challegram.telegram.StickersListener;
@@ -111,7 +111,7 @@ import tgx.td.Td;
 public class SettingsController extends ViewController<Void> implements
   View.OnClickListener,
   Menu, MoreDelegate, OptionDelegate,
-  TdlibCache.MyUserDataChangeListener, ConnectionListener, StickersListener, MediaLayout.MediaGalleryCallback,
+  TdlibCache.MyUserDataChangeListener, StickersListener, MediaLayout.MediaGalleryCallback,
   ActivityResultHandler, View.OnLongClickListener, SessionListener, GlobalTokenStateListener, TdlibCache.UserDataChangeListener,
   TdlibOptionListener {
 
@@ -597,8 +597,10 @@ public class SettingsController extends ViewController<Void> implements
     items.add(new ListItem(notificationErrorDescriptionRes != 0 ? ListItem.TYPE_VALUED_SETTING_COMPACT : ListItem.TYPE_SETTING, R.id.btn_notificationSettings, R.drawable.baseline_notifications_24, R.string.Notifications));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_chatSettings, R.drawable.baseline_data_usage_24, R.string.DataSettings));
-    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgStt, R.drawable.vg_speech_to_text_24, R.string.vg_SttTitle));
+    if (SttManager.isSupported()) {
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR));
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgStt, R.drawable.vg_speech_to_text_24, R.string.vg_SttTitle));
+    }
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgRoundVideo, R.drawable.deproko_baseline_msg_video_24, R.string.vg_RoundTitle));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR));
@@ -711,7 +713,6 @@ public class SettingsController extends ViewController<Void> implements
 
     tdlib.cache().addMyUserListener(this);
     setMyUserId(tdlib.myUserId());
-    tdlib.listeners().subscribeToConnectivityUpdates(this);
     tdlib.listeners().subscribeToSessionUpdates(this);
     tdlib.listeners().addOptionsListener(this);
     TGLegacyManager.instance().addEmojiListener(adapter);
@@ -889,7 +890,6 @@ public class SettingsController extends ViewController<Void> implements
     super.destroy();
     tdlib.cache().removeMyUserListener(this);
     setMyUserId(0);
-    tdlib.listeners().unsubscribeFromConnectivityUpdates(this);
     tdlib.listeners().unsubscribeFromStickerUpdates(this);
     tdlib.listeners().unsubscribeFromSessionUpdates(this);
     tdlib.listeners().removeOptionListener(this);
@@ -898,6 +898,7 @@ public class SettingsController extends ViewController<Void> implements
     if (accountsBlock != null) {
       accountsBlock.destroy();
     }
+    Views.destroyRecyclerView(contentView);
   }
 
   private void updateHeader () {
@@ -938,12 +939,10 @@ public class SettingsController extends ViewController<Void> implements
       return;
     }
     float alpha;
-    int position = adapter != null ? adapter.indexOfViewById(R.id.vg_settingsProfile) : -1;
-    View view = position != -1 ? contentView.getLayoutManager().findViewByPosition(position) : null;
-    if (position == -1) {
-      alpha = 1f;
-    } else if (view == null) {
-      alpha = ((LinearLayoutManager) contentView.getLayoutManager()).findFirstVisibleItemPosition() > position ? 1f : 0f;
+    // The profile block is always the first item.
+    View view = contentView.getLayoutManager().findViewByPosition(0);
+    if (view == null) {
+      alpha = ((LinearLayoutManager) contentView.getLayoutManager()).findFirstVisibleItemPosition() > 0 ? 1f : 0f;
     } else {
       int nameTop = view.getTop() + Screen.dp(M3SettingsProfileView.AVATAR_SIZE + 8f + 16f);
       alpha = MathUtils.clamp(-nameTop / (float) Screen.dp(32f));
@@ -1082,11 +1081,6 @@ public class SettingsController extends ViewController<Void> implements
       return true;
     }
     return false;
-  }
-
-  @Override
-  public void onConnectionDisplayStatusChanged () {
-    // The connection state is shown in the chat list app bar; the profile block shows phone • username.
   }
 
   @Override

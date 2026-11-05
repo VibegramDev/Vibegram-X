@@ -13,6 +13,7 @@ import android.graphics.Path;
 
 import androidx.graphics.shapes.CornerRounding;
 import androidx.graphics.shapes.Morph;
+import androidx.graphics.shapes.MutableCubic;
 import androidx.graphics.shapes.RoundedPolygon;
 import androidx.graphics.shapes.RoundedPolygonKt;
 import androidx.graphics.shapes.ShapesKt;
@@ -20,6 +21,9 @@ import androidx.graphics.shapes.Shapes_androidKt;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import kotlin.Unit;
+import kotlin.jvm.functions.Function1;
 
 /**
  * androidx.graphics.shapes implementation of {@link M3LoadingIndicator.Shapes}: the indeterminate polygon sequence
@@ -36,6 +40,19 @@ public final class M3LoadingShapes {
   private static final class Impl implements M3LoadingIndicator.Shapes {
     private final Morph[] morphs;
     private final float scaleFactor;
+
+    // Shapes_androidKt.toPath(morph, ...) allocates a list of new cubics on every frame (Morph.asCubics).
+    private final MutableCubic cubic = new MutableCubic();
+    private Path target;
+    private boolean first;
+    private final Function1<MutableCubic, Unit> addCubic = c -> {
+      if (first) {
+        target.moveTo(c.getAnchor0X(), c.getAnchor0Y());
+        first = false;
+      }
+      target.cubicTo(c.getControl0X(), c.getControl0Y(), c.getControl1X(), c.getControl1Y(), c.getAnchor1X(), c.getAnchor1Y());
+      return Unit.INSTANCE;
+    };
 
     Impl () {
       RoundedPolygon[] polygons = {softBurst(), cookie9(), pentagon(), pill(), sunny(), cookie4(), oval()};
@@ -57,7 +74,11 @@ public final class M3LoadingShapes {
     @Override
     public void toPath (int index, float progress, Path out) {
       out.rewind();
-      Shapes_androidKt.toPath(morphs[index], progress, out);
+      target = out;
+      first = true;
+      morphs[index].forEachCubic(progress, cubic, addCubic);
+      out.close();
+      target = null;
     }
 
     @Override

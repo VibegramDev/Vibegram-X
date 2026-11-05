@@ -32,6 +32,7 @@ import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.component.user.RemoveHelper;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.MoreDelegate;
+import org.thunderdog.challegram.proxy.WebProxy;
 import org.thunderdog.challegram.telegram.ConnectionListener;
 import org.thunderdog.challegram.telegram.ConnectionState;
 import org.thunderdog.challegram.telegram.GlobalProxyPingListener;
@@ -45,6 +46,7 @@ import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.v.CustomRecyclerView;
 import org.thunderdog.challegram.widget.RadioView;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -333,9 +335,44 @@ public class SettingsProxyController extends RecyclerViewController<Void> implem
     }
   }
 
+  // A ping of a WEB proxy starts its hidden WebView (WebProxy.lease): WEB proxies are pinged one at a time.
+  private static final long WEB_PING_TIMEOUT_MS = 30_000L;
+  private final ArrayDeque<Settings.Proxy> webPingQueue = new ArrayDeque<>();
+  private @Nullable Settings.Proxy webPingCurrent;
+
   private void pingProxy (@NonNull Settings.Proxy info, boolean allowNotify) {
+    if (WebProxy.isWeb(info.proxy)) {
+      if (info != webPingCurrent && !webPingQueue.contains(info)) {
+        webPingQueue.add(info);
+        pingNextWebProxy();
+      }
+      return;
+    }
+    pingProxyNow(info);
+  }
+
+  private void pingNextWebProxy () {
+    if (webPingCurrent == null && !webPingQueue.isEmpty() && !isDestroyed()) {
+      final Settings.Proxy current = webPingQueue.poll();
+      webPingCurrent = current;
+      pingProxyNow(current);
+      // A ping superseded by another one never reports back: the queue moves on anyway.
+      UI.post(() -> {
+        if (webPingCurrent == current) {
+          webPingCurrent = null;
+          pingNextWebProxy();
+        }
+      }, WEB_PING_TIMEOUT_MS);
+    }
+  }
+
+  private void pingProxyNow (@NonNull Settings.Proxy info) {
     int nextPingId = info.pingCount + 1;
     tdlib.pingProxy(info, pingMs -> runOnUiThreadOptional(() -> {
+      if (info == webPingCurrent) {
+        webPingCurrent = null;
+        pingNextWebProxy();
+      }
       if (info.pingCount == nextPingId) {
         checkWinners();
         adapter.updateValuedSettingByPosition(indexOfProxy(info.id));

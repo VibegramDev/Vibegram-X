@@ -24,11 +24,7 @@
   <string name="vg_SttCreditsModels">Model authors</string>
   <string name="vg_SttCreditsEngines">Recognition engines</string>
   <string name="vg_SttDownloadFailed">Couldn\'t download the model. Check the connection and try again.</string>
-  <string name="vg_SttTranscribe">Transcribe</string>
-  <string name="vg_SttHide">Hide transcription</string>
   <string name="vg_SttNoModel">Download a transcription model in Settings first</string>
-  <string name="vg_SttOpenSettings">Open</string>
-  <string name="vg_SttInProgress">Transcribing…</string>
   <string name="vg_SttFailed">Couldn\'t transcribe this message</string>
   <string name="vg_SttEmpty">No speech recognized</string>
   <string name="vg_SttNoSpace">Not enough space for the model: free up %1$s more.</string>

@@ -95,11 +95,15 @@ public final class WebProxyTransport {
   private static final long INITIAL_WINDOW = 4L * 1024 * 1024;
   private static final int MAX_STREAMS = 64;
   private static final int MAX_OUTBOUND_ITEMS = 8192;
-  private static final int MAX_OUTBOUND_BYTES = 64 * 1024 * 1024;
+  private static final int MAX_OUTBOUND_CHARS = 64 * 1024 * 1024;
+  private static final int DRAIN_PASS_CHARS = 1024 * 1024;
   private static final String BRIDGE_OBJECT = "TelegramWebProxy";
 
   private static final long RESTART_DELAY_MIN_MS = 1000L;
   private static final long RESTART_DELAY_MAX_MS = 30_000L;
+  // In background the carrier is still restarted (pushes are fetched through the proxy), but rarely:
+  // onForeground() reconnects at once.
+  private static final long RESTART_DELAY_BACKGROUND_MS = 5 * 60_000L;
 
   private static final String BASE64_PREFIX = "tproxy-base64:";
   private static final int MAX_BASE64_LENGTH = ((FRAME_HEADER + FRAME_MAX_PAYLOAD + 2) / 3) * 4;
@@ -176,38 +180,48 @@ public final class WebProxyTransport {
       return 0;
     }
     synchronized (registryLock) {
-      final String key = key(normalized.value, secret);
-      Entry entry = registry.get(key);
-      if (entry != null && entry.transport.serverSocket.isClosed()) {
-        registry.remove(key);
-        entry = null;
-      }
+      Entry entry = obtainEntry(key(normalized.value, secret), normalized, secretBytes, true);
       if (entry == null) {
-        try {
-          WebProxyTransport transport = new WebProxyTransport(normalized, secretBytes);
-          transport.start();
-          entry = new Entry(transport);
-          registry.put(key, entry);
-        } catch (Exception e) {
-          Log.e("Cannot start WEB proxy transport", e);
-          return 0;
-        }
+        return 0;
       }
       entry.refs++;
       return entry.transport.serverSocket.getLocalPort();
     }
   }
 
-  /** @return port of the running transport, or 0 */
+  /** @return port of the transport (restarted, when its loopback server has died), or 0 if it isn't running */
   @AnyThread
   static int peekPort (@NonNull String address, @NonNull String secret) {
     final Address normalized = Address.parse(address);
-    if (normalized == null) {
+    final byte[] secretBytes = decodeSecret(secret);
+    if (normalized == null || secretBytes == null) {
       return 0;
     }
     synchronized (registryLock) {
-      Entry entry = registry.get(key(normalized.value, secret));
-      return entry != null && !entry.transport.serverSocket.isClosed() ? entry.transport.serverSocket.getLocalPort() : 0;
+      Entry entry = obtainEntry(key(normalized.value, secret), normalized, secretBytes, false);
+      return entry != null ? entry.transport.serverSocket.getLocalPort() : 0;
+    }
+  }
+
+  /** A transport whose loopback server has died is replaced; its holders keep their references. */
+  private static @Nullable Entry obtainEntry (String key, Address address, byte[] secretBytes, boolean create) {
+    Entry entry = registry.get(key);
+    if (entry != null ? !entry.transport.serverSocket.isClosed() : !create) {
+      return entry;
+    }
+    try {
+      WebProxyTransport transport = new WebProxyTransport(address, secretBytes);
+      transport.start();
+      Entry started = new Entry(transport);
+      if (entry != null) {
+        started.refs = entry.refs;
+        entry.transport.stop();
+      }
+      registry.put(key, started);
+      return started;
+    } catch (Exception e) {
+      Log.e("Cannot start WEB proxy transport", e);
+      return null;
     }
   }
 
@@ -267,16 +281,16 @@ public final class WebProxyTransport {
   private final ExecutorService carrierExecutor = Executors.newSingleThreadExecutor();
   private final AtomicInteger nextStreamId = new AtomicInteger(1);
   private final Map<Integer, Stream> streams = new HashMap<>();
-  private final ArrayDeque<byte[]> outbound = new ArrayDeque<>();
+  private final ArrayDeque<String> outbound = new ArrayDeque<>();
 
   private WebView webView;
   private JavaScriptReplyProxy replyProxy;
   private boolean bridgeReady;
-  private boolean base64InstallTimeoutRetried;
   private boolean carrierConnected;
   private boolean stopped;
   private boolean restartScheduled;
-  private int outboundBytes;
+  private boolean drainScheduled;
+  private int outboundChars;
   private long restartDelayMs = RESTART_DELAY_MIN_MS;
 
   private final Runnable createWebViewRunnable = this::createWebView;
@@ -316,7 +330,7 @@ public final class WebProxyTransport {
       close = new ArrayList<>(streams.values());
       streams.clear();
       outbound.clear();
-      outboundBytes = 0;
+      outboundChars = 0;
       lock.notifyAll();
     }
     try {
@@ -356,8 +370,23 @@ public final class WebProxyTransport {
 
   private void acceptLoop () {
     while (true) {
+      final Socket socket;
       try {
-        Socket socket = serverSocket.accept();
+        socket = serverSocket.accept();
+      } catch (Exception e) {
+        synchronized (lock) {
+          if (stopped) {
+            return;
+          }
+        }
+        // Nobody would serve the port anymore: the closed server makes the registry start a new transport.
+        Log.e("WEB proxy: accept failed", e);
+        try {
+          serverSocket.close();
+        } catch (Exception ignore) { }
+        return;
+      }
+      try {
         socket.setTcpNoDelay(true);
         Stream stream;
         synchronized (lock) {
@@ -376,14 +405,14 @@ public final class WebProxyTransport {
         final Stream value = stream;
         ioExecutor.execute(() -> readLoop(value));
       } catch (Exception e) {
+        // A single connection has failed (e.g. TDLib has already dropped it): serve the next one.
+        closeSocket(socket);
         synchronized (lock) {
           if (stopped) {
             return;
           }
         }
-        Log.e("WEB proxy: accept failed", e);
-        failCarrier();
-        return;
+        Log.w("WEB proxy: cannot accept connection", e);
       }
     }
   }
@@ -408,7 +437,7 @@ public final class WebProxyTransport {
             && (!carrierConnected || !stream.opened || stream.sendWindow == 0)) {
             lock.wait();
           }
-          if (stopped || streams.get(stream.id) != stream) {
+          if (stopped || streams.get(stream.id) != stream || stream.finishing) {
             return;
           }
           allowance = (int) Math.min(DATA_CHUNK, stream.sendWindow);
@@ -424,7 +453,7 @@ public final class WebProxyTransport {
         byte[] data = new byte[count];
         System.arraycopy(buffer, 0, data, 0, count);
         synchronized (lock) {
-          if (stopped || streams.get(stream.id) != stream || !carrierConnected) {
+          if (stopped || streams.get(stream.id) != stream || stream.finishing || !carrierConnected) {
             return;
           }
           stream.sendWindow -= count;
@@ -638,14 +667,8 @@ public final class WebProxyTransport {
           return;
         }
       }
-      if (base64InstallTimeoutRetried) {
-        Log.e("WEB proxy: Base64 bridge installation timed out again");
-        failCarrier();
-      } else {
-        Log.w("WEB proxy: Base64 bridge installation timed out; retrying once");
-        base64InstallTimeoutRetried = true;
-        failCarrier();
-      }
+      Log.e("WEB proxy: Base64 bridge installation timed out");
+      failCarrier();
     };
     UI.post(timeout, 5000);
     try {
@@ -665,7 +688,6 @@ public final class WebProxyTransport {
           failCarrier();
           return;
         }
-        base64InstallTimeoutRetried = false;
         bridgeReady = true;
         Log.i("WEB proxy: bridge ready");
         sendFrame(FRAME_HELLO, 0, new byte[] {1});
@@ -744,23 +766,24 @@ public final class WebProxyTransport {
       if (payload.length == 0) {
         return false;
       }
+      final boolean startWriter;
       synchronized (lock) {
+        if (streams.get(stream.id) != stream || stream.finishing) {
+          return true;
+        }
         if (stream.receiveWindow < payload.length) {
           return false;
         }
+        // Queued bytes are bounded by the window: it is returned only once they reach the socket.
         stream.receiveWindow -= payload.length;
+        stream.incoming.add(payload);
+        startWriter = !stream.writing;
+        stream.writing = true;
       }
-      try {
-        OutputStream output = stream.socket.getOutputStream();
-        output.write(payload);
-        synchronized (lock) {
-          if (streams.get(stream.id) == stream) {
-            stream.receiveWindow += payload.length;
-            sendFrame(FRAME_WINDOW, stream.id, uint32(payload.length));
-          }
-        }
-      } catch (Exception e) {
-        closeStream(stream, true);
+      if (startWriter) {
+        try {
+          ioExecutor.execute(() -> writeLoop(stream));
+        } catch (Exception ignore) { /* executor is shut down */ }
       }
       return true;
     } else if (type == FRAME_WINDOW && payload.length == 4) {
@@ -783,14 +806,51 @@ public final class WebProxyTransport {
     return false;
   }
 
+  private void writeLoop (Stream stream) {
+    try {
+      OutputStream output = stream.socket.getOutputStream();
+      while (true) {
+        final byte[] data;
+        synchronized (lock) {
+          data = stream.incoming.poll();
+          if (data == null) {
+            stream.writing = false;
+            if (stream.finishing) {
+              break;
+            }
+            return;
+          }
+        }
+        output.write(data);
+        synchronized (lock) {
+          if (streams.get(stream.id) == stream && !stream.finishing) {
+            stream.receiveWindow += data.length;
+            sendFrame(FRAME_WINDOW, stream.id, uint32(data.length));
+          }
+        }
+      }
+    } catch (Exception e) {
+      closeStream(stream, true);
+      return;
+    }
+    closeStream(stream, false);
+  }
+
   private void closeStream (Stream stream, boolean notifyRelay) {
-    boolean sendClose;
+    final boolean sendClose;
     synchronized (lock) {
       if (streams.get(stream.id) != stream) {
         return;
       }
+      if (!notifyRelay && stream.writing) {
+        // CLOSE from the relay comes after its DATA: writeLoop delivers what is queued and then closes the stream.
+        stream.finishing = true;
+        lock.notifyAll();
+        return;
+      }
       streams.remove(stream.id);
-      sendClose = notifyRelay && carrierConnected && stream.opened;
+      sendClose = notifyRelay && carrierConnected && stream.opened && !stream.finishing;
+      stream.incoming.clear();
       lock.notifyAll();
     }
     closeSocket(stream.socket);
@@ -811,37 +871,55 @@ public final class WebProxyTransport {
       .putInt(payload.length)
       .put(payload)
       .array();
+    // Encoded by the sending thread: the main thread only posts the messages.
+    final String message = BASE64_PREFIX + Base64.encodeToString(frame, Base64.NO_WRAP);
+    final boolean scheduleDrain;
     synchronized (lock) {
       if (stopped) {
         return;
       }
-      if (outbound.size() >= MAX_OUTBOUND_ITEMS || outboundBytes > MAX_OUTBOUND_BYTES - frame.length) {
+      if (outbound.size() >= MAX_OUTBOUND_ITEMS || outboundChars > MAX_OUTBOUND_CHARS - message.length()) {
         UI.post(this::failCarrier);
         return;
       }
-      outbound.add(frame);
-      outboundBytes += frame.length;
+      outbound.add(message);
+      outboundChars += message.length();
+      scheduleDrain = !drainScheduled;
+      drainScheduled = true;
     }
-    UI.post(this::drainOutbound);
+    if (scheduleDrain) {
+      UI.post(this::drainOutbound);
+    }
   }
 
   @UiThread
   private void drainOutbound () {
+    int budget = DRAIN_PASS_CHARS;
     while (true) {
-      byte[] frame;
+      String message;
       JavaScriptReplyProxy target;
       synchronized (lock) {
         target = replyProxy;
         if (stopped || target == null || !bridgeReady || outbound.isEmpty()) {
+          drainScheduled = false;
           return;
         }
-        frame = outbound.removeFirst();
-        outboundBytes -= frame.length;
+        if (budget <= 0) {
+          // Lets the main thread breathe during big transfers.
+          UI.post(this::drainOutbound);
+          return;
+        }
+        message = outbound.removeFirst();
+        outboundChars -= message.length();
       }
+      budget -= message.length();
       try {
-        target.postMessage(BASE64_PREFIX + Base64.encodeToString(frame, Base64.NO_WRAP));
+        target.postMessage(message);
       } catch (Exception e) {
         Log.e("WEB proxy: cannot post frame", e);
+        synchronized (lock) {
+          drainScheduled = false;
+        }
         failCarrier();
         return;
       }
@@ -859,7 +937,7 @@ public final class WebProxyTransport {
       carrierConnected = false;
       replyProxy = null;
       outbound.clear();
-      outboundBytes = 0;
+      outboundChars = 0;
       close = new ArrayList<>(streams.values());
       streams.clear();
       lock.notifyAll();
@@ -876,7 +954,7 @@ public final class WebProxyTransport {
           return;
         }
       }
-      UI.post(createWebViewRunnable, delay);
+      UI.post(createWebViewRunnable, UI.isResumed() ? delay : Math.max(delay, RESTART_DELAY_BACKGROUND_MS));
     });
   }
 
@@ -948,9 +1026,13 @@ public final class WebProxyTransport {
   private static final class Stream {
     final int id;
     final Socket socket;
+    // DATA from the relay, written to the socket by writeLoop
+    final ArrayDeque<byte[]> incoming = new ArrayDeque<>();
     long sendWindow = INITIAL_WINDOW;
     long receiveWindow = INITIAL_WINDOW;
     boolean opened;
+    boolean writing;
+    boolean finishing;
 
     Stream (int id, Socket socket) {
       this.id = id;

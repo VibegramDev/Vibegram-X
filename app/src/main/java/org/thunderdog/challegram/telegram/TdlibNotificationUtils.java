@@ -270,11 +270,7 @@ public class TdlibNotificationUtils {
   }
 
   static Intent newCoreIntent (int accountId, long forLocalChatId, long specificMessageId) {
-    return newCoreIntent(accountId, forLocalChatId, specificMessageId, 0);
-  }
-
-  static Intent newCoreIntent (int accountId, long forLocalChatId, long specificMessageId, long messageThreadId) {
-    return forLocalChatId != 0 ? Intents.valueOfLocalChatId(accountId, forLocalChatId, specificMessageId, messageThreadId) : Intents.valueOfMain(accountId);
+    return forLocalChatId != 0 ? Intents.valueOfLocalChatId(accountId, forLocalChatId, specificMessageId) : Intents.valueOfMain(accountId);
   }
 
   public static class NotificationInitializationFailedError extends RuntimeException {

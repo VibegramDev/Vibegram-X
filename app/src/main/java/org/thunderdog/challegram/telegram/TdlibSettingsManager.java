@@ -70,6 +70,7 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
   private static final String DISMISS_MESSAGE_PREFIX = "dismiss_pinned_";
   private static final String DISMISS_REQUESTS_PREFIX = "dismiss_requests_";
   private static final String FORUM_VIEW_PREFERENCE_PREFIX = "forum_view_";
+  private static final String MONET_WALLPAPER_RESET_PREFIX = "monet_wallpaper_reset_";
 
   private static final String NOTIFICATION_GROUP_DATA_PREFIX = "notification_gdata_";
   private static final String NOTIFICATION_DATA_PREFIX = "notification_data_";
@@ -177,6 +178,7 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
     String dismissPrefix = key(DISMISS_MESSAGE_PREFIX, accountId);
     String dismissReqPrefix = key(DISMISS_REQUESTS_PREFIX, accountId);
     String forumViewPrefix = key(FORUM_VIEW_PREFERENCE_PREFIX, accountId);
+    String monetWallpaperResetPrefix = key(MONET_WALLPAPER_RESET_PREFIX, accountId);
     String notificationGroupDataPrefix = key(NOTIFICATION_GROUP_DATA_PREFIX, accountId);
     String notificationDataPrefix = key(NOTIFICATION_DATA_PREFIX, accountId);
     String conversionPrefix = key(CONVERSION_PREFIX, accountId);
@@ -186,6 +188,7 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
       dismissPrefix,
       dismissReqPrefix,
       forumViewPrefix,
+      monetWallpaperResetPrefix,
       notificationGroupDataPrefix,
       notificationDataPrefix,
       conversionPrefix,
@@ -304,8 +307,17 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
     return Settings.instance().getInt(key(FORUM_VIEW_PREFERENCE_PREFIX, tdlib.id()) + chatId, 0);
   }
 
-  public boolean hasForumViewPreference (long chatId) {
-    return getForumViewPreference(chatId) != 0;
+  /**
+   * One-time migration of the wallpaper kept for a Monet theme (see TdlibWallpaperManager):
+   * returns true only the first time it is called for the wallpaper usage id.
+   */
+  public boolean checkMonetWallpaperResetNeeded (int wallpaperUsageId) {
+    String key = key(MONET_WALLPAPER_RESET_PREFIX, tdlib.id()) + wallpaperUsageId;
+    if (Settings.instance().getBoolean(key, false)) {
+      return false;
+    }
+    Settings.instance().putBoolean(key, true);
+    return true;
   }
 
   public boolean forcePlainModeInChannels () {

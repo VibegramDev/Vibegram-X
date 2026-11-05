@@ -24,7 +24,9 @@ import android.graphics.PixelFormat;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
+import android.view.View;
 
+import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -46,17 +48,17 @@ import me.vkryl.core.ColorUtils;
  * {@code addThemeInvalidateListener} and it follows theme changes.
  *
  * <ul>
- *   <li>Sizes (M3 Expressive buttons): small — 40dp, label large 14sp, 16dp padding; medium — 56dp, title medium
- *   16sp, 24dp padding. Round shape.</li>
+ *   <li>Size (M3 Expressive buttons): medium — 56dp, title medium 16sp, 24dp padding. Round shape.</li>
  *   <li>Colours: filled — primary / onPrimary; tonal — secondaryContainer / onSecondaryContainer; text — no container,
  *   primary label. Disabled — container onSurface 12%, label onSurface 38%. Pressed — state layer 10% of the label.</li>
  * </ul>
  */
-public class M3ButtonView extends android.view.View {
+public class M3ButtonView extends View {
   public static final int STYLE_FILLED = 0, STYLE_TONAL = 1, STYLE_TEXT = 2;
-  public static final int SIZE_SMALL = 0, SIZE_MEDIUM = 1;
+  /** Medium (56dp) is the only size in use; small buttons (40dp) were never needed. */
+  public static final int SIZE_MEDIUM = 1;
 
-  private final int style, size;
+  private final int style;
   private CharSequence label = "";
   private @Nullable Text text;
   private int textBuiltWidth = -1;
@@ -64,8 +66,10 @@ public class M3ButtonView extends android.view.View {
 
   public M3ButtonView (Context context, int style, int size) {
     super(context);
+    if (size != SIZE_MEDIUM) {
+      throw new IllegalArgumentException("size: " + size);
+    }
     this.style = style;
-    this.size = size;
     this.stateLayer = new M3StateLayerDrawable(null, new RoundMask(), pressedColor());
     ViewUtils.setBackground(this, stateLayer);
     Views.setClickable(this);
@@ -84,11 +88,11 @@ public class M3ButtonView extends android.view.View {
   }
 
   public int height () {
-    return Screen.dp(size == SIZE_MEDIUM ? 56f : 40f);
+    return Screen.dp(56f);
   }
 
   private int horizontalPadding () {
-    return Screen.dp(size == SIZE_MEDIUM ? 24f : 16f);
+    return Screen.dp(24f);
   }
 
   // Label
@@ -107,19 +111,13 @@ public class M3ButtonView extends android.view.View {
     return label;
   }
 
-  private static TextStyleProvider smallStyle, mediumStyle;
+  private static TextStyleProvider textStyle;
 
-  private TextStyleProvider textStyle () {
-    if (size == SIZE_MEDIUM) {
-      if (mediumStyle == null) {
-        mediumStyle = Paints.robotoStyleProvider(16f);
-      }
-      return mediumStyle;
+  private static TextStyleProvider textStyle () {
+    if (textStyle == null) {
+      textStyle = Paints.robotoStyleProvider(16f);
     }
-    if (smallStyle == null) {
-      smallStyle = Paints.robotoStyleProvider(14f);
-    }
-    return smallStyle;
+    return textStyle;
   }
 
   private final TextColorSet labelColorSet = this::labelColor;
@@ -134,7 +132,7 @@ public class M3ButtonView extends android.view.View {
 
   // Colours
 
-  private @androidx.annotation.ColorInt int containerColor () {
+  private @ColorInt int containerColor () {
     if (style == STYLE_TEXT) {
       return 0;
     }
@@ -144,7 +142,7 @@ public class M3ButtonView extends android.view.View {
     return style == STYLE_FILLED ? M3.primary() : M3.secondaryContainer();
   }
 
-  private @androidx.annotation.ColorInt int labelColor () {
+  private @ColorInt int labelColor () {
     if (!isEnabled()) {
       return ColorUtils.alphaColor(.38f, M3.onSurface());
     }
@@ -168,39 +166,6 @@ public class M3ButtonView extends android.view.View {
       super.setEnabled(enabled);
       invalidate();
     }
-  }
-
-  // Countdown
-
-  private @Nullable Runnable lockTick;
-
-  /**
-   * Keeps the button disabled for {@code seconds} with a countdown after the label, so that a stray tap right after
-   * the sheet opens can't confirm an operation (Vibegram X: operations with Stars).
-   */
-  public void lock (int seconds) {
-    if (lockTick != null) {
-      removeCallbacks(lockTick);
-    }
-    final CharSequence label = this.label;
-    lockTick = new Runnable() {
-      int secondsLeft = seconds;
-
-      @Override
-      public void run () {
-        if (secondsLeft <= 0) {
-          setText(label);
-          setEnabled(true);
-          lockTick = null;
-          return;
-        }
-        setEnabled(false);
-        setText(TextUtils.concat(label, " · ", Integer.toString(secondsLeft)));
-        secondsLeft--;
-        postDelayed(this, 1000L);
-      }
-    };
-    lockTick.run();
   }
 
   // Layout and drawing

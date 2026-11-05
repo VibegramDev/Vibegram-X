@@ -1672,7 +1672,6 @@
   <string name="NoVideoToShowInChannel">Published video messages\nwill be shown here.</string>
   <string name="NoGifsToShowInChannel">Published GIFs will be shown here.</string>
   <string name="PinToTop">Pin to top</string>
-  <string name="ScrollToTop">Scroll to top</string>
   <string name="UnpinFromTop">Unpin from top</string>
   <string name="WhatThisBotCanDo">What can this bot do?</string>
   <string name="WhatThisChannelCanDo">What can admins do on behalf of this channel?</string>
@@ -2536,9 +2535,9 @@
   <string name="ViewAsTopics">View as topics</string>
   <string name="ViewAsTabs">View as tabs</string>
   <string name="FilterByTopic">Filter by topic</string>
-  <string name="SearchForMessages">Search for messages</string>
   <string name="NoMessagesFound">No messages found</string>
   <string name="ChangeTopicIcon">Change Topic Icon</string>
+  <string name="format_topicIconNumber">Icon %1$d</string>
   <string name="ResetTopicIcon">Reset Topic Icon</string>
 
   <string name="EventLogMutedNewParticipants">%1$s muted new video chat participants</string>
@@ -4573,6 +4572,7 @@
   <string name="ClearHistoryBtn">Clear</string>
 
   <string name="format_notificationGroupSender">%1$s @ %2$s</string>
+  <string name="format_chatAndForumTopic">%1$s › %2$s</string>
 
   <string name="HoldToRemind">Hold to create a reminder.</string>
   <string name="HoldToSchedule">Hold to send at a specific date and other options.</string>

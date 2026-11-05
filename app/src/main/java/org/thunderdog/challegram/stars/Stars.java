@@ -131,7 +131,7 @@ public final class Stars {
     return STAR + " " + format(amount);
   }
 
-  /** Signed amount of a transaction: «+⭐ 50» / «−⭐ 50». */
+  /** Signed amount of a transaction, the star after the number (unlike {@link #amount}): «+50 ⭐» / «−50 ⭐». */
   public static String signedAmount (TdApi.StarAmount amount) {
     boolean negative = isNegative(amount);
     return (negative ? "−" : "+") + format(abs(amount)) + " " + STAR;

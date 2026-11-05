@@ -18,15 +18,12 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
-import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.RippleDrawable;
-import android.os.Build;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -45,7 +42,6 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewPagerTopView;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.ThemeInvalidateListener;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -181,7 +177,6 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
     }
   }
 
-  /** Counters and theme: the items draw their own state. */
   /** Theme change: the items draw M3 roles themselves, invalidating the rail alone does not redraw them. */
   @Override
   public void onThemeInvalidate (boolean isTempUpdate) {
@@ -230,12 +225,19 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
     }
   }
 
-  private class ItemView extends View {
+  private static final String[] NO_LINES = new String[0];
+  private static final float[] NO_WIDTHS = new float[0];
+
+  private class ItemView extends ForegroundCompat.HostView {
     private final int index;
     private @Nullable Entry entry;
     private @Nullable Drawable icon;
     private @Nullable String[] labelLines;
+    // Widths of the lines in the bold (selected) and medium style.
+    private float[] labelBoldWidths = NO_WIDTHS, labelMediumWidths = NO_WIDTHS;
     private int labelLinesWidth;
+    private final M3StateLayerDrawable stateLayer;
+    private int stateLayerColor;
 
     public ItemView (Context context, int index) {
       super(context);
@@ -246,9 +248,13 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
         }
       });
       setOnLongClickListener(v -> listener != null && listener.onPagerItemLongClick(this.index));
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        setForeground(new RippleDrawable(ColorStateList.valueOf(Theme.RIPPLE_COLOR), null, new IndicatorMask()));
-      }
+      stateLayerColor = computeStateLayerColor();
+      stateLayer = new M3StateLayerDrawable(null, new IndicatorMask(), stateLayerColor);
+      ForegroundCompat.set(this, stateLayer);
+    }
+
+    private int computeStateLayerColor () {
+      return ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSurface());
     }
 
     void setEntry (Entry entry) {
@@ -269,14 +275,20 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
       CharSequence label = entry != null ? entry.label : null;
       int maxWidth = Math.max(0, width - Screen.dp(8f));
       if (TextUtils.isEmpty(label) || maxWidth == 0) {
-        return new String[0];
+        return NO_LINES;
       }
       if (labelLines == null || labelLinesWidth != maxWidth) {
         // Bold (selected) is the widest style: the item keeps its height when the selection moves.
-        StaticLayout layout = new StaticLayout(label, Paints.getBoldTextPaint(LABEL_SIZE), maxWidth, Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
+        TextPaint boldPaint = Paints.getBoldTextPaint(LABEL_SIZE);
+        TextPaint mediumPaint = Paints.getMediumTextPaint(LABEL_SIZE, false);
+        StaticLayout layout = new StaticLayout(label, boldPaint, maxWidth, Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
         labelLines = new String[layout.getLineCount()];
+        labelBoldWidths = new float[labelLines.length];
+        labelMediumWidths = new float[labelLines.length];
         for (int i = 0; i < labelLines.length; i++) {
           labelLines[i] = label.subSequence(layout.getLineStart(i), layout.getLineEnd(i)).toString().trim();
+          labelBoldWidths[i] = boldPaint.measureText(labelLines[i]);
+          labelMediumWidths[i] = mediumPaint.measureText(labelLines[i]);
         }
         labelLinesWidth = maxWidth;
       }
@@ -294,6 +306,11 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
     protected void onDraw (@NonNull Canvas c) {
       if (entry == null) {
         return;
+      }
+      int newStateLayerColor = computeStateLayerColor();
+      if (newStateLayerColor != stateLayerColor) {
+        stateLayerColor = newStateLayerColor;
+        stateLayer.setColor(newStateLayerColor);
       }
       float selected = getSelectedFactor(index);
       float cx = getWidth() / 2f;
@@ -315,10 +332,12 @@ public class M3FolderRailView extends FrameLayoutFix implements ThemeInvalidateL
       String[] lines = getLabelLines(getWidth());
       if (lines.length > 0) {
         int color = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.secondary(), selected);
-        TextPaint paint = selected >= .5f ? Paints.getBoldTextPaint(LABEL_SIZE, color) : Paints.getMediumTextPaint(LABEL_SIZE, color, false);
+        boolean bold = selected >= .5f;
+        TextPaint paint = bold ? Paints.getBoldTextPaint(LABEL_SIZE, color) : Paints.getMediumTextPaint(LABEL_SIZE, color, false);
+        float[] widths = bold ? labelBoldWidths : labelMediumWidths;
         float baseline = indicatorTop + indicatorHeight + Screen.dp(4f) - paint.ascent();
-        for (String line : lines) {
-          c.drawText(line, cx - paint.measureText(line) / 2f, baseline, paint);
+        for (int i = 0; i < lines.length; i++) {
+          c.drawText(lines[i], cx - widths[i] / 2f, baseline, paint);
           baseline += Screen.dp(LABEL_LINE_HEIGHT);
         }
       }

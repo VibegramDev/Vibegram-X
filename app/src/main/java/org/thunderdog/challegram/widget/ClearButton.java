@@ -18,7 +18,6 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.RectF;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -29,6 +28,7 @@ import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.tool.UI;
 
 import me.vkryl.android.AnimatorUtils;
 
@@ -45,12 +45,9 @@ public class ClearButton extends HeaderButton {
   private final int lineRadius = (int) ((float) lineHeight * .5f);
 
   private final Paint paint;
-  private final RectF arcBounds = new RectF();
 
-  // Progress spinner state
   private boolean inProgress;
-  private float progressAngle;
-  private ValueAnimator progressAnimator;
+  private ProgressComponent progress;
 
   public ClearButton (Context context) {
     super(context);
@@ -82,6 +79,13 @@ public class ClearButton extends HeaderButton {
     super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     totalHeight = getMeasuredHeight() - Screen.dp(1f);
     cy = Screen.dp(1f) + totalHeight / 2;
+    setProgressBounds();
+  }
+
+  private void setProgressBounds () {
+    if (progress != null) {
+      progress.setBounds(cx - lineRadius, cy - lineRadius, cx + lineRadius, cy + lineRadius);
+    }
   }
 
   private boolean isVisible;
@@ -158,36 +162,17 @@ public class ClearButton extends HeaderButton {
       return;
     }
     this.inProgress = inProgress;
-    if (inProgress) {
-      startProgressAnimation();
-    } else {
-      stopProgressAnimation();
+    if (inProgress && progress == null) {
+      // Draw-driven spinner: stops by itself while the button is not drawn.
+      progress = new ProgressComponent(UI.getContext(getContext()), lineRadius);
+      progress.setUseLargerPaint(Screen.dp(2f));
+      progress.attachToView(this);
+      setProgressBounds();
+    }
+    if (progress != null) {
+      progress.setAlpha(inProgress ? 1f : 0f);
     }
     invalidate();
-  }
-
-  private void startProgressAnimation () {
-    if (progressAnimator != null) {
-      progressAnimator.cancel();
-    }
-    progressAnimator = ValueAnimator.ofFloat(0f, 360f);
-    progressAnimator.setDuration(800L);
-    progressAnimator.setRepeatCount(ValueAnimator.INFINITE);
-    progressAnimator.setRepeatMode(ValueAnimator.RESTART);
-    progressAnimator.setInterpolator(AnimatorUtils.LINEAR_INTERPOLATOR);
-    progressAnimator.addUpdateListener(animation -> {
-      progressAngle = (float) animation.getAnimatedValue();
-      invalidate();
-    });
-    progressAnimator.start();
-  }
-
-  private void stopProgressAnimation () {
-    if (progressAnimator != null) {
-      progressAnimator.cancel();
-      progressAnimator = null;
-    }
-    progressAngle = 0f;
   }
 
   @SuppressWarnings ("ConstantConditions")
@@ -197,16 +182,12 @@ public class ClearButton extends HeaderButton {
       paint.setColor(Theme.getColor(colorId));
     }
     if (totalHeight > 0) {
-      // Draw spinning arc when in progress
       if (inProgress) {
-        int radius = lineRadius;
-        arcBounds.set(cx - radius, cy - radius, cx + radius, cy + radius);
-        paint.setStyle(Paint.Style.STROKE);
-        c.drawArc(arcBounds, progressAngle, 270f, false, paint);
+        progress.forceColor(paint.getColor());
+        progress.draw(c);
         return;
       }
 
-      // Draw X button
       if (factor > 0f) {
         switch (ANIMATION_MODE) {
           case ANIMATION_MODE_SCALE: {

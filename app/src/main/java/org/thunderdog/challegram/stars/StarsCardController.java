@@ -17,6 +17,7 @@
 package org.thunderdog.challegram.stars;
 
 import android.content.Context;
+import android.net.Uri;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.InputType;
@@ -33,6 +34,7 @@ import org.drinkless.tdlib.TdApi;
 import org.json.JSONObject;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.component.base.SettingView;
+import org.thunderdog.challegram.core.Background;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.UI;
@@ -351,7 +353,8 @@ public class StarsCardController extends EditBaseController<StarsCardController.
     final boolean allowSave = saveCard && args.canSaveCredentials && !args.needPassword;
     final String name = valueOf(nameItem), country = valueOf(countryItem), zip = valueOf(zipItem);
     setInProgress(true);
-    new Thread(() -> {
+    // HttpURLConnection goes directly (or through the system proxy of Android), not through the proxy of TDLib.
+    Background.instance().post(() -> {
       String credentials = null;
       try {
         if (args.provider.getConstructor() == TdApi.PaymentProviderSmartGlocal.CONSTRUCTOR) {
@@ -375,7 +378,7 @@ public class StarsCardController extends EditBaseController<StarsCardController.
         args.callback.onCardTokenized(result, title, allowSave);
         navigateBack();
       });
-    }, "VgCardTokenize").start();
+    });
     return true;
   }
 
@@ -385,10 +388,7 @@ public class StarsCardController extends EditBaseController<StarsCardController.
   private static final String SMART_GLOCAL_TEST_URL = "https://tgb-playground.smart-glocal.com/cds/v1/tokenize/card";
 
   private static @Nullable String tokenizeSmartGlocal (TdApi.PaymentProviderSmartGlocal provider, boolean isTest, String number, int month, int year, String cvc) throws Exception {
-    String url = provider.tokenizeUrl;
-    if (StringUtils.isEmpty(url) || !(url.startsWith("https://") && url.endsWith(".smart-glocal.com/cds/v1/tokenize/card"))) {
-      url = isTest ? SMART_GLOCAL_TEST_URL : SMART_GLOCAL_URL;
-    }
+    String url = isSmartGlocalTokenizeUrl(provider.tokenizeUrl) ? provider.tokenizeUrl : isTest ? SMART_GLOCAL_TEST_URL : SMART_GLOCAL_URL;
     JSONObject card = new JSONObject();
     card.put("number", number);
     card.put("expiration_month", String.format(Locale.US, "%02d", month));
@@ -405,6 +405,20 @@ public class StarsCardController extends EditBaseController<StarsCardController.
     result.put("token", token);
     result.put("type", "card");
     return result.toString();
+  }
+
+  /** The card goes only to a host of Smart Glocal: https, *.smart-glocal.com, the tokenization path, nothing else. */
+  private static boolean isSmartGlocalTokenizeUrl (@Nullable String url) {
+    if (StringUtils.isEmpty(url)) {
+      return false;
+    }
+    Uri uri = Uri.parse(url);
+    String host = uri.getHost();
+    return "https".equals(uri.getScheme()) &&
+      host != null && host.toLowerCase(Locale.ROOT).matches("[a-z0-9.-]+\\.smart-glocal\\.com") &&
+      uri.getPort() == -1 &&
+      "/cds/v1/tokenize/card".equals(uri.getPath()) &&
+      uri.getUserInfo() == null && uri.getQuery() == null && uri.getFragment() == null;
   }
 
   private static @Nullable String tokenizeStripe (TdApi.PaymentProviderStripe provider, String number, int month, int year, String cvc, String name, String country, String zip) throws Exception {
@@ -444,7 +458,8 @@ public class StarsCardController extends EditBaseController<StarsCardController.
     HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
     try {
       connection.setConnectTimeout(30_000);
-      connection.setReadTimeout(80_000);
+      // Background is shared by the whole app: don't hold it longer than needed.
+      connection.setReadTimeout(30_000);
       connection.setUseCaches(false);
       connection.setDoOutput(true);
       connection.setRequestMethod("POST");

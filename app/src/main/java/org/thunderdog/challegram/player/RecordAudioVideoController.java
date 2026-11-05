@@ -279,17 +279,38 @@ public class RecordAudioVideoController implements
     public void onFail () {
       RecordAudioVideoController.this.onFail();
     }
+
+    @Override
+    public void onMaxDurationReached () {
+      // 10 minutes recorded: finish as if the user released the button, nothing more is captured anyway
+      if (dictating && currentRecording == RECORD_MODE_AUDIO) {
+        finishRecording(false);
+      }
+    }
   };
 
   private void finishDictation (boolean cancel) {
-    final float[] samples = DictationRecorder.instance().stop(cancel);
-    if (samples == null || !hasValidOutputTarget()) {
+    if (cancel || !hasValidOutputTarget()) {
+      DictationRecorder.instance().stop(true, null);
       return;
     }
     final MessagesController target = targetController;
     final long chatId = targetChatId;
     final TdApi.MessageTopic topicId = targetMessageTopicId;
     target.setDictationInProgress(true);
+    // The microphone thread finishes on its own; the samples come back without blocking the UI thread.
+    DictationRecorder.instance().stop(false, samples -> {
+      if (samples == null) {
+        if (!target.isDestroyed() && target.compareChat(chatId, topicId)) {
+          target.setDictationInProgress(false);
+        }
+        return;
+      }
+      recognizeDictation(samples, target, chatId, topicId);
+    });
+  }
+
+  private static void recognizeDictation (float[] samples, MessagesController target, long chatId, TdApi.MessageTopic topicId) {
     boolean started = SttManager.instance().transcribeSamples(samples, text -> {
       boolean sameChat = !target.isDestroyed() && target.compareChat(chatId, topicId);
       if (sameChat) {
@@ -307,7 +328,9 @@ public class RecordAudioVideoController implements
       }
     });
     if (!started) {
-      target.setDictationInProgress(false);
+      if (!target.isDestroyed() && target.compareChat(chatId, topicId)) {
+        target.setDictationInProgress(false);
+      }
       UI.showToast(R.string.vg_DictationFailed, Toast.LENGTH_SHORT);
     }
   }
@@ -1076,13 +1099,23 @@ public class RecordAudioVideoController implements
         });
       }
 
+      // Called for every camera frame while zooming: one reusable Runnable carries the latest ratio,
+      // posted again only after the previous post has run.
+      private volatile float latestRatio;
+      private final java.util.concurrent.atomic.AtomicBoolean ratioPosted = new java.util.concurrent.atomic.AtomicBoolean();
+      private final Runnable applyRatio = () -> {
+        ratioPosted.set(false);
+        if (sessionId == zoomSessionId) {
+          zoomBar.setCurrentRatio(latestRatio);
+        }
+      };
+
       @Override
       public void onZoomRatioChanged (float ratio) {
-        UI.post(() -> {
-          if (sessionId == zoomSessionId) {
-            zoomBar.setCurrentRatio(ratio);
-          }
-        });
+        latestRatio = ratio;
+        if (ratioPosted.compareAndSet(false, true)) {
+          UI.post(applyRatio);
+        }
       }
     });
   }

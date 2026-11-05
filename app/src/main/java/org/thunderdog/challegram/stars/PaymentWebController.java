@@ -40,8 +40,9 @@ import me.vkryl.core.lambda.RunnableBool;
 
 /**
  * Web pages of a payment, as in the official checkout: the provider's card form (providers without a native form:
- * the page posts «payment_form_submit» with the credentials through TelegramWebviewProxy) and 3-D Secure
- * verification (finished when the page redirects to t.me).
+ * the page posts «payment_form_submit» with the credentials through TelegramWebviewProxy; accepted only while the
+ * provider's own page is open) and 3-D Secure verification (finished when the page redirects to t.me). Links to
+ * other apps open only after the user confirms them.
  */
 public class PaymentWebController extends WebkitController<PaymentWebController.Args> {
   public static class Args {
@@ -59,7 +60,10 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     }
   }
 
-  /** 3-D Secure: {@code onDone} receives true when the bank page finished (redirect to t.me), false when closed. */
+  /**
+   * 3-D Secure: {@code onDone} receives true when the bank page finished (redirect to t.me), false when closed.
+   * The redirect doesn't prove the payment: its result comes with the updates of TDLib.
+   */
   public static void openVerification (@NonNull ViewController<?> context, @NonNull String url, @NonNull RunnableBool onDone) {
     PaymentWebController c = new PaymentWebController(context.context(), context.tdlib());
     c.setArguments(new Args(url, Lang.getString(R.string.vg_PaymentVerification), true, onDone, null));
@@ -81,7 +85,8 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     return R.id.controller_vgPaymentWeb;
   }
 
-  private boolean finished;
+  private boolean finished, isAskingExternal;
+  private WebView webView;
 
   @SuppressLint({"AddJavascriptInterface", "JavascriptInterface"})
   @Override
@@ -92,6 +97,7 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     if (uri.getHost() != null) {
       headerCell.setSubtitle(uri.getHost());
     }
+    this.webView = webView;
     if (!args.isVerification) {
       webView.addJavascriptInterface(new TelegramWebviewProxy(), "TelegramWebviewProxy");
     }
@@ -103,7 +109,7 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     @JavascriptInterface
     public void postEvent (final String eventName, final String eventData) {
       UI.post(() -> {
-        if (isDestroyed() || finished || !"payment_form_submit".equals(eventName)) {
+        if (isDestroyed() || finished || !"payment_form_submit".equals(eventName) || !isProviderPageOpen()) {
           return;
         }
         String credentials, title;
@@ -112,8 +118,7 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
           credentials = json.getJSONObject("credentials").toString();
           title = json.optString("title", "");
         } catch (Throwable t) {
-          credentials = eventData;
-          title = "";
+          return;
         }
         finished = true;
         Args args = getArgumentsStrict();
@@ -121,6 +126,19 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
         navigateBack();
       });
     }
+  }
+
+  /** The bridge is visible to every page and frame: only the provider's page may submit the credentials. */
+  private boolean isProviderPageOpen () {
+    String expectedHost = Uri.parse(getArgumentsStrict().url).getHost();
+    String currentUrl = webView.getUrl();
+    String currentHost = currentUrl != null ? Uri.parse(currentUrl).getHost() : null;
+    if (StringUtils.isEmpty(expectedHost) || StringUtils.isEmpty(currentHost)) {
+      return false;
+    }
+    expectedHost = expectedHost.toLowerCase(java.util.Locale.ROOT);
+    currentHost = currentHost.toLowerCase(java.util.Locale.ROOT);
+    return currentHost.equals(expectedHost) || currentHost.endsWith("." + expectedHost);
   }
 
   @Override
@@ -139,17 +157,29 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     }
     String scheme = uri.getScheme();
     if (scheme != null && !"http".equals(scheme) && !"https".equals(scheme) && !"about".equals(scheme)) {
-      // Bank apps of 3-D Secure and payment pages (deep links).
-      try {
-        Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        context().startActivity(intent);
-      } catch (Throwable t) {
-        UI.showToast(R.string.vg_PaymentAppNotFound, android.widget.Toast.LENGTH_SHORT);
+      // Bank apps of 3-D Secure and payment pages (deep links): a page can't start other apps by itself.
+      if (!isAskingExternal && !isDestroyed()) {
+        isAskingExternal = true;
+        StarsUi.confirm(this, Lang.getString(R.string.OpenInExternalApp), Lang.getString(R.string.OpenThisLink, uri.toString()), Lang.getString(R.string.Open), 0, false, confirmed -> {
+          isAskingExternal = false;
+          if (confirmed && !isDestroyed()) {
+            openExternal(uri);
+          }
+        });
       }
       return true;
     }
     return false;
+  }
+
+  private void openExternal (Uri uri) {
+    try {
+      Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      context().startActivity(intent);
+    } catch (Throwable t) {
+      UI.showToast(R.string.vg_PaymentAppNotFound, android.widget.Toast.LENGTH_SHORT);
+    }
   }
 
   private void finishVerification (boolean completed) {

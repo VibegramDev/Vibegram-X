@@ -74,7 +74,6 @@ import org.thunderdog.challegram.telegram.TdlibDelegate;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
-import org.thunderdog.challegram.theme.ThemeListenerEntry;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
@@ -120,7 +119,6 @@ import java.util.Collections;
 import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
-import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.util.ClickHelper;
 import me.vkryl.android.widget.FrameLayoutFix;
@@ -307,7 +305,8 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
 
       @Override
       public void onItemRangeChanged (int positionStart, int itemCount) {
-        updateSegments();
+        // A changed row may change its kind: only it and its two neighbours can change their shape.
+        updateSegments(positionStart - 1, positionStart + itemCount);
       }
 
       @Override
@@ -465,25 +464,21 @@ public class SettingsAdapter extends RecyclerView.Adapter<SettingHolder> impleme
       }
     }
     if (kind == SEGMENT_CARD) {
-      Drawable background = view.getBackground();
-      if (!(background instanceof SettingHolder.SegmentBackground)) {
-        ViewUtils.setBackground(view, background = new SettingHolder.SegmentBackground());
-        // Card colors are read at draw time.
-        if (themeProvider != null && themeProvider.getThemeListeners().findThemeListenerByTarget(view, ThemeListenerEntry.MODE_INVALIDATE) == null) {
-          themeProvider.addThemeInvalidateListener(view);
-        }
-      }
-      ((SettingHolder.SegmentBackground) background).setShape(view, isSegmentConnected(position, -1), isSegmentConnected(position, 1));
+      SettingHolder.setSegmentShape(view, isSegmentConnected(position, -1), isSegmentConnected(position, 1), themeProvider);
     }
   }
 
   private void updateSegments () {
+    updateSegments(0, Integer.MAX_VALUE);
+  }
+
+  private void updateSegments (int fromPosition, int toPosition) {
     for (RecyclerView parentView : parentViews) {
       for (int i = 0; i < parentView.getChildCount(); i++) {
         View view = parentView.getChildAt(i);
         RecyclerView.ViewHolder holder = parentView.getChildViewHolder(view);
         int position = parentView.getChildAdapterPosition(view);
-        if (holder != null && position != RecyclerView.NO_POSITION) {
+        if (holder != null && position != RecyclerView.NO_POSITION && position >= fromPosition && position <= toPosition) {
           // Rows being removed keep their current look until they are detached.
           applySegment(view, holder.getItemViewType(), position);
         }

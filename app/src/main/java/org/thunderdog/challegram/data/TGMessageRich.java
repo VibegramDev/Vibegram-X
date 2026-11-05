@@ -10,6 +10,7 @@ package org.thunderdog.challegram.data;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -57,8 +58,6 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   private static final float LIST_GAP = 6f;
   private static final float CELL_PADDING = 6f;
   private static final float SCROLLBAR_SPACE = 10f;
-  /** Wide tables keep natural column widths and scroll horizontally instead of being squeezed */
-  private static final boolean ALLOW_TABLE_SCROLL = true;
 
   private static final long FILE_KEY_OFFSET = 1L << 40;
 
@@ -72,7 +71,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   private final ArrayList<ButtonsBlock> buttonRows = new ArrayList<>();
   private final ArrayList<MediaWrapper> mediaWrappers = new ArrayList<>();
   private final ArrayList<TdApi.PageBlockCaption> mediaCaptions = new ArrayList<>();
-  private final ArrayList<Toggle> toggles = new ArrayList<>();
+  /** Touch areas of collapsible blocks, rebuilt with the layout and swapped as a whole (layouts may be built off the UI thread). */
+  private volatile ArrayList<Toggle> toggles = new ArrayList<>();
+  private ArrayList<Toggle> pendingToggles;
   private final ArrayList<TableBlock> tables = new ArrayList<>();
   /** Collapsible blocks the user has toggled (value = expanded). Survives rebuilds. */
   private final IdentityHashMap<Object, Boolean> expandedState = new IdentityHashMap<>();
@@ -139,12 +140,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   // Parsing
 
   private void parseBlocks () {
-    for (MosaicWrapper mosaic : mosaics) {
-      mosaic.destroy();
-    }
-    for (TextWrapper text : texts) {
-      text.performDestroy();
-    }
+    destroyBlocks();
     blocks.clear();
     texts.clear();
     mosaics.clear();
@@ -167,21 +163,20 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     }
   }
 
-  private TextStyleProvider styleProvider (float sizeDiff) {
-    return provider(sizeDiff);
-  }
+  private static final SparseArray<TextStyleProvider> providers = new SparseArray<>();
 
-  private static final android.util.SparseArray<TextStyleProvider> providers = new android.util.SparseArray<>();
-
+  /** Layouts are built on background threads too, so the shared cache is guarded. */
   private static TextStyleProvider provider (float sizeDiff) {
     int key = Math.round(sizeDiff * 10);
-    TextStyleProvider provider = providers.get(key);
-    if (provider == null) {
-      provider = new TextStyleProvider(Fonts.newRobotoStorage()).setTextSizeDiff(sizeDiff).setTextSize(Settings.instance().getChatFontSize()).setAllowSp(true);
-      Settings.instance().addChatFontSizeChangeListener(provider);
-      providers.put(key, provider);
+    synchronized (providers) {
+      TextStyleProvider provider = providers.get(key);
+      if (provider == null) {
+        provider = new TextStyleProvider(Fonts.newRobotoStorage()).setTextSizeDiff(sizeDiff).setTextSize(Settings.instance().getChatFontSize()).setAllowSp(true);
+        Settings.instance().addChatFontSizeChangeListener(provider);
+        providers.put(key, provider);
+      }
+      return provider;
     }
-    return provider;
   }
 
   private TextWrapper newText (@Nullable TdApi.RichText richText, float sizeDiff, TextColorSet colorSet) {
@@ -189,7 +184,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       return null;
     }
     TdlibUi.UrlOpenParameters openParameters = openParameters();
-    TextWrapper wrapper = TextWrapper.parseRichText(controller(), clickCallback(), richText, styleProvider(sizeDiff), colorSet, openParameters, (w, text, specificMedia) -> {
+    TextWrapper wrapper = TextWrapper.parseRichText(controller(), clickCallback(), richText, provider(sizeDiff), colorSet, openParameters, (w, text, specificMedia) -> {
       if (texts.contains(w)) {
         invalidateTextMediaReceiver(text, specificMedia);
       }
@@ -664,7 +659,6 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
 
   @Override
   protected void buildContent (int maxWidth) {
-    toggles.clear();
     int y = 0;
     int width = 0;
     boolean first = true;
@@ -690,6 +684,12 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     }
     this.contentWidth = Math.max(Math.min(width, maxWidth), computeBubbleTimePartWidth(false));
     this.contentHeight = y;
+    pendingToggles = new ArrayList<>();
+    for (Block block : blocks) {
+      block.collectToggles(0, block.y);
+    }
+    toggles = pendingToggles;
+    pendingToggles = null;
   }
 
   @Override
@@ -722,7 +722,6 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   @Override
   protected void drawContent (MessageView view, Canvas c, int startX, int startY, int maxWidth, ComplexReceiver receiver) {
     ComplexReceiver textMediaReceiver = view.getTextMediaReceiver();
-    toggles.clear();
     for (TableBlock table : tables) {
       table.isVisible = false;
     }
@@ -739,6 +738,12 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       if (count > 0) {
         text.requestMedia(textMediaReceiver, startKey, count);
         startKey += count;
+      }
+    }
+    // Custom emoji icons of embedded buttons go after the texts, so they never take receivers of the message inline keyboard
+    for (ButtonsBlock row : buttonRows) {
+      if (row.keyboard != null) {
+        startKey += row.keyboard.requestEmbeddedIconMedia(textMediaReceiver, startKey);
       }
     }
     textMediaReceiver.clearReceiversWithHigherKey(startKey);
@@ -777,11 +782,27 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
 
   @Override
   protected void onMessageContainerDestroyed () {
+    destroyBlocks();
+    if (inlineButtonHost != null) {
+      inlineButtonHost.performDestroy();
+    }
+  }
+
+  private void destroyBlocks () {
+    stopTableFling();
     for (MosaicWrapper mosaic : mosaics) {
       mosaic.destroy();
     }
     for (TextWrapper text : texts) {
       text.performDestroy();
+    }
+    for (FileBlock file : files) {
+      file.component.performDestroy();
+    }
+    for (ButtonsBlock row : buttonRows) {
+      if (row.keyboard != null) {
+        row.keyboard.performDestroy();
+      }
     }
   }
 
@@ -1106,6 +1127,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     abstract void layout (int maxWidth);
 
     abstract void draw (MessageView view, Canvas c, int x, int y, ComplexReceiver receiver, ComplexReceiver textMediaReceiver);
+
+    /** Registers touch areas of collapsible blocks; x and y are relative to the content start. */
+    void collectToggles (int x, int y) { }
   }
 
   private final class TextBlock extends Block {
@@ -1204,6 +1228,13 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         child.draw(view, c, x + indent, y + child.y, receiver, textMediaReceiver);
       }
     }
+
+    @Override
+    void collectToggles (int x, int y) {
+      for (Block child : children) {
+        child.collectToggles(x + indent, y + child.y);
+      }
+    }
   }
 
   private final class ListBlock extends Block {
@@ -1262,6 +1293,14 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         item.content.draw(view, c, contentX, y + item.y, receiver, textMediaReceiver);
       }
     }
+
+    @Override
+    void collectToggles (int x, int y) {
+      int contentX = x + labelWidth + Screen.dp(LIST_GAP);
+      for (Item item : items) {
+        item.content.collectToggles(contentX, y + item.y);
+      }
+    }
   }
 
   private final class DividerBlock extends Block {
@@ -1285,6 +1324,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     final TextWrapper text;
     final @Nullable TextWrapper credit;
     boolean canExpand;
+    int measuredWidth, measuredTextSizePx;
 
     ExpandableQuoteBlock (Object key, TextWrapper text, @Nullable TextWrapper credit) {
       this.key = key;
@@ -1296,13 +1336,16 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     void layout (int maxWidth) {
       int textWidth = Math.max(Screen.dp(40f), maxWidth - Screen.dp(QUOTE_PADDING) - Screen.dp(8f) - Screen.dp(20f));
       boolean expanded = isExpanded(key, false);
-      text.setMaxLines(-1);
-      text.prepare(textWidth);
-      canExpand = text.getLineCount() > COLLAPSED_LINES;
-      if (canExpand && !expanded) {
-        text.setMaxLines(COLLAPSED_LINES);
+      int textSizePx = text.getTextStyleProvider().getTextSizeInPixels();
+      if (measuredWidth != textWidth || measuredTextSizePx != textSizePx) {
+        text.setMaxLines(-1);
         text.prepare(textWidth);
+        canExpand = text.getLineCount() > COLLAPSED_LINES;
+        measuredWidth = textWidth;
+        measuredTextSizePx = textSizePx;
       }
+      text.setMaxLines(canExpand && !expanded ? COLLAPSED_LINES : -1);
+      text.prepare(textWidth);
       int h = Screen.dp(6f) + text.getHeight();
       if (credit != null && (expanded || !canExpand)) {
         credit.prepare(textWidth);
@@ -1332,9 +1375,15 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       }
       if (canExpand) {
         drawChevron(c, x + width - Screen.dp(14f), y + height - Screen.dp(12f), expanded, color);
+      }
+    }
+
+    @Override
+    void collectToggles (int x, int y) {
+      if (canExpand) {
         // Collapsed: the whole quote expands it. Expanded: only the bottom strip collapses it, so links inside stay clickable.
-        int toggleTop = expanded ? y + height - Screen.dp(24f) : y;
-        toggles.add(new Toggle(x, toggleTop, x + width, y + height, key, false));
+        int toggleTop = isExpanded(key, false) ? y + height - Screen.dp(24f) : y;
+        pendingToggles.add(new Toggle(x, toggleTop, x + width, y + height, key, false));
       }
     }
   }
@@ -1374,9 +1423,16 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       drawChevron(c, x + Screen.dp(7f), y + headerHeight / 2, expanded, decentColor());
       header.draw(c, x + Screen.dp(22f), textY, null, 1f, textMediaReceiver);
       c.drawRect(x, y + headerHeight - Math.max(1, Screen.dp(.5f)), x + width, y + headerHeight, Paints.fillingPaint(ColorUtils.alphaColor(.2f, decentColor())));
-      toggles.add(new Toggle(x, y, x + width, y + headerHeight, details, details.isOpen));
       if (expanded) {
         content.draw(view, c, x, y + headerHeight + Screen.dp(4f), receiver, textMediaReceiver);
+      }
+    }
+
+    @Override
+    void collectToggles (int x, int y) {
+      pendingToggles.add(new Toggle(x, y, x + width, y + headerHeight, details, details.isOpen));
+      if (isExpanded(details, details.isOpen)) {
+        content.collectToggles(x, y + headerHeight + Screen.dp(4f));
       }
     }
   }
@@ -1427,12 +1483,16 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       this.columnCount = columnCount;
     }
 
-    @Override
-    void layout (int maxWidth) {
-      final int padding = Screen.dp(table.isCompact ? CELL_PADDING / 2 : CELL_PADDING);
-      final int minColumnWidth = Screen.dp(32f);
+    private int[] naturalWidths;
+    private int naturalTextSizePx;
+
+    /** Natural (single line) width of each column, ignoring cells spanning several columns. Measured once per text size. */
+    private int[] measureNaturalWidths (int padding) {
+      final int textSizePx = provider(table.isCompact ? -2f : -1f).getTextSizeInPixels();
+      if (naturalWidths != null && naturalTextSizePx == textSizePx) {
+        return naturalWidths;
+      }
       int[] natural = new int[columnCount];
-      // Natural (single line) width of each column, ignoring cells spanning several columns
       for (Cell[] row : cells) {
         int column = 0;
         for (Cell cell : row) {
@@ -1444,6 +1504,16 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
           column += span;
         }
       }
+      naturalWidths = natural;
+      naturalTextSizePx = textSizePx;
+      return natural;
+    }
+
+    @Override
+    void layout (int maxWidth) {
+      final int padding = Screen.dp(table.isCompact ? CELL_PADDING / 2 : CELL_PADDING);
+      final int minColumnWidth = Screen.dp(32f);
+      final int[] natural = measureNaturalWidths(padding);
       // Very long cells wrap instead of making a single column huge
       final int maxColumnWidth = Math.max(Screen.dp(200f), maxWidth * 4 / 5);
       int[] widths = new int[columnCount];
@@ -1451,27 +1521,6 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       for (int i = 0; i < columnCount; i++) {
         widths[i] = Math.max(minColumnWidth, Math.min(maxColumnWidth, natural[i]));
         total += widths[i];
-      }
-      //noinspection ConstantConditions
-      if (total > maxWidth && !ALLOW_TABLE_SCROLL) {
-        // Shrink the widest columns first, keeping narrow ones at their natural width
-        int fair = maxWidth / columnCount;
-        int fixedTotal = 0, flexibleNatural = 0;
-        for (int w : widths) {
-          if (w <= fair) {
-            fixedTotal += w;
-          } else {
-            flexibleNatural += w;
-          }
-        }
-        int flexibleSpace = Math.max(0, maxWidth - fixedTotal);
-        total = 0;
-        for (int i = 0; i < columnCount; i++) {
-          if (widths[i] > fair && flexibleNatural > 0) {
-            widths[i] = Math.max(minColumnWidth, (int) ((long) widths[i] * flexibleSpace / flexibleNatural));
-          }
-          total += widths[i];
-        }
       }
       int y = 0;
       rowHeights = new int[cells.length];
@@ -1523,6 +1572,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         Cell[] row = cells[rowIndex];
         for (Cell cell : row) {
           int left = ox + cell.x, top = y + cell.y;
+          if (left >= x + width || left + cell.w <= x) {
+            continue;
+          }
           if (cell.cell.isHeader) {
             c.drawRect(left, top, left + cell.w, top + cell.h, Paints.fillingPaint(ColorUtils.alphaColor(.07f, textColor())));
           } else if (table.isStriped && rowIndex % 2 == 1) {
@@ -1646,7 +1698,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     @Override
     void layout (int maxWidth) {
       if (keyboard == null) {
-        keyboard = new TGInlineKeyboard(TGMessageRich.this, false);
+        keyboard = new TGInlineKeyboard(TGMessageRich.this, false).setEmbeddedIcons();
         keyboard.setViewProvider(currentViews);
       }
       keyboard.set(msg.id, markup, maxWidth, maxWidth);
@@ -1675,6 +1727,8 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     }
 
     boolean contains (float x, float y) {
+      x -= getContentX();
+      y -= getContentY();
       return x >= left && x < right && y >= top && y < bottom;
     }
 

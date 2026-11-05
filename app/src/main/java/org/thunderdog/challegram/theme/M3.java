@@ -12,24 +12,24 @@
  */
 package org.thunderdog.challegram.theme;
 
-import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.view.animation.Interpolator;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
 
 import org.thunderdog.challegram.tool.UI;
+
+import java.util.Arrays;
 
 import me.vkryl.core.ColorUtils;
 
@@ -40,8 +40,8 @@ import me.vkryl.core.ColorUtils;
  * color roles, corner shape scale, elevation levels and spring motion schemes.
  *
  * Color roles are part of every theme ({@link ThemeDelegate#getRoleColor}, stored in {@link Roles}): for built-in
- * Monet themes on Android 14+ they come straight from the system dynamic color roles
- * (android.R.color.system_*_light/dark), otherwise they are derived from the theme's own colors.
+ * Monet themes they are the device scheme ({@link MonetPalette}: system dynamic color roles on Android 14+, tonal
+ * palette tones elsewhere), otherwise they are derived from the theme's own colors.
  * The accessors below read the roles of the current theme.
  */
 public final class M3 {
@@ -52,10 +52,7 @@ public final class M3 {
   public static final float CORNER_SMALL = 8f;
   public static final float CORNER_MEDIUM = 12f;
   public static final float CORNER_LARGE = 16f;
-  public static final float CORNER_LARGE_INCREASED = 20f;
   public static final float CORNER_EXTRA_LARGE = 28f;
-  public static final float CORNER_EXTRA_LARGE_INCREASED = 32f;
-  public static final float CORNER_EXTRA_EXTRA_LARGE = 48f;
 
   // Elevation levels (ElevationTokens), dp
   public static final float ELEVATION_LEVEL1 = 1f;
@@ -72,29 +69,27 @@ public final class M3 {
     SURFACE = 0,
     ON_SURFACE = 1,
     ON_SURFACE_VARIANT = 2,
-    SURFACE_CONTAINER_LOWEST = 3,
-    SURFACE_CONTAINER_LOW = 4,
-    SURFACE_CONTAINER = 5,
-    SURFACE_CONTAINER_HIGH = 6,
-    SURFACE_CONTAINER_HIGHEST = 7,
-    PRIMARY = 8,
-    ON_PRIMARY = 9,
-    PRIMARY_CONTAINER = 10,
-    ON_PRIMARY_CONTAINER = 11,
-    SECONDARY = 12,
-    SECONDARY_CONTAINER = 13,
-    ON_SECONDARY_CONTAINER = 14,
-    OUTLINE = 15,
-    OUTLINE_VARIANT = 16,
-    ERROR = 17,
-    ON_ERROR = 18,
-    INVERSE_SURFACE = 19,
-    INVERSE_ON_SURFACE = 20,
-    INVERSE_PRIMARY = 21,
-    ROLE_COUNT = 22;
+    SURFACE_CONTAINER_LOW = 3,
+    SURFACE_CONTAINER = 4,
+    SURFACE_CONTAINER_HIGH = 5,
+    SURFACE_CONTAINER_HIGHEST = 6,
+    PRIMARY = 7,
+    ON_PRIMARY = 8,
+    PRIMARY_CONTAINER = 9,
+    ON_PRIMARY_CONTAINER = 10,
+    SECONDARY = 11,
+    SECONDARY_CONTAINER = 12,
+    ON_SECONDARY_CONTAINER = 13,
+    OUTLINE = 14,
+    OUTLINE_VARIANT = 15,
+    ERROR = 16,
+    ON_ERROR = 17,
+    INVERSE_SURFACE = 18,
+    INVERSE_ON_SURFACE = 19,
+    INVERSE_PRIMARY = 20,
+    ROLE_COUNT = 21;
 
   public static @ColorInt int surface () { return get(SURFACE); }
-  public static @ColorInt int surfaceContainerLowest () { return get(SURFACE_CONTAINER_LOWEST); }
   public static @ColorInt int onSurface () { return get(ON_SURFACE); }
   public static @ColorInt int onSurfaceVariant () { return get(ON_SURFACE_VARIANT); }
   public static @ColorInt int surfaceContainerLow () { return get(SURFACE_CONTAINER_LOW); }
@@ -160,23 +155,36 @@ public final class M3 {
       if (this.topRadius != topRadius || this.bottomRadius != bottomRadius) {
         this.topRadius = topRadius;
         this.bottomRadius = bottomRadius;
+        buildPath();
         invalidateSelf();
+      }
+    }
+
+    @Override
+    protected void onBoundsChange (@NonNull Rect bounds) {
+      rect.set(bounds);
+      buildPath();
+    }
+
+    private void buildPath () {
+      path.reset();
+      if (topRadius != bottomRadius) {
+        radii[0] = radii[1] = radii[2] = radii[3] = topRadius;
+        radii[4] = radii[5] = radii[6] = radii[7] = bottomRadius;
+        path.addRoundRect(rect, radii, Path.Direction.CW);
       }
     }
 
     @Override
     public void draw (@NonNull Canvas c) {
       paint.setColor(get(role));
-      if (topRadius == 0f && bottomRadius == 0f) {
-        c.drawRect(getBounds(), paint);
-        return;
+      if (topRadius != bottomRadius) {
+        c.drawPath(path, paint);
+      } else if (topRadius != 0f) {
+        c.drawRoundRect(rect, topRadius, topRadius, paint);
+      } else {
+        c.drawRect(rect, paint);
       }
-      rect.set(getBounds());
-      radii[0] = radii[1] = radii[2] = radii[3] = topRadius;
-      radii[4] = radii[5] = radii[6] = radii[7] = bottomRadius;
-      path.reset();
-      path.addRoundRect(rect, radii, Path.Direction.CW);
-      c.drawPath(path, paint);
     }
 
     @Override
@@ -201,33 +209,25 @@ public final class M3 {
     return forcedTheme != null ? forcedTheme.getRoleColor(role) : get(role);
   }
 
-  private static volatile int systemRolesVersion;
-
-  /** System color roles may change without a palette change (e.g. contrast level): system roles are re-read. */
-  public static void invalidateSystemRoles () {
-    systemRolesVersion++;
-  }
-
   /**
-   * Color roles of one theme, stored in the theme itself. Computed once, on the first read, from the theme's raw
-   * colors ({@link ThemeDelegate#getRawColor}, never from the role-mapped ones), so surface derived from filling
-   * cannot feed back into itself. Themes call {@link #invalidate} when their colors change (theme editor); Monet
-   * themes are rebuilt when the system palette changes ({@link ThemeManager#checkMonetPalette}).
+   * Color roles of one theme, stored in the theme itself. Computed once, on the first read: for Monet themes from the
+   * device scheme ({@link MonetPalette#scheme}: system roles on Android 14+, palette tones elsewhere), for the other
+   * themes from the theme's raw colors ({@link ThemeDelegate#getRawColor}, never from the role-mapped ones), so surface
+   * derived from filling cannot feed back into itself. Themes call {@link #invalidate} when their colors change (theme
+   * editor); Monet themes are rebuilt when the system scheme changes ({@link ThemeManager#checkMonetPalette}).
    */
   public static final class Roles {
     private final boolean system;
     private volatile int[] values;
-    private int version;
 
-    /** @param system Monet themes: system dynamic color roles on Android 14+. */
+    /** @param system Monet themes: Material 3 scheme of the device. */
     public Roles (boolean system) {
       this.system = system;
     }
 
     public @ColorInt int get (ThemeDelegate theme, int role) {
       int[] values = this.values;
-      if (values == null || (system && version != systemRolesVersion)) {
-        version = systemRolesVersion;
+      if (values == null) {
         values = compute(theme, system);
         this.values = values;
       }
@@ -240,80 +240,12 @@ public final class M3 {
   }
 
   private static int[] compute (ThemeDelegate theme, boolean system) {
+    if (system) {
+      return Arrays.copyOf(MonetPalette.scheme(UI.getContext(), theme.isDark(), theme.getId() == ThemeId.MONET_BLACK), ROLE_COUNT);
+    }
     final int[] cache = new int[ROLE_COUNT];
-    final boolean dark = theme.isDark();
-    if (system && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      try {
-        computeSystem(cache, dark, theme.getId() == ThemeId.MONET_BLACK);
-        return cache;
-      } catch (Throwable ignored) { }
-    }
-    computeDerived(cache, dark, theme);
+    computeDerived(cache, theme.isDark(), theme);
     return cache;
-  }
-
-  @androidx.annotation.RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-  private static void computeSystem (int[] cache, boolean dark, boolean black) {
-    Resources r = UI.getContext().getResources();
-    if (dark) {
-      cache[SURFACE] = c(r, android.R.color.system_surface_dark);
-      cache[ON_SURFACE] = c(r, android.R.color.system_on_surface_dark);
-      cache[ON_SURFACE_VARIANT] = c(r, android.R.color.system_on_surface_variant_dark);
-      cache[SURFACE_CONTAINER_LOWEST] = c(r, android.R.color.system_surface_container_lowest_dark);
-      cache[SURFACE_CONTAINER_LOW] = c(r, android.R.color.system_surface_container_low_dark);
-      cache[SURFACE_CONTAINER] = c(r, android.R.color.system_surface_container_dark);
-      cache[SURFACE_CONTAINER_HIGH] = c(r, android.R.color.system_surface_container_high_dark);
-      cache[SURFACE_CONTAINER_HIGHEST] = c(r, android.R.color.system_surface_container_highest_dark);
-      cache[PRIMARY] = c(r, android.R.color.system_primary_dark);
-      cache[ON_PRIMARY] = c(r, android.R.color.system_on_primary_dark);
-      cache[PRIMARY_CONTAINER] = c(r, android.R.color.system_primary_container_dark);
-      cache[ON_PRIMARY_CONTAINER] = c(r, android.R.color.system_on_primary_container_dark);
-      cache[SECONDARY] = c(r, android.R.color.system_secondary_dark);
-      cache[SECONDARY_CONTAINER] = c(r, android.R.color.system_secondary_container_dark);
-      cache[ON_SECONDARY_CONTAINER] = c(r, android.R.color.system_on_secondary_container_dark);
-      cache[OUTLINE] = c(r, android.R.color.system_outline_dark);
-      cache[OUTLINE_VARIANT] = c(r, android.R.color.system_outline_variant_dark);
-      cache[ERROR] = c(r, android.R.color.system_error_dark);
-      cache[ON_ERROR] = c(r, android.R.color.system_on_error_dark);
-      // No public inverse roles: dark inverseSurface = N90 (= onSurface), inverseOnSurface = N20, inversePrimary = A40.
-      cache[INVERSE_SURFACE] = c(r, android.R.color.system_on_surface_dark);
-      cache[INVERSE_ON_SURFACE] = c(r, android.R.color.system_neutral1_800);
-      cache[INVERSE_PRIMARY] = c(r, android.R.color.system_primary_light);
-    } else {
-      cache[SURFACE] = c(r, android.R.color.system_surface_light);
-      cache[ON_SURFACE] = c(r, android.R.color.system_on_surface_light);
-      cache[ON_SURFACE_VARIANT] = c(r, android.R.color.system_on_surface_variant_light);
-      cache[SURFACE_CONTAINER_LOWEST] = c(r, android.R.color.system_surface_container_lowest_light);
-      cache[SURFACE_CONTAINER_LOW] = c(r, android.R.color.system_surface_container_low_light);
-      cache[SURFACE_CONTAINER] = c(r, android.R.color.system_surface_container_light);
-      cache[SURFACE_CONTAINER_HIGH] = c(r, android.R.color.system_surface_container_high_light);
-      cache[SURFACE_CONTAINER_HIGHEST] = c(r, android.R.color.system_surface_container_highest_light);
-      cache[PRIMARY] = c(r, android.R.color.system_primary_light);
-      cache[ON_PRIMARY] = c(r, android.R.color.system_on_primary_light);
-      cache[PRIMARY_CONTAINER] = c(r, android.R.color.system_primary_container_light);
-      cache[ON_PRIMARY_CONTAINER] = c(r, android.R.color.system_on_primary_container_light);
-      cache[SECONDARY] = c(r, android.R.color.system_secondary_light);
-      cache[SECONDARY_CONTAINER] = c(r, android.R.color.system_secondary_container_light);
-      cache[ON_SECONDARY_CONTAINER] = c(r, android.R.color.system_on_secondary_container_light);
-      cache[OUTLINE] = c(r, android.R.color.system_outline_light);
-      cache[OUTLINE_VARIANT] = c(r, android.R.color.system_outline_variant_light);
-      cache[ERROR] = c(r, android.R.color.system_error_light);
-      cache[ON_ERROR] = c(r, android.R.color.system_on_error_light);
-      // Light: inverseSurface = N20, inverseOnSurface = N95, inversePrimary = A80.
-      cache[INVERSE_SURFACE] = c(r, android.R.color.system_neutral1_800);
-      cache[INVERSE_ON_SURFACE] = c(r, android.R.color.system_neutral1_50);
-      cache[INVERSE_PRIMARY] = c(r, android.R.color.system_primary_dark);
-    }
-    if (black) {
-      // AMOLED variant: keep true-black surfaces, containers stay tonal.
-      cache[SURFACE] = 0xFF000000;
-      cache[SURFACE_CONTAINER_LOWEST] = 0xFF000000;
-    }
-  }
-
-  @RequiresApi(Build.VERSION_CODES.M)
-  private static int c (Resources r, int id) {
-    return r.getColor(id, null) | 0xFF000000;
   }
 
   private static void computeDerived (int[] cache, boolean dark, ThemeDelegate theme) {
@@ -326,12 +258,9 @@ public final class M3 {
     cache[ON_SURFACE_VARIANT] = onSurfaceVariant;
     // Tonal surface containers: surface tinted towards on-surface with a hint of primary.
     int tint = ColorUtils.fromToArgb(onSurface, primary, .35f);
-    float[] steps = dark ? new float[] {-.04f, .04f, .07f, .10f, .14f} : new float[] {.0f, .03f, .05f, .07f, .09f};
-    for (int i = 0; i < 5; i++) {
-      float step = steps[i];
-      cache[SURFACE_CONTAINER_LOWEST + i] = step < 0 ?
-        ColorUtils.fromToArgb(surface, 0xFF000000, -step) :
-        ColorUtils.fromToArgb(surface, tint, step);
+    float[] steps = dark ? new float[] {.04f, .07f, .10f, .14f} : new float[] {.03f, .05f, .07f, .09f};
+    for (int i = 0; i < steps.length; i++) {
+      cache[SURFACE_CONTAINER_LOW + i] = ColorUtils.fromToArgb(surface, tint, steps[i]);
     }
     cache[PRIMARY] = primary;
     cache[ON_PRIMARY] = contrast(primary);
@@ -356,16 +285,8 @@ public final class M3 {
 
   // Motion: spring schemes (StandardMotionTokens / ExpressiveMotionTokens)
 
-  public static final float SPRING_FAST_SPATIAL_STIFFNESS = 800f, SPRING_FAST_SPATIAL_DAMPING = .6f;
-  public static final float SPRING_DEFAULT_SPATIAL_STIFFNESS = 380f, SPRING_DEFAULT_SPATIAL_DAMPING = .8f;
-  public static final float SPRING_DEFAULT_EFFECTS_STIFFNESS = 1600f, SPRING_DEFAULT_EFFECTS_DAMPING = 1f;
-
   /** Expressive "fast spatial" spring: small, snappy elements (indicators, toggles). */
-  public static final Spring FAST_SPATIAL = new Spring(SPRING_FAST_SPATIAL_STIFFNESS, SPRING_FAST_SPATIAL_DAMPING);
-  /** Expressive "default spatial" spring: medium elements (FAB menu, sheets). */
-  public static final Spring DEFAULT_SPATIAL = new Spring(SPRING_DEFAULT_SPATIAL_STIFFNESS, SPRING_DEFAULT_SPATIAL_DAMPING);
-  /** "Default effects" spring: color and opacity, no overshoot. */
-  public static final Spring DEFAULT_EFFECTS = new Spring(SPRING_DEFAULT_EFFECTS_STIFFNESS, SPRING_DEFAULT_EFFECTS_DAMPING);
+  public static final Spring FAST_SPATIAL = new Spring(800f, .6f);
   /** Expressive "fast effects" spring: color and opacity of small components, no overshoot. */
   public static final Spring FAST_EFFECTS = new Spring(3800f, 1f);
 

@@ -34,6 +34,7 @@ import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.navigation.ViewPagerController;
 import org.thunderdog.challegram.navigation.ViewPagerTopView;
 import tgx.td.ChatId;
+import org.thunderdog.challegram.telegram.ChatListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
@@ -47,11 +48,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 import me.vkryl.android.widget.FrameLayoutFix;
+import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntList;
 
 import org.thunderdog.challegram.util.StringList;
 
-public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabsController.Arguments> implements TdlibCache.SupergroupDataChangeListener, Menu, MoreDelegate {
+public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabsController.Arguments> implements TdlibCache.SupergroupDataChangeListener, ChatListener, Menu, MoreDelegate {
 
   public static class Arguments {
     public final TdApi.Chat chat;
@@ -66,6 +68,10 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   private final List<TdApi.ForumTopic> topics = new ArrayList<>();
   private boolean isLoading;
   private boolean hasMore;
+  private int nextOffsetDate, nextOffsetForumTopicId;
+  private long nextOffsetMessageId;
+  private boolean isSubscribedToUpdates;
+  private boolean knownIsForum = true, knownHasForumTabs = true;
 
   public ForumTopicTabsController (Context context, Tdlib tdlib) {
     super(context, tdlib);
@@ -123,6 +129,17 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
     if (isLoading) return;
     isLoading = true;
 
+    if (!isSubscribedToUpdates) {
+      TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chatId);
+      if (supergroup != null) {
+        knownIsForum = supergroup.isForum;
+        knownHasForumTabs = supergroup.hasForumTabs;
+      }
+      tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      tdlib.listeners().subscribeToChatUpdates(chatId, this);
+      isSubscribedToUpdates = true;
+    }
+
     // First, try to show cached topics immediately for instant display
     java.util.List<TdApi.ForumTopic> cachedTopics = tdlib.getCachedForumTopics(chatId);
     if (cachedTopics != null && !cachedTopics.isEmpty()) {
@@ -137,11 +154,12 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
       if (result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR) {
         TdApi.ForumTopics forumTopics = (TdApi.ForumTopics) result;
         tdlib.ui().post(() -> {
+          if (isDestroyed()) return;
           topics.clear();
           for (TdApi.ForumTopic topic : forumTopics.topics) {
             topics.add(topic);
           }
-          hasMore = forumTopics.nextOffsetForumTopicId != 0;
+          setNextOffset(forumTopics);
           // Update cache
           tdlib.updateForumTopicsCache(chatId, topics);
           isLoading = false;
@@ -237,16 +255,17 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
     if (isLoading || !hasMore) return;
     isLoading = true;
 
-    int lastTopicId = topics.isEmpty() ? 0 : topics.get(topics.size() - 1).info.forumTopicId;
-
-    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0, 0L, lastTopicId, 50), result -> {
+    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", nextOffsetDate, nextOffsetMessageId, nextOffsetForumTopicId, 50), result -> {
       if (result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR) {
         TdApi.ForumTopics forumTopics = (TdApi.ForumTopics) result;
         tdlib.ui().post(() -> {
+          if (isDestroyed()) return;
           for (TdApi.ForumTopic topic : forumTopics.topics) {
-            topics.add(topic);
+            if (indexOfTopic(topic.info.forumTopicId) == -1) {
+              topics.add(topic);
+            }
           }
-          hasMore = forumTopics.nextOffsetForumTopicId != 0;
+          setNextOffset(forumTopics);
           isLoading = false;
 
           // Update the pager
@@ -258,13 +277,51 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
     });
   }
 
+  private void setNextOffset (TdApi.ForumTopics forumTopics) {
+    nextOffsetDate = forumTopics.nextOffsetDate;
+    nextOffsetMessageId = forumTopics.nextOffsetMessageId;
+    nextOffsetForumTopicId = forumTopics.nextOffsetForumTopicId;
+    hasMore = forumTopics.topics.length > 0 && (nextOffsetDate != 0 || nextOffsetMessageId != 0 || nextOffsetForumTopicId != 0);
+  }
+
+  private int indexOfTopic (int forumTopicId) {
+    for (int i = 0; i < topics.size(); i++) {
+      if (topics.get(i).info.forumTopicId == forumTopicId) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  // ChatListener (ForumTopicInfoListener): tab titles follow renamed topics
+
+  @Override
+  public void onForumTopicInfoChanged (TdApi.ForumTopicInfo info) {
+    if (info.chatId != chatId) return;
+    tdlib.ui().post(() -> {
+      if (isDestroyed()) return;
+      int index = indexOfTopic(info.forumTopicId);
+      if (index != -1) {
+        TdApi.ForumTopic topic = topics.get(index);
+        boolean nameChanged = !StringUtils.equalsOrBothEmpty(topic.info.name, info.name);
+        topic.info = info;
+        if (nameChanged) {
+          notifyPagerItemPositionsChanged();
+        }
+      }
+    });
+  }
+
   // TdlibCache.SupergroupDataChangeListener implementation
   @Override
   public void onSupergroupUpdated (TdApi.Supergroup supergroup) {
     tdlib.ui().post(() -> {
-      if (ChatId.toSupergroupId(chatId) == supergroup.id) {
-        // Check if forum mode was disabled externally or tabs layout changed
-        if (!supergroup.isForum && chat != null) {
+      if (ChatId.toSupergroupId(chatId) == supergroup.id && !isDestroyed()) {
+        // Reopen the chat only when forum mode or the tabs layout actually changes, not on any supergroup update
+        final boolean wasForum = knownIsForum, hadForumTabs = knownHasForumTabs;
+        knownIsForum = supergroup.isForum;
+        knownHasForumTabs = supergroup.hasForumTabs;
+        if (wasForum && !supergroup.isForum && chat != null) {
           // Forum mode was disabled - navigate to regular chat view
           navigateBack();
           tdlib.ui().post(() -> {
@@ -272,7 +329,7 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
               tdlib.ui().openChat(this, chat.id, new TdlibUi.ChatOpenParameters().keepStack());
             }
           });
-        } else if (supergroup.isForum && !supergroup.hasForumTabs && chat != null) {
+        } else if (supergroup.isForum && hadForumTabs && !supergroup.hasForumTabs && chat != null) {
           // Tabs layout was disabled - switch to list controller
           navigateBack();
           tdlib.ui().post(() -> {
@@ -664,6 +721,11 @@ public class ForumTopicTabsController extends ViewPagerController<ForumTopicTabs
   @Override
   public void destroy () {
     super.destroy();
+    if (isSubscribedToUpdates) {
+      tdlib.cache().unsubscribeFromSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+      tdlib.listeners().unsubscribeFromChatUpdates(chatId, this);
+      isSubscribedToUpdates = false;
+    }
   }
 
   // Permission checks for topic actions

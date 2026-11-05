@@ -38,7 +38,7 @@ import org.thunderdog.challegram.tool.Screen;
  * Supports both colored circles (for topics without custom emoji) and
  * custom emoji icons (stickers) for topics with iconCustomEmojiId.
  */
-public class TopicIconModifier implements DrawModifier, TdlibEmojiManager.Watcher {
+public class TopicIconModifier implements DrawModifier, TdlibEmojiManager.Watcher, View.OnAttachStateChangeListener {
 
   private static final float ICON_SIZE_DP = 20f;
   private static final float LEFT_OFFSET_DP = 18f; // Left padding area, before text
@@ -126,19 +126,17 @@ public class TopicIconModifier implements DrawModifier, TdlibEmojiManager.Watche
 
   @Override
   public void onCustomEmojiLoaded (TdlibEmojiManager context, TdlibEmojiManager.Entry entry) {
-    this.customEmoji = entry;
-    if (!entry.isNotFound()) {
-      buildCustomEmojiFiles(entry);
-    }
-    // Request files and invalidate view on UI thread
-    if (tdlib != null) {
-      tdlib.ui().post(() -> {
-        requestIconFiles();
-        if (attachedView != null) {
-          attachedView.invalidate();
-        }
-      });
-    }
+    // Files are built and requested on the UI thread: drawing reads them there
+    tdlib.ui().post(() -> {
+      this.customEmoji = entry;
+      if (!entry.isNotFound()) {
+        buildCustomEmojiFiles(entry);
+      }
+      requestIconFiles();
+      if (attachedView != null) {
+        attachedView.invalidate();
+      }
+    });
   }
 
   private void requestIconFiles () {
@@ -158,22 +156,46 @@ public class TopicIconModifier implements DrawModifier, TdlibEmojiManager.Watche
    * Must be called when the view is bound.
    */
   public void attachToView (View view) {
+    if (attachedView == view) {
+      return;
+    }
+    // A recycled view: the receiver of the previous view would invalidate the wrong one
+    detach();
     this.attachedView = view;
-    if (customEmojiId != 0 && iconReceiver == null) {
+    view.addOnAttachStateChangeListener(this);
+    if (customEmojiId != 0) {
       this.iconReceiver = new ComplexReceiver(view);
+      if (view.isAttachedToWindow()) {
+        iconReceiver.attach();
+      }
       requestIconFiles();
     }
   }
 
   /**
-   * Detach from the view and clean up receivers.
+   * Detach from the view and destroy the receivers. Called automatically when the view leaves the window.
    */
   public void detach () {
-    this.attachedView = null;
+    if (attachedView != null) {
+      attachedView.removeOnAttachStateChangeListener(this);
+      attachedView = null;
+    }
     if (iconReceiver != null) {
-      iconReceiver.clear();
+      iconReceiver.performDestroy();
       iconReceiver = null;
     }
+  }
+
+  @Override
+  public void onViewAttachedToWindow (View v) {
+    if (iconReceiver != null) {
+      iconReceiver.attach();
+    }
+  }
+
+  @Override
+  public void onViewDetachedFromWindow (View v) {
+    detach();
   }
 
   @Override
@@ -218,12 +240,9 @@ public class TopicIconModifier implements DrawModifier, TdlibEmojiManager.Watche
         }
         // Draw thumbnail as placeholder
         DoubleImageReceiver preview = iconReceiver.getPreviewReceiver(0);
-        if (preview != null) {
+        if (preview != null && !preview.needPlaceholder()) {
           preview.setBounds(left, top, right, bottom);
           preview.draw(c);
-        }
-        if (!imageRcv.needPlaceholder()) {
-          imageRcv.draw(c);
           return;
         }
       }

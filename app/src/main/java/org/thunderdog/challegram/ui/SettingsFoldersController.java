@@ -195,7 +195,14 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
             GradientDrawable oval = new GradientDrawable();
             oval.setShape(GradientDrawable.OVAL);
             oval.setColor(0xFFFFFFFF);
-            M3StateLayerDrawable stateLayer = new M3StateLayerDrawable(null, new InsetDrawable(oval, Screen.dp(4f)), 0);
+            M3StateLayerDrawable stateLayer = new M3StateLayerDrawable(null, new InsetDrawable(oval, Screen.dp(4f)), ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSecondaryContainer())) {
+              @Override
+              protected boolean onStateChange (@NonNull int[] state) {
+                // Theme may have changed since the last press.
+                setColor(ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSecondaryContainer()));
+                return super.onStateChange(state);
+              }
+            };
             Drawable addIcon = Drawables.get(parent.getResources(), R.drawable.baseline_add_24);
             FrameLayoutFix button = new FrameLayoutFix(parent.getContext()) {
               @Override
@@ -209,7 +216,6 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
                 boolean enabled = isEnabled();
                 // Disabled: container onSurface 10%, icon onSurface 38%.
                 c.drawCircle(cx, cy, Screen.dp(20f), Paints.fillingPaint(enabled ? M3.secondaryContainer() : ColorUtils.alphaColor(.1f, M3.onSurface())));
-                stateLayer.setColor(ColorUtils.alphaColor(M3.STATE_PRESSED, M3.onSecondaryContainer()));
                 if (addIcon != null) {
                   Drawables.draw(c, addIcon, cx - addIcon.getMinimumWidth() / 2f, cy - addIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(enabled ? M3.onSecondaryContainer() : ColorUtils.alphaColor(.38f, M3.onSurface())));
                 }

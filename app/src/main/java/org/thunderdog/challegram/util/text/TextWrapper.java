@@ -242,6 +242,7 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
           .viewProvider(viewProvider)
           .highlight(highlightText)
           .lineWidthProvider(lineWidthProvider)
+          .quoteExpander(quoteToggleListener != null ? this : null)
           .textFlags(BitwiseUtils.setFlag(textFlags, Text.FLAG_BIG_EMOJI, false));
         text = b.build();
         if (needBigEmoji) {

@@ -124,6 +124,9 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
         checkBox.destroy();
         checkBox = null;
       }
+      if (text != null) {
+        text.performDestroy();
+      }
     }
   }
 
@@ -242,6 +245,9 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
     TdApi.FormattedText title = checklist.title != null ? checklist.title : Td.emptyFormattedText();
     if (titleText == null || !Td.equalsTo(titleSource, title)) {
       titleSource = title;
+      if (titleText != null) {
+        titleText.performDestroy();
+      }
       titleText = new TextWrapper(tdlib, title, getBiggerTextStyleProvider(), getTextColorSet(), openParameters(), (wrapper, text, specificMedia) -> invalidateTextMediaReceiver(text, specificMedia))
         .addTextFlags(Text.FLAG_ALL_BOLD)
         .setViewProvider(currentViews);
@@ -315,6 +321,9 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
       if (entry.text == null || entry.isStrikethrough != isStrikethrough || !Td.equalsTo(entry.textSource, text)) {
         entry.textSource = text;
         entry.isStrikethrough = isStrikethrough;
+        if (entry.text != null) {
+          entry.text.performDestroy();
+        }
         entry.text = new TextWrapper(tdlib, isStrikethrough ? withStrikethrough(text) : text, getTextStyleProvider(), getTextColorSet(), openParameters(), (wrapper, t, specificMedia) -> invalidateTextMediaReceiver(t, specificMedia))
           .setViewProvider(currentViews);
         textWrappersChanged = true;
@@ -405,7 +414,7 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
       if (entry.text != null) {
         entry.text.prepare(taskTextWidth);
       }
-      if (entry.authorName != null) {
+      if (entry.authorName != null && (entry.authorText == null || entry.authorText.getMaxWidth() != taskTextWidth)) {
         entry.authorText = buildAuthorText(entry.authorName, taskTextWidth);
       }
     }
@@ -661,6 +670,9 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
 
   @Override
   protected void onMessageContainerDestroyed () {
+    if (titleText != null) {
+      titleText.performDestroy();
+    }
     for (TaskEntry entry : entries) {
       entry.performDestroy();
     }

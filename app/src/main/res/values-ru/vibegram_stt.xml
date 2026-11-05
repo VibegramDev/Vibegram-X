@@ -14,11 +14,7 @@
   <string name="vg_SttCreditsModels">Авторы моделей</string>
   <string name="vg_SttCreditsEngines">Движки распознавания</string>
   <string name="vg_SttDownloadFailed">Не удалось скачать модель. Проверьте подключение и попробуйте ещё раз.</string>
-  <string name="vg_SttTranscribe">Расшифровать</string>
-  <string name="vg_SttHide">Скрыть расшифровку</string>
   <string name="vg_SttNoModel">Сначала скачайте модель расшифровки в настройках</string>
-  <string name="vg_SttOpenSettings">Открыть</string>
-  <string name="vg_SttInProgress">Расшифровка…</string>
   <string name="vg_SttFailed">Не удалось расшифровать сообщение</string>
   <string name="vg_SttEmpty">Речь не распознана</string>
   <string name="vg_SttNoSpace">Недостаточно места для модели: освободите ещё %1$s.</string>

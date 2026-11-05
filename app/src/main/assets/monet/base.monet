@@ -1,0 +1,380 @@
+# Monet: colors shared by the light, dark and black variants
+#
+# Runtime template for the built-in Material You ("Monet") themes (see ThemeMonet.java).
+# The table is derived from the Material 3 color roles: every Telegram X color is given the role that matches
+# what the color is used for in the app, and the role is resolved from the device scheme (MonetPalette.java):
+# the system roles on Android 14+, tones of the system tonal palettes per the M3 tonal spot scheme elsewhere.
+# The same line therefore gives the light value in Monet White and the dark value in Monet Dark.
+#
+# Syntax: `colorName: value`, one per line; `#` starts a comment.
+#   surface, onSurface, primaryContainer, ...   Material 3 color role of the current scheme
+#   P40 S90 T30 N94 NV80 E40                    tone 0..100 of a tonal palette (primary, secondary, tertiary,
+#                                               neutral, neutral variant, error), the same in light and dark
+#   value@NN                                    value with NN % opacity
+#   mix(A,B,P)                                  A blended towards B by P percent
+#   #RGB #RGBA #RRGGBB #RRGGBBAA                literal colors
+#   include: name                               start from another template, then override
+#
+# Rules used below (per group, not per line):
+# - Content on a fill uses the pair of that fill: primary/onPrimary, primaryContainer/onPrimaryContainer, ...
+# - Secondary text, icons, inactive controls: onSurfaceVariant; decorative lines: outlineVariant.
+# - "Positive" (secret chats, online, correct answer, success): the tertiary family. M3 has no success role and
+#   tertiary is the scheme's complementary accent. "Negative": the error family.
+# - Telegram X draws white icons on some colored circles (file icons, call bar, play buttons). Those fills use
+#   tone 40 in both light and dark, so the white icon keeps at least 4.5:1.
+# - Pressed / selected overlays are state layers: the content color at 8-20 % opacity.
+
+# Main
+placeholder: onSurface@8
+previewBackground: surface@80
+separator: #0000
+fillingActive: surfaceContainerHighest
+fillingActiveContent: onSurfaceVariant
+fillingPositive: primary
+fillingPositiveContent: onPrimary
+fillingNegative: error
+
+# Snackbar and tooltip: M3 snackbar (inverse surface)
+snackbarUpdate: inverseSurface
+snackbarUpdateText: inverseOnSurface
+snackbarUpdateAction: inversePrimary
+tooltip: inverseSurface
+tooltip_text: inverseOnSurface
+tooltip_textLink: inversePrimary
+tooltip_textLinkPressHighlight: inversePrimary@25
+tooltip_outline: #0000
+
+# Text
+text: onSurface
+textLight: onSurfaceVariant
+textPlaceholder: onSurfaceVariant
+textSelectionHighlight: primary@30
+textLink: primary
+textLinkPressHighlight: primary@20
+textSearchQueryHighlight: primary
+textNeutral: primary
+textSecure: tertiary
+textNegative: error
+background_text: onSurfaceVariant
+background_textLight: onSurfaceVariant
+background_icon: onSurfaceVariant
+
+# Icons
+icon: onSurfaceVariant
+iconActive: primary
+iconLight: outline
+iconPositive: tertiary
+iconNegative: error
+
+# Controls: M3 progress indicator, checkbox, radio, slider, switch and text field tokens
+progress: primary
+controlInactive: onSurfaceVariant
+controlActive: primary
+controlContent: onPrimary
+checkActive: primary
+checkContent: onPrimary
+sliderActive: primary
+sliderInactive: secondaryContainer
+togglerActive: onPrimary
+togglerActiveBackground: primary
+togglerInactive: outline
+togglerInactiveBackground: surfaceContainerHighest
+togglerPositive: onPrimary
+togglerPositiveBackground: primary
+togglerPositiveContent: primary
+togglerNegative: onError
+togglerNegativeBackground: error
+togglerNegativeContent: error
+inputInactive: outline
+inputActive: primary
+inputPositive: tertiary
+inputNegative: error
+# Inline keyboard buttons: M3 outlined button; filled when pressed
+inlineOutline: outline
+inlineText: primary
+inlineIcon: primary
+inlineContentActive: onPrimary
+
+# Round buttons: FAB = primaryContainer, small floating buttons over content = surfaceContainerHigh,
+# call answer / decline = tertiary / error
+circleButtonRegular: primaryContainer
+circleButtonRegularIcon: onPrimaryContainer
+circleButtonActive: primary
+circleButtonActiveIcon: onPrimary
+circleButtonTheme: primaryContainer
+circleButtonThemeIcon: onPrimaryContainer
+circleButtonOverlay: surfaceContainerHigh
+circleButtonOverlayIcon: onSurfaceVariant
+circleButtonChat: surfaceContainerHigh
+circleButtonChatIcon: onSurfaceVariant
+circleButtonNewSecret: primaryContainer
+circleButtonNewSecretIcon: onPrimaryContainer
+circleButtonNewChat: primaryContainer
+circleButtonNewChatIcon: onPrimaryContainer
+circleButtonNewGroup: primaryContainer
+circleButtonNewGroupIcon: onPrimaryContainer
+circleButtonNewChannel: primaryContainer
+circleButtonNewChannelIcon: onPrimaryContainer
+circleButtonPositive: tertiary
+circleButtonPositiveIcon: onTertiary
+circleButtonNegative: error
+circleButtonNegativeIcon: onError
+
+# Seek bars and music player
+seekEmpty: surfaceContainerHighest
+seekReady: outlineVariant
+seekDone: primary
+playerButton: onSurface
+playerButtonActive: primary
+playerCoverPlaceholder: surfaceContainerHighest
+playerCoverIcon: onSurfaceVariant
+
+# Status marks
+online: tertiary
+promo: primary
+promoContent: onPrimary
+introSection: outlineVariant
+introSectionActive: primary
+profileSectionActive: primary
+profileSectionActiveContent: primary
+
+# Avatars: one tonal color for every placeholder (monochrome, follows the wallpaper); muted kinds are neutral
+avatar_content: onPrimaryContainer
+avatarRed: primaryContainer
+avatarRed_big: primaryContainer
+avatarOrange: primaryContainer
+avatarOrange_big: primaryContainer
+avatarYellow: primaryContainer
+avatarYellow_big: primaryContainer
+avatarGreen: primaryContainer
+avatarGreen_big: primaryContainer
+avatarCyan: primaryContainer
+avatarCyan_big: primaryContainer
+avatarBlue: primaryContainer
+avatarBlue_big: primaryContainer
+avatarViolet: primaryContainer
+avatarViolet_big: primaryContainer
+avatarPink: primaryContainer
+avatarPink_big: primaryContainer
+avatarSavedMessages: primaryContainer
+avatarSavedMessages_big: primaryContainer
+avatarReplies: primaryContainer
+avatarReplies_big: primaryContainer
+avatarArchive: primaryContainer
+avatarArchivePinned: surfaceContainerHighest
+avatarInactive: surfaceContainerHighest
+avatarInactive_big: surfaceContainerHighest
+
+# Sender names: one accent (monochrome, as the avatars)
+nameInactive: onSurfaceVariant
+nameRed: primary
+nameOrange: primary
+nameYellow: primary
+nameGreen: primary
+nameCyan: primary
+nameBlue: primary
+nameViolet: primary
+namePink: primary
+
+# App bars: M3 top app bar (surface, onSurface title and navigation icon, onSurfaceVariant actions)
+headerBackground: surface
+headerText: onSurface
+headerIcon: onSurface
+headerLightBackground: surface
+headerLightText: onSurface
+headerLightIcon: onSurfaceVariant
+headerPlaceholder: onSurface@8
+headerButton: surfaceContainerHigh
+headerButtonIcon: onSurfaceVariant
+headerBadge: primary
+headerBadgeMuted: outline
+headerBadgeFailed: error
+headerTabActive: primary
+headerTabActiveText: primary
+headerTabInactiveText: onSurfaceVariant
+# Selection mode with a destructive action
+headerRemoveBackground: errorContainer
+headerRemoveBackgroundHighlight: mix(errorContainer,error,30)
+# Ongoing call bar: white icons, tone 40
+headerBarCallIncoming: T40
+headerBarCallActive: P40
+headerBarCallMuted: NV40
+passcode: surface
+passcodeIcon: onSurfaceVariant
+passcodeText: onSurface
+# System notifications: accent color of the notification
+notification: primary
+notificationLink: primary
+notificationSecure: tertiary
+notificationPlayer: primary
+
+# Chat list. Counters: primary; muted: secondaryContainer / onSecondaryContainer (docs/MATERIAL3_DESIGN.md)
+ticks: primary
+ticksRead: primary
+chatListMute: onSurfaceVariant
+chatListIcon: onSurfaceVariant
+chatListAction: primary
+chatListVerify: primary
+badge: primary
+badgeText: onPrimary
+badgeMuted: secondaryContainer
+badgeMutedText: onSecondaryContainer
+badgeFailed: error
+badgeFailedText: onError
+
+# Chat
+chatSendButton: primary
+chatKeyboard: surfaceContainer
+chatKeyboardButton: surfaceContainerHighest
+unread: surfaceContainerHigh
+unreadText: primary
+messageSelection: primary@12
+messageSwipeBackground: primaryContainer
+messageSwipeContent: onPrimaryContainer
+messageAuthor: primary
+messageAuthorPsa: tertiary
+messageVerticalLine: primary
+messageNeutralFillingContent: onPrimary
+messageCorrectFilling: tertiary
+messageCorrectFillingContent: onTertiary
+messageCorrectChosenFilling: tertiary
+messageCorrectChosenFillingContent: onTertiary
+messageNegativeLine: error
+messageNegativeLineContent: onError
+chatSeparator: outlineVariant
+bubble_chatSeparator: outlineVariant
+shareSeparator: outlineVariant
+blockQuoteText: onSurface
+blockQuoteLine: primary
+bubbleIn_blockQuoteText: onSurface
+bubbleIn_blockQuoteLine: primary
+bubbleOut_blockQuoteText: onPrimaryContainer
+bubbleOut_blockQuoteLine: primary
+
+# Service messages on the plain chat background (no wallpaper): tonal pills
+bubble_date_noWallpaper: secondaryContainer
+bubble_dateText_noWallpaper: onSecondaryContainer
+bubble_unread_noWallpaper: secondaryContainer
+bubble_unreadText_noWallpaper: onSecondaryContainer
+bubble_mediaReply_noWallpaper: secondaryContainer
+bubble_mediaReplyText_noWallpaper: onSecondaryContainer
+bubble_mediaTime_noWallpaper: secondaryContainer
+bubble_mediaTimeText_noWallpaper: onSecondaryContainer
+bubble_overlay_noWallpaper: secondaryContainer
+bubble_overlayText_noWallpaper: onSecondaryContainer
+bubble_button_noWallpaper: secondaryContainer
+bubble_buttonText_noWallpaper: onSecondaryContainer
+bubble_buttonRipple_noWallpaper: onSecondaryContainer@12
+bubble_mediaOverlay: scrim@25
+bubble_messageSelection: primary@20
+bubble_messageSelectionNoWallpaper: primary@20
+bubble_messageCheckOutline: surfaceContainerLowest
+bubble_messageCheckOutlineNoWallpaper: outline
+
+# Incoming bubbles: a neutral container (the fill is set per variant), onSurface content
+bubbleIn_time: onSurfaceVariant
+bubbleIn_progress: primary
+bubbleIn_text: onSurface
+bubbleIn_textLink: primary
+bubbleIn_textLinkPressHighlight: primary@20
+bubbleIn_outline: outlineVariant
+bubbleIn_separator: outlineVariant
+bubbleIn_pressed: onSurface@10
+bubbleIn_fillingActive: surfaceContainerHighest
+bubbleIn_fillingActiveContent: onSurfaceVariant
+bubbleIn_fillingPositive: primary
+bubbleIn_fillingPositiveContent: onPrimary
+bubbleIn_fillingPositive_overlay: primary
+bubbleIn_fillingPositiveContent_overlay: onPrimary
+
+# Outgoing bubbles: primaryContainer, onPrimaryContainer content, primary accents
+bubbleOut_background: primaryContainer
+bubbleOut_text: onPrimaryContainer
+bubbleOut_time: onPrimaryContainer@85
+bubbleOut_progress: onPrimaryContainer@85
+bubbleOut_textLink: primary
+bubbleOut_textLinkPressHighlight: primary@20
+bubbleOut_outline: primary@30
+bubbleOut_separator: onPrimaryContainer@30
+bubbleOut_pressed: onPrimaryContainer@10
+bubbleOut_chatVerticalLine: primary
+bubbleOut_chatNeutralFillingContent: onPrimary
+bubbleOut_chatCorrectFilling: tertiary
+bubbleOut_chatCorrectFillingContent: onTertiary
+bubbleOut_chatCorrectChosenFilling: tertiary
+bubbleOut_chatCorrectChosenFillingContent: onTertiary
+bubbleOut_chatNegativeFilling: error
+bubbleOut_chatNegativeFillingContent: onError
+bubbleOut_inlineText: primary
+bubbleOut_inlineOutline: primary
+bubbleOut_inlineIcon: primary
+bubbleOut_waveformActive: primary
+bubbleOut_waveformInactive: primary@30
+bubbleOut_ticks: primary
+bubbleOut_ticksRead: primary
+bubbleOut_messageAuthor: primary
+bubbleOut_messageAuthorPsa: tertiary
+bubbleOut_fillingActive: primary@16
+bubbleOut_fillingActiveContent: onPrimaryContainer
+bubbleOut_fillingPositive: primary
+bubbleOut_fillingPositiveContent: onPrimary
+bubbleOut_fillingPositive_overlay: primary
+bubbleOut_fillingPositiveContent_overlay: onPrimary
+
+# Attach menu: tonal containers, one icon color for all of them (every "on container" tone pairs with any container)
+attachPhoto: primaryContainer
+attachFile: tertiaryContainer
+attachLocation: secondaryContainer
+attachContact: tertiaryContainer
+attachInlineBot: secondaryContainer
+attachText: onPrimaryContainer
+fileAttach: surfaceContainerHighest
+
+# Files and voice messages. File circles carry white icons: tone 40
+file: P40
+bubbleOut_file: P40
+fileYellow: S40
+fileGreen: T40
+fileRed: E40
+waveformActive: primary
+waveformInactive: outlineVariant
+
+# Instant View: article text = onSurface, meta = onSurfaceVariant, code = tertiary on a container, marks = tertiaryContainer
+iv_pageTitle: onSurface
+iv_pageSubtitle: onSurfaceVariant
+iv_pageAuthor: onSurfaceVariant
+iv_pageFooter: onSurfaceVariant
+iv_caption: onSurfaceVariant
+iv_text: onSurface
+iv_header: onSurface
+iv_icon: onSurfaceVariant
+iv_separator: outlineVariant
+iv_textLink: primary
+iv_textLinkPressHighlight: primary@20
+iv_textCode: tertiary
+iv_textCodeBackground: surfaceContainerHigh
+iv_textCodeBackgroundPressed: surfaceContainerHighest
+iv_textMarked: onTertiaryContainer
+iv_textMarkedBackground: tertiaryContainer
+iv_textMarkedLink: primary
+iv_textMarkedLinkPressHighlight: primary@20
+iv_textReference: onSurface
+iv_preBlockBackground: surfaceContainerHigh
+iv_chatLinkBackground: surfaceContainer
+iv_blockQuote: onSurface
+iv_blockQuoteLine: primary
+iv_pullQuote: onSurfaceVariant
+ivHeader: onSurface
+ivHeaderIcon: onSurfaceVariant
+
+# Other
+sectionedScrollBar: onSurfaceVariant@40
+sectionedScrollBarActive: primary
+sectionedScrollBarActiveContent: onPrimary
+statusBar: #0000
+statusBarContent: onSurface
+
+# Theme picker radios: the accent each Monet theme will have (light primary = P40, dark primary = P80)
+themeMonetWhite: P40
+themeMonetDark: P80
+themeMonetBlack: P80

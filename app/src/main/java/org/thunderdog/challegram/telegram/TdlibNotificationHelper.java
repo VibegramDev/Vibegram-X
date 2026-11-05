@@ -147,7 +147,7 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
     boolean needRebuild = false;
     for (TdApi.NotificationGroup rawGroup : update.groups) {
       if (accept(rawGroup.type)) {
-        rawGroup.notifications = filterMutedForumTopicNotifications(rawGroup.chatId, rawGroup.notifications);
+        rawGroup.notifications = filterMutedForumTopicNotifications(rawGroup.chatId, rawGroup.id, rawGroup.notifications);
         TdlibNotificationGroup group = new TdlibNotificationGroup(tdlib, rawGroup);
         if (!group.isEmpty()) {
           groups.put(rawGroup.id, group);
@@ -171,11 +171,8 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
 
   private boolean haveRebuilt;
 
-  /**
-   * Drops notifications about messages in forum topics muted by their own notification settings.
-   * TDLib applies only chat-level settings, so such topics would otherwise notify like the rest of the forum.
-   */
-  private TdApi.Notification[] filterMutedForumTopicNotifications (long chatId, @Nullable TdApi.Notification[] notifications) {
+  /** Drops notifications about messages in forum topics muted by their own notification settings. */
+  private TdApi.Notification[] filterMutedForumTopicNotifications (long chatId, int notificationGroupId, @Nullable TdApi.Notification[] notifications) {
     // Not gated on Tdlib.isForum: the supergroup may be missing from the cache when woken up by a push,
     // the topic of the message is enough.
     if (notifications == null || notifications.length == 0 || !ChatId.isSupergroup(chatId)) {
@@ -188,7 +185,7 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       if (notification.type.getConstructor() == TdApi.NotificationTypeNewMessage.CONSTRUCTOR) {
         TdApi.Message message = ((TdApi.NotificationTypeNewMessage) notification.type).message;
         if (message.topicId != null && message.topicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR) {
-          isMuted = tdlib.isForumTopicMuted(message.chatId, ((TdApi.MessageTopicForum) message.topicId).forumTopicId, true);
+          isMuted = tdlib.isForumTopicNotificationMuted(message.chatId, ((TdApi.MessageTopicForum) message.topicId).forumTopicId, notificationGroupId, notification.id);
         }
       }
       if (isMuted) {
@@ -211,7 +208,7 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       return;
     boolean isSilent = update.notificationSoundId == 0;
     if (update.addedNotifications != null && update.addedNotifications.length > 0) {
-      update.addedNotifications = filterMutedForumTopicNotifications(update.chatId, update.addedNotifications);
+      update.addedNotifications = filterMutedForumTopicNotifications(update.chatId, update.notificationGroupId, update.addedNotifications);
       if (update.addedNotifications.length == 0) {
         isSilent = true;
       }
@@ -299,7 +296,6 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       group = new TdlibNotificationGroup(tdlib, update);
       if (group.isEmpty())
         return;
-
       groups.put(update.notificationGroupId, group);
       notifications.addAll(group.notifications());
       Collections.sort(notifications);
@@ -372,18 +368,6 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
     } else {
       return baseNotificationId + offset;
     }
-  }
-
-  /**
-   * Generate a unique notification ID for a specific forum topic within a group.
-   * Uses a hash-based approach to avoid ID collisions.
-   */
-  public int getNotificationIdForTopicView (int groupId, long topicId) {
-    // Combine groupId with topicId hash to generate unique ID
-    // Use a large offset to avoid collisions with regular group IDs
-    int topicHash = Long.hashCode(topicId) & 0x7FFFFFFF; // Ensure positive
-    int topicOffset = (topicHash % 100000) + 100000; // Range: 100000-199999
-    return baseNotificationId + (TdlibNotificationGroup.MAX_CATEGORY + 1) + groupId * 200000 + topicOffset;
   }
 
   public boolean isEmpty () {
