@@ -64,19 +64,12 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
           bindModelRow(view, model);
         } else if (item.getId() == R.id.btn_vgSttCredit) {
           view.setData(((SttModel.Credit) item.getData()).displayUrl());
-        } else if (item.getId() == R.id.btn_vgSttVideos) {
-          view.getToggler().setRadioEnabled(SttManager.instance().isVideoTranscriptionEnabled(), isUpdate);
         }
       }
     };
 
     ArrayList<ListItem> items = new ArrayList<>();
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_SttDescription));
-
-    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgSttVideos, 0, R.string.vg_SttVideos));
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-    items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_SttVideosInfo));
 
     // One radio group in two sections: the Russian-only model on top, the multilingual ones below.
     addModels(items, R.string.vg_SttRussianHeader, true);
@@ -281,10 +274,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
 
   @Override
   public void onClick (View v) {
-    if (v.getId() == R.id.btn_vgSttVideos) {
-      SttManager.instance().setVideoTranscriptionEnabled(adapter.toggleView(v));
-      return;
-    }
     if (v.getId() == R.id.btn_vgSttCredit) {
       SttModel.Credit credit = (SttModel.Credit) ((ListItem) v.getTag()).getData();
       tdlib.ui().openUrl(this, credit.url, new TdlibUi.UrlOpenParameters().disableInstantView());

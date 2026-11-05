@@ -1047,11 +1047,10 @@ public class TGMessageMedia extends TGMessage implements SttManager.Transcriptio
     TdApi.Video video = getSttVideo();
     boolean canTranscribe = video != null && msg.chatId != 0 && !isHot() && !isSponsoredMessage();
     if (canTranscribe && !sttListening) {
-      // The settings switch comes as a transcription update too.
       sttListening = true;
       SttManager.instance().addTranscriptionListener(this);
     }
-    this.sttKey = canTranscribe && SttManager.instance().isVideoTranscriptionEnabled() ?
+    this.sttKey = canTranscribe ?
       SttManager.key(video.video.id, video.video.remote != null ? video.video.remote.uniqueId : null) : null;
   }
 
