@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: «Log in with Telegram» (login requests of websites and apps, login buttons of bots).
+     Texts follow the official Telegram Android app (not in the TGX cloud language pack). -->
+<resources>
+  <string name="vg_BotAuthAllowMessages">Разрешить писать Вам</string>
+  <string name="vg_BotAuthAllowMessagesInfo">Вы можете разрешить %1$s отправлять Вам сообщения.</string>
+  <string name="vg_BotAuthAppSubtitle">Приложение получит доступ к Вашему **имени**,\n**имени пользователя** и **фото профиля**.</string>
+  <string name="vg_BotAuthBasedOnIP">На основе IP-адреса (%1$s)</string>
+  <string name="vg_BotAuthBotSubtitle">Бот получит доступ к Вашему **имени**,\n**имени пользователя** и **фото профиля**.</string>
+  <string name="vg_BotAuthInfo">Попытка входа совершена с этого устройства.</string>
+  <string name="vg_BotAuthLoggedInFail">Попробуйте снова авторизоваться на **%1$s**.</string>
+  <string name="vg_BotAuthLoggedInFailNoDomain">Срок действия ссылки истёк.</string>
+  <string name="vg_BotAuthLoggedInFailTitle">Не удалось войти</string>
+  <string name="vg_BotAuthLoggedInSuccess">Вы авторизовались на **%1$s**.</string>
+  <string name="vg_BotAuthLoggedInSuccessTitle">Успешный вход</string>
+  <string name="vg_BotAuthLoggedInSuccessWithoutPhoneNumber">Вы авторизовались на **%1$s**, но не предоставили доступ к своему номеру телефона.</string>
+  <string name="vg_BotAuthLogin">Войти</string>
+  <string name="vg_BotAuthLoginRequestFrom">Запрос на авторизацию из **%1$s**</string>
+  <string name="vg_BotAuthNotification">Запрос на авторизацию на %1$s из %2$s</string>
+  <string name="vg_BotAuthNotificationChannel">Запросы на вход</string>
+  <string name="vg_BotAuthNotificationTitle">Запрос на авторизацию</string>
+  <string name="vg_BotAuthPhoneNumber">Номер телефона</string>
+  <string name="vg_BotAuthPhoneNumberAccept">Разрешить</string>
+  <string name="vg_BotAuthPhoneNumberDeny">Запретить</string>
+  <string name="vg_BotAuthPhoneNumberText">**%1$s** запрашивает доступ к Вашему номеру телефона **%2$s**.\n\nРазрешить доступ?</string>
+  <string name="vg_BotAuthSelectCode">Нажмите на код, который\nвидите на экране входа</string>
+  <string name="vg_BotAuthSelectEmoji">Нажмите на эмодзи, который\nвидите на экране входа</string>
+  <string name="vg_BotAuthSiteSubtitle">Сайт получит доступ к Вашему **имени**,\n**имени пользователя** и **фото профиля**.</string>
+  <string name="vg_BotAuthTitle">Авторизация на **%1$s**</string>
+  <string name="vg_Decline">Отклонить</string>
+  <string name="vg_UnverifiedApp">Неподтверждённое приложение</string>
+</resources>

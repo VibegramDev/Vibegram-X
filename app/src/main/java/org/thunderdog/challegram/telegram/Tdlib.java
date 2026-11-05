@@ -9239,6 +9239,12 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   @TdlibThread
+  private void updateNewOauthRequest (TdApi.UpdateNewOauthRequest update) {
+    // «Log in with Telegram» request of a website or an app: a notification that opens the confirmation sheet.
+    org.thunderdog.challegram.ui.OAuthSheet.showNotification(this, update);
+  }
+
+  @TdlibThread
   private void updateUnconfirmedSession (TdApi.UpdateUnconfirmedSession update) {
     // TODO
   }
@@ -10692,6 +10698,10 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         updateOption(context, (TdApi.UpdateOption) update);
         break;
       }
+      case TdApi.UpdateNewOauthRequest.CONSTRUCTOR: {
+        updateNewOauthRequest((TdApi.UpdateNewOauthRequest) update);
+        break;
+      }
       case TdApi.UpdateOwnedStarCount.CONSTRUCTOR: {
         updateOwnedStarCount((TdApi.UpdateOwnedStarCount) update);
         break;
@@ -10867,7 +10877,6 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       case TdApi.UpdateGiftAuctionState.CONSTRUCTOR:
       case TdApi.UpdateActiveGiftAuctions.CONSTRUCTOR:
       case TdApi.UpdateStakeDiceState.CONSTRUCTOR:
-      case TdApi.UpdateNewOauthRequest.CONSTRUCTOR:
       case TdApi.UpdateTextCompositionStyles.CONSTRUCTOR:
       case TdApi.UpdateAllowedBotUsernamePremiumSuffixes.CONSTRUCTOR:
       case TdApi.UpdateTonWalletGaslessTransfersInfo.CONSTRUCTOR:

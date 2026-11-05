@@ -100,6 +100,7 @@ public class Intents {
   public static final String CHANNEL_ID_LOCATION = "location";
 
   public static final String ACTION_OPEN_MAIN = PACKAGE_NAME + ".OPEN_MAIN";
+  public static final String ACTION_OPEN_OAUTH = PACKAGE_NAME + ".OPEN_OAUTH";
 
   public static final String ACTION_MESSAGE_REPLY = PACKAGE_NAME + ".ACTION_MESSAGE_REPLY";
   public static final String ACTION_MESSAGE_MUTE = PACKAGE_NAME + ".ACTION_MESSAGE_MUTE";

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: «Log in with Telegram» (login requests of websites and apps, login buttons of bots).
+     Texts follow the official Telegram Android app (not in the TGX cloud language pack). -->
+<resources>
+  <string name="vg_BotAuthAllowMessages">Allow Messages</string>
+  <string name="vg_BotAuthAllowMessagesInfo">This will allow %1$s to message you.</string>
+  <string name="vg_BotAuthAppSubtitle">This app will receive your **name**,\n**username** and **profile photo**.</string>
+  <string name="vg_BotAuthBasedOnIP">Based on the IP (%1$s)</string>
+  <string name="vg_BotAuthBotSubtitle">This bot will receive your **name**,\n**username** and **profile photo**.</string>
+  <string name="vg_BotAuthInfo">This login attempt came from the device above.</string>
+  <string name="vg_BotAuthLoggedInFail">Please try logging in to **%1$s** again.</string>
+  <string name="vg_BotAuthLoggedInFailNoDomain">Link has expired.</string>
+  <string name="vg_BotAuthLoggedInFailTitle">Login Failed</string>
+  <string name="vg_BotAuthLoggedInSuccess">You\'re now logged in to **%1$s**.</string>
+  <string name="vg_BotAuthLoggedInSuccessTitle">Login successful</string>
+  <string name="vg_BotAuthLoggedInSuccessWithoutPhoneNumber">You\'re now logged in to **%1$s**, but you didn\'t grant access to your phone number.</string>
+  <string name="vg_BotAuthLogin">Log In</string>
+  <string name="vg_BotAuthLoginRequestFrom">Login request from **%1$s**</string>
+  <string name="vg_BotAuthNotification">Login request for %1$s from %2$s</string>
+  <string name="vg_BotAuthNotificationChannel">Login requests</string>
+  <string name="vg_BotAuthNotificationTitle">Login Request</string>
+  <string name="vg_BotAuthPhoneNumber">Phone Number</string>
+  <string name="vg_BotAuthPhoneNumberAccept">Allow</string>
+  <string name="vg_BotAuthPhoneNumberDeny">Deny</string>
+  <string name="vg_BotAuthPhoneNumberText">**%1$s** wants to access your phone number **%2$s**.\n\nAllow access?</string>
+  <string name="vg_BotAuthSelectCode">Tap the code shown\non your login screen</string>
+  <string name="vg_BotAuthSelectEmoji">Tap the emoji shown\non your login screen</string>
+  <string name="vg_BotAuthSiteSubtitle">This site will receive your **name**,\n**username** and **profile photo**.</string>
+  <string name="vg_BotAuthTitle">Log in to **%1$s**</string>
+  <string name="vg_Decline">Decline</string>
+  <string name="vg_UnverifiedApp">Unverified App</string>
+</resources>

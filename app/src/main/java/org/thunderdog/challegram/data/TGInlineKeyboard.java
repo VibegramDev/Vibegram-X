@@ -38,21 +38,19 @@ import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.component.chat.MessageView;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.emoji.Emoji;
-import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
+import org.thunderdog.challegram.ui.OAuthSheet;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
-import org.thunderdog.challegram.ui.ListItem;
 import org.thunderdog.challegram.ui.MessagesController;
-import org.thunderdog.challegram.util.CustomTypefaceSpan;
 import org.thunderdog.challegram.util.DrawableProvider;
 import org.thunderdog.challegram.util.EmojiString;
 import org.thunderdog.challegram.loader.ComplexReceiver;
@@ -64,11 +62,9 @@ import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.util.text.TextEntityMessage;
 import org.thunderdog.challegram.util.text.TextMedia;
 import org.thunderdog.challegram.util.text.TextStyleProvider;
-import org.thunderdog.challegram.widget.CheckBoxView;
 import org.thunderdog.challegram.widget.ProgressComponent;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import me.vkryl.android.AnimatorUtils;
@@ -1436,73 +1432,16 @@ public class TGInlineKeyboard {
               .requireOpenPrompt(!open.skipConfirmation));
             break;
           }
-          case TdApi.LoginUrlInfoRequestConfirmation.CONSTRUCTOR:
+          case TdApi.LoginUrlInfoRequestConfirmation.CONSTRUCTOR: {
             TdApi.LoginUrlInfoRequestConfirmation confirm = (TdApi.LoginUrlInfoRequestConfirmation) loginUrlInfo;
-            List<ListItem> items = new ArrayList<>();
-            items.add(new ListItem(ListItem.TYPE_CHECKBOX_OPTION_MULTILINE,
-              R.id.btn_signIn, 0,
-              Lang.getString(R.string.LogInAsOn,
-                (target, argStart, argEnd, argIndex, needFakeBold) -> argIndex == 1 ?
-                  new CustomTypefaceSpan(null, ColorId.textLink) :
-                  Lang.newBoldSpan(needFakeBold),
-                context.context.tdlib().accountName(),
-                confirm.domain),
-              true
-            ));
-            if (confirm.requestWriteAccess) {
-              items.add(new ListItem(ListItem.TYPE_CHECKBOX_OPTION_MULTILINE,
-                R.id.btn_allowWriteAccess,
-                0,
-                Lang.getString(R.string.AllowWriteAccess, Lang.boldCreator(), context.context.tdlib().cache().userName(confirm.botUserId)),
-                true
-              ));
-            }
-            context.context.controller().showSettings(
-              new SettingsWrapBuilder(R.id.btn_open)
-              .addHeaderItem(Lang.getString(R.string.OpenLinkConfirm, (target, argStart, argEnd, spanIndex, needFakeBold) -> new CustomTypefaceSpan(null, ColorId.textLink), confirm.url))
-              .setRawItems(items)
-              .setIntDelegate((id, result) -> {
-                boolean needSignIn = items.get(0).isSelected();
-                boolean needWriteAccess = items.size() > 1 && items.get(1).isSelected();
-                if (needSignIn) {
-                  makeActive();
-                  showProgressDelayed();
-                  context.context.tdlib().send(new TdApi.GetLoginUrl(parent.getChatId(), context.messageId, button.id, needWriteAccess), getLoginUrlCallback(currentContextId, view, button, needVerify));
-                } else {
-                  openUrl(currentContextId, view, button.url, false);
-                }
-              })
-                .setSettingProcessor((item, itemView, isUpdate) -> {
-                  switch (item.getViewType()) {
-                    case ListItem.TYPE_CHECKBOX_OPTION:
-                    case ListItem.TYPE_CHECKBOX_OPTION_MULTILINE:
-                    case ListItem.TYPE_CHECKBOX_OPTION_WITH_AVATAR:
-                      ((CheckBoxView) itemView.getChildAt(0)).setChecked(item.isSelected(), isUpdate);
-                      break;
-                  }
-                })
-              .setOnSettingItemClick(confirm.requestWriteAccess ? (itemView, settingsId, item, doneButton, settingsAdapter, window) -> {
-                final int itemId = item.getId();
-                if (itemId == R.id.btn_signIn) {
-                  boolean needSignIn = settingsAdapter.getCheckIntResults().get(R.id.btn_signIn) == R.id.btn_signIn;
-                  if (!needSignIn) {
-                    // settingsAdapter.setToggledById(R.id.btn_allowWriteAccess, false);
-                    items.get(1).setSelected(false);
-                    settingsAdapter.updateValuedSettingById(R.id.btn_allowWriteAccess);
-                  }
-                } else if (itemId == R.id.btn_allowWriteAccess) {
-                  boolean needWriteAccess = settingsAdapter.getCheckIntResults().get(R.id.btn_allowWriteAccess) == R.id.btn_allowWriteAccess;
-                  if (needWriteAccess) {
-                    // settingsAdapter.setToggledById(R.id.btn_signIn, true);
-                    items.get(0).setSelected(true);
-                    settingsAdapter.updateValuedSettingById(R.id.btn_signIn);
-                  }
-                }
-              } : null)
-              .setSaveStr(R.string.Open)
-              .setRawItems(items)
-            );
+            // The login sheet of the official app: bot avatar, «Log in to domain», «Allow messages», Decline / Log In.
+            OAuthSheet.showLoginUrl(context.context.controller(), context.context.tdlib(), confirm, true, allowWriteAccess -> {
+              makeActive();
+              showProgressDelayed();
+              context.context.tdlib().send(new TdApi.GetLoginUrl(parent.getChatId(), context.messageId, button.id, allowWriteAccess), getLoginUrlCallback(currentContextId, view, button, needVerify));
+            });
             break;
+          }
           default: {
             Td.assertLoginUrlInfo_7af29c11();
             throw Td.unsupported(loginUrlInfo);
