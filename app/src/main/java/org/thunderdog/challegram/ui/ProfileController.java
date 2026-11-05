@@ -2691,7 +2691,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   // shown when the bot has Stars or Star transactions (BotStarsController.botHasStars of the official app).
 
   private @Nullable TdApi.StarAmount botStarAmount;
-  private boolean botHasStarTransactions, botStarsLoaded;
+  private boolean botHasStarTransactions;
+  /** The bot Stars screen was opened: the balance is requested again on return (withdrawals change it). */
+  private boolean botStarsOpened;
   private int botStarsRequestId;
 
   private void loadBotStars () {
@@ -2703,7 +2705,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       if (requestId != botStarsRequestId || result == null) {
         return;
       }
-      botStarsLoaded = true;
       botStarAmount = result.starAmount;
       botHasStarTransactions = result.transactions.length > 0;
       checkBotStarsRow();
@@ -5271,6 +5272,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     } else if (viewId == R.id.btn_botDescription) {
       editDescription(true);
     } else if (viewId == R.id.btn_vgBotStars) {
+      botStarsOpened = true;
       org.thunderdog.challegram.stars.BotStarsController.open(this, user.id);
     } else if (viewId == R.id.btn_botEdit) {
       TdApi.InternalLinkType internalLinkType = (TdApi.InternalLinkType) ((ListItem) v.getTag()).getData();
@@ -5571,7 +5573,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       oneShot = true;
       pagerAdapter.notifyDataSetChanged();
     }
-    if (botStarsLoaded) {
+    if (botStarsOpened) {
+      botStarsOpened = false;
       loadBotStars();
     }
     if (!isEditing()) {

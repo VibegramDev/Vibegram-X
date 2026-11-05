@@ -111,7 +111,7 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       return;
     }
     cancelPaneAnimation();
-    boolean fadeThrough = animated && capturePaneGhost();
+    boolean fadeThrough = animated && !Settings.instance().needReduceMotion() && capturePaneGhost();
     clearSection();
     if (controller == null) {
       if (fadeThrough) {
@@ -120,6 +120,7 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       return;
     }
     section = controller;
+    navigation.updateTabletSelection();
     View view = controller.getValue();
     if (view.getParent() != null) {
       ((ViewGroup) view.getParent()).removeView(view);
@@ -173,6 +174,7 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       masterHeader.setVisibility(VISIBLE);
     }
     requestLayout();
+    navigation.updateTabletSelection();
   }
 
   int getDetailWidth () {
@@ -287,11 +289,13 @@ final class TabletNavigationLayout extends FrameLayoutFix {
 
   // M3 fade-through in the left pane when the dock section changes (Chats, Calls, Contacts, Settings), like top-level
   // destinations on the phone. The outgoing section is gone at once, so its content and app bar fade out as a snapshot
-  // taken above the floating bar; then the incoming content fades in scaling up from 92% (fades only with reduced
+  // taken above the floating bar; then the incoming content fades in scaling up from 92% (no transition with reduced
   // motion), its app bar fades in. The folder rail and the floating bar stay in place.
 
   private @Nullable ValueAnimator paneAnimator;
   private @Nullable Bitmap paneGhost;
+  /** Snapshot buffer kept between section switches: allocating a pane-sized bitmap on each one stalls the first frame. */
+  private @Nullable Bitmap paneGhostBuffer;
   private float paneGhostAlpha;
   private @Nullable View paneContent, paneHeader;
   private final Paint paneGhostPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
@@ -313,12 +317,17 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     if (width <= 0 || height <= 0) {
       return false;
     }
-    try {
-      paneGhost = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-    } catch (OutOfMemoryError e) {
-      paneGhost = null;
-      return false;
+    if (paneGhostBuffer != null && paneGhostBuffer.getWidth() == width && paneGhostBuffer.getHeight() == height) {
+      paneGhostBuffer.eraseColor(0);
+    } else {
+      paneGhostBuffer = null;
+      try {
+        paneGhostBuffer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+      } catch (OutOfMemoryError e) {
+        return false;
+      }
     }
+    paneGhost = paneGhostBuffer;
     Canvas c = new Canvas(paneGhost);
     // Without the floating bar: the snapshot ends above it.
     master.draw(c);
@@ -335,25 +344,22 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     }
     paneContent = section != null ? section.getValue() : main.getTabletChatList();
     paneHeader = section != null ? sectionHeader : masterHeader;
-    final boolean scale = !Settings.instance().needReduceMotion();
-    applyPaneTransition(0f, scale);
+    applyPaneTransition(0f);
     Views.setLayerType(paneContent, LAYER_TYPE_HARDWARE);
-    paneAnimator = startTransition(progress -> applyPaneTransition(progress, scale), () -> {
+    paneAnimator = startTransition(this::applyPaneTransition, () -> {
       paneAnimator = null;
       resetPane();
     });
   }
 
-  private void applyPaneTransition (float progress, boolean scale) {
+  private void applyPaneTransition (float progress) {
     paneGhostAlpha = M3.fadeThroughOut(progress);
     float alpha = M3.fadeThroughIn(progress);
     if (paneContent != null) {
       paneContent.setAlpha(alpha);
-      if (scale) {
-        float factor = M3.fadeThroughScale(progress);
-        paneContent.setScaleX(factor);
-        paneContent.setScaleY(factor);
-      }
+      float factor = M3.fadeThroughScale(progress);
+      paneContent.setScaleX(factor);
+      paneContent.setScaleY(factor);
     }
     if (paneHeader != null) {
       paneHeader.setAlpha(alpha);
@@ -383,7 +389,6 @@ final class TabletNavigationLayout extends FrameLayoutFix {
       paneHeader = null;
     }
     if (paneGhost != null) {
-      // Not recycled: the last frame may still reference it.
       paneGhost = null;
       paneGhostAlpha = 0f;
       invalidate();
@@ -395,6 +400,8 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     super.onDetachedFromWindow();
     cancelDetailAnimation();
     cancelPaneAnimation();
+    // Not recycled: the last frame may still reference it.
+    paneGhostBuffer = null;
   }
 
   void setMain (MainController controller) {
@@ -404,6 +411,7 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     cancelDetailAnimation();
     clearMain();
     main = controller;
+    navigation.updateTabletSelection();
     if (main == null) {
       return;
     }
@@ -514,6 +522,7 @@ final class TabletNavigationLayout extends FrameLayoutFix {
     masterHeader = null;
     master = null;
     listWidth = 0;
+    navigation.updateTabletSelection();
   }
 
   void updateColors () {

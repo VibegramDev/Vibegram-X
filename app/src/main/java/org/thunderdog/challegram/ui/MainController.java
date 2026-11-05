@@ -116,6 +116,7 @@ import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
@@ -418,6 +419,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     prepareControllerForPosition(0, this::executeScheduledAnimation);
 
     if (headerCell != null) {
+      addThemeInvalidateListener(headerCell.getView());
       headerCell.getTopView().setOnSlideOffListener(new ViewPagerTopView.OnSlideOffListener() {
 
         private long selectedPagerItemId = INVALID_PAGER_ITEM_ID;
@@ -1009,6 +1011,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     popupLayout.setNeedFullScreen(true);
 
     final List<M3AccountItemView> accountViews = new ArrayList<>();
+    final ThemeListenerList popupThemeListeners = newPopupThemeListeners(popupLayout);
     // Account of each row: not in the view tag, the tablet menu keeps the item width there (MenuMoreWrap#addCustomItem).
     final java.util.Map<View, TdlibAccount> rowAccounts = new java.util.HashMap<>();
     View.OnClickListener onClick = v -> {
@@ -1034,12 +1037,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       rowAccounts.put(view, account);
       view.setAccount(account, false);
       view.attach();
-      addThemeInvalidateListener(view);
+      popupThemeListeners.addThemeInvalidateListener(view);
       accountViews.add(view);
     }
     popupLayout.setDismissListener(popup -> {
       for (M3AccountItemView view : accountViews) {
-        removeThemeListenerByTarget(view);
         view.performDestroy();
       }
     });
@@ -1047,7 +1049,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     float[] touchPoint;
     if (!isCompactWindow() && (touchPoint = context.getRecentTouchPoint()) != null) {
       MenuMoreWrap menu = new MenuMoreWrap(context);
-      menu.init(getThemeListeners(), null);
+      menu.init(popupThemeListeners, null);
       // Avatar in the 24dp leading icon slot of the menu items.
       float start = MenuMoreWrap.ITEM_PADDING, textStart = MenuMoreWrap.ITEM_TEXT_START;
       for (M3AccountItemView view : accountViews) {
@@ -2101,12 +2103,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       }
     }
     return true;
-  }
-
-  @Override
-  protected boolean useHeaderShadowLine () {
-    // M3 app bar: no shadow line, it is separated from content by color on scroll (see getHeaderColor).
-    return false;
   }
 
   @Override
@@ -3473,6 +3469,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return -1;
   }
 
+  private int headerCellBackgroundMode = -1;
+
   private void checkTabs () {
     if (headerCell == null)
       return;
@@ -3513,21 +3511,20 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         target.addView(headerCellView);
       }
     }
+    boolean barBackground = displayTabsAtBottom && !chipStyle;
+    if (headerCellBackgroundMode != (barBackground ? 1 : 0)) {
+      headerCellBackgroundMode = barBackground ? 1 : 0;
+      // Folder tabs at the bottom = navigation area: surfaceContainer (M3 roles, every theme). Chips draw themselves.
+      ViewUtils.setBackground(headerCellView, barBackground ? M3.roleDrawable(M3.SURFACE_CONTAINER) : null);
+    }
     if (chipStyle) {
-      // Chips float over the list: no bar background, the chips draw themselves.
       Views.setTopMargin(headerCellView, 0);
-      ViewUtils.setBackground(headerCellView, null);
-      addThemeInvalidateListener(headerCellView);
     } else if (displayTabsAtBottom) {
       Views.setTopMargin(headerCellView, Screen.dp(3f) - Screen.dp(1f));
-      // Folder tabs at the bottom = navigation area: surfaceContainer (M3 roles, every theme).
-      ViewUtils.setBackground(headerCellView, M3.roleDrawable(M3.SURFACE_CONTAINER));
-      addThemeInvalidateListener(headerCellView);
       headerCell.getTopView().setSelectionColorId(ColorId.headerLightText, .9f);
       headerCell.getTopView().setTextFromToColorId(ColorId.headerLightText, ColorId.headerLightText, PropertyId.SUBTITLE_ALPHA);
     } else {
       Views.setTopMargin(headerCellView, 0);
-      ViewUtils.setBackground(headerCellView, null);
       headerCell.getTopView().setSelectionColorId(ColorId.headerTabActive);
       headerCell.getTopView().setTextFromToColorId(ColorId.headerTabInactiveText, ColorId.headerTabActiveText);
     }

@@ -182,8 +182,21 @@ final class SettingsAccountsBlock implements GlobalAccountListener, GlobalCounte
   }
 
   @Override
+  public void onUnreadCountersChanged (Tdlib tdlib, @NonNull TdApi.ChatList chatList, int count, boolean isMuted) {
+    if (adapter == null || controller.isDestroyed()) {
+      return;
+    }
+    int i = adapter.indexOfViewByData(tdlib.account());
+    if (i != -1) {
+      adapter.notifyItemChanged(i);
+    }
+  }
+
+  @Override
   public void onTotalUnreadCounterChanged (@NonNull TdApi.ChatList chatList, boolean isReset) {
-    controller.runOnUiThreadOptional(this::updateAccountRows);
+    if (isReset) {
+      updateAccountRows();
+    }
   }
 
   @Override

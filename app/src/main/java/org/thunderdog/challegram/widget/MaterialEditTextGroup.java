@@ -336,6 +336,23 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
   }
 
   private final Paint outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  {
+    outlinePaint.setStyle(Paint.Style.STROKE);
+  }
+  // Width of the floating label text, measured once per text and size (not on every frame of the outline).
+  private @Nullable CharSequence labelWidthText;
+  private float labelWidthTextSize, labelTextWidth;
+
+  private float labelTextWidth () {
+    CharSequence text = hintView.getText();
+    float textSize = hintView.getPaint().getTextSize();
+    if (labelWidthText != text || labelWidthTextSize != textSize) {
+      labelWidthText = text;
+      labelWidthTextSize = textSize;
+      labelTextWidth = hintView.getPaint().measureText(text, 0, text.length());
+    }
+    return labelTextWidth;
+  }
   private final RectF outlineRect = new RectF();
 
   private float labelProgress () {
@@ -405,7 +422,6 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       final float right = editText.getRight() + editText.getTranslationX();
       final float bottom = editText.getBottom();
       outlineRect.set(left + strokeWidth / 2f, top + strokeWidth / 2f, right - strokeWidth / 2f, bottom - strokeWidth / 2f);
-      outlinePaint.setStyle(Paint.Style.STROKE);
       outlinePaint.setStrokeWidth(strokeWidth);
       outlinePaint.setColor(outlineColor(focus));
       final float radius = Screen.dp(M3.CORNER_EXTRA_SMALL);
@@ -415,7 +431,7 @@ public class MaterialEditTextGroup extends FrameLayoutFix implements View.OnFocu
       final boolean needCutout = progress > 0f;
       int saveCount = -1;
       if (needCutout) {
-        float textWidth = Math.min(hintView.getPaint().measureText(hintView.getText().toString()), hintView.getWidth()) * OUTLINED_LABEL_SCALE;
+        float textWidth = Math.min(labelTextWidth(), hintView.getWidth()) * OUTLINED_LABEL_SCALE;
         float labelCenter = isRtl ? hintView.getRight() - textWidth / 2f : hintView.getLeft() + textWidth / 2f;
         float halfWidth = textWidth * progress / 2f + Screen.dp(OUTLINED_LABEL_GAP);
         float halfHeight = Screen.dp(SUPPORTING_LINE_HEIGHT / 2f);

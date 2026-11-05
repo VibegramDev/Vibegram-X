@@ -904,8 +904,10 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
   }
 
   /** Tablet: the left pane row whose screen is open in the right pane (filled with secondaryContainer by its segment). */
+  private boolean tabletSelected;
+
   private boolean isTabletSelected () {
-    return NavigationController.isTabletSelectedRow(this, null, 0);
+    return tabletSelected;
   }
 
   @Override
@@ -966,6 +968,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
 
   @Override
   protected void onDraw (Canvas c) {
+    tabletSelected = NavigationController.isTabletSelectedRow(this, null, 0);
     if (drawModifiers != null) {
       for (DrawModifier modifier : drawModifiers) {
         modifier.beforeDraw(this, c);

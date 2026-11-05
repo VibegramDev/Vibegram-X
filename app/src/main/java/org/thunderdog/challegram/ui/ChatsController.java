@@ -2038,7 +2038,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
 
   @Override
   protected boolean useDrawer () {
-    return true;
+    return false;
   }
 
   // load more

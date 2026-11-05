@@ -3045,11 +3045,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     return recordAudioVideoController.isOpen() || hasAnimatingWindow() || navigation.isAnimating() || navigation.getHeaderView().isAnimating();
   }
 
-  /** For logs: which part keeps {@link #isNavigationBusy()} true. */
-  public String describeNavigationBusy () {
-    return "recorder=" + recordAudioVideoController.isOpen() + " window=" + hasAnimatingWindow() + " navigation=" + navigation.isAnimating() + " header=" + navigation.getHeaderView().isAnimating();
-  }
-
   private boolean openCameraByPermissionRequest (ViewController.CameraOpenOptions options) {
     RunnableBool after = granted -> {
       if (granted) {

@@ -750,6 +750,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   }
 
   private Paint chipShadowPaint;
+  private int chipShadowColor;
 
   /** M3 filter chip container; {@code selection} 0 — unselected, 1 — selected. */
   private void drawChip (Canvas c, float left, float right, int viewHeight, float selection) {
@@ -760,12 +761,16 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     int fill = ColorUtils.fromToArgb(unselectedFill, M3.secondaryContainer(), selection);
     if (chipElevated) {
       // Elevation level 1: a soft key shadow under the container.
+      int shadowColor = Theme.isDark() ? 0x72000000 : 0x38000000;
       if (chipShadowPaint == null) {
         chipShadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         chipShadowPaint.setStyle(Paint.Style.FILL);
       }
+      if (chipShadowColor != shadowColor) {
+        chipShadowColor = shadowColor;
+        chipShadowPaint.setShadowLayer(Screen.dp(2f), 0, Screen.dp(1f), shadowColor);
+      }
       chipShadowPaint.setColor(fill);
-      chipShadowPaint.setShadowLayer(Screen.dp(2f), 0, Screen.dp(1f), ColorUtils.alphaColor(Theme.isDark() ? .45f : .22f, 0xff000000));
       c.drawRoundRect(rect, radius, radius, chipShadowPaint);
     } else {
       if (Color.alpha(fill) != 0) {

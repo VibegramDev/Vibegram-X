@@ -15,18 +15,20 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
-import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.view.Gravity;
 import android.view.ViewGroup;
 
-import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.FloatingButton;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.ThemeChangeListener;
+import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
@@ -36,7 +38,7 @@ import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.MathUtils;
 
-public class DoneButton extends CircleButton implements RootFrameLayout.InsetsChangeListener {
+public class DoneButton extends CircleButton implements RootFrameLayout.InsetsChangeListener, ThemeChangeListener {
   private final FactorAnimator.Target target;
 
   private static final int ANIMATOR_VISIBILITY = 0;
@@ -49,6 +51,7 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
     init(R.drawable.baseline_check_24, 56f, 0f, ColorId.circleButtonRegular, ColorId.circleButtonRegularIcon);
     // M3 FAB, same as the navigation FloatingButton.
     FloatingButton.setM3FabBackground(this);
+    setCustomIconColor(M3.onPrimaryContainer());
 
     FrameLayoutFix.LayoutParams params;
     params = FrameLayoutFix.newParams(Screen.dp(56f), Screen.dp(56f), (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) | Gravity.BOTTOM);
@@ -82,6 +85,8 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
   @Override
   protected void onAttachedToWindow () {
     super.onAttachedToWindow();
+    ThemeManager.instance().addThemeListener(this);
+    setCustomIconColor(M3.onPrimaryContainer());
     if (Settings.instance().useEdgeToEdge()) {
       rootFrameLayout = Views.findAncestor(this, RootFrameLayout.class, true);
       if (rootFrameLayout != null) {
@@ -93,14 +98,21 @@ public class DoneButton extends CircleButton implements RootFrameLayout.InsetsCh
   }
 
   @Override
-  public void draw (@NonNull Canvas c) {
+  public boolean needsTempUpdates () {
+    return true;
+  }
+
+  @Override
+  public void onThemeColorsChanged (boolean areTemp, @Nullable ColorState state) {
+    // The icon is onPrimaryContainer: not a theme color id, so CircleButton does not follow it by itself.
     setCustomIconColor(M3.onPrimaryContainer());
-    super.draw(c);
+    invalidate();
   }
 
   @Override
   protected void onDetachedFromWindow () {
     super.onDetachedFromWindow();
+    ThemeManager.instance().removeThemeListener(this);
     if (rootFrameLayout != null) {
       rootFrameLayout.removeInsetsChangeListener(this);
       rootFrameLayout = null;
