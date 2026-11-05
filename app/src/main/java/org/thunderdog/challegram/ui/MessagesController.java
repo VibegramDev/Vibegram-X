@@ -194,6 +194,7 @@ import org.thunderdog.challegram.player.RoundVideoController;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.ChatListener;
+import org.thunderdog.challegram.telegram.DateChangeListener;
 import org.thunderdog.challegram.telegram.EmojiMediaType;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.ListManager;
@@ -310,7 +311,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   Menu, Unlockable, View.OnClickListener,
   ActivityResultHandler, MoreDelegate, CommandKeyboardLayout.Callback, MediaCollectorDelegate, SelectDelegate,
   ReplyBarView.Callback, RaiseHelper.Listener,
-  TGLegacyManager.EmojiLoadListener, ChatHeaderView.Callback,
+  TGLegacyManager.EmojiLoadListener, ChatHeaderView.Callback, DateChangeListener,
   ChatListener, NotificationSettingsListener, EmojiLayout.Listener,
   MessageThreadListener, TdlibSingleUnreadReactionsManager.UnreadSingleReactionListener,
   TdlibCache.SupergroupDataChangeListener, TdlibCache.BasicGroupDataChangeListener, TdlibCache.SecretChatDataChangeListener,
@@ -1642,6 +1643,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     updateView();
 
     TGLegacyManager.instance().addEmojiListener(this);
+    tdlib.context().dateManager().addListener(this);
 
     if (needTabs()) {
       pagerHeaderView = new ViewPagerHeaderViewCompact(context);
@@ -4451,7 +4453,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public final boolean shouldDisallowScreenshots () {
-    return (chat != null && (isSecretChat() || chat.hasProtectedContent || manager.hasVisibleProtectedContent())) || super.shouldDisallowScreenshots();
+    return !Config.ENABLE_TEST_HOOKS && ((chat != null && (isSecretChat() || chat.hasProtectedContent || manager.hasVisibleProtectedContent())) || super.shouldDisallowScreenshots());
   }
 
   @Override
@@ -4756,6 +4758,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       tdlib.settings().removeJoinRequestsDismissListener(this);
       TGLegacyManager.instance().removeEmojiListener(this);
+      tdlib.context().dateManager().removeListener(this);
       if (emojiLayout != null) {
         emojiLayout.destroy();
       }
@@ -7601,7 +7604,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
           return !Td.equalsTo(oldText, newText);
         }
         default: {
-          Td.assertMessageContent_f7758f8b();
+          Td.assertMessageContent_cc875c63();
           break;
         }
       }
@@ -8046,7 +8049,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         break;
       }
       default: {
-        Td.assertMessageContent_f7758f8b();
+        Td.assertMessageContent_cc875c63();
         throw Td.unsupported(editContext.message.content);
       }
     }
@@ -12516,6 +12519,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
       ((LinearLayoutManager) wallpapersList.getLayoutManager()).setReverseLayout(Lang.rtl());
       wallpapersList.invalidateItemDecorations();
       ((WallpaperAdapter) wallpapersList.getAdapter()).centerWallpapers(false);
+    }
+  }
+
+  @Override
+  public void onTimeFormatChanged () {
+    if (chat == null) {
+      return;
+    }
+    manager.updateDateSeparators();
+    manager.updateTimeFormat();
+    if (headerCell != null) {
+      headerCell.setChat(tdlib, chat, messageThread);
+      if (messageThread != null) {
+        updateMessageThreadSubtitle();
+      }
     }
   }
 

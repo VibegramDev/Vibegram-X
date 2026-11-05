@@ -53,6 +53,7 @@ import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSetOverride;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.widget.BaseView;
+import org.thunderdog.challegram.widget.DateTimeView;
 import org.thunderdog.challegram.widget.SimplestCheckBoxHelper;
 
 import java.util.ArrayList;
@@ -62,7 +63,8 @@ import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.Destroyable;
 import tgx.td.ChatId;
 
-public class UserView extends BaseView implements Destroyable, RemoveHelper.RemoveDelegate, TooltipOverlayView.LocationProvider, ComplexReceiverProvider {
+public class UserView extends BaseView implements Destroyable, RemoveHelper.RemoveDelegate,
+  TooltipOverlayView.LocationProvider, ComplexReceiverProvider, DateTimeView {
   /*private static final int ACCENT_COLOR = 0xff569ace;
   private static final int DECENT_COLOR = 0xff8a8a8a;*/
 
@@ -193,6 +195,11 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
     }
   }
 
+  @Override
+  public void onDateOrTimeChanged () {
+    updateSubtext();
+  }
+
   public void updateSubtext () {
     if (user != null) {
       user.updateStatus();
@@ -298,6 +305,9 @@ public class UserView extends BaseView implements Destroyable, RemoveHelper.Remo
       this.unregisteredContact = null;
       buildLayout();
     } else {
+      // An equal user made again by the owner has its own status, e.g. a time of a view of a
+      // message after a change of the time format
+      this.user = user;
       if (sourceName == null || user.updateName() || !sourceName.equals(user.getName())) {
         updateName();
       }

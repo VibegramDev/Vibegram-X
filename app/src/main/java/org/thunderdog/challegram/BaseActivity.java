@@ -1406,6 +1406,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     currentOrientation = newConfig.orientation;
     Lang.checkLanguageCode();
     ThemeManager.instance().checkMonetPalette();
+    TdlibManager.instance().dateManager().checkDateAndTimeFormat();
     setSystemNightMode(newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK);
     if (needRecreate) {
       recreate();
