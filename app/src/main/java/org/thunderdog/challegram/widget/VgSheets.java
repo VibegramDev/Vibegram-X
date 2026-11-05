@@ -354,6 +354,11 @@ public final class VgSheets {
   }
 
   public static PopupLayout showLockedDialog (ViewController<?> context, CharSequence headline, CharSequence message, CharSequence action, @Nullable CharSequence cancel, @Nullable View content, int lockSeconds, RunnableBool onResult) {
+    return showLockedDialog(context, headline, message, action, cancel, content, lockSeconds, false, onResult);
+  }
+
+  /** @param isDestructive the action deletes something: its button is red, as in the confirmations of Telegram X. */
+  public static PopupLayout showLockedDialog (ViewController<?> context, CharSequence headline, CharSequence message, CharSequence action, @Nullable CharSequence cancel, @Nullable View content, int lockSeconds, boolean isDestructive, RunnableBool onResult) {
     DialogLayout dialog = new DialogLayout(context.context(), context, null);
     dialog.setHeadline(headline);
     if (!TextUtils.isEmpty(message)) {
@@ -379,6 +384,9 @@ public final class VgSheets {
         onResult.runWithBool(true);
       }
     });
+    if (isDestructive) {
+      dialog.setButtonDestructive(actionButton);
+    }
     lockButton(actionButton, action, lockSeconds);
     popupLayout[0] = showDialog(context, dialog);
     popupLayout[0].setDismissListener(new PopupLayout.DismissListener() {

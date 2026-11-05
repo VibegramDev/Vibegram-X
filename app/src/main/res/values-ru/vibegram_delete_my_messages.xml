@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: «Delete my messages» in group chats (texts follow the exteragram plugin «Delete My Messages»). -->
+<resources>
+  <string name="vg_DeleteMyMessages">Удалить свои сообщения</string>
+  <string name="vg_DeleteMyMessagesStop">Остановить удаление сообщений</string>
+  <string name="vg_DeleteMyMessagesTitle">Удаление сообщений</string>
+  <string name="vg_DeleteMyMessagesConfirm">Вы точно хотите удалить свои сообщения в %1$s (%2$s)? Они будут удалены у всех участников. Это действие необратимо.</string>
+  <string name="vg_DeleteMyMessagesConfirmUnknown">Вы точно хотите удалить свои сообщения в %1$s? Они будут удалены у всех участников. Это действие необратимо.</string>
+  <string name="vg_DeleteMyMessagesStarted">Началось удаление сообщений…</string>
+  <string name="vg_DeleteMyMessagesNothing">В этом чате нет ваших сообщений</string>
+  <string name="vg_DeleteMyMessagesProgress">Удалено сообщений: %1$s из %2$s</string>
+  <string name="vg_DeleteMyMessagesProgressShort">Удалено сообщений: %1$s</string>
+  <string name="vg_DeleteMyMessagesDone">Все сообщения удалены: %1$s\nПериод: %2$s — %3$s</string>
+  <string name="vg_DeleteMyMessagesDonePartial">Удалено сообщений: %1$s (%2$s — %3$s)\nНе удалось удалить у всех: %4$s</string>
+  <string name="vg_DeleteMyMessagesNotDeleted">Не удалось удалить сообщения у всех участников: %1$s</string>
+  <string name="vg_DeleteMyMessagesStopConfirm">Удалено сообщений: %1$s. Остановить удаление?</string>
+  <string name="vg_DeleteMyMessagesStopAction">Остановить</string>
+  <string name="vg_DeleteMyMessagesStopped">Удаление остановлено. Удалено сообщений: %1$s</string>
+  <string name="vg_DeleteMyMessagesFloodWait">Telegram ограничил частоту удаления, продолжение через %1$s</string>
+  <string name="vg_DeleteMyMessagesError">Не удалось выполнить операцию: %1$s</string>
+</resources>

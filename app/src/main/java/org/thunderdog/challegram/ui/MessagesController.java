@@ -2426,6 +2426,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
       });
     } else if (id == R.id.btn_manageGroup) {
       manageGroup();
+    } else if (id == R.id.btn_vgDeleteMyMessages) {
+      if (chat != null) {
+        DeleteMyMessages.onMenuItemPressed(this, chat.id);
+      }
     } else if (id == R.id.btn_deleteThread) {
       deleteThread();
     } else if (id == R.id.btn_viewScheduled) {
@@ -4809,6 +4813,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
       strings.append(R.string.PasscodeTitle);
     }
     tdlib.ui().addDeleteChatOptions(getChatId(), ids, strings, !tdlib.isChannel(chat.id), false);
+    if (!messagesHidden && DeleteMyMessages.isAvailable(tdlib, chat)) {
+      // Vibegram X: delete all of the user's messages in the group (exteragram plugin «Delete My Messages»).
+      ids.append(R.id.btn_vgDeleteMyMessages);
+      strings.append(DeleteMyMessages.isRunning(tdlib, chat.id) ? R.string.vg_DeleteMyMessagesStop : R.string.vg_DeleteMyMessages);
+    }
 
     if (!messagesHidden) {
       if (ChatId.isUserChat(chat.id)) {
