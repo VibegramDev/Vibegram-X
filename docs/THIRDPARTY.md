@@ -55,11 +55,6 @@ Voice messages are transcribed on the device. The native libraries are prebuilt 
 * [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.28.2, licensed under
   [MIT](https://github.com/microsoft/onnxruntime/blob/main/LICENSE): `libonnxruntime.so`, shipped with the sherpa-onnx release.
 
-## Telegram-Monet
-
-The Material You color mapping used by the built-in "Monet" themes (`app/src/main/assets/monet/`) is adapted from
-[Telegram-Monet](https://github.com/mi-g-alex/Telegram-Monet) by mi-g-alex et al., licensed under EPL-2.0.
-
 ## Telegram for Android (WEB proxy)
 
 The WEB proxy transport (`app/src/main/java/org/thunderdog/challegram/proxy/`) and the format of `webproxy` links are based on

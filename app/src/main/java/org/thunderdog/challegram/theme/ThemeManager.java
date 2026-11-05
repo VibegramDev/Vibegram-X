@@ -254,6 +254,8 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
   private final ReferenceList<ChatStyleChangeListener> chatStyleChangeListeners = new ReferenceList<>();
 
   private ThemeManager () {
+    // Monet templates are read and parsed in the background while the rest of the start-up runs.
+    ThemeMonet.preload(AppContext.get());
     TdlibManager.instance().global().addAccountListener(this);
   }
 
@@ -687,9 +689,7 @@ public class ThemeManager implements FactorAnimator.Target, GlobalAccountListene
    * based on a Monet theme.
    */
   public void checkMonetPalette () {
-    boolean rolesChanged = M3.refreshSystemRoles();
-    boolean paletteChanged = MonetPalette.refresh(AppContext.get());
-    if (!rolesChanged && !paletteChanged) {
+    if (!MonetPalette.refresh(AppContext.get())) {
       return;
     }
     ThemeSet.resetMonetThemes();
