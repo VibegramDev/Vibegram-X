@@ -2792,12 +2792,29 @@ public class TD {
     if (text == null) {
       return;
     }
-    String part = getText(text).replace('\n', ' ').trim();
-    if (!part.isEmpty()) {
-      if (b.length() > 0) {
-        b.append(' ');
+    final int start = b.length();
+    if (start > 0) {
+      b.append(' ');
+    }
+    int partStart = b.length();
+    getText(text, b, true);
+    int partEnd = b.length();
+    while (partStart < partEnd && b.charAt(partStart) <= ' ') {
+      partStart++;
+    }
+    while (partEnd > partStart && b.charAt(partEnd - 1) <= ' ') {
+      partEnd--;
+    }
+    if (partStart == partEnd) {
+      b.setLength(start);
+      return;
+    }
+    b.setLength(partEnd);
+    b.delete(start > 0 ? start + 1 : 0, partStart);
+    for (int i = start; i < b.length(); i++) {
+      if (b.charAt(i) == '\n') {
+        b.setCharAt(i, ' ');
       }
-      b.append(part);
     }
   }
 

@@ -40,6 +40,7 @@ import org.thunderdog.challegram.navigation.MenuMoreWrap;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.ThemeInvalidateListener;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
@@ -53,7 +54,7 @@ import me.vkryl.core.MathUtils;
  * ({@link MenuMoreWrap} at the touch point). It follows the menu's position and appearance animation.
  */
 @SuppressLint("ViewConstructor")
-public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObserver.OnPreDrawListener, RootFrameLayout.MarginModifier {
+public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObserver.OnPreDrawListener, RootFrameLayout.MarginModifier, ThemeInvalidateListener {
   /** 40dp reactions with 7dp vertical padding (ReactionsSelectorRecyclerView). */
   public static final int HEIGHT = 54;
   /** Gap between the row and the menu container. */
@@ -67,6 +68,7 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
   private final ReactionsSelectorRecyclerView reactionsView;
   private final @Nullable ImageView expandButton;
   private final Rect insets = new Rect();
+  private int expandIconColor;
 
   public MessageReactionsBar (Context context, ViewController<?> themeProvider, MenuMoreWrap menu, float touchX, MessageOptionsPagerController.State state, @Nullable View.OnClickListener onExpand) {
     super(context);
@@ -86,7 +88,7 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
       expandButton = new ImageView(context);
       expandButton.setScaleType(ImageView.ScaleType.CENTER);
       expandButton.setImageResource(R.drawable.baseline_small_arrow_down_24);
-      expandButton.setColorFilter(Paints.getColorFilter(M3.onSurfaceVariant()));
+      expandButton.setColorFilter(Paints.getColorFilter(expandIconColor = M3.onSurfaceVariant()));
       expandButton.setLayoutParams(FrameLayoutFix.newParams(expandWidth, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.RIGHT));
       expandButton.setOnClickListener(onExpand);
       Views.setClickable(expandButton);
@@ -107,7 +109,6 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
       setClipToOutline(true);
       setElevation(Screen.dp(M3.ELEVATION_LEVEL2));
     }
-    themeProvider.addThemeInvalidateListener(this);
   }
 
   @Override
@@ -118,11 +119,15 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
   }
 
   @Override
-  public void invalidate () {
-    super.invalidate();
+  public void onThemeInvalidate (boolean isTempUpdate) {
     if (expandButton != null) {
-      expandButton.setColorFilter(Paints.getColorFilter(M3.onSurfaceVariant()));
+      int color = M3.onSurfaceVariant();
+      if (color != expandIconColor) {
+        expandIconColor = color;
+        expandButton.setColorFilter(Paints.getColorFilter(color));
+      }
     }
+    invalidate();
   }
 
   @Override
@@ -153,6 +158,9 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
   @Override
   protected void onAttachedToWindow () {
     super.onAttachedToWindow();
+    boundsProvider.addThemeInvalidateListener(this);
+    onThemeInvalidate(false);
+    positionInvalidated = true;
     getViewTreeObserver().addOnPreDrawListener(this);
   }
 
@@ -160,6 +168,34 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
   protected void onDetachedFromWindow () {
     super.onDetachedFromWindow();
     getViewTreeObserver().removeOnPreDrawListener(this);
+    boundsProvider.removeThemeListenerByTarget(this);
+  }
+
+  // Inputs of the last placement: it is recomputed only when the menu or the row changes geometry.
+  private boolean positionInvalidated = true;
+  private float lastMenuX, lastMenuY;
+  private int lastMenuWidth, lastWidth, lastHeight, lastLeft, lastTop, lastParentWidth;
+  private final Rect lastInsets = new Rect();
+
+  private boolean updatePositionInputs (View parent) {
+    float menuX = menu.getLeft() + menu.getTranslationX();
+    float menuY = menu.getTop() + menu.getTranslationY();
+    if (!positionInvalidated && menuX == lastMenuX && menuY == lastMenuY && menu.getWidth() == lastMenuWidth &&
+      getWidth() == lastWidth && getHeight() == lastHeight && getLeft() == lastLeft && getTop() == lastTop &&
+      parent.getWidth() == lastParentWidth && insets.equals(lastInsets)) {
+      return false;
+    }
+    positionInvalidated = false;
+    lastMenuX = menuX;
+    lastMenuY = menuY;
+    lastMenuWidth = menu.getWidth();
+    lastWidth = getWidth();
+    lastHeight = getHeight();
+    lastLeft = getLeft();
+    lastTop = getTop();
+    lastParentWidth = parent.getWidth();
+    lastInsets.set(insets);
+    return true;
   }
 
   /** Above the menu container (MenuMoreWrap#setReservedTop keeps the space), aligned to its edge closest to the touch. */
@@ -169,28 +205,30 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
       return true;
     }
     View parent = (View) getParent();
-    int padding = Screen.dp(MenuMoreWrap.PADDING);
-    float menuLeft = menu.getLeft() + menu.getTranslationX() + padding;
-    float menuRight = menu.getLeft() + menu.getTranslationX() + menu.getWidth() - padding;
-    float menuTop = menu.getTop() + menu.getTranslationY() + padding;
-    float touch = touchX - Views.getLocationOnScreen(parent)[0];
-    float left = touch >= (menuLeft + menuRight) / 2f ? menuRight - getWidth() : menuLeft;
-    // Stays inside the chat pane (in the tablet split the window also holds the chat list).
-    int minLeft = insets.left + padding, maxRight = parent.getWidth() - insets.right - padding;
-    View pane = boundsProvider.getValue();
-    if (pane != null && pane.getWindowToken() != null && pane.getWidth() > 0) {
-      int paneLeft = Views.getLocationOnScreen(pane)[0] - Views.getLocationOnScreen(parent)[0];
-      minLeft = Math.max(minLeft, paneLeft + padding);
-      maxRight = Math.min(maxRight, paneLeft + pane.getWidth() - padding);
+    if (updatePositionInputs(parent)) {
+      int padding = Screen.dp(MenuMoreWrap.PADDING);
+      float menuLeft = menu.getLeft() + menu.getTranslationX() + padding;
+      float menuRight = menu.getLeft() + menu.getTranslationX() + menu.getWidth() - padding;
+      float menuTop = menu.getTop() + menu.getTranslationY() + padding;
+      float touch = touchX - Views.getLocationOnScreen(parent)[0];
+      float left = touch >= (menuLeft + menuRight) / 2f ? menuRight - getWidth() : menuLeft;
+      // Stays inside the chat pane (in the tablet split the window also holds the chat list).
+      int minLeft = insets.left + padding, maxRight = parent.getWidth() - insets.right - padding;
+      View pane = boundsProvider.getValue();
+      if (pane != null && pane.getWindowToken() != null && pane.getWidth() > 0) {
+        int paneLeft = Views.getLocationOnScreen(pane)[0] - Views.getLocationOnScreen(parent)[0];
+        minLeft = Math.max(minLeft, paneLeft + padding);
+        maxRight = Math.min(maxRight, paneLeft + pane.getWidth() - padding);
+      }
+      left = MathUtils.clamp(left, minLeft, Math.max(minLeft, maxRight - getWidth()));
+      float top = menuTop - Screen.dp(GAP) - getHeight();
+      setTranslationX(left - getLeft());
+      setTranslationY(top - getTop());
+      setPivotX(MathUtils.clamp(touch - left, 0, getWidth()));
+      setPivotY(getHeight());
     }
-    left = MathUtils.clamp(left, minLeft, Math.max(minLeft, maxRight - getWidth()));
-    float top = menuTop - Screen.dp(GAP) - getHeight();
-    setTranslationX(left - getLeft());
-    setTranslationY(top - getTop());
-    // Appears and disappears with the menu.
+    // Appears and disappears with the menu (the setters ignore unchanged values).
     setAlpha(MathUtils.clamp(menu.getAlpha()));
-    setPivotX(MathUtils.clamp(touch - left, 0, getWidth()));
-    setPivotY(getHeight());
     setScaleX(menu.getScaleX());
     setScaleY(menu.getScaleY());
     return true;

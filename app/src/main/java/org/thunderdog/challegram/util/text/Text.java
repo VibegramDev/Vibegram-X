@@ -338,7 +338,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     return null;
   }
 
-  private Text (@NonNull String in, int maxWidth, @NonNull TextStyleProvider textStyleProvider, @NonNull TextColorSet textColorSet, int maxLineCount, @Nullable LineWidthProvider lineWidthProvider, @Nullable LineMarginProvider lineMarginProvider, int textFlags, @Nullable TextEntity[] entities, String suffix, @Nullable ClickListener clickListener, @Nullable TextMediaListener textMediaListener) {
+  private Text (@NonNull String in, int maxWidth, @NonNull TextStyleProvider textStyleProvider, @NonNull TextColorSet textColorSet, int maxLineCount, @Nullable LineWidthProvider lineWidthProvider, @Nullable LineMarginProvider lineMarginProvider, int textFlags, @Nullable TextEntity[] entities, String suffix, @Nullable ClickListener clickListener, @Nullable TextMediaListener textMediaListener, @Nullable QuoteExpander quoteExpander) {
     this.textFlags = textFlags;
     this.maxWidth = maxWidth;
     this.maxLineCount = maxLineCount;
@@ -346,6 +346,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     this.lineMarginProvider = lineMarginProvider;
     this.clickListener = clickListener;
     this.textMediaListener = textMediaListener;
+    this.quoteExpander = quoteExpander;
     this.textStyleProvider = textStyleProvider;
     this.defaultTextColorSet = textColorSet;
     this.entities = entities;
@@ -370,6 +371,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     private ViewProvider viewProvider;
     private ClickListener clickListener;
     private TextMediaListener textMediaListener;
+    private QuoteExpander quoteExpander;
     private Highlight highlight; // TODO highlight text
 
     public Builder (String in, int maxWidth, @NonNull TextStyleProvider provider, @NonNull TextColorSet theme) {
@@ -558,12 +560,17 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       return this;
     }
 
+    public Builder quoteExpander (@Nullable QuoteExpander quoteExpander) {
+      this.quoteExpander = quoteExpander;
+      return this;
+    }
+
     public Text build () {
       TextEntity[] entities = this.entities;
       if (this.highlight != null) {
         entities = new FormattedText(in, entities).highlight(this.highlight).entities;
       }
-      Text text = new Text(in, maxWidth, provider, theme, maxLineCount, lineWidthProvider, lineMarginProvider, textFlags, entities, suffix, clickListener, textMediaListener);
+      Text text = new Text(in, maxWidth, provider, theme, maxLineCount, lineWidthProvider, lineMarginProvider, textFlags, entities, suffix, clickListener, textMediaListener, quoteExpander);
       if (viewProvider != null)
         text.setViewProvider(viewProvider);
       return text;
