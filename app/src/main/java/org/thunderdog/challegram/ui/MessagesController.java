@@ -744,10 +744,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
       ((ForumTopicTabsController) parent).selectTopic(forumTopicId);
       return;
     }
-    tdlib.ui().openChat(this, chat, new TdlibUi.ChatOpenParameters()
-      .messageTopic(new TdApi.MessageTopicForum(forumTopicId))
-      .keepStack()
-    );
+    MessagesController controller = new MessagesController(context, tdlib);
+    controller.setArguments(new MessagesController.Arguments(
+      tdlib, null, chat, null, new TdApi.MessageTopicForum(forumTopicId), null
+    ));
+    navigateTo(controller);
   }
 
   /** «New Thread» card of the whole chat with a bot whose users create topics, or null. */

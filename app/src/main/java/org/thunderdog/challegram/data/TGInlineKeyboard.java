@@ -577,7 +577,11 @@ public class TGInlineKeyboard {
     }
 
     private int getIconSpace () {
-      return iconText != null ? iconText.getWidth() + Screen.dp(ICON_GAP_DP) : 0;
+      if (iconText != null) {
+        return iconText.getWidth() + Screen.dp(ICON_GAP_DP);
+      }
+      // Same room as the constructor of custom buttons leaves, the icon is placed from it
+      return customIconRes != 0 ? Screen.dp(24f) / 2 + Screen.dp(CUSTOM_ICON_PADDING) : 0;
     }
 
     private void performDestroy () {
@@ -704,8 +708,16 @@ public class TGInlineKeyboard {
       }
     }
 
+    /** Icon next to the text of a bot button, which the app adds to it. */
     public void setCustomIcon (@DrawableRes int iconRes) {
+      if (this.customIconRes == iconRes) {
+        return;
+      }
+      int width = wrapper.getMaxWidth() + getIconSpace();
       this.customIconRes = iconRes;
+      TextPaint textPaint = Paints.getBoldPaint14(needFakeBold);
+      int textMaxWidth = Math.max(0, width - getIconSpace());
+      this.wrapper = new EmojiString(wrapper.getText(), textMaxWidth, textPaint);
     }
 
     public void setCustomIconReverse (boolean customIconReverse) {
