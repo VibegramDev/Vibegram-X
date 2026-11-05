@@ -30,6 +30,7 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.component.base.SettingView;
@@ -131,7 +132,7 @@ public final class StarsBuySheet {
     }, context) {
       @Override
       protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
-        view.setIcon(new StarDrawable(Screen.dp(72f)), 72f);
+        view.setIcon(Drawables.get(R.drawable.vg_star_96), 72f);
         CharSequence title = missingStars > 0 ? Lang.plural(R.string.vg_StarsNeededTitle, missingStars) : Lang.getString(R.string.vg_TelegramStars);
         TdApi.FormattedText text;
         if (missingStars > 0 && !StringUtils.isEmpty(purposeName)) {
@@ -185,7 +186,7 @@ public final class StarsBuySheet {
     private static final int MAX_COUNT = 6;
     // Stateless apart from the bounds, which every draw sets: shared by all rows (drawn on the main thread only).
     private static final StarStackDrawable[] cache = new StarStackDrawable[MAX_COUNT];
-    private static StarDrawable star;
+    private static Drawable star;
 
     /** The stack of 1…6 stars: shared, rows are bound without allocations. */
     static StarStackDrawable get (int count) {
@@ -201,7 +202,7 @@ public final class StarsBuySheet {
     private StarStackDrawable (int count) {
       this.count = count;
       if (star == null) {
-        star = new StarDrawable();
+        star = Drawables.get(R.drawable.vg_star_24);
       }
     }
 

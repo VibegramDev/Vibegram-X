@@ -31,7 +31,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibOptionListener;
 import org.thunderdog.challegram.theme.M3;
-import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.ui.ListItem;
 import org.thunderdog.challegram.ui.RecyclerViewController;
 import org.thunderdog.challegram.ui.SettingHolder;
@@ -95,7 +95,7 @@ public class StarsController extends RecyclerViewController<Void> implements Vie
 
       @Override
       protected void setInfoHeader (ListItem item, InfoHeaderView view, boolean isUpdate) {
-        view.setIcon(new StarDrawable(Screen.dp(96f)), 96f);
+        view.setIcon(Drawables.get(R.drawable.vg_star_96), 96f);
         view.setTexts(tdlib, Lang.getString(R.string.vg_TelegramStars), StarsUi.linkText(Lang.getString(R.string.vg_TelegramStarsInfo), StarsUi.ABOUT_URL));
         TdApi.StarAmount balance = tdlib.ownedStarCount() != null ? tdlib.ownedStarCount() : loadedBalance;
         view.setAmount(balance != null ? Stars.amount(balance) : Stars.STAR + " …", null, 28f);

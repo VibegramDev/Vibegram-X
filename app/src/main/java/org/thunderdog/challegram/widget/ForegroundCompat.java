@@ -21,14 +21,14 @@ import androidx.annotation.Nullable;
 /**
  * {@link View#setForeground} (pressed state layer above the content) for every flavor: View#setForeground is
  * API 23, FrameLayout has its own since API 1, other views below API 23 implement {@link Host} and forward
- * draw / state / hotspot calls here (fields may still be null while the View constructor runs).
+ * draw / state / hotspot calls to the static methods here (the field may still be null while the View
+ * constructor runs). {@link HostView} does this for a plain View.
  */
 public final class ForegroundCompat {
   public interface Host {
     @Nullable ForegroundCompat foregroundCompat ();
   }
 
-  /** Plain {@link View} with a foreground on every API level (the forwarding boilerplate of {@link Host} in one place). */
   public static class HostView extends View implements Host {
     private final ForegroundCompat foregroundCompat = new ForegroundCompat(this);
 
@@ -45,38 +45,30 @@ public final class ForegroundCompat {
     @Override
     public void draw (@NonNull Canvas c) {
       super.draw(c);
-      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-        foregroundCompat.draw(c);
-      }
+      ForegroundCompat.draw(foregroundCompat, c);
     }
 
     @Override
     protected boolean verifyDrawable (@NonNull Drawable who) {
-      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+      return super.verifyDrawable(who) || ForegroundCompat.verifyDrawable(foregroundCompat, who);
     }
 
     @Override
     protected void drawableStateChanged () {
       super.drawableStateChanged();
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableStateChanged();
-      }
+      ForegroundCompat.drawableStateChanged(foregroundCompat);
     }
 
     @Override
     public void drawableHotspotChanged (float x, float y) {
       super.drawableHotspotChanged(x, y);
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableHotspotChanged(x, y);
-      }
+      ForegroundCompat.drawableHotspotChanged(foregroundCompat, x, y);
     }
 
     @Override
     public void jumpDrawablesToCurrentState () {
       super.jumpDrawablesToCurrentState();
-      if (foregroundCompat != null) {
-        foregroundCompat.jumpDrawablesToCurrentState();
-      }
+      ForegroundCompat.jumpDrawablesToCurrentState(foregroundCompat);
     }
   }
 
@@ -90,6 +82,36 @@ public final class ForegroundCompat {
       ((Host) view).foregroundCompat().setDrawable(drawable);
     } else {
       throw new IllegalArgumentException(view.getClass().getName() + " must implement ForegroundCompat.Host");
+    }
+  }
+
+  /** Call after super.draw(). */
+  public static void draw (@Nullable ForegroundCompat foreground, @NonNull Canvas c) {
+    if (foreground != null && foreground.drawable != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      foreground.drawable.setBounds(0, 0, foreground.view.getWidth(), foreground.view.getHeight());
+      foreground.drawable.draw(c);
+    }
+  }
+
+  public static boolean verifyDrawable (@Nullable ForegroundCompat foreground, @NonNull Drawable who) {
+    return foreground != null && who == foreground.drawable;
+  }
+
+  public static void drawableStateChanged (@Nullable ForegroundCompat foreground) {
+    if (foreground != null && foreground.drawable != null && foreground.drawable.isStateful()) {
+      foreground.drawable.setState(foreground.view.getDrawableState());
+    }
+  }
+
+  public static void drawableHotspotChanged (@Nullable ForegroundCompat foreground, float x, float y) {
+    if (foreground != null && foreground.drawable != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      foreground.drawable.setHotspot(x, y);
+    }
+  }
+
+  public static void jumpDrawablesToCurrentState (@Nullable ForegroundCompat foreground) {
+    if (foreground != null && foreground.drawable != null) {
+      foreground.drawable.jumpToCurrentState();
     }
   }
 
@@ -115,35 +137,5 @@ public final class ForegroundCompat {
       }
     }
     view.invalidate();
-  }
-
-  /** Call after super.draw(). */
-  public void draw (@NonNull Canvas c) {
-    if (drawable != null) {
-      drawable.setBounds(0, 0, view.getWidth(), view.getHeight());
-      drawable.draw(c);
-    }
-  }
-
-  public boolean verifyDrawable (@NonNull Drawable who) {
-    return who == drawable;
-  }
-
-  public void drawableStateChanged () {
-    if (drawable != null && drawable.isStateful()) {
-      drawable.setState(view.getDrawableState());
-    }
-  }
-
-  public void drawableHotspotChanged (float x, float y) {
-    if (drawable != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      drawable.setHotspot(x, y);
-    }
-  }
-
-  public void jumpDrawablesToCurrentState () {
-    if (drawable != null) {
-      drawable.jumpToCurrentState();
-    }
   }
 }

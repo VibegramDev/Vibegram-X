@@ -34,6 +34,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.ListItem;
@@ -203,7 +204,7 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
         TdApi.ProductInfo product = args.form.productInfo;
         if (!view.setPhoto(tdlib, product != null ? product.photo : null, 88f, 12f)) {
           if (args.starOption != null) {
-            view.setIcon(new StarDrawable(Screen.dp(88f)), 88f);
+            view.setIcon(Drawables.get(R.drawable.vg_star_96), 88f);
           } else {
             view.setAvatar(tdlib, new TdApi.MessageSenderUser(args.form.sellerBotUserId), 88f);
           }

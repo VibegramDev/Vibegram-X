@@ -271,38 +271,30 @@ public class OverlayButtonWrap extends FrameLayoutFix implements View.OnClickLis
     @Override
     public void draw (@NonNull Canvas c) {
       super.draw(c);
-      if (foregroundCompat != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-        foregroundCompat.draw(c);
-      }
+      ForegroundCompat.draw(foregroundCompat, c);
     }
 
     @Override
     protected boolean verifyDrawable (@NonNull Drawable who) {
-      return super.verifyDrawable(who) || (foregroundCompat != null && foregroundCompat.verifyDrawable(who));
+      return super.verifyDrawable(who) || ForegroundCompat.verifyDrawable(foregroundCompat, who);
     }
 
     @Override
     protected void drawableStateChanged () {
       super.drawableStateChanged();
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableStateChanged();
-      }
+      ForegroundCompat.drawableStateChanged(foregroundCompat);
     }
 
     @Override
     public void drawableHotspotChanged (float x, float y) {
       super.drawableHotspotChanged(x, y);
-      if (foregroundCompat != null) {
-        foregroundCompat.drawableHotspotChanged(x, y);
-      }
+      ForegroundCompat.drawableHotspotChanged(foregroundCompat, x, y);
     }
 
     @Override
     public void jumpDrawablesToCurrentState () {
       super.jumpDrawablesToCurrentState();
-      if (foregroundCompat != null) {
-        foregroundCompat.jumpDrawablesToCurrentState();
-      }
+      ForegroundCompat.jumpDrawablesToCurrentState(foregroundCompat);
     }
 
     MenuItemView (Context context, @DrawableRes int iconRes) {
