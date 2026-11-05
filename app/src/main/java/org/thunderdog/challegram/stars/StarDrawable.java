@@ -18,7 +18,6 @@ package org.thunderdog.challegram.stars;
 
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
-import android.graphics.CornerPathEffect;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -29,18 +28,44 @@ import android.graphics.drawable.Drawable;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.graphics.PathParser;
 
 /**
- * The gold Telegram Star: a five-pointed star with rounded points and a yellow → orange gradient, drawn into the
- * bounds (centred, aspect kept). Used for icons, list rows and {@link StarSpan}.
+ * The gold Telegram Star of the official app (star_small_inner): gold gradient, white highlights and an orange
+ * outline, drawn from the official paths (84×84 viewport) into the bounds, centred with the aspect kept. Drawn in code
+ * so that the gradients work on every Android version. Used for icons, list rows and {@link StarSpan}.
  */
 public class StarDrawable extends Drawable {
-  public static final int COLOR_TOP = 0xFFFFD43B, COLOR_BOTTOM = 0xFFF29900;
+  private static final float VIEWPORT = 84f;
 
-  private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Path path = new Path();
-  private int pathWidth = -1, pathHeight = -1;
+  private static final String PATH_FILL = "M30.673,26.951L38.611,11.046C39.526,9.211 41.74,8.474 43.556,9.4C44.268,9.763 44.845,10.351 45.198,11.074L52.695,26.413C53.307,27.666 54.504,28.521 55.877,28.687L71.574,30.582C73.705,30.839 75.227,32.794 74.972,34.948C74.867,35.835 74.466,36.66 73.836,37.285L61.428,49.595C60.927,50.092 60.685,50.796 60.772,51.5L62.834,68.118C63.129,70.497 61.46,72.668 59.107,72.966C58.215,73.079 57.31,72.907 56.52,72.473L43.412,65.267C42.463,64.746 41.322,64.731 40.36,65.227L26.779,72.237C24.868,73.224 22.527,72.457 21.551,70.525C21.186,69.802 21.051,68.983 21.165,68.179L22.251,60.555C22.782,56.826 25.075,53.591 28.397,51.884L43.482,44.133C43.885,43.926 44.045,43.429 43.84,43.022C43.682,42.706 43.342,42.528 42.996,42.578L24.547,45.236C21.727,45.643 18.867,44.842 16.656,43.026L10.512,37.981C8.758,36.541 8.491,33.937 9.916,32.165C10.578,31.341 11.529,30.806 12.571,30.671L28.324,28.631C29.334,28.5 30.215,27.871 30.673,26.951Z";
+  private static final String PATH_HIGHLIGHT_1 = "M44.996,47.578C45.342,47.528 45.682,47.706 45.84,48.022C46.045,48.429 45.885,48.926 45.482,49.133L30.397,56.884C27.075,58.591 24.782,61.826 24.251,65.555L23.296,72.263C22.569,71.903 21.947,71.31 21.551,70.525C21.186,69.802 21.051,68.983 21.165,68.179L22.251,60.555C22.782,56.826 25.075,53.591 28.397,51.884L33.574,49.223L44.996,47.578Z";
+  private static final String PATH_HIGHLIGHT_2 = "M43.556,9.4C44.268,9.763 44.845,10.351 45.198,11.074L52.695,26.413C53.307,27.666 54.504,28.521 55.877,28.687L71.574,30.582C73.705,30.839 75.227,32.794 74.972,34.948C74.933,35.28 74.852,35.603 74.734,35.911C74.375,35.745 73.986,35.632 73.574,35.582L57.877,33.687C56.504,33.521 55.307,32.666 54.695,31.413L47.198,16.074C46.845,15.351 46.268,14.763 45.556,14.4C43.74,13.474 41.526,14.211 40.611,16.046L32.673,31.951C32.215,32.871 31.334,33.5 30.324,33.631L14.571,35.671C13.529,35.806 12.578,36.341 11.916,37.165C11.579,37.584 11.337,38.05 11.186,38.535L10.512,37.981C8.758,36.541 8.491,33.937 9.916,32.165C10.578,31.341 11.529,30.806 12.571,30.671L28.324,28.631C29.334,28.5 30.215,27.871 30.673,26.951L38.611,11.046C39.526,9.211 41.74,8.474 43.556,9.4Z";
+  private static final String PATH_OUTLINE = "M37.179,10.332C38.491,7.703 41.673,6.644 44.282,7.974C45.305,8.495 46.13,9.337 46.636,10.371L54.132,25.71C54.507,26.477 55.236,26.998 56.069,27.099L71.766,28.993C74.777,29.357 76.919,32.109 76.561,35.136C76.414,36.381 75.851,37.54 74.963,38.421L62.555,50.73C62.407,50.878 62.333,51.09 62.36,51.303L64.422,67.921C64.825,71.172 62.54,74.144 59.308,74.554C58.08,74.709 56.836,74.472 55.75,73.875L42.641,66.67C42.16,66.405 41.582,66.397 41.094,66.649L27.513,73.659C24.809,75.054 21.499,73.97 20.123,71.247C19.61,70.231 19.421,69.081 19.581,67.954L20.667,60.329C21.271,56.088 23.881,52.406 27.666,50.461L38.641,44.821L24.776,46.82C21.627,47.274 18.435,46.427 15.918,44.483L15.641,44.263L9.496,39.217C7.064,37.221 6.695,33.618 8.669,31.162C9.589,30.017 10.913,29.272 12.365,29.084L28.118,27.044C28.599,26.982 29.02,26.681 29.242,26.237L37.179,10.332ZM42.829,10.825C41.808,10.304 40.562,10.719 40.042,11.761L32.105,27.666C31.409,29.061 30.07,30.018 28.529,30.217L12.776,32.257C12.145,32.339 11.567,32.664 11.163,33.167C10.287,34.256 10.452,35.862 11.527,36.744L17.672,41.79C19.536,43.32 21.944,43.995 24.319,43.653L42.767,40.994C43.797,40.846 44.803,41.374 45.27,42.303C45.868,43.492 45.399,44.947 44.213,45.557L29.129,53.307C26.269,54.776 24.293,57.564 23.835,60.781L22.749,68.405C22.681,68.884 22.762,69.373 22.979,69.804C23.555,70.944 24.926,71.393 26.045,70.815L39.627,63.806C41.061,63.065 42.767,63.087 44.183,63.865L57.291,71.07C57.785,71.342 58.349,71.449 58.906,71.379C60.38,71.192 61.433,69.823 61.246,68.315L59.184,51.697C59.036,50.502 59.448,49.305 60.302,48.459L72.709,36.149C73.082,35.779 73.321,35.289 73.383,34.76C73.535,33.478 72.634,32.322 71.383,32.17L55.685,30.276C53.772,30.045 52.107,28.855 51.257,27.115L43.761,11.776C43.559,11.364 43.232,11.03 42.829,10.825Z";
+
+  // Parsed once: the paths are immutable and drawn through the canvas scale.
+  private static Path fillPath, highlight1Path, highlight2Path, outlinePath;
+
+  private static synchronized void initPaths () {
+    if (fillPath == null) {
+      fillPath = parse(PATH_FILL, Path.FillType.EVEN_ODD);
+      highlight1Path = parse(PATH_HIGHLIGHT_1, Path.FillType.EVEN_ODD);
+      highlight2Path = parse(PATH_HIGHLIGHT_2, Path.FillType.EVEN_ODD);
+      outlinePath = parse(PATH_OUTLINE, Path.FillType.WINDING);
+    }
+  }
+
+  private static Path parse (String data, Path.FillType fillType) {
+    Path path = PathParser.createPathFromPathData(data);
+    path.setFillType(fillType);
+    return path;
+  }
+
+  private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final Paint outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final int intrinsicSize;
+  private int alpha = 255;
 
   public StarDrawable () {
     this(0);
@@ -48,7 +73,15 @@ public class StarDrawable extends Drawable {
 
   public StarDrawable (int intrinsicSize) {
     this.intrinsicSize = intrinsicSize;
-    paint.setStyle(Paint.Style.FILL);
+    initPaths();
+    // Gradients in viewport coordinates, as in the official vector.
+    fillPaint.setStyle(Paint.Style.FILL);
+    fillPaint.setShader(new LinearGradient(25.17f, 9.008f, 58.49f, 78.313f, 0xFFFFD951, 0xFFFFB222, Shader.TileMode.CLAMP));
+    highlightPaint.setStyle(Paint.Style.FILL);
+    highlightPaint.setColor(0xFFFFFFFF);
+    outlinePaint.setStyle(Paint.Style.FILL);
+    outlinePaint.setShader(new LinearGradient(41.807f, 6.644f, 41.807f, 74.914f, 0xFFE58F0D, 0xFFEB7915, Shader.TileMode.CLAMP));
+    updateAlpha();
   }
 
   @Override
@@ -61,31 +94,10 @@ public class StarDrawable extends Drawable {
     return intrinsicSize > 0 ? intrinsicSize : -1;
   }
 
-  private void rebuild (int width, int height) {
-    pathWidth = width;
-    pathHeight = height;
-    float size = Math.min(width, height);
-    // A five-pointed star is 1.902 R wide and 1.809 R tall (R = outer radius).
-    float outer = size / 1.95f;
-    float inner = outer * .53f;
-    float cx = width / 2f;
-    float starHeight = outer * 1.809f;
-    float cy = (height - starHeight) / 2f + outer;
-    path.reset();
-    for (int i = 0; i < 10; i++) {
-      double angle = Math.toRadians(-90 + i * 36);
-      float radius = i % 2 == 0 ? outer : inner;
-      float x = cx + (float) (Math.cos(angle) * radius);
-      float y = cy + (float) (Math.sin(angle) * radius);
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    path.close();
-    paint.setPathEffect(new CornerPathEffect(outer * .3f));
-    paint.setShader(new LinearGradient(cx - outer * .6f, cy - outer, cx + outer * .6f, cy + outer * .8f, COLOR_TOP, COLOR_BOTTOM, Shader.TileMode.CLAMP));
+  private void updateAlpha () {
+    fillPaint.setAlpha(alpha);
+    outlinePaint.setAlpha(alpha);
+    highlightPaint.setAlpha(Math.round(alpha * .66f));
   }
 
   @Override
@@ -94,24 +106,32 @@ public class StarDrawable extends Drawable {
     if (bounds.isEmpty()) {
       return;
     }
-    if (bounds.width() != pathWidth || bounds.height() != pathHeight) {
-      rebuild(bounds.width(), bounds.height());
-    }
+    float size = Math.min(bounds.width(), bounds.height());
+    float scale = size / VIEWPORT;
     int saveCount = c.save();
-    c.translate(bounds.left, bounds.top);
-    c.drawPath(path, paint);
+    c.translate(bounds.left + (bounds.width() - size) / 2f, bounds.top + (bounds.height() - size) / 2f);
+    c.scale(scale, scale);
+    c.drawPath(fillPath, fillPaint);
+    c.drawPath(highlight1Path, highlightPaint);
+    c.drawPath(highlight2Path, highlightPaint);
+    c.drawPath(outlinePath, outlinePaint);
     c.restoreToCount(saveCount);
   }
 
   @Override
   public void setAlpha (int alpha) {
-    paint.setAlpha(alpha);
-    invalidateSelf();
+    if (this.alpha != alpha) {
+      this.alpha = alpha;
+      updateAlpha();
+      invalidateSelf();
+    }
   }
 
   @Override
   public void setColorFilter (@Nullable ColorFilter colorFilter) {
-    paint.setColorFilter(colorFilter);
+    fillPaint.setColorFilter(colorFilter);
+    highlightPaint.setColorFilter(colorFilter);
+    outlinePaint.setColorFilter(colorFilter);
     invalidateSelf();
   }
 

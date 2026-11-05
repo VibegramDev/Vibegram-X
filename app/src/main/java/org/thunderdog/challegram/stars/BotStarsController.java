@@ -184,12 +184,16 @@ public class BotStarsController extends RecyclerViewController<BotStarsControlle
     return Stars.withIcons(usd != null ? text + "   " + usd : text);
   }
 
+  /**
+   * «≈ $274.18». TDLib passes usdRate in US cents per Star (1.3 = $0.013, starRevenueStatistics is the server rate
+   * × 100), so Stars × usdRate is the amount in cents.
+   */
   private @Nullable String usdText (TdApi.StarAmount amount) {
     if (usdRate <= 0) {
       return null;
     }
     double stars = amount.starCount + amount.nanostarCount / 1e9;
-    return String.format(java.util.Locale.US, "≈ $%.2f", stars * usdRate);
+    return "≈ " + Stars.usd(Math.round(stars * usdRate));
   }
 
   private void load () {

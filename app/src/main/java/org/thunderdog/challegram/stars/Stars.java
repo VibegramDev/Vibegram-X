@@ -24,8 +24,8 @@ import androidx.annotation.Nullable;
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.core.Lang;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.text.NumberFormat;
+import java.util.Currency;
 
 /** Formatting of Telegram Star amounts. */
 public final class Stars {
@@ -52,9 +52,23 @@ public final class Stars {
     if (amount.nanostarCount == 0) {
       return format(amount.starCount);
     }
-    BigDecimal value = BigDecimal.valueOf(amount.starCount).add(BigDecimal.valueOf(amount.nanostarCount, 9));
-    value = value.setScale(2, RoundingMode.DOWN).stripTrailingZeros();
-    return Lang.formatNumber(value.doubleValue());
+    // As formatStarsAmount of the official app: whole Stars with grouping, then up to three digits of the fraction
+    // without trailing zeros (23,418.1). Truncated, so that a balance is never shown higher than it is.
+    TdApi.StarAmount abs = abs(amount);
+    StringBuilder b = new StringBuilder();
+    if (isNegative(amount)) {
+      b.append('-');
+    }
+    b.append(format(abs.starCount));
+    String fraction = String.format(java.util.Locale.US, "%03d", Math.abs(abs.nanostarCount) / 1_000_000);
+    int end = fraction.length();
+    while (end > 0 && fraction.charAt(end - 1) == '0') {
+      end--;
+    }
+    if (end > 0) {
+      b.append(Lang.getDecimalSeparator()).append(fraction, 0, end);
+    }
+    return b.toString();
   }
 
   private static final String[] SHORT_SUFFIXES = {"", "K", "M", "G", "T", "P"};
@@ -95,6 +109,19 @@ public final class Stars {
     return isNegative(amount) ? new TdApi.StarAmount(-amount.starCount, -amount.nanostarCount) : amount;
   }
 
+  /**
+   * «$27,418.30» («27 418,30 $» in Russian): the currency format of the app language with cents, as
+   * BillingController.formatCurrency of the official app. Not CurrencyUtils: its buildAmount drops the leading zero of
+   * cents ($1.05 → $1.5).
+   */
+  public static String usd (long cents) {
+    NumberFormat format = NumberFormat.getCurrencyInstance(Lang.locale());
+    format.setCurrency(Currency.getInstance("USD"));
+    format.setMinimumFractionDigits(2);
+    format.setMaximumFractionDigits(2);
+    return format.format(cents / 100.0);
+  }
+
   /** «⭐ 1 234» */
   public static String amount (long count) {
     return STAR + " " + format(count);
@@ -112,7 +139,7 @@ public final class Stars {
 
   /** Replaces every {@link #STAR} (with or without the emoji variation selector) by the gold star span. */
   public static CharSequence withIcons (@Nullable CharSequence text) {
-    return withIcons(text, 1.05f);
+    return withIcons(text, 1.2f);
   }
 
   public static CharSequence withIcons (@Nullable CharSequence text, float scale) {
@@ -134,14 +161,5 @@ public final class Stars {
       index = str.indexOf(STAR, end);
     }
     return b != null ? b : text;
-  }
-
-  /** Approximate price in US dollars of {@code starCount} stars; the rate is USD cents per 1000 stars. */
-  public static String usd (long starCount, long thousandStarToUsdRate) {
-    if (thousandStarToUsdRate <= 0) {
-      return null;
-    }
-    double usd = starCount * (double) thousandStarToUsdRate / 1000.0 / 100.0;
-    return "≈$" + BigDecimal.valueOf(usd).setScale(2, RoundingMode.HALF_UP).toPlainString();
   }
 }

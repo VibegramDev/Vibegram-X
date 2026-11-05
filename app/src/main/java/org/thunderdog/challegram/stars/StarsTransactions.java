@@ -75,7 +75,7 @@ public final class StarsTransactions {
     public String title = "", subtitle = "";
     public long userId, chatId;
     public @Nullable TdApi.MessageSender sender;
-    public @DrawableRes int iconRes = R.drawable.baseline_stars_24;
+    public @DrawableRes int iconRes = R.drawable.vg_stars_24;
     public @Nullable String status;
     public @Nullable TdApi.Photo photo;
   }
@@ -315,7 +315,7 @@ public final class StarsTransactions {
   static final int COLOR_INCOMING = 0xFF3FB950, COLOR_OUTGOING = 0xFFE5534B;
 
   static CharSequence amountText (TdApi.StarAmount amount) {
-    return Stars.withIcons(Stars.signedAmount(amount), .95f);
+    return Stars.withIcons(Stars.signedAmount(amount), 1.1f);
   }
 
   static int amountColor (TdApi.StarAmount amount) {

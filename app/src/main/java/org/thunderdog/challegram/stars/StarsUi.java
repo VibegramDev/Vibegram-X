@@ -17,6 +17,16 @@
 package org.thunderdog.challegram.stars;
 
 import android.content.Context;
+import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.Shader;
+import android.graphics.drawable.Drawable;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextPaint;
@@ -35,6 +45,7 @@ import org.thunderdog.challegram.loader.ImageFile;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.widget.ImageReceiverView;
@@ -50,6 +61,34 @@ public final class StarsUi {
   public static final String TERMS_URL = "https://telegram.org/tos/stars";
   public static final String ABOUT_URL = "https://telegram.org/blog/telegram-stars";
   public static final String WITHDRAW_INFO_URL = "https://telegram.org/tos/stars";
+
+  private static Bitmap goldStarIcon;
+
+  /**
+   * Icon of the «Telegram Stars» settings row: the star glyph of the official app filled with its gold gradient
+   * (PremiumGradient.goldenStarMenuDrawable: starsGradient1 → starsGradient2 with the same matrix). Not tinted.
+   */
+  public static Bitmap goldStarIcon (@NonNull Resources res) {
+    if (goldStarIcon == null) {
+      Drawable glyph = Drawables.get(res, R.drawable.vg_stars_24);
+      int width = glyph.getMinimumWidth(), height = glyph.getMinimumHeight();
+      Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+      Canvas c = new Canvas(bitmap);
+      glyph.setBounds(0, 0, width, height);
+      glyph.draw(c);
+      LinearGradient shader = new LinearGradient(0, 100, 150, 0, 0xFFFEC846, 0xFFEC920A, Shader.TileMode.CLAMP);
+      Matrix matrix = new Matrix();
+      matrix.postScale(width / 100f, height * 2 / 100f, 75, 50);
+      matrix.postTranslate(-width, -height * 2);
+      shader.setLocalMatrix(matrix);
+      Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+      paint.setShader(shader);
+      paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+      c.drawRect(0, 0, width, height, paint);
+      goldStarIcon = bitmap;
+    }
+    return goldStarIcon;
+  }
 
   /**
    * Second confirmation of every operation with Stars (Vibegram X): after the main confirmation, which looks as in

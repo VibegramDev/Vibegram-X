@@ -2731,7 +2731,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         }
       }
       block.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-      block.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgBotStars, R.drawable.baseline_star_border_24, R.string.vg_BotBalanceStars));
+      block.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgBotStars, R.drawable.vg_stars_outline_24, R.string.vg_BotBalanceStars));
     } else {
       // A block of its own below notifications, as the Stars card above the shared media of the official profile.
       int notificationsIndex = baseAdapter.indexOfViewById(R.id.btn_notifications);
@@ -2742,7 +2742,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         }
       }
       block.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      block.add(new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_vgBotStars, R.drawable.baseline_star_border_24, R.string.vg_BotBalanceStars));
+      block.add(new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_vgBotStars, R.drawable.vg_stars_outline_24, R.string.vg_BotBalanceStars));
       block.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
     if (insertAt == -1) {

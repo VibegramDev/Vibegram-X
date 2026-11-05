@@ -29,7 +29,7 @@ public class StarSpan extends ReplacementSpan {
   private final float scale;
 
   public StarSpan () {
-    this(1.05f);
+    this(1.2f);
   }
 
   public StarSpan (float scale) {

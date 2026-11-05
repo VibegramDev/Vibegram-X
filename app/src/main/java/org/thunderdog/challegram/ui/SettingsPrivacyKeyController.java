@@ -388,7 +388,7 @@ public class SettingsPrivacyKeyController extends RecyclerViewController<Setting
   /** «You will receive 85% of the selected fee (≈$0.13) for each incoming message.» */
   private CharSequence paidPriceInfo () {
     long perMille = tdlib.options().paidMessageEarningsPerMille;
-    long rate = tdlib.options().usdToThousandStarRate > 0 ? tdlib.options().usdToThousandStarRate : tdlib.options().thousandStarToUsdRate;
+    long rate = tdlib.options().thousandStarToUsdRate; // US cents for 1000 Stars when they are withdrawn
     double income = selectedPaidStarCount() * (perMille / 1000.0) * rate / 1000.0 / 100.0;
     String percent = (perMille % 10 == 0 ? Long.toString(perMille / 10) : String.format(java.util.Locale.US, "%.1f", perMille / 10.0)) + "%";
     return Lang.getString(R.string.vg_StarsPriceInfo, percent, String.format(java.util.Locale.US, "%.2f", income));
