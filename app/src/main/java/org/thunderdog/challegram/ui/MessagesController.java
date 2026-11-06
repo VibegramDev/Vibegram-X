@@ -93,6 +93,7 @@ import org.thunderdog.challegram.component.attach.SponsoredMessagesInfoControlle
 import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.component.chat.AttachLinearLayout;
 import org.thunderdog.challegram.component.chat.AudioFile;
+import org.thunderdog.challegram.component.chat.BotForumThreadHint;
 import org.thunderdog.challegram.component.chat.ChatBottomBarView;
 import org.thunderdog.challegram.component.chat.ChatHeaderView;
 import org.thunderdog.challegram.component.chat.ChatSearchMembersView;
@@ -706,12 +707,83 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private int composerInsetSource = -1;
   private static final int COMPOSER_INSET_PENDING = -2;
 
+  private @Nullable BotForumThreadHint botForumThreadHint;
+  /** Chat for which the fields below were checked: they are asked on every frame. */
+  private long botForumCheckedChatId;
+  private boolean isBotForumChat, canManageBotForumTopics;
+
+  /** The whole chat with a bot that has topics, not one of its topics. */
+  public boolean isBotForumWholeChat () {
+    if (chat == null || previewMode != PREVIEW_MODE_NONE || isInForceTouchMode() ||
+      messageThread != null || messageTopicId != null) {
+      return false;
+    }
+    if (botForumCheckedChatId != chat.id) {
+      botForumCheckedChatId = chat.id;
+      isBotForumChat = tdlib.isBotForum(chat.id);
+      canManageBotForumTopics = tdlib.canManageBotForumTopics(chat.id);
+    }
+    return isBotForumChat;
+  }
+
+  /**
+   * In chats with bots that have topics, the pinned messages of the bot are shown only in the
+   * whole chat, where new topics start.
+   */
+  private boolean needPinnedMessages () {
+    if (inPreviewMode || isInForceTouchMode()) {
+      return false;
+    }
+    return messageTopicId == null || !tdlib.isBotForum(chat.id);
+  }
+
+  /**
+   * The whole chat in which messages of different topics are separated: «All» of a chat with a
+   * bot with topics, or the «All» tab of a forum.
+   */
+  public boolean isTopicsWholeChat () {
+    if (isBotForumWholeChat()) {
+      return true;
+    }
+    return chat != null && messageThread == null && messageTopicId == null &&
+      getParentOrSelf() instanceof ForumTopicTabsController;
+  }
+
+  /** «Continue last thread»: the topic opens in the tabs, or on its own screen. */
+  public void openBotForumTopic (int forumTopicId) {
+    ViewController<?> parent = getParentOrSelf();
+    if (parent instanceof ForumTopicTabsController) {
+      ((ForumTopicTabsController) parent).selectTopic(forumTopicId);
+      return;
+    }
+    MessagesController controller = new MessagesController(context, tdlib);
+    controller.setArguments(new MessagesController.Arguments(
+      tdlib, null, chat, null, new TdApi.MessageTopicForum(forumTopicId), null
+    ));
+    navigateTo(controller);
+  }
+
+  /** «New Thread» card of the whole chat with a bot whose users create topics, or null. */
+  public @Nullable BotForumThreadHint getBotForumThreadHint () {
+    if (!isBotForumWholeChat() || !canManageBotForumTopics) {
+      return null;
+    }
+    if (botForumThreadHint == null) {
+      botForumThreadHint = new BotForumThreadHint(manager);
+    }
+    return botForumThreadHint;
+  }
+
   private void updateMessagesViewInset () {
     if (messagesView == null || messagesInsetFrozen) {
       return;
     }
     composerInsetSource = getFloatingComposerInset();
     int requestedInset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? composerInsetSource : extraBottomInset;
+    BotForumThreadHint threadHint = getBotForumThreadHint();
+    if (threadHint != null && messagesView.getMeasuredWidth() > 0) {
+      requestedInset += threadHint.getHeight(messagesView.getMeasuredWidth());
+    }
     int listHeight = messagesView.getMeasuredHeight();
     if (listHeight > 0) {
       // Never let the padding cover the whole list. For a moment the composer with a panel can be as tall as the list
@@ -2256,7 +2328,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
       hideBottomHint();
       openMediaView(false, false);
     } else if (viewId == R.id.msg_send) {
-      if (!leaveInlineMode()) {
+      if (sendButton.inStopMode()) {
+        manager.stopPendingMessage(true);
+      } else if (!leaveInlineMode()) {
         if (inputView != null && !isSelfChat() && !tdlib.hasPremium() && inputView.hasOnlyPremiumFeatures()) {
           showBottomHint(Strings.buildMarkdown(this, Lang.getString(R.string.MessageContainsPremiumFeatures), null), false);
         } else if (isEditingMessage()) {
@@ -2387,6 +2461,24 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  /** Replaces the whole chat with its topics, as tabs or as a list. */
+  private void openTopicsInstead (boolean asTabs) {
+    ViewController<?> forumController;
+    if (asTabs) {
+      ForumTopicTabsController tabsController = new ForumTopicTabsController(context, tdlib);
+      tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
+      forumController = tabsController;
+    } else {
+      ForumTopicsController listController = new ForumTopicsController(context, tdlib);
+      listController.setArguments(new ForumTopicsController.Arguments(chat));
+      forumController = listController;
+    }
+    forumController.addOneShotFocusListener(() -> {
+      forumController.destroyStackItemAt(forumController.stackSize() - 2);
+    });
+    navigateTo(forumController);
+  }
+
   @Override
   public void onMoreItemPressed (int id) {
     if (tdlib.ui().processLeaveButton(this, null, getChatId(), id, null)) {
@@ -2413,31 +2505,17 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (id == R.id.btn_openDirectMessages) {
       openLinkedChat(true);
     } else if (id == R.id.btn_viewAsTopics) {
+      if (tdlib.isBotForum(chat.id)) {
+        // Chats with bots have no such setting: they always open as topics
+        openTopicsInstead(tdlib.settings().isForumViewTabs(chat.id, true));
+        return;
+      }
       // Set viewAsTopics to true and open forum topics view
       tdlib.client().send(new TdApi.ToggleChatViewAsTopics(chat.id, true), result -> {
         if (result.getConstructor() == TdApi.Ok.CONSTRUCTOR) {
           tdlib.ui().post(() -> {
             // Navigate directly to forum controller (don't use openChat - chat object not updated yet)
-            long supergroupId = ChatId.toSupergroupId(chat.id);
-            TdApi.Supergroup supergroup = supergroupId != 0 ? tdlib.cache().supergroup(supergroupId) : null;
-            boolean hasForumTabs = supergroup != null && supergroup.hasForumTabs;
-
-            ViewController<?> forumController;
-            if (hasForumTabs) {
-              ForumTopicTabsController tabsController = new ForumTopicTabsController(context, tdlib);
-              tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
-              forumController = tabsController;
-            } else {
-              ForumTopicsController listController = new ForumTopicsController(context, tdlib);
-              listController.setArguments(new ForumTopicsController.Arguments(chat));
-              forumController = listController;
-            }
-
-            // Navigate and destroy current controller
-            forumController.addOneShotFocusListener(() -> {
-              forumController.destroyStackItemAt(forumController.stackSize() - 2);
-            });
-            navigateTo(forumController);
+            openTopicsInstead(tdlib.settings().isForumViewTabs(chat.id, false));
           });
         }
       });
@@ -3113,7 +3191,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     closeCommandsKeyboard(false);
 
     if (previewSearchSender == null) {
-      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled, !inPreviewMode && !isInForceTouchMode());
+      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled,
+        needPinnedMessages());
     }
 
     updateShadowColor();
@@ -4875,7 +4954,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
 
     // Add "View as topics" option for forum chats viewed as unified chat
-    if (tdlib.isForum(chat.id) && messageThread == null && forumTopic == null && !chat.viewAsTopics) {
+    boolean canViewAsTopics = tdlib.isBotForum(chat.id) ||
+      (tdlib.isForum(chat.id) && !chat.viewAsTopics);
+    if (canViewAsTopics && messageThread == null && forumTopic == null && messageTopicId == null) {
       ids.append(R.id.btn_viewAsTopics);
       strings.append(R.string.ViewAsTopics);
     }
@@ -10510,7 +10591,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private void checkSendButton (boolean animated) {
-    setSendVisible(inputView.getText().length() > 0 || isEditingMessage() || hasAttachedFiles(), animated && getParentOrSelf().isAttachedToNavigationController());
+    boolean hasContent =
+      inputView.getText().length() > 0 || isEditingMessage() || hasAttachedFiles();
+    // As in the official app, the send button stops a reply that a bot types
+    boolean canStop = !hasContent && pendingMessageCanStop;
+    animated = animated && getParentOrSelf().isAttachedToNavigationController();
+    sendButton.setInStopMode(canStop, animated);
+    setSendVisible(hasContent || canStop, animated);
+  }
+
+  private boolean pendingMessageCanStop;
+
+  /** A bot types a reply: the send button stops it while the input is empty. */
+  public void setPendingMessageCanStop (boolean canStop) {
+    if (this.pendingMessageCanStop != canStop) {
+      this.pendingMessageCanStop = canStop;
+      if (inputView != null && sendButton != null) {
+        checkSendButton(true);
+      }
+    }
   }
 
   private void displaySendButton () {
@@ -13429,7 +13528,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void onSetSearchFilteredShowMode (boolean inSearchMode) {
     // Reopen chat if needed
     if (!inSearchMode && searchMessagesFilterMode) {
-      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled, !inPreviewMode && !isInForceTouchMode());
+      manager.openChat(chat, messageThread, messageTopicId, previewSearchFilter, this, areScheduled,
+        needPinnedMessages());
     } else if (inSearchMode && !searchMessagesFilterMode) {
       applyQueryForManagerInFilteredShowMode(getLastMessageSearchQuery());
     }

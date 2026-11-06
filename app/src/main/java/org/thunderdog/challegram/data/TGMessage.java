@@ -15,6 +15,7 @@
 package org.thunderdog.challegram.data;
 
 import android.content.res.Resources;
+import android.graphics.Color;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.BitmapShader;
@@ -58,6 +59,7 @@ import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
+import org.thunderdog.challegram.component.chat.BotForumThreadHint;
 import org.thunderdog.challegram.component.chat.MessageQuickActionSwipeHelper;
 import org.thunderdog.challegram.component.chat.MessageView;
 import org.thunderdog.challegram.component.chat.MessageViewGroup;
@@ -104,6 +106,7 @@ import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.ui.ForumTopicView;
 import org.thunderdog.challegram.ui.FeatureToggles;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.ui.TranslationControllerV2;
@@ -113,6 +116,7 @@ import org.thunderdog.challegram.util.LanguageDetector;
 import org.thunderdog.challegram.util.NonBubbleEmojiLayout;
 import org.thunderdog.challegram.util.ReactionsCounterDrawable;
 import org.thunderdog.challegram.util.TranslationCounterDrawable;
+import org.thunderdog.challegram.util.text.TextEntityMessage;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.Highlight;
 import org.thunderdog.challegram.util.text.Letters;
@@ -232,6 +236,14 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   protected TGSource forwardInfo;
   protected ReplyComponent replyData;
   protected TGInlineKeyboard inlineKeyboard;
+  /** «Continue last thread» under the newest message of the whole chat with a bot with topics. */
+  private TGInlineKeyboard continueThreadKeyboard;
+  /** Topic pill above the first message of each topic in the whole chat with a bot with topics. */
+  private boolean hasTopicSeparator;
+  private @Nullable Text topicSeparatorText;
+  private @Nullable String topicSeparatorLetter;
+  private float topicSeparatorLetterWidth;
+  private final RectF topicSeparatorRect = new RectF();
   protected final TGReactions messageReactions;
   protected final TGCommentButton commentButton;
   protected MessageQuickActionSwipeHelper swipeHelper;
@@ -760,6 +772,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     flags = BitwiseUtils.setFlag(flags, MESSAGE_FLAG_BELOW_HEADER, isBelowHeader);
     updateShowBadge();
     updateBadgeText();
+    updateTopicSeparator(top);
 
     setIsBottom(true);
 
@@ -783,7 +796,8 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     boolean isChannel = isChannel();
 
     TdApi.Message topMessage = top.getMessage();
-    if (top.headerDisabled() || top.isSponsoredMessage() != isSponsoredMessage() || (flags & FLAG_SHOW_BADGE) != 0 || !tdlib.isSameSender(topMessage, msg) || !TD.isSameSource(topMessage, msg, forceForwardOrImportInfo()) || topMessage.viaBotUserId != msg.viaBotUserId || !StringUtils.equalsOrBothEmpty(topMessage.authorSignature, msg.authorSignature) || mergeDisabled() || (useBubbles ? top.isOutgoingBubble() != isOutgoingBubble() : top.getMessage().mediaAlbumId != msg.mediaAlbumId || msg.mediaAlbumId != 0)) {
+    if (hasTopicSeparator ||
+      top.headerDisabled() || top.isSponsoredMessage() != isSponsoredMessage() || (flags & FLAG_SHOW_BADGE) != 0 || !tdlib.isSameSender(topMessage, msg) || !TD.isSameSource(topMessage, msg, forceForwardOrImportInfo()) || topMessage.viaBotUserId != msg.viaBotUserId || !StringUtils.equalsOrBothEmpty(topMessage.authorSignature, msg.authorSignature) || mergeDisabled() || (useBubbles ? top.isOutgoingBubble() != isOutgoingBubble() : top.getMessage().mediaAlbumId != msg.mediaAlbumId || msg.mediaAlbumId != 0)) {
       setHeaderEnabled(!headerDisabled());
       top.setIsBottom(true);
       return false;
@@ -1401,7 +1415,68 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       return Screen.dp(7f);
     }
 
-    return (flags & FLAG_EXTRA_PADDING) != 0 ? Screen.dp(7f) + (messagesController().needExtraBigPadding() ? Screen.dp(48f) : 0) : 0;
+    if ((flags & FLAG_EXTRA_PADDING) == 0) {
+      return 0;
+    }
+    int padding = Screen.dp(7f) + (messagesController().needExtraBigPadding() ? Screen.dp(48f) : 0);
+    if (needContinueThreadButton()) {
+      padding += TGInlineKeyboard.getButtonHeight() + TGInlineKeyboard.getButtonSpacing();
+    }
+    return padding;
+  }
+
+  /**
+   * As in the official app, the newest message of the whole chat with a bot with topics offers to
+   * continue its topic. The newest message is the one with the extra bottom padding.
+   */
+  private boolean needContinueThreadButton () {
+    return (flags & FLAG_EXTRA_PADDING) != 0 && forumTopicKey != null &&
+      messagesController().isBotForumWholeChat();
+  }
+
+  private void buildContinueThreadButton () {
+    if (!needContinueThreadButton()) {
+      return;
+    }
+    if (continueThreadKeyboard == null) {
+      continueThreadKeyboard = new TGInlineKeyboard(this, false);
+      continueThreadKeyboard.setViewProvider(currentViews);
+      continueThreadKeyboard.setLocalClickListener((view, keyboard, button) ->
+        messagesController().openBotForumTopic(forumTopicKey.forumTopicId)
+      );
+    }
+    TdApi.InlineKeyboardButton button = new TdApi.InlineKeyboardButton(
+      Lang.getString(R.string.vg_BotForumContinueThread),
+      0,
+      new TdApi.ButtonStyleDefault(),
+      new TdApi.InlineKeyboardButtonTypeCallback(new byte[0])
+    );
+    TdApi.ReplyMarkupInlineKeyboard markup = new TdApi.ReplyMarkupInlineKeyboard(
+      new TdApi.InlineKeyboardButton[][] {{button}}, false
+    );
+    if (useBubbles() && useBubble()) {
+      int width = getActualRightContentEdge() - getActualLeftContentEdge();
+      int maxWidth = pRealContentMaxWidth + getBubblePaddingLeft() + getBubblePaddingRight();
+      continueThreadKeyboard.set(msg.id, markup, width, maxWidth);
+    } else {
+      continueThreadKeyboard.set(msg.id, markup, getContentWidth(), pRealContentMaxWidth);
+    }
+    continueThreadKeyboard.firstButton().setCustomIcon(R.drawable.round_keyboard_arrow_right_18);
+    continueThreadKeyboard.firstButton().setCustomIconReverse(true);
+  }
+
+  private boolean hasContinueThreadButton () {
+    return continueThreadKeyboard != null && !continueThreadKeyboard.isEmpty() &&
+      needContinueThreadButton();
+  }
+
+  private int measureContinueThreadButtonLeft () {
+    if (!useBubbles()) {
+      return pRealContentX;
+    }
+    return alignBubbleRight() ?
+      getActualRightContentEdge() - continueThreadKeyboard.getWidth() :
+      getActualLeftContentEdge();
   }
 
   public int computeHeight () {
@@ -1996,6 +2071,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       }
     }
 
+    if (hasTopicSeparator) {
+      drawTopicSeparator(view, c);
+    }
+
     if (useBubbles && !needViewGroup()) {
       drawBackground(view, c);
     }
@@ -2273,6 +2352,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     // Inline keyboard
     if (inlineKeyboard != null && !inlineKeyboard.isEmpty()) {
       inlineKeyboard.draw(view, c, measureKeyboardLeft(), measureKeyboardTop());
+    }
+    if (hasContinueThreadButton()) {
+      int top = findBottomEdge() + TGInlineKeyboard.getButtonSpacing();
+      continueThreadKeyboard.draw(view, c, measureContinueThreadButtonLeft(), top);
     }
 
     // Reaction bubbles
@@ -2908,6 +2991,11 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       }
     }
 
+    if (hasTopicSeparator && topicSeparatorText != null &&
+      checkClickOnRect(topicSeparatorRect, x, y, Screen.dp(4))) {
+      return CLICK_TYPE_TOPIC_SEPARATOR;
+    }
+
     if (replyData != null && replyData.isInside(x, y, useBubbles() && !useBubble())) {
       return CLICK_TYPE_REPLY;
     }
@@ -2929,6 +3017,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       switch (clickType) {
         case CLICK_TYPE_TRANSLATE_MESSAGE_ICON: {
           openLanguageSelectorInlineMode();
+          break;
+        }
+        case CLICK_TYPE_TOPIC_SEPARATOR: {
+          messagesController().openBotForumTopic(forumTopicKey.forumTopicId);
           break;
         }
         case CLICK_TYPE_CHANNEL_MESSAGE_ICON: {
@@ -3073,6 +3165,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     if (!isEventLog() && inlineKeyboard != null && !inlineKeyboard.isEmpty() && inlineKeyboard.onTouchEvent(view, e)) {
       return true;
     }
+    if (hasContinueThreadButton() && continueThreadKeyboard.onTouchEvent(view, e)) {
+      return true;
+    }
     if (useReactionBubbles()) {
       if (messageReactions.onTouchEvent(view, e)) {
         return true;
@@ -3092,6 +3187,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   private static final int CLICK_TYPE_MESSAGE_RESTRICTED_ICON = 5;
   private static final int CLICK_TYPE_MESSAGE_EDITED_ICON = 6;
   private static final int CLICK_TYPE_CHANNEL_MESSAGE_SENDER_ICON = 7;
+  private static final int CLICK_TYPE_TOPIC_SEPARATOR = 8;
 
   private int clickType = CLICK_TYPE_NONE;
 
@@ -3208,6 +3304,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     } else if (inlineKeyboard != null) {
       inlineKeyboard.clear();
     }
+    buildContinueThreadButton();
     if (UI.inUiThread()) {
       performWithViews(this::requestInlineKeyboardMedia);
     }
@@ -4333,6 +4430,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     requestTextMedia(view.getTextMediaReceiver());
     requestAuthorTextMedia(view.getEmojiStatusReceiver());
     requestInlineKeyboardMedia(view);
+    requestTopicSeparatorMedia(view);
 
     if (footerText != null) {
       footerText.requestMedia(view.getFooterTextMediaReceiver(true));
@@ -4482,6 +4580,14 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   }
 
   public int getHeaderPadding () {
+    int result = getBadgeAndDatePadding();
+    if (hasTopicSeparator) {
+      result += BotForumThreadHint.getSeparatorHeight();
+    }
+    return (flags & FLAG_HEADER_ENABLED) != 0 && !useBubbles() ? xHeaderPadding + result : result;
+  }
+
+  private int getBadgeAndDatePadding () {
     int result;
     if ((flags & FLAG_SHOW_BADGE) != 0) {
       if ((flags & FLAG_SHOW_DATE) != 0) {
@@ -4496,7 +4602,150 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
         result = 0;
       }
     }
-    return (flags & FLAG_HEADER_ENABLED) != 0 && !useBubbles() ? xHeaderPadding + result : result;
+    return result;
+  }
+
+  // Topic separators
+
+  private void updateTopicSeparator (@Nullable TGMessage top) {
+    boolean hasTopicSeparator = forumTopicKey != null &&
+      messagesController().isTopicsWholeChat() &&
+      (top == null || top.forumTopicKey == null ||
+        top.forumTopicKey.forumTopicId != forumTopicKey.forumTopicId);
+    if (this.hasTopicSeparator != hasTopicSeparator) {
+      this.hasTopicSeparator = hasTopicSeparator;
+      if (hasTopicSeparator) {
+        withTopicInfo(inPlace -> buildTopicSeparator());
+      }
+    }
+  }
+
+  private void buildTopicSeparator () {
+    TdApi.ForumTopicInfo info = topicInfo();
+    long customEmojiId = info.icon != null ? info.icon.customEmojiId : 0;
+    String label;
+    TextEntity[] entities = null;
+    if (customEmojiId != 0) {
+      label = TOPIC_ICON_PLACEHOLDER + " " + info.name;
+      TdApi.TextEntity[] rawEntities = {
+        new TdApi.TextEntity(0, TOPIC_ICON_PLACEHOLDER.length(),
+          new TdApi.TextEntityTypeCustomEmoji(customEmojiId))
+      };
+      entities = TextEntity.valueOf(tdlib, label, rawEntities, null);
+      boolean noAnimations =
+        Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
+      if (entities != null && noAnimations) {
+        for (TextEntity entity : entities) {
+          if (entity instanceof TextEntityMessage) {
+            ((TextEntityMessage) entity).setForceDisableAnimations(true);
+          }
+        }
+      }
+      topicSeparatorLetter = null;
+    } else {
+      label = info.name;
+      topicSeparatorLetter = ForumTopicView.getTopicLetter(info);
+      topicSeparatorLetterWidth = topicSeparatorLetter != null ?
+        U.measureText(topicSeparatorLetter, Paints.getBoldPaint13(false)) : 0;
+    }
+    int maxWidth = Math.max(
+      Screen.dp(40f),
+      Screen.currentWidth() - Screen.dp(TOPIC_SEPARATOR_OTHER_WIDTH)
+    );
+    TextColorSet colorSet = this::getTopicSeparatorTextColor;
+    Text text = new Text.Builder(label, maxWidth, Paints.robotoStyleProvider(14f), colorSet)
+      .entities(entities, (t, specificMedia) -> invalidateTopicSeparatorMedia(t, specificMedia))
+      .allBold()
+      .singleLine()
+      .noClickable()
+      .viewProvider(currentViews)
+      .build();
+    runOnUiThreadOptional(() -> {
+      topicSeparatorText = text;
+      performWithViews(view -> {
+        requestTopicSeparatorMedia(view);
+        view.invalidate();
+      });
+    });
+  }
+
+  private int getTopicSeparatorTextColor () {
+    return manager.getColor(ColorId.unreadText, ColorId.bubble_dateText,
+      ColorId.bubble_dateText_noWallpaper, PropertyId.WALLPAPER_OVERRIDE_DATE);
+  }
+
+  private static final String TOPIC_ICON_PLACEHOLDER = "\u2B50";
+  private static final float TOPIC_SEPARATOR_OTHER_WIDTH = 28.66f + 20f + 64f + 32f;
+  private static final float TOPIC_SEPARATOR_PILL_TOP = 4.5f;
+  private static final float TOPIC_SEPARATOR_PILL_HEIGHT = 24f;
+  private static final float TOPIC_SEPARATOR_ICON_SIZE = 20f;
+  private static final float TOPIC_SEPARATOR_ICON_LEFT = 2.66f;
+  private static final float TOPIC_SEPARATOR_TEXT_LEFT = 27.66f;
+  private static final float TOPIC_SEPARATOR_PADDING_RIGHT = 20f;
+  private static final float TOPIC_SEPARATOR_EMOJI_PADDING_LEFT = 8f;
+
+  private void requestTopicSeparatorMedia (MessageView view) {
+    ComplexReceiver receiver = view.getTopicSeparatorMediaReceiver(topicSeparatorText != null);
+    if (receiver == null) {
+      return;
+    }
+    if (topicSeparatorText != null && hasTopicSeparator) {
+      topicSeparatorText.requestMedia(receiver);
+    } else {
+      receiver.clear();
+    }
+  }
+
+  private void invalidateTopicSeparatorMedia (Text text, @Nullable TextMedia specificMedia) {
+    performWithViews(view -> {
+      ComplexReceiver receiver = view.getTopicSeparatorMediaReceiver(true);
+      if (text != topicSeparatorText || !text.invalidateMediaContent(receiver, specificMedia)) {
+        requestTopicSeparatorMedia(view);
+      }
+    });
+  }
+
+  private void drawTopicSeparator (MessageView view, Canvas c) {
+    Text text = topicSeparatorText;
+    int top = getBadgeAndDatePadding();
+    int width = view.getMeasuredWidth();
+    int backgroundColor = manager.getOverlayColor(ColorId.unread, ColorId.bubble_date,
+      ColorId.bubble_date_noWallpaper, PropertyId.WALLPAPER_OVERRIDE_DATE);
+    BotForumThreadHint.drawSeparatorDashes(c, width, top, backgroundColor);
+    if (text == null) {
+      return;
+    }
+    boolean hasLetter = topicSeparatorLetter != null;
+    float contentLeft = Screen.dp(
+      hasLetter ? TOPIC_SEPARATOR_TEXT_LEFT : TOPIC_SEPARATOR_EMOJI_PADDING_LEFT
+    );
+    float pillWidth = contentLeft + text.getWidth() + Screen.dp(TOPIC_SEPARATOR_PADDING_RIGHT);
+    float left = (width - pillWidth) / 2f;
+    float pillTop = top + Screen.dp(TOPIC_SEPARATOR_PILL_TOP);
+    float pillHeight = Screen.dp(TOPIC_SEPARATOR_PILL_HEIGHT);
+    topicSeparatorRect.set(left, pillTop, left + pillWidth, pillTop + pillHeight);
+    float radius = pillHeight / 2f;
+    c.drawRoundRect(topicSeparatorRect, radius, radius, Paints.fillingPaint(backgroundColor));
+    int textColor = getTopicSeparatorTextColor();
+    float centerY = pillTop + pillHeight / 2f;
+    if (hasLetter) {
+      float iconRadius = Screen.dp(TOPIC_SEPARATOR_ICON_SIZE) / 2f;
+      float iconCenterX = left + Screen.dp(TOPIC_SEPARATOR_ICON_LEFT) + iconRadius;
+      TdApi.ForumTopicInfo info = topicInfo();
+      int iconColor = ForumTopicView.getTopicColor(info.icon != null ? info.icon.color : 0);
+      c.drawCircle(iconCenterX, centerY, iconRadius, Paints.fillingPaint(iconColor));
+      TextPaint letterPaint = Paints.getBoldPaint13(false, Color.WHITE);
+      c.drawText(topicSeparatorLetter, iconCenterX - topicSeparatorLetterWidth / 2f,
+        centerY + Screen.dp(4.5f), letterPaint);
+    }
+    int textLeft = (int) (left + contentLeft);
+    text.draw(c, textLeft, (int) (centerY - text.getHeight() / 2f), null, 1f,
+      view.getTopicSeparatorMediaReceiver(true));
+    Drawable arrow = view.getSparseDrawable(R.drawable.round_keyboard_arrow_right_16, ColorId.NONE);
+    Drawables.draw(c, arrow,
+      textLeft + text.getWidth() + Screen.dp(1f),
+      centerY - arrow.getMinimumHeight() / 2f,
+      Paints.getPorterDuffPaint(ColorUtils.alphaColor(.75f, textColor)));
   }
 
   // Data getters
@@ -4710,13 +4959,19 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     return new MessageId(msg.chatId, msg.id, getOtherMessageIds(msg.id));
   }
 
+  /** A reply that a bot types in real time ({@link TdApi.UpdatePendingMessage}), not sent yet. */
+  public final boolean isPendingMessage () {
+    return msg.id == MessagesManager.PENDING_MESSAGE_ID;
+  }
+
   public final boolean isRealMessage () {
     return msg != null && !isFakeMessage() && !isSponsoredMessage();
   }
 
   public boolean isFakeMessage () {
     //noinspection WrongConstant
-    if (msg.content.getConstructor() == TdApiExt.MessageChatEvent.CONSTRUCTOR) {
+    if (msg.content.getConstructor() == TdApiExt.MessageChatEvent.CONSTRUCTOR ||
+      isPendingMessage()) {
       return true;
     }
     return isDemoChat();
@@ -6295,6 +6550,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       if ((flags & FLAG_EXTRA_PADDING) == 0) {
         flags |= FLAG_EXTRA_PADDING;
         if ((flags & FLAG_LAYOUT_BUILT) != 0) {
+          buildContinueThreadButton();
           height = computeHeight();
         }
       }
@@ -6361,6 +6617,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     messageReactions.performDestroy();
     if (inlineKeyboard != null) {
       inlineKeyboard.performDestroy();
+    }
+    if (continueThreadKeyboard != null) {
+      continueThreadKeyboard.performDestroy();
     }
     setViewAttached(false);
     onMessageContainerDestroyed();
@@ -10032,7 +10291,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
 
   private void setTopicInfo (TdApi.ForumTopicInfo topicInfo) {
     List<RunnableBool> postponedCallbacks;
+    boolean hadTopicInfo;
     synchronized (forumTopicKey) {
+      hadTopicInfo = this.topicInfo != null;
       if (this.topicInfo == null) {
         postponedCallbacks = this.postponedTopicInfoCallbacks;
         this.postponedTopicInfoCallbacks = null;
@@ -10045,6 +10306,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       for (RunnableBool postponedCallback : postponedCallbacks) {
         postponedCallback.runWithBool(false);
       }
+    }
+    if (hadTopicInfo && hasTopicSeparator) {
+      // The topic was renamed or got another icon
+      buildTopicSeparator();
     }
     onTopicInfoUpdated();
   }

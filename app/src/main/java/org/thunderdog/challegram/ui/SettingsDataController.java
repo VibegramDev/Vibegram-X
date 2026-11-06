@@ -145,25 +145,13 @@ public class SettingsDataController extends RecyclerViewController<SettingsDataC
       public void setValuedSetting (ListItem item, SettingView view, boolean isUpdate) {
         final int itemId = item.getId();
         if (itemId == R.id.btn_dataSaver) {
-          final boolean isEnabled = !tdlib.files().isDataSaverEventuallyEnabled();
-          if (isUpdate) {
-            view.setEnabledAnimated(isEnabled);
-          } else {
-            view.setEnabled(isEnabled);
-          }
+          // Always available: the user can turn the data saver off, even when it was turned on automatically.
           view.getToggler().setRadioEnabled(tdlib.files().isDataSaverActive(), isUpdate);
         } else if (itemId == R.id.btn_dataSaverForce) {
           final boolean overMobile = tdlib.files().isDataSaverEnabledOverMobile();
           final boolean overRoaming = tdlib.files().isDataSaverEnabledOverRoaming();
           final int resource = overMobile && overRoaming ? R.string.WhenUsingMobileDataOrRoaming : overMobile ? R.string.WhenUsingMobileData : overRoaming ? R.string.WhenUsingRoaming : R.string.Never;
           view.setData(resource);
-
-          final boolean isEnabled = tdlib.files().isDataSaverEventuallyEnabled() || !tdlib.files().isDataSaverAlwaysEnabled();
-          if (isUpdate) {
-            view.setEnabledAnimated(isEnabled);
-          } else {
-            view.setEnabled(isEnabled);
-          }
         } else if (itemId == R.id.btn_proxy) {
           int proxyId = Settings.instance().getEffectiveProxyId();
           if (proxyId != Settings.PROXY_ID_NONE) {
@@ -510,9 +498,9 @@ public class SettingsDataController extends RecyclerViewController<SettingsDataC
     } else if (id == R.id.btn_proxy) {
       tdlib.ui().openProxySettings(this, true);
     } else if (id == R.id.btn_dataSaver) {
-      if (tdlib.files().setDataSaverEnabled(toggleResult)) {
-        adapter.updateValuedSettingById(R.id.btn_dataSaverForce);
-      }
+      tdlib.files().setDataSaverEnabled(toggleResult);
+      adapter.updateValuedSettingById(R.id.btn_dataSaver);
+      adapter.updateValuedSettingById(R.id.btn_dataSaverForce);
     } else if (id == R.id.btn_dataSaverForce) {
       showSettings(id, new ListItem[] {
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_forceMobile, 0, R.string.WhenUsingMobileData, tdlib.files().isDataSaverEnabledOverMobile()),

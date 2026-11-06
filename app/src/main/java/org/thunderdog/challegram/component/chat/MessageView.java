@@ -113,6 +113,7 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
   private final RefreshRateLimiter refreshRateLimiter, highRefreshRateLimiter;
   private ComplexReceiver footerTextMediaReceiver;
   private ComplexReceiver inlineKeyboardMediaReceiver;
+  private ComplexReceiver topicSeparatorMediaReceiver;
 
   private ImageReceiver contentReceiver;
   private DoubleImageReceiver previewReceiver;
@@ -189,6 +190,9 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
     emojiStatusReceiver.performDestroy();
     if (inlineKeyboardMediaReceiver != null) {
       inlineKeyboardMediaReceiver.performDestroy();
+    }
+    if (topicSeparatorMediaReceiver != null) {
+      topicSeparatorMediaReceiver.performDestroy();
     }
     if (contentReceiver != null) {
       contentReceiver.destroy();
@@ -487,6 +491,20 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
     return inlineKeyboardMediaReceiver;
   }
 
+  /** Custom emoji icon of the topic separator of the message, created when first needed. */
+  public ComplexReceiver getTopicSeparatorMediaReceiver (boolean force) {
+    if (topicSeparatorMediaReceiver == null && force) {
+      topicSeparatorMediaReceiver = new ComplexReceiver()
+        .setUpdateListener(refreshRateLimiter);
+      if (isAttached) {
+        topicSeparatorMediaReceiver.attach();
+      } else {
+        topicSeparatorMediaReceiver.detach();
+      }
+    }
+    return topicSeparatorMediaReceiver;
+  }
+
   public ComplexReceiver getFooterTextMediaReceiver (boolean force) {
     if (footerTextMediaReceiver == null) {
       footerTextMediaReceiver = new ComplexReceiver()
@@ -519,6 +537,9 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
       if (inlineKeyboardMediaReceiver != null) {
         inlineKeyboardMediaReceiver.attach();
       }
+      if (topicSeparatorMediaReceiver != null) {
+        topicSeparatorMediaReceiver.attach();
+      }
       if ((flags & FLAG_USE_COMMON_RECEIVER) != 0) {
         contentReceiver.attach();
         previewReceiver.attach();
@@ -544,6 +565,9 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
       replyTextMediaReceiver.detach();
       if (inlineKeyboardMediaReceiver != null) {
         inlineKeyboardMediaReceiver.detach();
+      }
+      if (topicSeparatorMediaReceiver != null) {
+        topicSeparatorMediaReceiver.detach();
       }
       if ((flags & FLAG_USE_COMMON_RECEIVER) != 0) {
         contentReceiver.detach();
@@ -611,6 +635,11 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
 
     if (msg.onMessageClick(this, m)) {
       return true;
+    }
+
+    if (msg.isPendingMessage()) {
+      // The bot is still typing it: there's nothing to reply to, copy or forward yet
+      return false;
     }
 
     /*if (ChatId.isMultiChat(msg.getChatId()) && !msg.isChannel()) {

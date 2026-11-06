@@ -1580,6 +1580,9 @@ public class Settings {
   private static int makeDefaultSettings () {
     int defaultSettings = 0;
 
+    // Vibegram: the keyboard hides when the chat is scrolled by a finger (Settings › Interface › Chats).
+    defaultSettings |= FLAG_OTHER_HIDE_CHAT_KEYBOARD;
+
     /*autoplayGIFs = true;
     autoplayGIFs = (settings & FLAG_OTHER_AUTOPLAY_GIFS) != 0;*/
     defaultSettings |= FLAG_OTHER_AUTOPLAY_GIFS;

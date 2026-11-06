@@ -2150,8 +2150,13 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     // with unread messages would wrongly render as a plain chat. Forums that actually open as a
     // unified chat (view-as-messages mode) still get their scroll anchor recomputed inside
     // TdlibUi.openChat(), so nothing is lost here.
-    // The same for channel direct messages administered by the user: they open as one conversation per sender.
-    if (!tdlib.isForum(chat.id) && !tdlib.isAdministeredDirectMessagesChat(chat.id) && (highlightMode = MessagesManager.getAnchorHighlightMode(tdlib.id(), chat, null)) != MessagesManager.HIGHLIGHT_MODE_NONE) {
+    // The same for channel direct messages administered by the user: they open as one conversation
+    // per sender, and for chats with bots that have topics.
+    boolean opensAsTopics = tdlib.isForum(chat.id) || tdlib.isBotForum(chat.id) ||
+      tdlib.isAdministeredDirectMessagesChat(chat.id);
+    if (!opensAsTopics &&
+      (highlightMode = MessagesManager.getAnchorHighlightMode(tdlib.id(), chat, null)) !=
+        MessagesManager.HIGHLIGHT_MODE_NONE) {
       params = new TdlibUi.ChatOpenParameters().shareItem(shareItem).highlightMessage(highlightMode, MessagesManager.getAnchorMessageId(tdlib.id(), chat, null, highlightMode));
     } else {
       params = new TdlibUi.ChatOpenParameters().shareItem(shareItem);

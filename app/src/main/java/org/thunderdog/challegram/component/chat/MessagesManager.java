@@ -79,6 +79,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -565,6 +566,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     }
     loader.reuse();
     resetSponsoredContext();
+    removePendingMessage();
     messageViewer = null;
     adapter.clear(true);
     clearHeaderMessage();
@@ -1967,11 +1969,17 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
       return;
     }
     ThreadInfo messageThread = loader.getMessageThread();
-    if (messageThread != null) {
-      messageThread.updateNewMessage(message);
-    }
-    if (!message.isOutgoing()) {
-      controller.checkSwitchPm(message.getMessage());
+    if (message.isPendingMessage()) {
+      // Neither counted in the thread nor checked for switch_pm: it isn't a message yet
+    } else {
+      if (messageThread != null) {
+        messageThread.updateNewMessage(message);
+      }
+      if (!message.isOutgoing()) {
+        // The reply that the bot typed has arrived
+        removePendingMessage();
+        controller.checkSwitchPm(message.getMessage());
+      }
     }
     if (!loader.canLoadBottom()) {
       boolean atBottom = manager.findFirstVisibleItemPosition() == 0;
@@ -2638,7 +2646,9 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
         int top = calculateOffsetInPixels(view, 0) + view.getMeasuredHeight();
         if (overlayHeight == 0 || top > overlayHeight) {
           TGMessage message = adapter.getMessage(firstVisibleItemPosition);
-          if (message == null || !message.isSponsoredMessage() || (firstVisibleItemPosition == 0 && !loader.canLoadBottom())) {
+          boolean isPending = message != null && message.isPendingMessage();
+          if (message == null || (!message.isSponsoredMessage() && !isPending) ||
+            (firstVisibleItemPosition == 0 && !loader.canLoadBottom() && !isPending)) {
             break;
           }
         }
@@ -3673,6 +3683,115 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
         updateMessageMentionRead(messageId);
       }
     });
+  }
+
+  // Replies that bots type in real time
+
+  /** Id of the pending message: bigger than ids of real messages, so it stays at the bottom. */
+  public static final long PENDING_MESSAGE_ID = Long.MAX_VALUE >> 1;
+
+  private @Nullable TGMessage pendingMessage;
+  private long pendingMessageDraftId;
+  private boolean pendingMessageKeepOnStop;
+  private final Runnable pendingMessageTimeout = this::removePendingMessage;
+
+  @Override
+  public void onPendingMessage (TdApi.UpdatePendingMessage update) {
+    tdlib.ui().post(() -> {
+      if (loader.getChatId() == update.chatId && isPendingMessageTopic(update.forumTopicId) &&
+        !loader.canLoadBottom() && !areScheduled()) {
+        showPendingMessage(update);
+      }
+    });
+  }
+
+  @Override
+  public void onPendingMessageStopped (long chatId, int forumTopicId, long draftId) {
+    tdlib.ui().post(() -> {
+      if (loader.getChatId() == chatId && pendingMessage != null &&
+        pendingMessageDraftId == draftId) {
+        stopPendingMessage(false);
+      }
+    });
+  }
+
+  /** The draft of a bot is shown only in its own topic, as in the official app. */
+  private boolean isPendingMessageTopic (int forumTopicId) {
+    TdApi.MessageTopic topicId = loader.getMessageTopicId() != null ?
+      loader.getMessageTopicId() : loader.getTopicId();
+    if (forumTopicId == 0) {
+      return topicId == null;
+    }
+    return topicId != null && topicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR &&
+      ((TdApi.MessageTopicForum) topicId).forumTopicId == forumTopicId;
+  }
+
+  private void showPendingMessage (TdApi.UpdatePendingMessage update) {
+    UI.removePendingRunnable(pendingMessageTimeout);
+    UI.post(pendingMessageTimeout,
+      TimeUnit.SECONDS.toMillis(tdlib.options().pendingTextMessagePeriod));
+    int index = pendingMessage != null ? adapter.indexOfMessageContainer(PENDING_MESSAGE_ID) : -1;
+    if (index != -1 && pendingMessageDraftId == update.draftId) {
+      pendingMessageKeepOnStop = update.keepOnStop;
+      replaceMessageContent(adapter.getMessage(index), index, update.chatId, PENDING_MESSAGE_ID,
+        update.content);
+      // The message is created anew when its content can't be replaced in place
+      pendingMessage = adapter.getMessage(index);
+      controller.setPendingMessageCanStop(update.canStop);
+      return;
+    }
+    removePendingMessage();
+    TdApi.Message message = new TdApi.Message();
+    message.chatId = update.chatId;
+    message.id = PENDING_MESSAGE_ID;
+    message.senderId = new TdApi.MessageSenderUser(tdlib.chatUserId(update.chatId));
+    message.date = (int) tdlib.currentTime(TimeUnit.SECONDS);
+    message.canBeSaved = true;
+    if (update.forumTopicId != 0) {
+      message.topicId = new TdApi.MessageTopicForum(update.forumTopicId);
+    }
+    message.content = update.content;
+    TdApi.Chat chat = tdlib.chatStrict(update.chatId);
+    TGMessage parsedMessage = TGMessage.valueOf(this, message, chat, loader.getMessageThread(),
+      chatAdmins);
+    parsedMessage.prepareLayout();
+    pendingMessage = parsedMessage;
+    pendingMessageDraftId = update.draftId;
+    pendingMessageKeepOnStop = update.keepOnStop;
+    controller.setPendingMessageCanStop(update.canStop);
+    updateNewMessage(parsedMessage);
+  }
+
+  /** The Stop button: the draft is removed unless the bot asked to keep it. */
+  public void stopPendingMessage (boolean byUser) {
+    if (pendingMessage == null) {
+      return;
+    }
+    if (byUser) {
+      TdApi.MessageTopic topicId = loader.getMessageTopicId() != null ?
+        loader.getMessageTopicId() : loader.getTopicId();
+      tdlib.send(new TdApi.StopPendingMessage(loader.getChatId(), topicId,
+        pendingMessageDraftId), tdlib.typedOkHandler());
+    }
+    if (pendingMessageKeepOnStop) {
+      controller.setPendingMessageCanStop(false);
+    } else {
+      removePendingMessage();
+    }
+  }
+
+  private void removePendingMessage () {
+    UI.removePendingRunnable(pendingMessageTimeout);
+    if (pendingMessage == null) {
+      return;
+    }
+    pendingMessage = null;
+    pendingMessageDraftId = 0;
+    controller.setPendingMessageCanStop(false);
+    int index = adapter.indexOfMessageContainer(PENDING_MESSAGE_ID);
+    if (index != -1) {
+      adapter.removeItem(index);
+    }
   }
 
   @Override

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: topics in chats with bots (texts of the official app). -->
+<resources>
+  <string name="vg_BotForumNewThread">New Thread</string>
+  <string name="vg_BotForumNewThreadText">Type any message to create a new thread.</string>
+  <string name="vg_BotForumContinueThread">Continue last thread</string>
+  <string name="vg_TopicTabsOnTop">Tabs on top</string>
+  <string name="vg_TopicTabsOnSide">Tabs on the side</string>
+</resources>

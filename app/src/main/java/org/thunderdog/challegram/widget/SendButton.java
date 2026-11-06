@@ -126,7 +126,18 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
     final int cy = getMeasuredHeight() / 2;
 
     final float inlineFactor = inInlineModeAnimator.getFloatValue();
-    final float sendScale = 1f - inlineFactor;
+    final float stopFactor = inStopModeAnimator.getFloatValue();
+    final float sendScale = (1f - inlineFactor) * (1f - stopFactor);
+
+    if (stopFactor > 0f) {
+      float size = Screen.dp(STOP_ICON_SIZE) *
+        (Config.DEFAULT_ICON_SWITCH_SCALE + (1f - Config.DEFAULT_ICON_SWITCH_SCALE) * stopFactor);
+      RectF rect = Paints.getRectF();
+      rect.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
+      float radius = Screen.dp(STOP_ICON_RADIUS);
+      int color = ColorUtils.alphaColor(stopFactor, Theme.chatSendButtonColor());
+      c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(color));
+    }
     final float activeFactor = isActiveAnimator.getFloatValue();
     final float editFactor = inEditModeAnimator.getFloatValue();
 
@@ -362,8 +373,22 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
   }
 
   public boolean inSimpleSendMode () {
-    return !inEditModeAnimator.getValue() && !inInlineModeAnimator.getValue();
+    return !inEditModeAnimator.getValue() && !inInlineModeAnimator.getValue() &&
+      !inStopModeAnimator.getValue();
   }
+
+  // Stop: a bot types a reply that can be stopped
+
+  public void setInStopMode (boolean inStopMode, boolean animated) {
+    inStopModeAnimator.setValue(inStopMode, animated);
+  }
+
+  public boolean inStopMode () {
+    return inStopModeAnimator.getValue();
+  }
+
+  private static final float STOP_ICON_SIZE = 14f;
+  private static final float STOP_ICON_RADIUS = 3f;
 
   // Animators
 
@@ -371,10 +396,13 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
   private static final int ACTIVE_ANIMATOR = 1;
   private static final int INLINE_ANIMATOR = 2;
   private static final int INLINE_PROGRESS_ANIMATOR = 3;
+  private static final int STOP_ANIMATOR = 4;
 
   private final BoolAnimator inEditModeAnimator = new BoolAnimator(EDIT_ANIMATOR, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
   private final BoolAnimator isActiveAnimator = new BoolAnimator(ACTIVE_ANIMATOR, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 220l, true);
   private final BoolAnimator inInlineModeAnimator = new BoolAnimator(INLINE_ANIMATOR, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
+  private final BoolAnimator inStopModeAnimator =
+    new BoolAnimator(STOP_ANIMATOR, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180L);
 
   private float inlineProgressFactor;
   private FactorAnimator inlineProgressAnimator;
@@ -401,7 +429,8 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
     switch (id) {
       case EDIT_ANIMATOR:
       case ACTIVE_ANIMATOR:
-      case INLINE_ANIMATOR: {
+      case INLINE_ANIMATOR:
+      case STOP_ANIMATOR: {
         break;
       }
       case INLINE_PROGRESS_ANIMATOR: {

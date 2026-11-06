@@ -35,4 +35,8 @@ public interface MessageListener {
   default void onMessageUnreadReactionsChanged (long chatId, long messageId, @Nullable TdApi.UnreadReaction[] unreadReactions, int unreadReactionCount) { }
   default void onMessagesDeleted (long chatId, long[] messageIds) { }
   default void onMessageLiveLocationViewed (long chatId, long messageId) { }
+  /** A bot types a reply in real time: the reply so far, replacing the previous one. */
+  default void onPendingMessage (TdApi.UpdatePendingMessage update) { }
+  /** Generation of a pending message was stopped by the user, e.g. on another device. */
+  default void onPendingMessageStopped (long chatId, int forumTopicId, long draftId) { }
 }

@@ -31,6 +31,7 @@ import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
 import org.thunderdog.challegram.ui.ListItem;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -219,6 +220,10 @@ public final class PaidMessages {
       UI.post(() -> confirm(context, tdlib, functions, after));
       return;
     }
+    // Bots don't charge for messages
+    if (tdlib.sendInNewBotForumTopic(functions, () -> after.runWithBool(true))) {
+      return;
+    }
     LinkedHashMap<Long, ChatPayment> chats = new LinkedHashMap<>();
     for (TdApi.Function<?> function : functions) {
       long chatId = chatIdOf(function);
@@ -355,6 +360,10 @@ public final class PaidMessages {
    * declines, the handler receives the error of an aborted request, which isn't shown to the user.
    */
   public static void sendWithConfirmation (@NonNull Tdlib tdlib, @NonNull TdApi.Function<?> function, @NonNull org.drinkless.tdlib.Client.ResultHandler handler) {
+    if (tdlib.sendInNewBotForumTopic(Collections.singletonList(function),
+      () -> tdlib.client().send(function, handler))) {
+      return;
+    }
     long chatId = chatIdOf(function);
     TdApi.MessageSendOptions options = optionsOf(function);
     if (chatId == 0 || (options != null && options.paidMessageStarCount > 0) || !mayBePaid(tdlib, chatId)) {
