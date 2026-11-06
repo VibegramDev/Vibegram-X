@@ -38,6 +38,7 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.annotation.AnyThread;
+import androidx.annotation.DrawableRes;
 import androidx.annotation.IdRes;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
@@ -123,6 +124,8 @@ import org.thunderdog.challegram.widget.CircleButton;
 import org.thunderdog.challegram.widget.DoneButton;
 import org.thunderdog.challegram.widget.EmptySmartView;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
+import org.thunderdog.challegram.widget.ProfileActionsView;
+import org.thunderdog.challegram.widget.ProfileChannelCardView;
 import org.thunderdog.challegram.widget.ProgressComponentView;
 import org.thunderdog.challegram.widget.ShadowView;
 import org.thunderdog.challegram.widget.SliderWrapView;
@@ -426,21 +429,12 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       realMenu.setOrientation(LinearLayout.HORIZONTAL);
       realMenu.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT));
 
-      HeaderButton callButton = null;
-
       int buttonColorId = getHeaderIconColorId();
 
-      if (mode == Mode.SECRET || mode == Mode.USER) {
-        callButton = header.addButton(realMenu, R.id.menu_btn_call, R.drawable.baseline_phone_24, buttonColorId, this, Screen.dp(48f));
-        callButton.setAlpha(userFull != null && (userFull.canBeCalled || userFull.hasPrivateCalls) ? 1f : 0f);
-      }
-
+      // The call is in the row of profile actions under the name (ProfileActionsView), not in the app bar.
       if (mode == Mode.SECRET) {
         StopwatchHeaderButton headerButton = header.addStopwatchButton(realMenu, this);
         headerButton.forceValue(tdlib.ui().getTTLShort(chat.id), tdlib.canChangeMessageAutoDeleteTime(chat.id));
-        if (!headerButton.getIsVisible()) {
-          callButton.setTranslationX(Screen.dp(StopwatchHeaderButton.WIDTH));
-        }
       }
       if (id == R.id.menu_profile_bot) {
         HeaderButton button = header.addButton(realMenu, R.id.menu_btn_manage, R.drawable.baseline_edit_24, buttonColorId, this, Screen.dp(49f));
@@ -454,6 +448,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       HeaderButton moreButton = header.addMoreButton(realMenu, this, buttonColorId);
       if (id == R.id.menu_profile_manage) {
         moreButton.setVisibility(hasMoreItems() ? View.VISIBLE : View.INVISIBLE);
+      } else if (isSelfProfile()) {
+        // The only item of the own profile's ⋮ ("Edit name") is the "Edit" button of the profile actions.
+        moreButton.setVisibility(View.GONE);
       }
       // M3: "Make sure icon buttons have a container fill." (as the back button)
       for (int i = 0; i < realMenu.getChildCount(); i++) {
@@ -497,10 +494,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       addMember(view);
     } else if (id == R.id.menu_btn_manage) {
       manageChat();
-    } else if (id == R.id.menu_btn_call) {
-      if (userFull != null) {
-        tdlib.context().calls().makeCall(this, user.id, userFull);
-      }
       /*case R.id.menu_btn_edit: {
         if (supergroupFull != null) {
           final EditChannelController channelController = new EditChannelController();
@@ -602,7 +595,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     final long myUserId = tdlib.myUserId();
 
     if (!isBot && user.id == myUserId && user.id != 0) {
-      showMore(new int[]{R.id.more_btn_edit}, new String[]{Lang.getString(R.string.EditName)}, 0);
+      // "Edit name" is the "Edit" button of the profile actions (ProfileActionsView).
       return;
     }
 
@@ -630,21 +623,17 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       strings.append(R.string.StartEncryptedChat);
     }
 
-    if (isBot) {
-      if (Td.hasUsername(user)) {
-        ids.append(R.id.more_btn_share);
-        strings.append(R.string.Share);
-      }
-    } else if (TD.hasPhoneNumber(user)) {
+    // Bots: "Share" and "Block" are in the row of profile actions (getProfileActions).
+    if (!isBot && TD.hasPhoneNumber(user)) {
       ids.append(R.id.more_btn_share);
       strings.append(R.string.ShareContact);
     }
 
     //if (!isBot || !((TdApi.UserTypeBot) user.type).isInline) {
     boolean isFullyBlocked = tdlib.chatFullyBlocked(chatId);
-    if (!user.isSupport || isFullyBlocked) {
+    if (!isBot && (!user.isSupport || isFullyBlocked)) {
       ids.append(R.id.more_btn_block);
-      strings.append(isFullyBlocked ? isBot ? R.string.UnblockBot : R.string.Unblock : isBot ? R.string.BlockBot : R.string.BlockContact);
+      strings.append(isFullyBlocked ? R.string.Unblock : R.string.BlockContact);
     }
     //}
 
@@ -684,12 +673,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       ids.append(R.id.menu_btn_manage);
       strings.append(isChannel() ? R.string.ManageChannel : R.string.ManageGroup);
     }
-    if (mode == Mode.CHANNEL || mode == Mode.SUPERGROUP) {
-      if (Td.hasUsername(supergroup)) {
-        ids.append(R.id.more_btn_share);
-        strings.append(R.string.Share);
-      }
-    }
+    // "Share", "Leave" and "Join" are in the row of profile actions (getProfileActions).
 
     if (!tdlib.isDirectMessagesChat(getChatId()) && (mode == Mode.SUPERGROUP || mode == Mode.GROUP)) {
       if (!canManageChat()) {
@@ -707,7 +691,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       strings.append(R.string.Stats);
     }
 
-    tdlib.ui().addDeleteChatOptions(getChatId(), ids, strings, false, true);
+    addDeleteChatMenuOptions(ids, strings);
 
     if (ids.size() > 0) {
       showMore(ids.get(), strings.get(), 0);
@@ -748,30 +732,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           } else if (id == R.id.more_btn_privacy) {
             openPrivacyExceptions();
           } else if (id == R.id.more_btn_block) {
-            final boolean needBlock = !tdlib.chatFullyBlocked(chat.id);
-            final boolean isBot = tdlib.isBotChat(chat.id);
-            if (needBlock) {
-              showOptions(Lang.getStringBold(isBot ? R.string.BlockBotConfirm : R.string.BlockUserConfirm, tdlib.chatTitle(chat.id)), new int[] {R.id.btn_blockSender, R.id.btn_cancel}, new String[] {Lang.getString(isBot ? R.string.BlockBot : R.string.BlockContact), Lang.getString(R.string.Cancel)}, new int[] {OptionColor.RED, OptionColor.NORMAL}, new int[] {R.drawable.baseline_block_24, R.drawable.baseline_cancel_24}, (itemView, id1) -> {
-                if (!isDestroyed() && id1 == R.id.btn_blockSender) {
-                  tdlib.blockSender(tdlib.sender(chat.id), new TdApi.BlockListMain(), result -> {
-                    if (TD.isOk(result)) {
-                      UI.showToast(Lang.getStringBold(isBot ? R.string.BlockedBot : R.string.BlockedUser, tdlib.chatTitle(chat.id)), Toast.LENGTH_SHORT);
-                    } else {
-                      tdlib.okHandler().onResult(result);
-                    }
-                  });
-                }
-                return true;
-              });
-            } else {
-              tdlib.unblockSender(tdlib.sender(chat.id), result -> {
-                if (TD.isOk(result)) {
-                  UI.showToast(Lang.getStringBold(isBot ? R.string.UnblockedBot : R.string.UnblockedUser, tdlib.chatTitle(chat.id)), Toast.LENGTH_SHORT);
-                } else {
-                  tdlib.okHandler().onResult(result);
-                }
-              });
-            }
+            toggleUserBlocked();
           } else if (id == R.id.more_btn_delete) {
             tdlib.ui().deleteContact(this, user.id);
           }
@@ -948,7 +909,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   }
 
   private void makeChannelChecks () {
-    baseAdapter.updateValuedSettingById(R.id.btn_notifications);
+    // Notifications (blocked by the system, channel importance) are the "Sound" button of the profile actions.
+    checkProfileActions();
   }
 
   private FrameLayoutFix contentView;
@@ -981,12 +943,13 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
   @Override
   protected int getFloatingButtonId () {
-    return isEditing() ? 0 : R.drawable.baseline_chat_bubble_24;
+    // Users, bots and the own profile: "Chat" is the first button of the row of profile actions.
+    return isEditing() || mode == Mode.USER || mode == Mode.SECRET ? 0 : R.drawable.baseline_chat_bubble_24;
   }
 
   @Override
   protected void onFloatingButtonPressed () {
-    if (mode == Mode.CHANNEL && FeatureToggles.CHANNEL_PROFILE_FLOATING_BUTTON_OPENS_DISCUSSION_GROUP) {
+    if (mode == Mode.CHANNEL && FeatureToggles.CHANNEL_PROFILE_FLOATING_BUTTON_OPENS_DISCUSSION_GROUP && !hasProfileAction(R.id.btn_vgProfileDiscuss)) {
       if (supergroup != null && supergroup.isChannel && supergroup.hasLinkedChat) {
         long linkedChatId = supergroupFull != null ? supergroupFull.linkedChatId : 0;
         if (linkedChatId != 0) {
@@ -995,6 +958,41 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         }
       }
     }
+    openProfileChat();
+  }
+
+  /** Block / unblock the user or stop / restart the bot (⋮ "Block" of users, "Stop" / "Start" button of bots). */
+  private void toggleUserBlocked () {
+    if (chat == null) {
+      return;
+    }
+    final boolean needBlock = !tdlib.chatFullyBlocked(chat.id);
+    final boolean isBot = tdlib.isBotChat(chat.id);
+    if (needBlock) {
+      showOptions(Lang.getStringBold(isBot ? R.string.BlockBotConfirm : R.string.BlockUserConfirm, tdlib.chatTitle(chat.id)), new int[] {R.id.btn_blockSender, R.id.btn_cancel}, new String[] {Lang.getString(isBot ? R.string.BlockBot : R.string.BlockContact), Lang.getString(R.string.Cancel)}, new int[] {OptionColor.RED, OptionColor.NORMAL}, new int[] {R.drawable.baseline_block_24, R.drawable.baseline_cancel_24}, (itemView, id1) -> {
+        if (!isDestroyed() && id1 == R.id.btn_blockSender) {
+          tdlib.blockSender(tdlib.sender(chat.id), new TdApi.BlockListMain(), result -> {
+            if (TD.isOk(result)) {
+              UI.showToast(Lang.getStringBold(isBot ? R.string.BlockedBot : R.string.BlockedUser, tdlib.chatTitle(chat.id)), Toast.LENGTH_SHORT);
+            } else {
+              tdlib.okHandler().onResult(result);
+            }
+          });
+        }
+        return true;
+      });
+    } else {
+      tdlib.unblockSender(tdlib.sender(chat.id), result -> {
+        if (TD.isOk(result)) {
+          UI.showToast(Lang.getStringBold(isBot ? R.string.UnblockedBot : R.string.UnblockedUser, tdlib.chatTitle(chat.id)), Toast.LENGTH_SHORT);
+        } else {
+          tdlib.okHandler().onResult(result);
+        }
+      });
+    }
+  }
+
+  private void openProfileChat () {
     ViewController<?> c = previousStackItem();
     if (c instanceof MessagesController && c.getChatId() == chat.id) {
       navigateBack();
@@ -1095,6 +1093,10 @@ public class ProfileController extends ViewController<ProfileController.Args> im
             outRect.bottom = originalBottom;
           }
         }
+      } else if (view instanceof ProfileActionsView) {
+        // Row of profile actions: pulled up over the empty offset's gap, right under the name and the status of the
+        // expanded header (a negative offset instead of a translation, which item animations would reset).
+        outRect.set(0, -ProfileActionsView.getHeaderOverlap(), 0, 0);
       } else {
         outRect.setEmpty();
       }
@@ -1640,6 +1642,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           checkContentScrollY(findCurrentCachedController()); // FIXME actually, need to fix it in a better way
         }
         checkTopViewPosition();
+        updateProfileActionsExpandFactor();
         if (dy != 0) {
           eventsBelongToSlider = false;
         }
@@ -1734,9 +1737,17 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       @Override
       protected SettingHolder initCustom (ViewGroup parent, int customViewType) {
         if (customViewType == CUSTOM_TYPE_PERSONAL_CHANNEL) {
-          ChatView chatView = new ChatView(context, tdlib);
+          ProfileChannelCardView cardView = new ProfileChannelCardView(context, tdlib);
+          addThemeInvalidateListener(cardView);
+          ChatView chatView = cardView.getChatView();
+          chatView.setId(R.id.btn_personalChannel);
           chatView.setOnClickListener(ProfileController.this);
-          return new SettingHolder(chatView);
+          return new SettingHolder(cardView);
+        }
+        if (customViewType == CUSTOM_TYPE_PROFILE_ACTIONS) {
+          ProfileActionsView actionsView = new ProfileActionsView(context, ProfileController.this);
+          actionsView.setCallback(ProfileController.this::onProfileActionPressed);
+          return new SettingHolder(actionsView);
         }
         return super.initCustom(parent, customViewType);
       }
@@ -1744,23 +1755,29 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       @Override
       protected void modifyCustom (SettingHolder holder, int position, ListItem item, int customViewType, View view, boolean isUpdate) {
         if (customViewType == CUSTOM_TYPE_PERSONAL_CHANNEL) {
-          ((ChatView) view).setChat((TGChat) item.getData());
+          ((ProfileChannelCardView) view).setChat((TGChat) item.getData(), item.getStringValue());
+        } else if (customViewType == CUSTOM_TYPE_PROFILE_ACTIONS) {
+          ProfileActionsView actionsView = (ProfileActionsView) view;
+          actionsView.setActions(profileActions);
+          actionsView.setExpandFactor(getProfileActionsExpandFactor());
         }
       }
 
       @Override
       public void onViewAttachedToWindow (SettingHolder holder) {
         super.onViewAttachedToWindow(holder);
-        if (holder.itemView instanceof ChatView) {
-          ((ChatView) holder.itemView).attach();
+        if (holder.itemView instanceof ProfileChannelCardView) {
+          ((ProfileChannelCardView) holder.itemView).getChatView().attach();
+        } else if (holder.itemView instanceof ProfileActionsView) {
+          ((ProfileActionsView) holder.itemView).setExpandFactor(getProfileActionsExpandFactor());
         }
       }
 
       @Override
       public void onViewDetachedFromWindow (SettingHolder holder) {
         super.onViewDetachedFromWindow(holder);
-        if (holder.itemView instanceof ChatView) {
-          ((ChatView) holder.itemView).detach();
+        if (holder.itemView instanceof ProfileChannelCardView) {
+          ((ProfileChannelCardView) holder.itemView).getChatView().detach();
         }
       }
 
@@ -1829,10 +1846,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           } else {
             view.setData(R.string.PhoneNumberUnknown);
           }
-        } else if (itemId == R.id.btn_notifications) {
-          TdApi.Chat cachedChat = tdlib.chat(chat.id);
-          view.setIcon(tdlib.ui().getIconForSetting(cachedChat));
-          tdlib.ui().setValueForSetting(view, chat.id);
         } else if (itemId == R.id.btn_vgBotStars) {
           TdApi.StarAmount amount = botStarAmount != null ? botStarAmount : new TdApi.StarAmount(0, 0);
           view.setData(org.thunderdog.challegram.stars.Stars.withIcons(org.thunderdog.challegram.stars.Stars.STAR + " " + org.thunderdog.challegram.stars.Stars.formatShort(amount)));
@@ -2022,8 +2035,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       }
     });
     buildCells();
-    // Info rows (username, bio, phone, notifications…) are segmented cards, like the settings pages
-    baseAdapter.setSegmented();
+    // Info rows (username, bio, phone, notifications…) are segmented cards, like the settings pages;
+    // the personal channel is a card of its own.
+    baseAdapter.setSegmented(VIEW_TYPE_PERSONAL_CHANNEL);
     baseRecyclerView.setAdapter(baseAdapter);
 
     // Binding data
@@ -2453,10 +2467,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     return new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_inviteLink, R.drawable.baseline_link_24, R.string.PrimaryInviteLinkMenu);
   }
 
-  private ListItem newNotificationItem () {
-    return new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_notifications, R.drawable.baseline_notifications_24, R.string.Notifications);
-  }
-
   private ListItem newBirthdateItem () {
     return new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_birthdate, R.drawable.baseline_cake_variant_24, R.string.Birthdate);
   }
@@ -2501,6 +2511,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     ArrayList<ListItem> items = new ArrayList<>(15);
 
     items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET));
+    addProfileActionsItem(items);
 
     int addedCount = 0;
     if (Settings.instance().showPeerIds()) {
@@ -2556,15 +2567,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     this.baseHeaderItemCount = addedCount;
     boolean isMe = tdlib.isSelfUserId(user.id);
 
+    // Notifications are the "Sound" button of the profile actions: the info block is followed by the media.
     if (addedCount != 0) {
-      items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-      if (!isMe) {
-        items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      }
-    }
-
-    if (!isMe) {
-      items.add(newNotificationItem());
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
 
@@ -2599,9 +2603,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   }
 
   private void checkUserButtons () {
-    if (headerView != null && !isEditing()) {
-      headerView.updateButtonAlpha(getMenuId(), R.id.menu_btn_call, BuildConfig.CALLS_AVAILABLE && (userFull.canBeCalled || userFull.hasPrivateCalls) ? 1f : 0f);
-    }
+    // The call button is in the row of profile actions.
+    checkProfileActions();
   }
 
   private SharedChatsController getCommonChatsController (@SharedChatsController.Mode int mode) {
@@ -2686,12 +2689,226 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     }
   }
 
-  // Personal channel (as in the official app: "Channel" block with the channel row and its last post above the info)
+  // Row of profile actions under the name (ProfileActionsView), as the buttons of the official profile. Only actions
+  // this screen already had: the chat (floating button), notifications, the call (app bar), share, edit, stop bot,
+  // discussion (floating button of channels), leave / join (⋮ menu). They are not repeated in the app bar, the
+  // floating button and the ⋮ menu.
+
+  private static final int CUSTOM_TYPE_PROFILE_ACTIONS = 2;
+  private static final int VIEW_TYPE_PROFILE_ACTIONS = ListItem.TYPE_CUSTOM - CUSTOM_TYPE_PROFILE_ACTIONS;
+
+  private List<ProfileActionsView.Action> profileActions = new ArrayList<>();
+  private boolean hasProfileActions;
+
+  private boolean isSelfProfile () {
+    return mode == Mode.USER && user != null && tdlib.isSelfUserId(user.id);
+  }
+
+  private static ProfileActionsView.Action newProfileAction (@IdRes int id, @DrawableRes int icon, @StringRes int label) {
+    return new ProfileActionsView.Action(id, icon, Lang.getString(label));
+  }
+
+  private boolean hasProfileAction (@IdRes int id) {
+    for (ProfileActionsView.Action action : profileActions) {
+      if (action.id == id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private List<ProfileActionsView.Action> buildProfileActions () {
+    List<ProfileActionsView.Action> actions = new ArrayList<>(ProfileActionsView.MAX_ACTIONS);
+    if (isEditing() || chat == null) {
+      return actions;
+    }
+    switch (mode) {
+      case Mode.USER:
+      case Mode.SECRET: {
+        if (user == null) {
+          break;
+        }
+        actions.add(newProfileAction(R.id.btn_vgProfileChat, R.drawable.baseline_chat_bubble_24, R.string.vg_ProfileActionChat));
+        if (isSelfProfile()) {
+          // Own profile: the edit action of its ⋮ menu and sharing the own contact.
+          actions.add(newProfileAction(R.id.btn_vgProfileEdit, R.drawable.baseline_edit_24, R.string.vg_ProfileActionEdit));
+          actions.add(newProfileAction(R.id.btn_vgProfileShare, R.drawable.baseline_share_arrow_24, R.string.vg_ProfileActionShare));
+          break;
+        }
+        addSoundProfileAction(actions);
+        if (TD.isBot(user)) {
+          if (Td.hasUsername(user)) {
+            actions.add(newProfileAction(R.id.btn_vgProfileShare, R.drawable.baseline_share_arrow_24, R.string.vg_ProfileActionShare));
+          }
+          boolean isBlocked = tdlib.chatFullyBlocked(ChatId.fromUserId(user.id));
+          actions.add(isBlocked ?
+            newProfileAction(R.id.btn_vgProfileBlockBot, R.drawable.baseline_replay_24, R.string.vg_ProfileActionStartBot) :
+            newProfileAction(R.id.btn_vgProfileBlockBot, R.drawable.baseline_block_24, R.string.vg_ProfileActionStopBot)
+          );
+        } else if (BuildConfig.CALLS_AVAILABLE && userFull != null && (userFull.canBeCalled || userFull.hasPrivateCalls)) {
+          // No video calls in the app: no "Video" button.
+          actions.add(newProfileAction(R.id.btn_vgProfileCall, R.drawable.baseline_phone_24, R.string.vg_ProfileActionCall));
+        }
+        break;
+      }
+      case Mode.CHANNEL:
+      case Mode.SUPERGROUP:
+      case Mode.GROUP: {
+        addSoundProfileAction(actions);
+        if (mode == Mode.CHANNEL && supergroup != null && supergroup.hasLinkedChat) {
+          actions.add(newProfileAction(R.id.btn_vgProfileDiscuss, R.drawable.baseline_forum_24, R.string.vg_ProfileActionDiscuss));
+        }
+        if (mode != Mode.GROUP && supergroup != null && Td.hasUsername(supergroup)) {
+          actions.add(newProfileAction(R.id.btn_vgProfileShare, R.drawable.baseline_share_arrow_24, R.string.vg_ProfileActionShare));
+        }
+        int leaveJoinOptionId = getLeaveJoinOptionId();
+        if (leaveJoinOptionId == R.id.btn_returnToChat) {
+          actions.add(newProfileAction(R.id.btn_vgProfileLeaveJoin, mode == Mode.CHANNEL ? R.drawable.baseline_person_add_24 : R.drawable.baseline_group_add_24, R.string.vg_ProfileActionJoin));
+        } else if (leaveJoinOptionId != 0) {
+          actions.add(newProfileAction(R.id.btn_vgProfileLeaveJoin, R.drawable.baseline_exit_to_app_24, R.string.vg_ProfileActionLeave));
+        }
+        break;
+      }
+    }
+    while (actions.size() > ProfileActionsView.MAX_ACTIONS) {
+      actions.remove(actions.size() - 1);
+    }
+    return actions;
+  }
+
+  /** The former "Notifications" row of the info list: same icon (TdlibUi.getIconForSetting) and options. */
+  private void addSoundProfileAction (List<ProfileActionsView.Action> actions) {
+    TdApi.Chat cachedChat = tdlib.chat(chat.id);
+    boolean isMuted = tdlib.chatMuteFor(cachedChat != null ? cachedChat : chat) > 0;
+    actions.add(newProfileAction(R.id.btn_vgProfileSound, tdlib.ui().getIconForSetting(cachedChat != null ? cachedChat : chat), isMuted ? R.string.vg_ProfileActionMuted : R.string.vg_ProfileActionSound));
+  }
+
+  /**
+   * The leave or join option of {@link TdlibUi#addDeleteChatOptions} for this group or channel ("Leave channel",
+   * "Leave group", "Join", "Return to group"...), or 0 ("Delete chat" stays in the ⋮ menu).
+   */
+  private int getLeaveJoinOptionId () {
+    IntList ids = new IntList(3);
+    StringList strings = new StringList(3);
+    tdlib.ui().addDeleteChatOptions(getChatId(), ids, strings, false, true);
+    if (ids.contains(R.id.btn_returnToChat)) {
+      return R.id.btn_returnToChat;
+    }
+    int index = ids.indexOf(R.id.btn_removeChatFromList);
+    if (index != -1) {
+      String label = strings.get()[index];
+      if (label.equals(Lang.getString(R.string.LeaveChannel)) || label.equals(Lang.getString(R.string.LeaveMegaMenu))) {
+        return R.id.btn_removeChatFromList;
+      }
+    }
+    return 0;
+  }
+
+  /** Delete and leave options of the ⋮ menu of a group or channel, without the one in the row of profile actions. */
+  private void addDeleteChatMenuOptions (IntList ids, StringList strings) {
+    IntList optionIds = new IntList(3);
+    StringList optionStrings = new StringList(3);
+    tdlib.ui().addDeleteChatOptions(getChatId(), optionIds, optionStrings, false, true);
+    int movedOptionId = hasProfileAction(R.id.btn_vgProfileLeaveJoin) ? getLeaveJoinOptionId() : 0;
+    String[] labels = optionStrings.get();
+    for (int i = 0; i < optionIds.size(); i++) {
+      if (optionIds.get(i) != movedOptionId) {
+        ids.append(optionIds.get(i));
+        strings.append(labels[i]);
+      }
+    }
+  }
+
+  /** Adds the row of profile actions right after the empty offset under the header (build*Cells). */
+  private void addProfileActionsItem (List<ListItem> items) {
+    profileActions = buildProfileActions();
+    hasProfileActions = !profileActions.isEmpty();
+    if (hasProfileActions) {
+      items.add(new ListItem(VIEW_TYPE_PROFILE_ACTIONS, R.id.btn_vgProfileActions));
+    }
+  }
+
+  private void checkProfileActions () {
+    if (baseAdapter == null || isEditing() || baseAdapter.getItems().isEmpty()) {
+      return;
+    }
+    List<ProfileActionsView.Action> actions = buildProfileActions();
+    boolean hasActions = !actions.isEmpty();
+    profileActions = actions;
+    if (hasActions != hasProfileActions) {
+      hasProfileActions = hasActions;
+      if (hasActions) {
+        baseAdapter.getItems().add(1, new ListItem(VIEW_TYPE_PROFILE_ACTIONS, R.id.btn_vgProfileActions));
+        baseAdapter.notifyItemInserted(1);
+      } else {
+        baseAdapter.getItems().remove(1);
+        baseAdapter.notifyItemRemoved(1);
+      }
+      onItemsHeightProbablyChanged();
+    } else if (hasActions) {
+      View view = baseRecyclerView != null ? baseRecyclerView.getLayoutManager().findViewByPosition(1) : null;
+      if (view instanceof ProfileActionsView) {
+        ((ProfileActionsView) view).setActions(actions);
+      } else {
+        baseAdapter.notifyItemChanged(1);
+      }
+    }
+  }
+
+  /** The buttons fade and shrink out as the header collapses into the small app bar. */
+  private float getProfileActionsExpandFactor () {
+    return baseRecyclerView instanceof ComplexRecyclerView ? ((ComplexRecyclerView) baseRecyclerView).getScrollFactor() : 1f;
+  }
+
+  private void updateProfileActionsExpandFactor () {
+    if (!hasProfileActions) {
+      return;
+    }
+    View view = baseRecyclerView.getLayoutManager().findViewByPosition(1);
+    if (view instanceof ProfileActionsView) {
+      ((ProfileActionsView) view).setExpandFactor(getProfileActionsExpandFactor());
+    }
+  }
+
+  private void onProfileActionPressed (View view, ProfileActionsView.Action action) {
+    final int id = action.id;
+    if (id == R.id.btn_vgProfileChat) {
+      openProfileChat();
+    } else if (id == R.id.btn_vgProfileSound) {
+      // Exactly the former "Notifications" row (no long press).
+      tdlib.ui().showMuteOptions(this, chat.id, true, null);
+    } else if (id == R.id.btn_vgProfileCall) {
+      if (user != null && userFull != null) {
+        tdlib.context().calls().makeCall(this, user.id, userFull);
+      }
+    } else if (id == R.id.btn_vgProfileShare) {
+      if (mode == Mode.USER || mode == Mode.SECRET) {
+        tdlib.ui().handleProfileMore(this, R.id.more_btn_share, user, userFull);
+      } else {
+        share(true);
+      }
+    } else if (id == R.id.btn_vgProfileEdit) {
+      tdlib.ui().handleProfileMore(this, R.id.more_btn_edit, user, userFull);
+    } else if (id == R.id.btn_vgProfileBlockBot) {
+      toggleUserBlocked();
+    } else if (id == R.id.btn_vgProfileDiscuss) {
+      if (supergroup != null) {
+        tdlib.ui().openLinkedChat(this, supergroup.id, false, new TdlibUi.ChatOpenParameters().keepStack().removeDuplicates());
+      }
+    } else if (id == R.id.btn_vgProfileLeaveJoin) {
+      int optionId = getLeaveJoinOptionId();
+      if (optionId != 0) {
+        tdlib.ui().processLeaveButton(this, null, getChatId(), optionId, null);
+      }
+    }
+  }
+
+  // Personal channel (as in the official app: "Channel" card with the channel row and its last post above the info)
 
   private static final int CUSTOM_TYPE_PERSONAL_CHANNEL = 1;
   private static final int VIEW_TYPE_PERSONAL_CHANNEL = ListItem.TYPE_CUSTOM - CUSTOM_TYPE_PERSONAL_CHANNEL;
-  /** Header, channel row, shadow bottom, shadow top: the info block follows. */
-  private static final int PERSONAL_CHANNEL_BLOCK_SIZE = 4;
+  /** Card (ProfileChannelCardView: "Channel" header, subscribers, channel row), shadow bottom, shadow top: the info block follows. */
+  private static final int PERSONAL_CHANNEL_BLOCK_SIZE = 3;
 
   private long personalChatId;
   private int personalChatRequestId;
@@ -2744,15 +2961,12 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       block.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       block.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgBotStars, R.drawable.vg_stars_outline_24, R.string.vg_BotBalanceStars));
     } else {
-      // A block of its own below notifications, as the Stars card above the shared media of the official profile.
-      int notificationsIndex = baseAdapter.indexOfViewById(R.id.btn_notifications);
-      for (int i = notificationsIndex; notificationsIndex != -1 && i < items.size(); i++) {
-        if (items.get(i).getViewType() == ListItem.TYPE_SHADOW_BOTTOM) {
-          insertAt = i + 1;
-          break;
-        }
+      // A block of its own below the info block (items with separators and a shadow bottom), as the Stars card above
+      // the shared media of the official profile.
+      insertAt = getTopItemsStart() + (baseHeaderItemCount > 0 ? baseHeaderItemCount * 2 : 0);
+      if (baseHeaderItemCount > 0) {
+        block.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
       }
-      block.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
       block.add(new ListItem(ListItem.TYPE_VALUED_SETTING, R.id.btn_vgBotStars, R.drawable.vg_stars_outline_24, R.string.vg_BotBalanceStars));
       block.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
@@ -2764,9 +2978,14 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     onItemsHeightProbablyChanged();
   }
 
+  /** Index of the personal channel block: after the empty offset and the row of profile actions. */
+  private int getPersonalChatBlockStart () {
+    return 1 + (hasProfileActions ? 1 : 0);
+  }
+
   /** Index of the first item of the info block (peer id, username, bio, phone...). */
   private int getTopItemsStart () {
-    return 1 + (hasPersonalChatBlock ? PERSONAL_CHANNEL_BLOCK_SIZE : 0);
+    return getPersonalChatBlockStart() + (hasPersonalChatBlock ? PERSONAL_CHANNEL_BLOCK_SIZE : 0);
   }
 
   private void checkPersonalChat () {
@@ -2824,24 +3043,22 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     return Td.hasUsername(supergroup) || TD.isMember(supergroup.status);
   }
 
-  private String getPersonalChatHeader (TdApi.Chat chat) {
+  /** Secondary text next to the "Channel" header of the card. */
+  private @Nullable String getPersonalChatSubscribers (TdApi.Chat chat) {
     TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chat.id);
-    String header = Lang.getString(R.string.PersonalChannel);
-    if (supergroup != null && supergroup.memberCount > 0) {
-      header = header + " · " + Lang.plural(R.string.xSubscribers, supergroup.memberCount);
-    }
-    return header;
+    return supergroup != null && supergroup.memberCount > 0 ? Lang.plural(R.string.xSubscribers, supergroup.memberCount) : null;
   }
 
   private void setPersonalChat (@Nullable TdApi.Chat chat, @Nullable TdApi.Message lastMessage) {
     if (baseAdapter == null) {
       return;
     }
+    final int start = getPersonalChatBlockStart();
     if (chat == null) {
       if (hasPersonalChatBlock) {
         hasPersonalChatBlock = false;
-        baseAdapter.getItems().subList(1, 1 + PERSONAL_CHANNEL_BLOCK_SIZE).clear();
-        baseAdapter.notifyItemRangeRemoved(1, PERSONAL_CHANNEL_BLOCK_SIZE);
+        baseAdapter.getItems().subList(start, start + PERSONAL_CHANNEL_BLOCK_SIZE).clear();
+        baseAdapter.notifyItemRangeRemoved(start, PERSONAL_CHANNEL_BLOCK_SIZE);
         onItemsHeightProbablyChanged();
       }
       return;
@@ -2851,22 +3068,20 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     displayChat.lastMessage = lastMessage;
     displayChat.positions = new TdApi.ChatPosition[0];
     TGChat item = new TGChat(this, ChatPosition.CHAT_LIST_MAIN, displayChat, true);
-    String header = getPersonalChatHeader(chat);
+    String subscribers = getPersonalChatSubscribers(chat);
     if (hasPersonalChatBlock) {
-      ListItem headerItem = baseAdapter.getItems().get(1);
-      headerItem.setString(header);
-      baseAdapter.getItems().get(2).setData(item);
-      baseAdapter.notifyItemRangeChanged(1, 2);
+      baseAdapter.getItems().get(start).setData(item).setStringValue(subscribers);
+      baseAdapter.notifyItemChanged(start);
       return;
     }
     hasPersonalChatBlock = true;
     List<ListItem> block = new ArrayList<>(PERSONAL_CHANNEL_BLOCK_SIZE);
-    block.add(new ListItem(ListItem.TYPE_HEADER, R.id.btn_personalChannelHeader, 0, header, false));
-    block.add(new ListItem(VIEW_TYPE_PERSONAL_CHANNEL, R.id.btn_personalChannel).setData(item).setLongId(chat.id));
+    // One card, as the info rows: the "Channel" header and the subscribers are drawn inside it.
+    block.add(new ListItem(VIEW_TYPE_PERSONAL_CHANNEL, R.id.btn_personalChannel).setData(item).setLongId(chat.id).setStringValue(subscribers));
     block.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     block.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    baseAdapter.getItems().addAll(1, block);
-    baseAdapter.notifyItemRangeInserted(1, block.size());
+    baseAdapter.getItems().addAll(start, block);
+    baseAdapter.notifyItemRangeInserted(start, block.size());
     onItemsHeightProbablyChanged();
   }
 
@@ -2874,10 +3089,10 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     index = Math.min(baseHeaderItemCount, index);
     final int start = getTopItemsStart();
     if (baseHeaderItemCount == 0) {
+      // The info block: [items..., shadow bottom], followed by the media.
       baseAdapter.getItems().add(start, item);
       baseAdapter.getItems().add(start + 1, new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-      baseAdapter.getItems().add(start + 2, new ListItem(ListItem.TYPE_SHADOW_TOP));
-      baseAdapter.notifyItemRangeInserted(start, 3);
+      baseAdapter.notifyItemRangeInserted(start, 2);
     } else if (index == 0) {
       baseAdapter.getItems().add(start, item);
       baseAdapter.getItems().add(start + 1, new ListItem(item.getViewType() == ListItem.TYPE_RADIO_SETTING ? ListItem.TYPE_SEPARATOR_FULL : ListItem.TYPE_SEPARATOR));
@@ -2900,9 +3115,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     ListItem removedItem = baseAdapter.getItems().remove(index); // item itself
     if (baseHeaderItemCount == 0) {
       baseAdapter.getItems().remove(index); // shadow bottom
-      baseAdapter.getItems().remove(index); // shadow top
-      baseAdapter.notifyItemRangeRemoved(index, 3);
-    } else if (index == 1) {
+      baseAdapter.notifyItemRangeRemoved(index, 2);
+    } else if (index == getTopItemsStart()) {
       baseAdapter.getItems().remove(index); // bottom separator
       baseAdapter.notifyItemRangeRemoved(index, 2);
     } else {
@@ -3312,6 +3526,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     ArrayList<ListItem> items = new ArrayList<>(20);
 
     items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET));
+    addProfileActionsItem(items);
 
     int addedCount = 0;
 
@@ -3339,16 +3554,11 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       addedCount++;
     }
 
+    // Notifications are the "Sound" button of the profile actions: the info block is followed by the media.
     if (addedCount > 0) {
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
     baseHeaderItemCount = addedCount;
-
-    if (addedCount > 0) {
-      items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    }
-    items.add(newNotificationItem());
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     addMediaItems(items);
 
@@ -3397,6 +3607,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     ArrayList<ListItem> items = new ArrayList<>(20);
 
     items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET));
+    addProfileActionsItem(items);
 
     int addedCount = 0;
 
@@ -3432,16 +3643,11 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       addedCount++;
     }
 
+    // Notifications are the "Sound" button of the profile actions: the info block is followed by the media.
     if (addedCount > 0) {
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     }
     baseHeaderItemCount = addedCount;
-
-    if (addedCount > 0) {
-      items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    }
-    items.add(newNotificationItem());
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     addMediaItems(items);
 
@@ -5246,8 +5452,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       } else {
         showDescriptionOptions(false, descriptionLanguage = null);
       }
-    } else if (viewId == R.id.btn_notifications) {
-      tdlib.ui().showMuteOptions(this, chat.id, true, null);
     } else if (viewId == R.id.btn_encryptionKey) {
       if (secretChat != null && secretChat.keyHash != null && secretChat.keyHash.length > 0) {
         EncryptionKeyController controller = new EncryptionKeyController(context, tdlib);
@@ -5846,6 +6050,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       case ListItem.TYPE_INFO:
       case ListItem.TYPE_SLIDER:
       case ListItem.TYPE_CHAT_BETTER:
+      // Personal channel card (setSegmented(VIEW_TYPE_PERSONAL_CHANNEL))
+      case VIEW_TYPE_PERSONAL_CHANNEL:
         return true;
     }
     return false;
@@ -5887,7 +6093,12 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   private int calculateRowHeight (int width, ListItem item) {
     final int itemId = item.getId();
     if (item.getViewType() == VIEW_TYPE_PERSONAL_CHANNEL) {
-      return ChatView.getViewHeight(Settings.instance().getChatListMode());
+      // "Channel" header with the subscribers and the channel row (ProfileChannelCardView.onMeasure).
+      return ProfileChannelCardView.getViewHeight();
+    }
+    if (item.getViewType() == VIEW_TYPE_PROFILE_ACTIONS) {
+      // Buttons and the gap to the first card, minus the part drawn over the empty offset's gap.
+      return ProfileActionsView.getViewHeight();
     }
     switch (item.getViewType()) {
       case ListItem.TYPE_INFO_MULTILINE: {
@@ -6694,6 +6905,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         if (mode != Mode.EDIT_BOT_USER) {
           checkUsername();
           checkPhone();
+          checkProfileActions();
         } else if (!TD.canEditBot(user)) {
           // Bot is no longer editable.
           // This is possible when the account got deleted while this screen is open.
@@ -6851,10 +7063,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   public void onChatMessageTtlSettingChanged (long chatId, int messageAutoDeleteTime) {
     tdlib.ui().post(() -> {
       if (chat != null && chat.id == chatId) {
-        final boolean res = tdlib.ui().updateTTLButton(getMenuId(), headerView, chat, false);
-        if (headerView != null) {
-          headerView.updateButton(getMenuId(), R.id.menu_btn_call, data -> data.setTranslationX(res ? 0f : Screen.dp(StopwatchHeaderButton.WIDTH)));
-        }
+        // The call button that moved with the stopwatch is in the row of profile actions.
+        tdlib.ui().updateTTLButton(getMenuId(), headerView, chat, false);
       }
     });
   }
@@ -6878,6 +7088,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         if (ProfileController.this.group != null && ProfileController.this.group.id == basicGroup.id) {
           ProfileController.this.group = basicGroup;
           setHeaderText();
+          checkProfileActions();
           if (migratedToSupergroup) {
             replaceWithSupergroup(basicGroup.upgradedToSupergroupId);
           }
@@ -6936,6 +7147,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           checkEasterEggs();
           checkConvertToBroadcastGroup();
           updateHeader(false);
+          checkProfileActions();
         }
       });
     } else if (mode == Mode.EDIT_CHANNEL || mode == Mode.EDIT_SUPERGROUP) {
@@ -7060,7 +7272,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     runOnUiThreadOptional(() -> {
       if (chat.id == chatId) {
         setHeaderMute(true);
-        baseAdapter.updateValuedSettingById(R.id.btn_notifications);
+        checkProfileActions();
       }
     });
   }
@@ -7069,7 +7281,17 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     runOnUiThreadOptional(() -> {
       if (scope.getConstructor() == tdlib.notifications().scope(chat.id).getConstructor()) {
         setHeaderMute(true);
-        baseAdapter.updateValuedSettingById(R.id.btn_notifications);
+        checkProfileActions();
+      }
+    });
+  }
+
+  @Override
+  public void onChatBlockListChanged (long chatId, @Nullable TdApi.BlockList blockList) {
+    // "Stop" / "Start" of a bot.
+    runOnUiThreadOptional(() -> {
+      if (chat != null && chat.id == chatId) {
+        checkProfileActions();
       }
     });
   }

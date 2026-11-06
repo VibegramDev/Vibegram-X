@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: профиль → ряд кнопок действий под именем (ProfileActionsView) -->
+<resources>
+  <string name="vg_ProfileActionChat">Чат</string>
+  <string name="vg_ProfileActionSound">Звук</string>
+  <string name="vg_ProfileActionMuted">Без звука</string>
+  <string name="vg_ProfileActionCall">Звонок</string>
+  <string name="vg_ProfileActionShare">Поделиться</string>
+  <string name="vg_ProfileActionEdit">Изменить</string>
+  <string name="vg_ProfileActionStopBot">Остановить</string>
+  <string name="vg_ProfileActionStartBot">Запустить</string>
+  <string name="vg_ProfileActionDiscuss">Обсуждение</string>
+  <string name="vg_ProfileActionLeave">Покинуть</string>
+  <string name="vg_ProfileActionJoin">Вступить</string>
+</resources>
