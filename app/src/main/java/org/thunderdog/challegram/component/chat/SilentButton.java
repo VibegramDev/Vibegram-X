@@ -125,7 +125,7 @@ public class SilentButton extends View {
       return;
     }
 
-    // Slash of Material Symbols "notifications_off"
+    // Slash of Telegram msg_mute / CrossOutDrawable
     int alpha = (int) (255f * Math.min(1f, ((Screen.dpf(24f) * factor) / Screen.dpf(8f))));
     DrawAlgorithms.drawCross(c, cx, cy, factor,
       alpha == 255 ? Theme.iconColor() : ColorUtils.color(alpha, Theme.iconColor()),

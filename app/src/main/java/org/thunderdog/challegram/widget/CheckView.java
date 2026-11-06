@@ -358,7 +358,7 @@ public class CheckView extends View {
           }*/
           case MODE_LOCATION:
           case MODE_GALLERY: {
-            // M3 selection: primary circle with an onPrimary check (Material Symbols Rounded "check", 24dp).
+            // M3 selection: primary circle with an onPrimary check (Telegram ic_ab_done, 24dp, 2dp stroke).
             // Gallery keeps its white ring: it is drawn over media, not over a theme surface.
             final int cx, cy;
             if (mode == MODE_LOCATION) {

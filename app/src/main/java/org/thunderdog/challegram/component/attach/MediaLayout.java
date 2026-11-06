@@ -184,6 +184,14 @@ public class MediaLayout extends FrameLayoutFix implements
     return parent.tdlib();
   }
 
+  /**
+   * @return true if the screen this layout was opened from is the given stack item, directly or as a page of it
+   * (a chat inside the topic tabs of a forum, of a bot with topics or of channel direct messages: the stack item is the tabs screen).
+   */
+  public boolean isOpenedFrom (@Nullable ViewController<?> stackItem) {
+    return stackItem != null && (stackItem == parent || stackItem == parent.getParentOrSelf());
+  }
+
   public void initDefault (MessagesController target) {
     init(MODE_DEFAULT, target);
   }

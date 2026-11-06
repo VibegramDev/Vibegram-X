@@ -87,8 +87,8 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
       for (int y = 0; y < bitmap.getHeight(); y++) {
         int color = bitmap.getPixel(centerX, y);
 
-        boolean hadColor = Color.alpha(prevColor) != 0;
-        boolean hasColor = Color.alpha(color) != 0;
+        boolean hadColor = Color.alpha(prevColor) >= 128;
+        boolean hasColor = Color.alpha(color) >= 128;
         if (hadColor != hasColor) {
           if (hasColor) {
             if (startTopY == -1) {
@@ -107,8 +107,9 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
         prevColor = color;
       }
 
+      // Pixels at least half covered, so the anti-aliased edges of the 1.67dp lines are measured at their real size
       this.verticalLineSpacing = secondaryTopY - endTopY;
-      this.lineSize = endTopY - startTopY - 1;
+      this.lineSize = endTopY - startTopY;
       this.verticalInset = startTopY;
 
       prevColor = 0;
@@ -119,8 +120,8 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
       for (int x = bitmap.getWidth() - 1; x >= 0; x--) {
         int color = bitmap.getPixel(x, verticalInset);
 
-        boolean hadColor = Color.alpha(prevColor) != 0;
-        boolean hasColor = Color.alpha(color) != 0;
+        boolean hadColor = Color.alpha(prevColor) >= 128;
+        boolean hasColor = Color.alpha(color) >= 128;
 
         if (hadColor != hasColor) {
           if (hasColor) {
@@ -156,7 +157,7 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
 
       this.horizontalInset = bitmap.getWidth() - startRightX - 1;
       this.horizontalLineSpacing = endRightX - secondaryRightX;
-      this.rectWidth = startRightX - endRightX - 1;
+      this.rectWidth = startRightX - endRightX;
 
       if (BuildConfig.DEBUG) {
         Log.v("Measured icon in %dms", SystemClock.uptimeMillis() - now);
@@ -257,13 +258,11 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
 
     if (factor > 0f) {
       float rectWidth = factor <= 1f ? this.rectWidth * factor : MathUtils.fromTo(this.rectWidth, cRight - (cLeft + lineSize + horizontalLineSpacing), factor - 1f);
-      c.drawRect(
-        cRight - rectWidth,
-        cTop,
-        cRight,
-        cTop + lineSize * 2 + verticalLineSpacing,
-        Paints.fillingPaint(contentColor)
-      );
+      // Media placeholder with the 1.5dp corners of Telegram's small image glyphs
+      RectF mediaRect = Paints.getRectF();
+      mediaRect.set(cRight - rectWidth, cTop, cRight, cTop + lineSize * 2 + verticalLineSpacing);
+      float mediaRadius = Math.min(Screen.dpf(1.5f), rectWidth / 2f);
+      c.drawRoundRect(mediaRect, mediaRadius, mediaRadius, Paints.fillingPaint(contentColor));
     }
 
     float lineStartX = cLeft + lineSize + horizontalLineSpacing;
@@ -275,7 +274,7 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
     }
     float bottomLineEndX = MathUtils.fromTo(cRight - rectWidth - horizontalLineSpacing, cRight, hasMedia.getFloatValue());
 
-    // Text lines with round caps, like the strokes of Material Symbols Rounded
+    // Text lines with round caps, like the strokes of Telegram's icons
     drawTextLine(c, lineStartX, cTop, topLineEndX, contentColor);
     drawTextLine(c, lineStartX, cTop + lineSize + verticalLineSpacing, topLineEndX, contentColor);
     drawTextLine(c, lineStartX, cTop + lineSize * 2 + verticalLineSpacing * 2, bottomLineEndX, contentColor);

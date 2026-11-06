@@ -386,7 +386,8 @@ public class RecordAudioVideoController implements
       this.cornerView = new View(context) {
         @Override
         protected void onDraw (Canvas c) {
-          DrawAlgorithms.drawDirection(c, 0, getMeasuredHeight() / 2, Theme.textDecentColor(), Gravity.LEFT);
+          // Telegram's "slide to cancel" arrow (ChatActivityEnterView.SlideTextView): arms 4dp back, 5dp to the side, 1.6dp
+          DrawAlgorithms.drawDirection(c, 0, getMeasuredHeight() / 2, Theme.textDecentColor(), Gravity.LEFT, Screen.dpf(4f), Screen.dpf(5f), Screen.dpf(1.6f));
         }
       };
       this.cornerView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(12f), Screen.dp(16f), Gravity.CENTER));

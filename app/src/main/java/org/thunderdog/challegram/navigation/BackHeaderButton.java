@@ -203,17 +203,19 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
     c.save();
     c.translate(getPaddingLeft() + getMeasuredWidth() / 2, getMeasuredHeight() / 2);
 
-    // Material Symbols Rounded geometry (24dp icon, 2dp stroke with round caps), centre lines in dp:
-    // menu: three 16dp bars 5dp apart; arrow_back: shaft from the tip (-6.6) to 7, arms ending at (0, ±6.6);
-    // close: diagonals of ±5.6dp, i.e. a ±7.92dp plus turned by 45°.
+    // Telegram MenuDrawable / BackDrawable geometry (2dp stroke with round caps), centre lines in dp:
+    // menu: three 16dp bars 5dp apart (18dp with the caps); back: shaft from 6.75 behind the tip side to 7,
+    // arms from the tip (7.25, ±0.25) to (0, ±6.5); close: a ±8dp plus turned by 45° (BackDrawable at rotation 1).
     // The glyph is built in a frame turned by 180°, so the arrow tip lies on local +x (mirrored in RTL).
     final float dir = Lang.rtl() ? -1f : 1f;
     final float menuHalfWidth = Screen.dpf(8f);
     final float menuGap = Screen.dpf(5f);
-    final float arrowTip = Screen.dpf(6.6f);
+    final float arrowTip = Screen.dpf(6.75f);
+    final float arrowHeadTip = Screen.dpf(7.25f);
+    final float arrowHeadTipY = Screen.dpf(.25f);
     final float arrowTail = Screen.dpf(7f);
-    final float arrowHead = Screen.dpf(6.6f);
-    final float closeHalfSize = Screen.dpf(7.92f);
+    final float arrowHead = Screen.dpf(6.5f);
+    final float closeHalfSize = Screen.dpf(8f);
 
     if (factor <= 1f) {
       final float f = Math.abs(factor);
@@ -222,8 +224,8 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
 
       final float startX = dir * MathUtils.fromTo(-menuHalfWidth, 0, f);
       final float startY = MathUtils.fromTo(menuGap, arrowHead, f);
-      final float endX = dir * MathUtils.fromTo(menuHalfWidth, arrowTip, f);
-      final float endY = MathUtils.fromTo(menuGap, 0, f);
+      final float endX = dir * MathUtils.fromTo(menuHalfWidth, arrowHeadTip, f);
+      final float endY = MathUtils.fromTo(menuGap, arrowHeadTipY, f);
 
       c.drawLine(startX, -startY, endX, -endY, paint);
       c.drawLine(startX, startY, endX, endY, paint);
@@ -246,10 +248,11 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
       c.drawLine(dir * MathUtils.fromTo(-arrowTail, -closeHalfSize, f), 0, dir * MathUtils.fromTo(arrowTip, closeHalfSize, f), 0, paint);
 
       final float startY = MathUtils.fromTo(arrowHead, closeHalfSize, f);
-      final float endX = dir * MathUtils.fromTo(arrowTip, 0, f);
+      final float endX = dir * MathUtils.fromTo(arrowHeadTip, 0, f);
+      final float endY = MathUtils.fromTo(arrowHeadTipY, 0, f);
 
-      c.drawLine(0, -startY, endX, 0, paint);
-      c.drawLine(0, startY, endX, 0, paint);
+      c.drawLine(0, -startY, endX, -endY, paint);
+      c.drawLine(0, startY, endX, endY, paint);
     }
 
     c.restore();

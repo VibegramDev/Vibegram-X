@@ -41,9 +41,9 @@ public class ClearButton extends HeaderButton {
 
   private final int totalWidth = Screen.dp(49f);
   private final int cx = (int) ((float) totalWidth * .5f);
-  // Material Symbols "close": arms span 11.2dp with a 2dp round-capped stroke
-  private final int lineHeight = Screen.dp(11.2f);
-  private final int lineRadius = Screen.dp(6f); // progress radius
+  // Telegram CloseProgressDrawable2: arms of 8dp from the centre at 45° (11.31dp span), 2dp round-capped stroke
+  private final int lineHeight = Screen.dp(11.31f);
+  private final int lineRadius = Screen.dp(8f); // progress radius, as the arc of Telegram's CloseProgressDrawable2
 
   private final Paint paint;
 

@@ -203,11 +203,12 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
           c.scale(scale, scale, cx, cy);
         }
 
-        // Material Symbols Rounded `check`: 2dp stroke with round caps and join, centre line in dp
-        // from the short arm end through the corner to the long arm end.
-        final float startX = cx + Screen.dpf(-6.7125f), startY = cy + Screen.dpf(.2875f);
-        final float cornerX = cx + Screen.dpf(-2.45f), cornerY = cy + Screen.dpf(4.575f);
-        final float endX = cx + Screen.dpf(6.725f), endY = cy + Screen.dpf(-4.625f);
+        // Telegram `input_done` (the edit-mode button of ChatActivityEnterView): 1.84dp stroke with round caps and
+        // join, centre line in dp from the short arm end through the corner to the long arm end.
+        final float startX = cx + Screen.dpf(-6.08f), startY = cy + Screen.dpf(.83f);
+        final float cornerX = cx + Screen.dpf(-2.17f), cornerY = cy + Screen.dpf(4.75f);
+        final float endX = cx + Screen.dpf(6.83f), endY = cy + Screen.dpf(-4.41f);
+        strokePaint.setStrokeWidth(Screen.dpf(1.84f));
 
         if (activeFactor == 1f || activeFactor == 0f) {
           checkPath.reset();
@@ -254,6 +255,7 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
           strokePaint.setColor(activeColor);
           c.drawPath(checkPath, strokePaint);
         }
+        strokePaint.setStrokeWidth(Screen.dp(2f));
 
         c.restore();
       }
@@ -281,8 +283,9 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
       if (inlineProgressFactor != .5f) {
         c.save();
 
+        // Telegram CloseProgressDrawable2: 2dp bars of 8dp from the centre, around the 8dp progress arc
         int width = Screen.dp(2f);
-        int totalSize = Screen.dp(18f);
+        int totalSize = Screen.dp(16f);
         int halfSize = totalSize / 2;
         int top = cy - halfSize;
         int bottom = cy + halfSize;

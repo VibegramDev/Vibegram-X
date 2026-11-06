@@ -69,3 +69,13 @@ the WEB proxy implementation of [Telegram for Android](https://github.com/DrKLO/
 [Telegram for Android](https://github.com/DrKLO/Telegram), commit `d7deedfa` ("update to 12.3.1"),
 licensed under GPL-2.0-or-later. They replace the Material Symbols drawables of the same name;
 the list is `scripts/icons/tg-mapping.tsv`, the conversion is `scripts/icons/tg_apply.py`.
+
+## Telegram Desktop and Telegram for iOS icons
+
+95 icon drawables in `app/src/main/res/drawable-{mdpi,hdpi,xhdpi,xxhdpi}/` (white PNG alpha masks) are rendered from
+icons of [Telegram Desktop](https://github.com/telegramdesktop/tdesktop), commit `93624f69`, licensed under
+GPL-3.0 (with the OpenSSL exception), and [Telegram for iOS](https://github.com/TelegramMessenger/Telegram-iOS),
+commit `279f89e4`, licensed under GPL-2.0. They are used where Telegram for Android has no matching icon and replace
+the Material Symbols drawables of the same name. Glyphs are rescaled, centred and their stroke weight adjusted to
+match the Telegram for Android set. The list (source file, commit, licence, scale and stroke change per icon) is
+`scripts/icons/tg-extra.tsv`, the conversion is `scripts/icons/tg_extra.py`.

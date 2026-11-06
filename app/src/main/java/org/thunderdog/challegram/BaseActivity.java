@@ -2117,7 +2117,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
         PopupLayout window = windows.get(i);
         View boundView = window.getBoundView();
         ViewController<?> boundController = window.getBoundController();
-        if (isContextual(boundView) || (byNavigation && boundView instanceof StickerSetWrap) || (boundView instanceof MediaLayout && !((navigation.getCurrentStackItem() instanceof MessagesController) || (((MediaLayout) boundView).getMode() == MediaLayout.MODE_AVATAR_PICKER))) || (byNavigation && isContextual(boundController)) ) {
+        if (isContextual(boundView) || (byNavigation && boundView instanceof StickerSetWrap) || (boundView instanceof MediaLayout && !((navigation.getCurrentStackItem() instanceof MessagesController) || ((MediaLayout) boundView).isOpenedFrom(navigation.getCurrentStackItem()) || (((MediaLayout) boundView).getMode() == MediaLayout.MODE_AVATAR_PICKER))) || (byNavigation && isContextual(boundController)) ) {
           window.hideWindow(true);
         }
       }

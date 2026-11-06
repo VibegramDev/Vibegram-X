@@ -36,11 +36,12 @@ public class TriangleView {
     paint.setColor(Theme.headerBackColor());
     paint.setStyle(Paint.Style.FILL);
 
-    width = Screen.dpf(10f);
-    height = Screen.dpf(5f);
+    width = Screen.dpf(10f * SCALE_X);
+    height = Screen.dpf(5f * SCALE_Y);
 
-    // Material Symbols Rounded `arrow_drop_down`: the 10x5dp triangle with rounded corners.
-    // Coordinates are the symbol's 960-unit viewport, (280, 400) being the sharp top-left corner.
+    // Telegram `ic_arrow_drop_down`: a 9.67 x 4.88dp triangle with rounded corners, built from the rounded outline of
+    // the 10 x 5dp Material Symbols `arrow_drop_down` (960-unit viewport, (280, 400) being the sharp top-left corner)
+    // scaled to Telegram's size.
     path = new Path();
     path.moveTo(px(x, 459), py(y, 579));
     path.lineTo(px(x, 314), py(y, 434));
@@ -61,12 +62,14 @@ public class TriangleView {
     path.close();
   }
 
+  private static final float SCALE_X = 9.67f / 10f, SCALE_Y = 4.88f / 5f;
+
   private static float px (float x, float symbolX) {
-    return x + Screen.dpf((symbolX - 280f) / 40f);
+    return x + Screen.dpf((symbolX - 280f) / 40f * SCALE_X);
   }
 
   private static float py (float y, float symbolY) {
-    return y + Screen.dpf((symbolY - 400f) / 40f);
+    return y + Screen.dpf((symbolY - 400f) / 40f * SCALE_Y);
   }
 
   public float getCenterX () {

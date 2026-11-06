@@ -1292,8 +1292,9 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
     }
 
     if (isTrack && progressFactor > 0f) {
-      // Cancel: Material Symbols "close"
-      DrawAlgorithms.drawAnimatedCross(c, x, y, 1f, cloudColor, (int) (Screen.dp(6.5f) * progressFactor));
+      // Cancel: Telegram MediaActionDrawable ICON_CANCEL (arms ±7dp with a 3dp stroke at 48dp, i.e. a 7dp span
+      // and a 1.5dp stroke in the 24dp circle)
+      DrawAlgorithms.drawAnimatedCross(c, x, y, 1f, cloudColor, (int) (Screen.dp(7f) * progressFactor), Screen.dpf(1.5f));
     }
 
     alpha *= (1f - progressFactor) * (1f - hideFactor);
@@ -1302,10 +1303,11 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
       return;
     }
 
-    // Glyphs inside the cloud follow Material Symbols cloud_done / cloud_download,
-    // in units of the main circle of the cloud (r = 7dp at 24dp, stroke 2dp).
+    // Glyphs inside the cloud follow Telegram's MediaActionDrawable (ICON_CHECK / ICON_DOWNLOAD) in units of the
+    // main circle of the cloud, like Telegram's mini download badge; the stroke is the mini one (2dp at r = 11dp),
+    // slightly heavier as the cloud circle is smaller.
     final float glyphRadius = originRadius * (1f - hideFactor);
-    final float strokeWidth = glyphRadius * (2f / 7f);
+    final float strokeWidth = glyphRadius * .22f;
 
     switch (currentState) {
       case TdlibFilesManager.STATE_DOWNLOADED_OR_UPLOADED: {
@@ -1316,9 +1318,10 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
 
         int progressColor = isTrack ? ColorUtils.alphaColor(alpha, Theme.fillingColor()) : ((int) (255f * alpha) << 24) | 0xffffff;
 
-        // check of cloud_done: (-.539, .346) → (-.238, .648) → (.368, .046); the short arm grows first.
-        final float shortArm = .302f, longArm = .606f;
-        final float x1 = x - glyphRadius * .539f, y1 = y + glyphRadius * .346f;
+        // Telegram check (-.375, .042) → (-.125, .292) → (.375, -.208), moved down by .14 to the middle of the
+        // cloud body (the lobes reach 1.29 below the centre); the short arm grows first.
+        final float shortArm = .25f, longArm = .5f;
+        final float x1 = x - glyphRadius * .375f, y1 = y + glyphRadius * .182f;
         final float x2 = x1 + glyphRadius * shortArm, y2 = y1 + glyphRadius * shortArm;
         final float distance = (shortArm + longArm) * factor;
         final Paint paint = DrawAlgorithms.getGlyphPaint(progressColor, strokeWidth);
@@ -1338,9 +1341,9 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
         } else {
           color = ColorUtils.color((int) (255f * alpha), 0xffffffff);
         }
-        // arrow of cloud_download: a slit from the top of the cloud to the tip .514 below the centre,
-        // arms .371 long along each axis
-        DrawAlgorithms.drawGlyphArrowDownward(c, x, y - glyphRadius, y + glyphRadius * .514f, glyphRadius * .371f, DrawAlgorithms.getGlyphPaint(color, strokeWidth), true);
+        // Telegram download arrow (shaft of .75 with a 90° head, arms .333 long along each axis), moved down by .14
+        // to the middle of the cloud body
+        DrawAlgorithms.drawGlyphArrowDownward(c, x, y - glyphRadius * .235f, y + glyphRadius * .515f, glyphRadius * .333f, DrawAlgorithms.getGlyphPaint(color, strokeWidth), false);
         break;
       }
     }

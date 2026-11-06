@@ -658,12 +658,12 @@ public class TGMessagePoll extends TGMessage implements ClickHelper.Delegate, Co
       if (explanationActive > 0f) {
         Drawable explanationDrawableActive = getExplanationDrawable(true);
         int progressColor = getProgressColor();
-        // Rays around Material Symbols "lightbulb" (22dp): the stroke weight of the bulb outline, round caps,
-        // centred on the bulb (2.3dp above the icon centre).
-        float size = Screen.dp(2f) * (22f / 24f);
+        // Rays around Telegram msg_emoji_objects (lightbulb, drawn at 22dp): the stroke weight of the bulb outline
+        // (1.4dp at 24dp), round caps, centred on the bulb (2dp above the centre of the 24dp icon).
+        float size = Screen.dpf(1.4f) * (22f / 24f);
         Drawables.draw(c, explanationDrawableActive, cx - explanationDrawable.getMinimumWidth() / 2f, cy - explanationDrawable.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(hintVisibility * explanationActive, progressColor)));
 
-        cy -= Screen.dp(2.3f);
+        cy -= Screen.dpf(2f) * (22f / 24f);
 
         int lineColor = ColorUtils.alphaColor(hintVisibility * explanationActive, progressColor);
         int lineLength = Screen.dp(2.5f);

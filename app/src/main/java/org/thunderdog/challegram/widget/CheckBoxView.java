@@ -98,7 +98,7 @@ public class CheckBoxView extends View {
   }
 
   /**
-   * M3 checkbox (18dp, 2dp corners, 2dp outline) drawn by a parent view, e.g. next to a selectable message.
+   * M3-coloured checkbox in Telegram's CheckBoxSquare geometry (18dp, 2dp corners, 2dp outline) drawn by a parent view, e.g. next to a selectable message.
    * Unchecked: {@code outlineColor} outline. Checked: {@code fillColor} container with a {@code checkColor} check mark.
    */
   public static void drawCheckBox (Canvas c, float cx, float cy, float factor, float alpha, int outlineColor, int fillColor, int checkColor) {
@@ -116,7 +116,7 @@ public class CheckBoxView extends View {
     final float scaleFactor = 1f - (rectFactor == 1f ? 1f - checkFactor : rectFactor) * SCALE_DIFF;
     final float strokeWidth = Screen.dp(2f);
     final float half = size / 2f;
-    // 2dp container corners (Material Symbols "check_box"), a circle for quiz answers.
+    // 2dp container corners (Telegram CheckBoxSquare), a circle for quiz answers.
     final float radius = MathUtils.fromTo(strokeWidth, half, circleFactor);
     // Unchecked: 2dp outline. Checking fills the container from the outline to the centre.
     final float hole = (half - strokeWidth) * (1f - rectFactor);
@@ -145,15 +145,15 @@ public class CheckBoxView extends View {
     Views.restore(c, restoreToCount);
   }
 
-  // Check marks of Material Symbols Rounded (wght 400): centre line {start x, start y, corner x, corner y, end x, end y}
-  // in dp from the centre of the container, drawn with a 2dp stroke with round caps and joins.
+  // Check marks of Telegram for Android: centre line {start x, start y, corner x, corner y, end x, end y, stroke}
+  // in dp from the centre of the container, drawn with round caps and joins.
 
-  /** "check_box": the mark inside the 18dp box. */
-  public static final float[] MARK_BOX = {-4.25f, -.05f, -1.4f, 2.815f, 4.25f, -2.85f};
-  /** "check_circle": the mark inside the 20dp circle. */
-  public static final float[] MARK_CIRCLE = {-4.25f, .35f, -1.4f, 3.215f, 4.25f, -2.45f};
-  /** "check": the 24dp icon. */
-  public static final float[] MARK_CHECK = {-6.71f, .29f, -2.45f, 4.57f, 6.72f, -4.61f};
+  /** CheckBoxSquare: the mark inside the 18dp box, 2dp stroke. */
+  public static final float[] MARK_BOX = {-5f, 1f, -2f, 4f, 5f, -3f, 2f};
+  /** CheckBoxBase: the mark inside the round checkbox (20–24dp), short arm 4dp, long arm 9dp, 1.9dp stroke. */
+  public static final float[] MARK_CIRCLE = {-4.33f, 1.17f, -1.5f, 4f, 4.86f, -2.36f, 1.9f};
+  /** ic_ab_done: the 24dp check icon, 2dp stroke. */
+  public static final float[] MARK_CHECK = {-7.33f, 1.33f, -2.83f, 5.33f, 7.67f, -5f, 2f};
 
   private static Paint markPaint;
   private static Path markPath;
@@ -167,11 +167,12 @@ public class CheckBoxView extends View {
       return;
     }
     final float dp = Screen.dpf(1f) * scale;
-    final float x1 = cx + mark[0] * dp;
+    // The indeterminate dash keeps 8dp between the cap centres (12dp in the 14dp inside of the box at most)
+    final float x1 = cx + MathUtils.fromTo(mark[0], -4f, dash) * dp;
     final float y1 = cy + MathUtils.fromTo(mark[1], 0f, dash) * dp;
     final float x2 = cx + MathUtils.fromTo(mark[2], 0f, dash) * dp;
     final float y2 = cy + MathUtils.fromTo(mark[3], 0f, dash) * dp;
-    final float x3 = cx + mark[4] * dp;
+    final float x3 = cx + MathUtils.fromTo(mark[4], 4f, dash) * dp;
     final float y3 = cy + MathUtils.fromTo(mark[5], 0f, dash) * dp;
 
     if (markPaint == null) {
@@ -182,7 +183,7 @@ public class CheckBoxView extends View {
       markPath = new Path();
     }
     markPaint.setColor(color);
-    markPaint.setStrokeWidth(Screen.dpf(2f) * scale);
+    markPaint.setStrokeWidth(Screen.dpf(mark.length > 6 ? mark[6] : 2f) * scale);
 
     markPath.reset();
     markPath.moveTo(x1, y1);

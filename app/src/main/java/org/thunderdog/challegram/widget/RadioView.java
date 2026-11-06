@@ -109,6 +109,7 @@ public class RadioView extends View implements FactorAnimator.Target {
     float cx = paddingLeft + (getMeasuredWidth() - paddingLeft - getPaddingRight()) / 2;
     float cy = paddingTop + (getMeasuredHeight() - paddingTop - getPaddingBottom()) / 2;
 
+    // Telegram RadioButton at its 20dp list size (RadioCell): 2dp ring of radius 9dp (stroke centre), 5dp dot.
     final float radius = Screen.dp(9f);
     final float innerRadius = Screen.dp(5f);
 

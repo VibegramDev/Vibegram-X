@@ -1438,10 +1438,11 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     }
   }
 
-  // Material Symbols expand_more / chevron_right: arms of 4dp along each axis, the symbol's 2dp stroke per 4.6dp of arm
+  // Telegram small chevron: 90° tip, arms of 4dp along each axis, 1.5dp stroke (Telegram keeps small glyphs at
+  // 1.33–1.67dp instead of thinning them with the size)
   private void drawChevron (Canvas c, int cx, int cy, boolean expanded, int color) {
     int size = Screen.dp(4f);
-    Paint paint = DrawAlgorithms.getGlyphPaint(color, size * (2f / 4.6f));
+    Paint paint = DrawAlgorithms.getGlyphPaint(color, Screen.dpf(1.5f));
     if (expanded) {
       DrawAlgorithms.drawGlyphPolyline(c, cx - size, cy - size / 2f, cx, cy + size / 2f, cx + size, cy - size / 2f, paint);
     } else {

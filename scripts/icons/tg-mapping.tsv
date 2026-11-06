@@ -437,9 +437,9 @@ deproko_baseline_flag_outline_24	msg_emoji_flags	high	emoji panel Flags (inactiv
 deproko_baseline_gif_24	smiles_tab_gif	high	emoji panel GIF section (inactive); shared-media GIF tab alt msg_gif
 deproko_baseline_gif_filled_16	msg_gif	medium	content-preview GIF emoji; no mini, scale
 deproko_baseline_gif_filled_24	smiles_tab_gif	medium	GIF section selected / search filter GIF; no filled pair (alt msg_gif)
-deproko_baseline_insert_emoticon_26	input_smile	high	composer emoji button
+deproko_baseline_insert_emoticon_26	raw/smile_to_sticker.json frame 0	high	composer button: rendered from Telegram ChatActivityEnterView Lottie (same scale as smile; smiles_tab_* are smaller panel-tab glyphs) | composer emoji button
 deproko_baseline_insert_sticker_24	msg2_sticker	medium	sticker settings row / trending add; TG settings Stickers row msg2_sticker
-deproko_baseline_insert_sticker_26	smiles_tab_stickers	high	emoji panel stickers section tab
+deproko_baseline_insert_sticker_26	raw/smile_to_sticker.json last frame	high	composer button: rendered from Telegram ChatActivityEnterView Lottie (same scale as smile; smiles_tab_* are smaller panel-tab glyphs) | emoji panel stickers section tab
 deproko_baseline_instantview_24	msg_instant	high	Instant View button in link preview; TG chat_msgInInstantDrawable
 deproko_baseline_lamp_22	msg_emoji_objects	high	poll explanation hint; TG chat_pollHintDrawable = msg_emoji_objects (lightbulb)
 deproko_baseline_lamp_24	msg_emoji_objects	high	emoji panel Symbols/objects (inactive); TG objects tab lightbulb
@@ -461,7 +461,7 @@ deproko_baseline_pin_14	msg_pin_mini	high	pinned mark in message bubble; TG chat
 deproko_baseline_pin_16	msg_pin_mini	high	content-preview pin emoji
 deproko_baseline_pin_24	msg_pin	high	pin menu item / bulk action
 deproko_baseline_pin_undo_24	msg_unpin	high	unpin menu item
-deproko_baseline_send_24	attach_send	medium	share sheet send / checklist create; TG ShareAlert writeButton attach_send; menu alt msg_send
+deproko_baseline_send_24	send_plane_24	high	composer send = TG ChatActivityEnterView send_plane_24 (attach_send is the 54dp share-sheet glyph, came out tiny); share sheet send / checklist create; TG ShareAlert writeButton attach_send; menu alt msg_send
 deproko_baseline_sound_muted_24	video_muted	medium	no-sound badge on video messages; TG chat_msgNoSoundDrawable; record-mute alt video_mute
 deproko_baseline_stickers_24	smiles_tab_stickers	medium	emoji panel switch-to-stickers / stickers menu; menu alt msg_sticker
 deproko_baseline_stickers_filled_24	msg2_sticker	high	settings "Stickers and Emoji" row; TG settings uses msg2_sticker
@@ -506,3 +506,4 @@ templarian_device_web_chrome_24	device_web_chrome	high	session browser logo
 templarian_device_web_edge_24	device_web_edge	high	session browser logo
 templarian_device_web_firefox_24	device_web_firefox	high	session browser logo
 templarian_device_web_safari_24	device_web_safari	high	session browser logo
+vg_input_gif_26	raw/smile_to_gif.json last frame	high	new: composer GIF button, rendered from Telegram Lottie (EmojiLayout.getTargetIcon)

@@ -1253,7 +1253,7 @@ public class EmojiLayout extends FrameLayoutFix implements ViewPager.OnPageChang
 
     int section = Settings.instance().getEmojiMediaSection();
     if (isMessage) {
-      return section == EmojiMediaType.GIF ? R.drawable.deproko_baseline_gif_24 : R.drawable.deproko_baseline_insert_sticker_26;
+      return section == EmojiMediaType.GIF ? R.drawable.vg_input_gif_26 : R.drawable.deproko_baseline_insert_sticker_26;
     } else {
       return section == EmojiMediaType.GIF ? R.drawable.deproko_baseline_gif_24 : R.drawable.deproko_baseline_stickers_24;
     }

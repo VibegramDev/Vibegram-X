@@ -1,0 +1,39 @@
+# Vibegram-X icons with no Telegram for Android 12.3.1 counterpart, drawn in its style (STYLE.md). Agent B.
+our_file	based_on	note
+baseline_bubble_chart_24	drawn (circle vocabulary of msg_info/msg_select)	paint-mode fallback; 3 outline circles, 1.33dp+ gaps
+baseline_bug_report_24	STYLE.md sample vg_bug_report_24	debug log / report rows
+baseline_build_24	drawn (no TG wrench)	debug/test tools; outline wrench at 45deg, slot gap 1.33dp
+baseline_content_cut_24	drawn (no TG scissors)	text formatting Cut
+baseline_content_paste_18	msg_log clipboard at 18dp (stroke 1.5)	paste button in setting row
+baseline_content_paste_24	msg_log clipboard (body + clip) without text lines	Paste / Paste URL
+baseline_crop_16_9_24	msg_photo_cropfix frame	crop 16:9 (outer 20.3x11.7)
+baseline_crop_3_2_24	photo_rectangle / msg_photo_cropfix frame	crop 3:2 (outer 20.3x13.7) and paint mode Rectangle; code also uses it for 4:3
+baseline_crop_5_4_24	msg_photo_cropfix frame	crop 5:4 (outer 20.3x16.3); code uses it for the 3:2 item
+baseline_crop_free_24	crop_square frame cut to corners	crop Free / camera Full; 4 rounded corner brackets
+baseline_crop_square_24	photo_rectangle / msg_photo_cropfix frame	crop 1:1; 19x19 outer, r 3.83 outer
+baseline_crown_circle_24	menu_wear crown silhouette in filled badge (filled_rating_crown idea)	unused in code; filled 21dp badge, crown knocked out
+baseline_extension_24	drawn (msg_photos rounded body)	Tweak settings; puzzle piece, 2 knobs
+baseline_folder_96	files_folder (filled folder) scaled to 96	unused in code
+baseline_format_color_fill_24	drawn (no TG fill tool)	paint mode Fill; tilted bucket + drop
+baseline_gesture_24	msg_photo_curve stroke vocabulary	passcode Gesture option; one free stroke
+baseline_gpp_maybe_14	menu_2sv shield outline + "!"	drawer 2FA-check badge
+baseline_indeterminate_check_box_24	baseline_check_box_outline_blank_24 (tdesktop task_unchecked, applied by agent A) + dash	language "only untranslated" toggle; same box as its blank pair
+baseline_notification_important_14	notification_important_24 at 14dp (stroke 1.5)	drawer Settings problem badge
+baseline_notification_important_24	msg_notifications (bell redrawn) + msg_info "!"	notification error state; bell with ! inside
+baseline_party_popper_16	party popper 24 design simplified for 16dp (stroke 1.4)	user-joined content preview
+baseline_party_popper_72	popper drawn at 24dp, scaled x3 like other TG 24->72 headers	giveaway winners header
+baseline_playback_speed_0_7_24	msg_speed_slow + msg_speed_veryfast glyphs	'0.7x' recomposed from TG speed glyphs
+baseline_playback_speed_2_5_24	msg_speed_superfast + msg_speed_slow glyphs	'2.5x' recomposed from TG speed glyphs
+baseline_playback_speed_x_5	msg_speed_* 'x' glyph	x appended to speed counter text
+baseline_queue_music_24	msg_reorder lines + msg_tone_on note	player 'Play next'
+baseline_receipt_16	drawn (msg_log paper + zigzag)	invoice content preview
+baseline_sim_card_alert_14	drawn SIM (msg_newphone has no SIM) + "!"	drawer check-phone badge
+baseline_stop_24	drawn (TG filled rounded-rect vocabulary)	stop recording / stop action; filled 13.3dp, r 3.3
+baseline_stop_24_white	same as baseline_stop_24	notification Stop action
+baseline_sync_problem_24	msg_retry (arrows redrawn) + msg_info "!"	notification sync error; TG retry arrows with ! in centre
+baseline_zoom_out_map_24	msg_download / menu_link arrow heads (90deg, arm 5.3)	paint mode free movement; 4 outward diagonal arrows
+deproko_baseline_animals_filled_blink_24	msg_emoji_cat (fitted vector), eyes closed	blink frame of the Animals tab (active icon = msg_emoji_cat)
+outline_toggle_on_24	drawn (no TG toggle glyph)	debug Feature Toggles; pill 21.3x12.3 + 6.7dp knob, 1.17dp gap
+round_warning_16	warning_sign (TG vector) at 16dp	screenshot-taken content preview
+templarian_baseline_calculator_18	msg_emoji_other (calculator) at 18dp	author attribution only
+templarian_baseline_source_merge_24	drawn (git merge, msg_info circle vocabulary)	source code / PR rows

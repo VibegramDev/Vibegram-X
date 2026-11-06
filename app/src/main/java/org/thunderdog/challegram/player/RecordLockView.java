@@ -152,37 +152,35 @@ public class RecordLockView extends View {
     final int grayColor = Theme.iconColor();
     final int redColor = Theme.getColor(ColorId.iconNegative);
 
-    // Lock: Material Symbols "lock" (filled body): 16 x 14dp body with 2dp corners and a 2dp keyhole, shackle of
-    // radius 4dp (stroke centre) standing 2dp above the body. As in the 24dp symbol, the body centre sits 3dp low.
+    // Lock of Telegram's ChatActivityEnterView (RecordCircle): 16 x 16dp filled body with 3dp corners and no keyhole,
+    // shrinking to the 12 x 12dp stop / pause; 1.7dp shackle of radius 4dp (stroke centre) whose arc centre stands
+    // 4dp above the body. The body centre sits 3dp low once the lock is collapsed.
     int totalDy = (int) (Screen.dp(3f) * collapseFactor * (1f - sendFactor));
 
     int width = (int) (Screen.dp(6f) + Screen.dp(2f) * (1f - sendFactor));
-    int height = (int) (Screen.dp(6f) + Screen.dp(1f) * (mode == MODE_DEFAULT ? (1f - sendFactor) : 1f));
+    int height = (int) (Screen.dp(6f) + Screen.dp(2f) * (1f - sendFactor));
     int dy = (int) (Screen.dp(BUTTON_SIZE) / 3f * (1f - collapseFactor));
     rectF.set(cx - width, cy - height + dy + totalDy, cx + width, cy + height + dy + totalDy);
 
-    final float bodyRadius = Screen.dp(2f);
+    final float bodyRadius = Screen.dp(3f);
     if (mode == MODE_DEFAULT) {
-      // Turns into Material Symbols "stop" (FILL 1): 12dp square with 2dp corners
+      // Turns into Telegram's stop: 12dp square with 3dp corners
       c.drawRoundRect(rectF, bodyRadius, bodyRadius, Paints.fillingPaint(ColorUtils.fromToArgb(grayColor, redColor, sendFactor)));
     } else {
       final float pauseAlpha = 1f - editFactor;
       final float alpha = editFactor;
 
       if (editFactor < 1f) {
-        // Splits into the bars of Material Symbols "pause" (FILL 1): 4 x 14dp, 4dp apart, fully rounded
-        final float halfGap = Screen.dp(2f);
-        final float seam = halfGap * (1f - sendFactor * 2f);
+        // Splits into Telegram's pause: the 12dp square cut by a 3.32dp gap, corners going from 3dp to 1.5dp.
+        // The halves overlap by the corner radius first, so the body stays one shape.
+        final float seam = MathUtils.fromTo(-bodyRadius, Screen.dpf(1.66f), sendFactor);
+        final float barRadius = MathUtils.fromTo(bodyRadius, Screen.dpf(1.5f), sendFactor);
         pausePath.reset();
-        tmpRect.set(rectF.left, rectF.top, cx + seam, rectF.bottom);
-        pausePath.addRoundRect(tmpRect, bodyRadius, bodyRadius, Path.Direction.CW);
-        tmpRect.set(cx - seam, rectF.top, rectF.right, rectF.bottom);
-        pausePath.addRoundRect(tmpRect, bodyRadius, bodyRadius, Path.Direction.CW);
+        tmpRect.set(rectF.left, rectF.top, cx - seam, rectF.bottom);
+        pausePath.addRoundRect(tmpRect, barRadius, barRadius, Path.Direction.CW);
+        tmpRect.set(cx + seam, rectF.top, rectF.right, rectF.bottom);
+        pausePath.addRoundRect(tmpRect, barRadius, barRadius, Path.Direction.CW);
         c.drawPath(pausePath, Paints.fillingPaint(ColorUtils.alphaColor(pauseAlpha, grayColor)));
-        // Keyhole, stretching into the gap between the bars
-        final float h = MathUtils.fromTo(halfGap, rectF.height() / 2f + halfGap, sendFactor);
-        tmpRect.set(cx - halfGap, rectF.centerY() - h, cx + halfGap, rectF.centerY() + h);
-        c.drawRoundRect(tmpRect, halfGap, halfGap, Paints.fillingPaint(ColorUtils.alphaColor(pauseAlpha, fillingColor)));
       }
 
       if (editFactor > 0f) {
@@ -191,12 +189,9 @@ public class RecordLockView extends View {
     }
 
     if (sendFactor < 1f) {
-      if (mode == MODE_DEFAULT) {
-        c.drawCircle(cx, rectF.centerY(), Screen.dp(2f), Paints.fillingPaint(ColorUtils.alphaColor(1f - sendFactor, fillingColor)));
-      }
       // Shackle, lifted by half of dy while the lock is open: the left leg stays in the body, the right one opens
       final float shackleRadius = Screen.dp(4f);
-      final float legHeight = Screen.dp(2f);
+      final float legHeight = Screen.dp(4f);
       final float bodyTop = rectF.top;
       final float arcCy = bodyTop - legHeight - dy / 2f;
       tmpRect.set(cx - shackleRadius, arcCy - shackleRadius, cx + shackleRadius, arcCy + shackleRadius);
@@ -206,7 +201,7 @@ public class RecordLockView extends View {
       shacklePath.rLineTo(0, legHeight);
       c.save();
       c.clipRect(0, 0, viewWidth, bodyTop);
-      c.drawPath(shacklePath, DrawAlgorithms.getGlyphPaint(ColorUtils.alphaColor(1f - sendFactor, grayColor), Screen.dp(2f)));
+      c.drawPath(shacklePath, DrawAlgorithms.getGlyphPaint(ColorUtils.alphaColor(1f - sendFactor, grayColor), Screen.dpf(1.7f)));
       c.restore();
     }
 

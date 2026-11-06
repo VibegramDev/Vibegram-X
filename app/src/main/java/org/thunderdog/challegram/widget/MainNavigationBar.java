@@ -85,11 +85,19 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private static final float BAR_HEIGHT = 56f;
   /** Center of the icon (and the active indicator) from the top of the tablet bar: vertically centered. */
   private static final float BAR_ICON_CENTER_Y = BAR_HEIGHT / 2f;
-  private static final float ICON_SIZE = 24f;
   private static final float AVATAR_SIZE = 28f;
-  /** Active indicator (and pressed state layer) size. */
+  /** Navigation bar (labels): active indicator (and pressed state layer) height. */
   private static final float INDICATOR_HEIGHT = 32f;
-  private static final float BAR_INDICATOR_WIDTH = 60f;
+  /**
+   * Floating bar (dock): the active indicator is a tall pill with the same gap to the bar edge on every side:
+   * 56 - 4 * 2 = 48dp tall, item width - 4dp wide (the bar has 2dp padding at the ends, so the outer items also get
+   * 4dp to the end of the bar). Its 24dp radius is concentric with the 28dp radius of the bar.
+   */
+  private static final float BAR_INDICATOR_INSET = 4f;
+  private static final float BAR_INDICATOR_HEIGHT = BAR_HEIGHT - BAR_INDICATOR_INSET * 2f;
+  /** Unread badge (large badge, gravity start): center of its start cap from the icon center, over the icon's top end corner. */
+  private static final float BADGE_OFFSET_X = 10f;
+  private static final float BADGE_OFFSET_Y = 8f;
 
   private final ViewController<?> themeProvider;
   private final ItemView[] items;
@@ -119,9 +127,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private static final float NAV_BAR_LABEL_LINE_HEIGHT = 16f;
   private @Nullable TextPaint labelPaint;
 
-  /** Compact floating bar (phone dock style): 72dp per item and 6dp padding at the ends. */
-  private static final float COMPACT_ITEM_WIDTH = 72f;
-  private static final float COMPACT_PADDING = 6f;
+  /** Compact floating bar (phone dock style): 74dp per item and 2dp padding at the ends (300dp for 4 items). */
+  private static final float COMPACT_ITEM_WIDTH = 74f;
+  private static final float COMPACT_PADDING = BAR_INDICATOR_INSET / 2f;
 
   /** Number shown by the badge of the chats item, read by screen readers after the label. */
   private long unreadCount;
@@ -147,7 +155,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
         @Override
         public int outlineColor (boolean isPressed) {
-          return containerColor();
+          // The badge is drawn over the active indicator when chats is selected.
+          ItemView[] items = MainNavigationBar.this.items;
+          float selected = items != null ? items[ITEM_CHATS].colorFactor : 0f;
+          return ColorUtils.fromToArgb(containerColor(), indicatorColor(), selected);
         }
       })
       .callback((counter, sizeChanged) -> invalidateItems())
@@ -157,10 +168,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     avatarView.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(AVATAR_SIZE), Screen.dp(AVATAR_SIZE), Gravity.CENTER_HORIZONTAL | Gravity.TOP));
 
     items = new ItemView[] {
-      // M3: outlined icon for unselected destinations, filled for the selected one.
-      new ItemView(context, ITEM_CHATS, R.drawable.outline_forum_24, R.drawable.baseline_forum_24, R.string.Chats),
-      new ItemView(context, ITEM_CALLS, R.drawable.outline_phone_24, R.drawable.baseline_phone_24, R.string.Calls),
-      new ItemView(context, ITEM_CONTACTS, R.drawable.outline_perm_contact_calendar_24, R.drawable.baseline_perm_contact_calendar_24, R.string.Contacts),
+      // M3: outlined icon for unselected destinations, filled for the selected one (same glyph, Telegram 12.4 tab icons).
+      new ItemView(context, ITEM_CHATS, R.drawable.vg_tab_chats_24, R.drawable.vg_tab_chats_active_24, R.string.Chats),
+      new ItemView(context, ITEM_CALLS, R.drawable.vg_tab_calls_24, R.drawable.vg_tab_calls_active_24, R.string.Calls),
+      new ItemView(context, ITEM_CONTACTS, R.drawable.vg_tab_contacts_24, R.drawable.vg_tab_contacts_active_24, R.string.Contacts),
       new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings)
     };
     items[ITEM_SETTINGS].addView(avatarView);
@@ -268,6 +279,38 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   }
 
   /**
+   * Active indicator. Floating bar: neutral pill a step above the surfaceContainer bar: surfaceContainerHighest
+   * (Monet: tone 22 on 12 dark, 90 on 94 light; classic themes: 14% / 9% tint on 7% / 5%), surfaceContainerHigh is too
+   * close to the bar to read in light themes. Navigation bar: M3 secondaryContainer indicator.
+   */
+  private int indicatorColor () {
+    return isNavBar ? M3.secondaryContainer() : M3.surfaceContainerHighest();
+  }
+
+  /** Icon of the selected item: onSurface on the neutral dock indicator, onSecondaryContainer in the navigation bar. */
+  private int selectedIconColor () {
+    return isNavBar ? M3.onSecondaryContainer() : M3.onSurface();
+  }
+
+  /**
+   * Bounds of the active indicator of an item at full size, centered in the item.
+   * Floating bar: 48dp pill, item width - 4dp. Navigation bar: 56x32dp, 6dp from the top.
+   */
+  private void getIndicatorRect (RectF rect, int itemLeft, int itemTop, int itemWidth) {
+    float width, height;
+    if (isNavBar) {
+      width = Math.min(itemWidth - Screen.dp(8f), Screen.dp(NAV_BAR_INDICATOR_WIDTH));
+      height = Screen.dp(INDICATOR_HEIGHT);
+    } else {
+      width = itemWidth - Screen.dp(BAR_INDICATOR_INSET);
+      height = Screen.dp(BAR_INDICATOR_HEIGHT);
+    }
+    float cx = itemLeft + itemWidth / 2f;
+    float cy = itemTop + getIconCenterY();
+    rect.set(cx - width / 2f, cy - height / 2f, cx + width / 2f, cy + height / 2f);
+  }
+
+  /**
    * M3 pressed state layer: ripple clipped to the shape of the element (the active indicator for
    * destinations, the container for the search button), drawn above it so it stays visible.
    */
@@ -276,7 +319,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       ripple = new RippleDrawable(ColorStateList.valueOf(Theme.RIPPLE_COLOR), null, mask);
     } else {
-      ripple = Theme.transparentRoundSelector(Screen.dp(INDICATOR_HEIGHT / 2f));
+      ripple = Theme.transparentRoundSelector(Screen.dp((isNavBar ? INDICATOR_HEIGHT : BAR_INDICATOR_HEIGHT) / 2f));
     }
     view.setBackground(null);
     ForegroundCompat.set(view, ripple);
@@ -355,7 +398,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     this.isCompactBarAtEnd = isCompactBarAtEnd;
   }
 
-  /** Width of the compact floating bar: 72dp per item and 6dp padding at the ends. */
+  /** Width of the compact floating bar: 74dp per item and 2dp padding at the ends. */
   public int getCompactBarWidth () {
     return Screen.dp(COMPACT_ITEM_WIDTH) * items.length + Screen.dp(COMPACT_PADDING) * 2;
   }
@@ -385,8 +428,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       }
       params.leftMargin = params.rightMargin = getBarMargin();
       params.bottomMargin = getBarBottomMargin() + bottomInset;
-      // Keeps the outer indicators away from the rounded ends.
-      setPadding(Screen.dp(8f), 0, Screen.dp(8f), 0);
+      // Half of the indicator inset: the outer indicators keep the same 4dp gap to the rounded ends as to the top and bottom.
+      int padding = Screen.dp(BAR_INDICATOR_INSET / 2f);
+      setPadding(padding, 0, padding, 0);
     }
     setLayoutParams(params);
     for (ItemView item : items) {
@@ -487,12 +531,9 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     public void draw (@NonNull Canvas c) {
       Rect bounds = getBounds();
       RectF rect = Paints.getRectF();
-      float width = Math.min(bounds.width() - Screen.dp(8f), Screen.dp(isNavBar ? NAV_BAR_INDICATOR_WIDTH : BAR_INDICATOR_WIDTH));
-      float height = Screen.dp(INDICATOR_HEIGHT);
-      float cx = bounds.exactCenterX();
-      float cy = bounds.top + getIconCenterY();
-      rect.set(cx - width / 2f, cy - height / 2f, cx + width / 2f, cy + height / 2f);
-      c.drawRoundRect(rect, height / 2f, height / 2f, Paints.fillingPaint(0xffffffff));
+      getIndicatorRect(rect, bounds.left, bounds.top, bounds.width());
+      float radius = rect.height() / 2f;
+      c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(0xffffffff));
     }
 
     @Override
@@ -590,21 +631,24 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       int cx = getWidth() / 2;
       int cy = getIconCenterY();
 
-      // Active indicator: opaque secondaryContainer pill, grows from the icon center along one axis.
+      // Active indicator: opaque pill (dock: neutral 48dp pill; navigation bar: secondaryContainer 56x32dp), grows from the
+      // icon center along the horizontal axis, stays fully rounded while it grows.
       float widthFactor = Math.max(0f, selectFactor);
       if (widthFactor > 0f) {
         RectF rect = Paints.getRectF();
-        float indicatorHeight = Screen.dp(INDICATOR_HEIGHT);
-        float indicatorWidth = Math.min(getWidth() - Screen.dp(8f), Screen.dp(isNavBar ? NAV_BAR_INDICATOR_WIDTH : BAR_INDICATOR_WIDTH)) * widthFactor;
-        rect.set(cx - indicatorWidth / 2f, cy - indicatorHeight / 2f, cx + indicatorWidth / 2f, cy + indicatorHeight / 2f);
-        c.drawRoundRect(rect, indicatorHeight / 2f, indicatorHeight / 2f, Paints.fillingPaint(ColorUtils.alphaColor(selected, M3.secondaryContainer())));
+        getIndicatorRect(rect, 0, 0, getWidth());
+        float indicatorWidth = rect.width() * widthFactor;
+        rect.left = cx - indicatorWidth / 2f;
+        rect.right = cx + indicatorWidth / 2f;
+        float radius = Math.min(rect.width(), rect.height()) / 2f;
+        c.drawRoundRect(rect, radius, radius, Paints.fillingPaint(ColorUtils.alphaColor(selected, indicatorColor())));
       }
-      // Icons: outlined onSurfaceVariant when unselected, filled onSecondaryContainer when selected.
+      // Icons: outlined onSurfaceVariant when unselected, filled (same glyph) when selected.
       if (icon != null && selected < 1f) {
         Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(1f - selected, M3.onSurfaceVariant())));
       }
       if (selectedIcon != null && selected > 0f) {
-        Drawables.draw(c, selectedIcon, cx - selectedIcon.getMinimumWidth() / 2f, cy - selectedIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(selected, M3.onSecondaryContainer())));
+        Drawables.draw(c, selectedIcon, cx - selectedIcon.getMinimumWidth() / 2f, cy - selectedIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(selected, selectedIconColor())));
       }
       if (isNavBar) {
         // Label below the indicator: secondary when active, onSurfaceVariant when inactive ("Active label changed from
@@ -627,10 +671,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     protected void dispatchDraw (Canvas canvas) {
       super.dispatchDraw(canvas);
       if (id == ITEM_CHATS) {
-        // Badge goes over the top-right corner of the icon.
-        int cx = getWidth() / 2 + Screen.dp(ICON_SIZE) / 2 - Screen.dp(4f);
-        int cy = getIconCenterY() - Screen.dp(ICON_SIZE) / 2 + Screen.dp(2f);
-        unreadCounter.draw(canvas, cx, cy, Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT, 1f);
+        // Badge overlaps the top end corner of the icon: its start cap is centered 10dp to the end of and 8dp above the
+        // icon center (inside the 24dp icon box), the badge grows towards the end.
+        boolean rtl = Lang.rtl();
+        int cx = getWidth() / 2 + Screen.dp(BADGE_OFFSET_X) * (rtl ? -1 : 1);
+        int cy = getIconCenterY() - Screen.dp(BADGE_OFFSET_Y);
+        unreadCounter.draw(canvas, cx, cy, rtl ? Gravity.RIGHT : Gravity.LEFT, 1f);
       }
     }
   }

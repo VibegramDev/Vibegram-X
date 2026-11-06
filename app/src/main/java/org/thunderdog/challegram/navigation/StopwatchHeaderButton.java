@@ -26,6 +26,7 @@ import androidx.annotation.Nullable;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.theme.ThemeDeprecated;
+import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.util.text.Letters;
@@ -47,7 +48,7 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
     super(context);
 
     this.circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    this.circlePaint.setStrokeWidth(Screen.dp(2f));
+    this.circlePaint.setStrokeWidth(Screen.dpf(DrawAlgorithms.GLYPH_STROKE_DP));
     this.circlePaint.setStyle(Paint.Style.STROKE);
     this.circlePaint.setStrokeCap(Paint.Cap.ROUND);
     this.circlePaint.setStrokeJoin(Paint.Join.ROUND);
@@ -300,26 +301,30 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
         c.scale(scale, scale, cx, cy);
       }
 
-      // Material Symbols Rounded `timer`: 2dp strokes with round caps, centre lines relative to the dial centre:
-      // dial radius 8dp, 4dp button bar 11dp above, 4dp hand, crown from 8dp to 10dp at 45°.
+      // Telegram `msg_stories_timer` stopwatch at the weight of the msg_* icons (1.67dp, round caps), centre lines
+      // relative to the icon centre: dial radius 9.5dp centred 0.9dp low, 2dp button stem on top of it, 5.7dp hand
+      // from a 2.67dp hub, crown from 9.5dp to 11.2dp at 40° right of the stem.
       // One path, so overlapping strokes do not darken while the glyph fades.
-      final float width = Screen.dpf(2f);
-      final float radius = Screen.dpf(8f);
-      final float barHalfWidth = Screen.dpf(2f);
-      final float barY = cy - Screen.dpf(11f) + width * (stopwatchPressureFactor < .5f ? stopwatchPressureFactor / .5f : 1f - (stopwatchPressureFactor - .5f) / .5f);
-      final float handLength = Screen.dpf(4f);
+      final float width = Screen.dpf(DrawAlgorithms.GLYPH_STROKE_DP);
+      final float radius = Screen.dpf(9.5f);
+      final float dialCy = cy + Screen.dpf(.9f);
+      final float stemBottom = dialCy - radius;
+      final float stemTop = stemBottom - Screen.dpf(2f) + width * (stopwatchPressureFactor < .5f ? stopwatchPressureFactor / .5f : 1f - (stopwatchPressureFactor - .5f) / .5f);
+      final float handLength = Screen.dpf(5.7f);
+      final float hubRadius = Screen.dpf(1.33f) - width / 2f;
       final double handAngle = stopwatchTickFactor != 1f ? Math.toRadians(360f * stopwatchTickFactor) : 0;
-      final float crownStart = radius / (float) Math.sqrt(2f);
-      final float crownEnd = Screen.dpf(10f) / (float) Math.sqrt(2f);
+      final float crownSin = (float) Math.sin(Math.toRadians(40.0)), crownCos = (float) Math.cos(Math.toRadians(40.0));
+      final float crownEnd = Screen.dpf(11.2f);
 
       stopwatchPath.reset();
-      stopwatchPath.addCircle(cx, cy, radius, Path.Direction.CW);
-      stopwatchPath.moveTo(cx - barHalfWidth, barY);
-      stopwatchPath.lineTo(cx + barHalfWidth, barY);
-      stopwatchPath.moveTo(cx, cy);
-      stopwatchPath.lineTo(cx + handLength * (float) Math.sin(handAngle), cy - handLength * (float) Math.cos(handAngle));
-      stopwatchPath.moveTo(cx + crownStart, cy - crownStart);
-      stopwatchPath.lineTo(cx + crownEnd, cy - crownEnd);
+      stopwatchPath.addCircle(cx, dialCy, radius, Path.Direction.CW);
+      stopwatchPath.addCircle(cx, dialCy, hubRadius, Path.Direction.CW);
+      stopwatchPath.moveTo(cx, stemTop);
+      stopwatchPath.lineTo(cx, stemBottom);
+      stopwatchPath.moveTo(cx, dialCy);
+      stopwatchPath.lineTo(cx + handLength * (float) Math.sin(handAngle), dialCy - handLength * (float) Math.cos(handAngle));
+      stopwatchPath.moveTo(cx + radius * crownSin, dialCy - radius * crownCos);
+      stopwatchPath.lineTo(cx + crownEnd * crownSin, dialCy - crownEnd * crownCos);
 
       circlePaint.setColor(color);
       c.drawPath(stopwatchPath, circlePaint);

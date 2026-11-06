@@ -117,7 +117,7 @@ public class SimplestCheckBox {
     final int eraseRadius = (int) ((float) radius * (1f - factor));
 
     if (eraseRadius < radius) {
-      // Square (multiple answers): M3 checkbox, 18dp with 2dp corners.
+      // Square (multiple answers): Telegram CheckBoxSquare, 18dp with 2dp corners.
       final float squareRadius = squareFactor > 0f ? MathUtils.fromTo(radius, Screen.dp(2f), squareFactor) : radius;
       RectF rectF = Paints.getRectF();
       if (squareFactor > 0f) {
@@ -142,9 +142,10 @@ public class SimplestCheckBox {
         } else {
           final float fx = factor <= .2f ? 0f : (factor - .2f) / .8f;
           if (fx > 0f) {
-            // Material Symbols Rounded "check_circle" mark (the "check_box" one is .4dp higher).
-            final float scale = (float) radius / (float) Screen.dp(10f);
-            CheckBoxView.drawCheckMark(c, centerX, centerY - Screen.dpf(.4f) * scale * squareFactor, CheckBoxView.MARK_CIRCLE, scale, fx, 0f, contentColor);
+            // Telegram CheckBoxBase mark (CheckBoxSquare's one when the box is square).
+            final boolean square = squareFactor >= .5f;
+            final float scale = (float) radius / (float) Screen.dp(square ? 9f : 10f);
+            CheckBoxView.drawCheckMark(c, centerX, centerY, square ? CheckBoxView.MARK_BOX : CheckBoxView.MARK_CIRCLE, scale, fx, 0f, contentColor);
           }
         }
       } else {

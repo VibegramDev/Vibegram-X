@@ -579,7 +579,7 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
           SimplestCheckBox.draw(c, cx, cy, checkFactor, null, entry.checkBox, lineColor, lineContentColor, SimplestCheckBox.MODE_NORMAL, 0f);
         }
       } else if (entry.isDone) {
-        // Material Symbols Rounded "check" at 18dp (1.5dp stroke).
+        // Telegram ic_ab_done check at 18dp (1.5dp stroke).
         CheckBoxView.drawCheckMark(c, cx, cy, CheckBoxView.MARK_CHECK, .75f, 1f, 0f, lineColor);
       } else {
         c.drawCircle(cx, cy, Screen.dp(2.5f), Paints.fillingPaint(lineColor));

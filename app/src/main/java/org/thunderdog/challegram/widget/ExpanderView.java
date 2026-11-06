@@ -21,6 +21,7 @@ import android.view.Gravity;
 import android.view.View;
 
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.TextColorSet;
@@ -43,10 +44,10 @@ public class ExpanderView implements FactorAnimator.Target {
     this.parentView = parentView;
     this.path = new Path();
 
-    // Material Symbols Rounded `expand_more`: 2dp chevron with round caps and join, 9.2dp wide, 4.6dp tall
-    // (centre line), centred on the rotation point.
-    float halfWidth = Screen.dpf(4.6f);
-    float halfHeight = Screen.dpf(2.3f);
+    // Telegram `msg_expand` (the account switcher arrow of DrawerProfileCell): 1.67dp chevron with round caps and
+    // join, 12.5dp wide, 6.2dp tall (centre line, 90° tip), centred on the rotation point.
+    float halfWidth = Screen.dpf(6.25f);
+    float halfHeight = Screen.dpf(3.1f);
 
     path.moveTo(-halfWidth, -halfHeight);
     path.lineTo(0, halfHeight);
@@ -54,7 +55,7 @@ public class ExpanderView implements FactorAnimator.Target {
 
     this.paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     paint.setStyle(Paint.Style.STROKE);
-    paint.setStrokeWidth(Screen.dp(2f));
+    paint.setStrokeWidth(Screen.dpf(DrawAlgorithms.GLYPH_STROKE_DP));
     paint.setStrokeCap(Paint.Cap.ROUND);
     paint.setStrokeJoin(Paint.Join.ROUND);
   }
