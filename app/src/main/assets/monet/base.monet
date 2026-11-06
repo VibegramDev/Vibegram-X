@@ -330,12 +330,14 @@ attachInlineBot: secondaryContainer
 attachText: onPrimaryContainer
 fileAttach: surfaceContainerHighest
 
-# Files and voice messages. File circles carry white icons: tone 40
+# Files and voice messages. File circles carry white icons: tone 40.
+# One color for every file type (and the live location circle): Telegram X's green/yellow/red per type would become
+# random wallpaper tones here (tertiary, secondary), and error is for error states only.
 file: P40
 bubbleOut_file: P40
-fileYellow: S40
-fileGreen: T40
-fileRed: E40
+fileYellow: P40
+fileGreen: P40
+fileRed: P40
 waveformActive: primary
 waveformInactive: outlineVariant
 
