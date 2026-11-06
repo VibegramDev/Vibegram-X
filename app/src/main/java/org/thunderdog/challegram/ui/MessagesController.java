@@ -95,6 +95,7 @@ import org.thunderdog.challegram.component.chat.AttachLinearLayout;
 import org.thunderdog.challegram.component.chat.AudioFile;
 import org.thunderdog.challegram.component.chat.BotForumThreadHint;
 import org.thunderdog.challegram.component.chat.ChatBottomBarView;
+import org.thunderdog.challegram.component.chat.ChatDropTarget;
 import org.thunderdog.challegram.component.chat.ChatHeaderView;
 import org.thunderdog.challegram.component.chat.ChatSearchMembersView;
 import org.thunderdog.challegram.component.chat.CircleCounterBadgeView;
@@ -1761,6 +1762,29 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     TGLegacyManager.instance().addEmojiListener(this);
     tdlib.context().dateManager().addListener(this);
+
+    if (previewMode == PREVIEW_MODE_NONE && !isInForceTouchMode()) {
+      // Vibegram: drag & drop of files from other apps (API 24+, see ChatDropTarget).
+      ChatDropTarget.attach(contentView, inputView, new ChatDropTarget.Callback() {
+        @Override
+        public boolean canAcceptDrop () {
+          return chat != null && !isDestroyed() && isFocused() && canWriteMessages() && !inPreviewMode;
+        }
+
+        @Override
+        public void onFilesDropped (List<String> paths, List<String> mimeTypes) {
+          onDroppedFiles(paths, mimeTypes);
+        }
+
+        @Override
+        public void onTextDropped (CharSequence text) {
+          if (inputView != null && canWriteMessages()) {
+            int at = Math.max(0, inputView.getSelectionEnd());
+            inputView.getText().insert(Math.min(at, inputView.getText().length()), text);
+          }
+        }
+      });
+    }
 
     if (needTabs()) {
       pagerHeaderView = new ViewPagerHeaderViewCompact(context);
@@ -11620,6 +11644,158 @@ public class MessagesController extends ViewController<MessagesController.Argume
         break;
       }
     }
+  }
+
+  // Vibegram: drag & drop. Photos and videos open in the gallery preview (caption, selection, "send as file"),
+  // anything else (documents, GIFs, mixed drops) is confirmed first and sent as files. Nothing is sent directly.
+  private static boolean isDroppedPhoto (String mime) {
+    return mime != null && mime.startsWith("image/") && !"image/gif".equals(mime) && !"image/svg+xml".equals(mime);
+  }
+
+  private void onDroppedFiles (List<String> paths, List<String> mimeTypes) {
+    if (isDestroyed() || chat == null || !canWriteMessages()) {
+      return;
+    }
+    boolean allMedia = true;
+    for (String mime : mimeTypes) {
+      if (!isDroppedPhoto(mime) && (mime == null || !mime.startsWith("video/"))) {
+        allMedia = false;
+        break;
+      }
+    }
+    if (allMedia && canSendPhotosAndVideos()) {
+      openDroppedMedia(paths, mimeTypes);
+    } else {
+      confirmDroppedFiles(paths);
+    }
+  }
+
+  private void confirmDroppedFiles (List<String> paths) {
+    StringBuilder names = new StringBuilder();
+    for (int i = 0; i < paths.size() && i < 3; i++) {
+      if (i > 0) names.append(", ");
+      names.append(new File(paths.get(i)).getName());
+    }
+    if (paths.size() > 3) {
+      names.append(" +").append(paths.size() - 3);
+    }
+    showOptions(names.toString(), new int[] {R.id.btn_send, R.id.btn_cancel}, new String[] {Lang.getString(paths.size() == 1 ? R.string.DropSendFile : R.string.DropSendFiles), Lang.getString(R.string.Cancel)}, null, new int[] {R.drawable.baseline_insert_drive_file_24, R.drawable.baseline_cancel_24}, (v, optionId) -> {
+      if (optionId == R.id.btn_send && !isDestroyed()) {
+        sendFiles(mediaButton, paths, paths.size() > 1, true, Td.newSendOptions());
+      }
+      return true;
+    });
+  }
+
+  private void openDroppedMedia (List<String> paths, List<String> mimeTypes) {
+    final int count = paths.size();
+    final ImageGalleryFile[] files = new ImageGalleryFile[count];
+    final int[] remaining = {count};
+    for (int i = 0; i < count; i++) {
+      final int index = i;
+      U.toGalleryFile(new File(paths.get(i)), mimeTypes.get(i).startsWith("video/"), galleryFile -> {
+        files[index] = galleryFile;
+        if (--remaining[0] > 0) {
+          return;
+        }
+        List<ImageGalleryFile> ready = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        for (int j = 0; j < count; j++) {
+          if (files[j] != null) {
+            ready.add(files[j]);
+          } else {
+            failed.add(paths.get(j));
+          }
+        }
+        if (isDestroyed()) {
+          for (ImageGalleryFile file : ready) {
+            ImageStrictCache.instance().forget(file);
+          }
+          return;
+        }
+        if (ready.isEmpty()) {
+          confirmDroppedFiles(paths);
+          return;
+        }
+        if (!failed.isEmpty()) {
+          // Undecodable media (e.g. unsupported codec) go as files after the preview is handled.
+          UI.showToast(R.string.DropSomeAsFiles, Toast.LENGTH_SHORT);
+        }
+        showDroppedMediaPreview(ready, failed);
+      });
+    }
+  }
+
+  private void showDroppedMediaPreview (List<ImageGalleryFile> files, List<String> failedPaths) {
+    MediaStack stack = new MediaStack(context, tdlib);
+    ArrayList<MediaItem> items = new ArrayList<>(files.size());
+    for (ImageGalleryFile file : files) {
+      items.add(new MediaItem(context, tdlib, file));
+    }
+    stack.set(0, items);
+    final ArrayList<ImageGalleryFile> selected = new ArrayList<>(files);
+    MediaSelectDelegate selectDelegate = files.size() == 1 ? null : new MediaSelectDelegate() {
+      @Override
+      public boolean isMediaItemSelected (int index, MediaItem item) {
+        return selected.contains(item.getSourceGalleryFile());
+      }
+
+      @Override
+      public void setMediaItemSelected (int index, MediaItem item, boolean isSelected) {
+        ImageGalleryFile file = item.getSourceGalleryFile();
+        if (isSelected) {
+          if (!selected.contains(file)) selected.add(file);
+        } else {
+          selected.remove(file);
+        }
+      }
+
+      @Override
+      public int getSelectedMediaCount () {
+        return selected.size();
+      }
+
+      @Override
+      public long getOutputChatId () {
+        return getChatId();
+      }
+
+      @Override
+      public boolean canDisableMarkdown () {
+        return true;
+      }
+
+      @Override
+      public ArrayList<ImageFile> getSelectedMediaItems (boolean copy) {
+        ArrayList<ImageFile> result = new ArrayList<>(selected.size());
+        // Keep the drop order, not the order of (re)selection.
+        for (ImageGalleryFile file : files) {
+          if (selected.contains(file)) result.add(file);
+        }
+        return result;
+      }
+    };
+    MediaViewController controller = new MediaViewController(context, tdlib);
+    controller.setArguments(
+      MediaViewController.Args.fromGallery(this, null, selectDelegate,
+        new MediaSpoilerSendDelegate() {
+          @Override
+          public boolean sendSelectedItems (View view, ArrayList<ImageFile> images, TdApi.MessageSendOptions options, boolean disableMarkdown, boolean asFiles, boolean showCaptionAboveMedia, boolean hasSpoiler) {
+            ImageGalleryFile[] out = new ImageGalleryFile[images.size()];
+            for (int i = 0; i < out.length; i++) {
+              out[i] = (ImageGalleryFile) images.get(i);
+            }
+            sendPhotosAndVideosCompressed(out, true, options, disableMarkdown, asFiles, showCaptionAboveMedia, hasSpoiler);
+            if (!failedPaths.isEmpty()) {
+              sendFiles(view, failedPaths, failedPaths.size() > 1, true, null, Td.newSendOptions());
+            }
+            return true;
+          }
+        },
+        stack, areScheduledOnly()
+      ).setReceiverChatId(getChatId())
+    );
+    controller.open();
   }
 
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, TdApi.MessageSendOptions initialSendOptions) {
