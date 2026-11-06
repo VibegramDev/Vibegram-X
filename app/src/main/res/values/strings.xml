@@ -4223,8 +4223,7 @@
   <string name="PersonalChannelSelect">Select a channel</string>
   <string name="PersonalChannelCreate">Start a new channel</string>
   <string name="PersonalChannelSet">Channel added to your profile</string>
-  <string name="DropToAttach">Drop to attach</string>
-  <string name="DropToAttachHint">Photos and videos open in a preview, other files ask before sending</string>
+  <string name="DropToAttach">Insert</string>
   <string name="DropSendFile">Send as file</string>
   <string name="DropSendFiles">Send as files</string>
   <string name="DropReadError">Couldn\'t read the dropped files</string>

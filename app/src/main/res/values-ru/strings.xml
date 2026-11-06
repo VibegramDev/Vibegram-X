@@ -18,8 +18,7 @@
   <string name="PersonalChannelSelect">Выберите канал</string>
   <string name="PersonalChannelCreate">Создать новый канал</string>
   <string name="PersonalChannelSet">Канал добавлен в профиль</string>
-  <string name="DropToAttach">Отпустите, чтобы прикрепить</string>
-  <string name="DropToAttachHint">Фото и видео откроются для просмотра, остальные файлы — с подтверждением</string>
+  <string name="DropToAttach">Вставить</string>
   <string name="DropSendFile">Отправить файлом</string>
   <string name="DropSendFiles">Отправить файлами</string>
   <string name="DropReadError">Не удалось прочитать перетащенные файлы</string>

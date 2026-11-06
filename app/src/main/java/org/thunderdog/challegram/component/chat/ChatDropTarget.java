@@ -14,7 +14,6 @@ package org.thunderdog.challegram.component.chat;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.ClipData;
-import android.content.ClipDescription;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.Cursor;
@@ -61,9 +60,8 @@ import me.vkryl.core.StringUtils;
  * needs {@link Activity#requestDragAndDropPermissions(DragEvent)} (API 24), so the target is installed only
  * there; older devices keep the current behaviour.
  *
- * The listener sits on the chat layout and on the composer: TextView accepts every drag by default and would
- * paste a dropped file as its URI text, so file drags are taken over there too, while plain text drags keep the
- * default EditText behaviour. Dropped items are copied into the app cache (the URI grant ends with the drop),
+ * The listener sits on the chat layout and on the composer (TextView accepts every drag by default and would
+ * paste a dropped file as text). Dropped text is inserted into the composer. Dropped items are copied into the app cache (the URI grant ends with the drop),
  * then handed to {@link Callback}: nothing is sent without the user confirming it in the preview / dialog.
  */
 @TargetApi(Build.VERSION_CODES.N)
@@ -87,13 +85,8 @@ public final class ChatDropTarget implements View.OnDragListener {
     ChatDropTarget target = new ChatDropTarget(container, callback);
     container.setOnDragListener(target);
     if (composer != null) {
-      composer.setOnDragListener((v, event) -> {
-        // Text drags: let EditText insert the text where it is dropped.
-        if (!isFileDrag(event.getClipDescription())) {
-          return false;
-        }
-        return target.onDrag(v, event);
-      });
+      // TextView accepts every drag and would paste a dropped file as its URI / contents.
+      composer.setOnDragListener(target);
     }
     return target;
   }
@@ -109,25 +102,6 @@ public final class ChatDropTarget implements View.OnDragListener {
     this.callback = callback;
   }
 
-  private static boolean isTextMime (String mime) {
-    return ClipDescription.MIMETYPE_TEXT_PLAIN.equals(mime) ||
-      ClipDescription.MIMETYPE_TEXT_HTML.equals(mime) ||
-      ClipDescription.MIMETYPE_TEXT_INTENT.equals(mime);
-  }
-
-  /** True if the drag may carry files (anything but plain/html text or intents). */
-  static boolean isFileDrag (@Nullable ClipDescription description) {
-    if (description == null) {
-      return false;
-    }
-    for (int i = 0; i < description.getMimeTypeCount(); i++) {
-      if (!isTextMime(description.getMimeType(i))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   @Override
   public boolean onDrag (View v, DragEvent event) {
     switch (event.getAction()) {
@@ -135,12 +109,8 @@ public final class ChatDropTarget implements View.OnDragListener {
         if (!callback.canAcceptDrop()) {
           return false;
         }
-        ClipDescription description = event.getClipDescription();
-        boolean fileDrag = isFileDrag(description);
-        if (!fileDrag && v != container) {
-          return false;
-        }
-        if (fileDrag && !dragActive) {
+        // A dragged .txt file and dragged text both arrive as text/plain: the kind is known only on drop.
+        if (!dragActive) {
           dragActive = true;
           hoverCount = 0;
           showOverlay(true);
@@ -331,23 +301,20 @@ public final class ChatDropTarget implements View.OnDragListener {
     }
   }
 
-  /** Full-chat drop zone: scrim + M3 primary-container card (CornerExtraLarge) with icon and labels. */
+  /** Full-chat drop zone: scrim + M3 primary-container card (CornerExtraLarge) with an icon and a one-word label. */
   private static final class Overlay extends View {
     private final RectF rect = new RectF();
     private final TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    private final TextPaint subtitlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Drawable icon;
     private boolean hovered;
-    private @Nullable StaticLayout titleLayout, subtitleLayout;
+    private @Nullable StaticLayout titleLayout;
     private int layoutWidth;
 
     Overlay (Context context) {
       super(context);
       titlePaint.setTypeface(Fonts.getRobotoMedium());
       titlePaint.setTextSize(Screen.sp(22f));
-      subtitlePaint.setTypeface(Fonts.getRobotoRegular());
-      subtitlePaint.setTextSize(Screen.sp(14f));
       strokePaint.setStyle(Paint.Style.STROKE);
       strokePaint.setStrokeWidth(Screen.dp(2f));
       icon = Drawables.get(context.getResources(), R.drawable.vg_drop_attach_48);
@@ -366,7 +333,6 @@ public final class ChatDropTarget implements View.OnDragListener {
       }
       layoutWidth = width;
       titleLayout = new StaticLayout(Lang.getString(R.string.DropToAttach), titlePaint, width, Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
-      subtitleLayout = new StaticLayout(Lang.getString(R.string.DropToAttachHint), subtitlePaint, width, Layout.Alignment.ALIGN_CENTER, 1f, Screen.dp(2f), false);
     }
 
     @Override
@@ -388,7 +354,7 @@ public final class ChatDropTarget implements View.OnDragListener {
       buildLayouts(textWidth);
       int iconSize = Screen.dp(72f);
       int gap = Screen.dp(16f);
-      int blockHeight = iconSize + gap + (titleLayout != null ? titleLayout.getHeight() : 0) + Screen.dp(8f) + (subtitleLayout != null ? subtitleLayout.getHeight() : 0);
+      int blockHeight = iconSize + gap + (titleLayout != null ? titleLayout.getHeight() : 0);
       float top = rect.centerY() - blockHeight / 2f;
 
       if (icon != null) {
@@ -404,14 +370,6 @@ public final class ChatDropTarget implements View.OnDragListener {
         c.save();
         c.translate(textLeft, y);
         titleLayout.draw(c);
-        c.restore();
-        y += titleLayout.getHeight() + Screen.dp(8f);
-      }
-      if (subtitleLayout != null) {
-        subtitlePaint.setColor((content & 0x00ffffff) | 0xcc000000);
-        c.save();
-        c.translate(textLeft, y);
-        subtitleLayout.draw(c);
         c.restore();
       }
     }
