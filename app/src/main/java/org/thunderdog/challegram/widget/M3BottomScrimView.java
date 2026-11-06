@@ -37,9 +37,9 @@ import org.thunderdog.challegram.tool.Screen;
 
 /**
  * Backdrop of a floating bottom container (tablet dock, tablet message composer): content scrolled under the
- * container fades into {@code surface} above it and stays faintly visible below its top edge, and the container casts
- * a soft shadow. Both floating containers use this view, so their fade and shadow are identical. The phone dock uses
- * only the shadow: the folder chips above it need an opaque backdrop ({@link M3DockScrimView}).
+ * container fades into {@code surface} above it and stays faintly visible below its top edge (the fade of the
+ * phone dock), and the container casts a soft
+ * shadow. Both floating containers use this view, so their fade and shadow are identical.
  */
 public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   public interface ShapeProvider {
@@ -48,13 +48,14 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   }
 
   /**
-   * Height of the fade above the floating container.
+   * Height of the fade above the floating container: as the fade of the phone dock (from a little above the folder
+   * chips to the top edge of the dock).
    */
   public static int getFadeHeight () {
     return Screen.dp(80f);
   }
 
-  /** Opacity of the surface at the top edge of the container and at the bottom of the view. */
+  /** Opacity of the surface at the top edge of the container and at the bottom of the view (as the phone dock). */
   private static final int ALPHA_AT_CONTAINER = 0xB3, ALPHA_AT_BOTTOM = 0xEB;
 
   // The fade is two eased gradients of unit height (above / below the top edge of the container), stretched by a
@@ -120,7 +121,7 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     final float top = shape.top;
     final boolean fadeAbove = fade > 0;
     // From the top of the fade to the bottom of the view: transparent -> 70% surface at the top edge of the container
-    // -> 92% at the bottom (the content stays faintly visible below the container).
+    // -> 92% at the bottom (the content stays faintly visible below the container, as under the phone dock).
     if (!fadeShadersReady || fadeColor != surface || fadeAboveVisible != fadeAbove) {
       fadeShadersReady = true;
       fadeColor = surface;
@@ -147,11 +148,30 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   private static final int SMOOTH_FADE_STEPS = 12;
 
   /**
-   * Vertical fade of {@code color} from {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1 (stretch it with a local
-   * matrix). Eased in and out (smoothstep), so the opacity changes without a jump in its rate: a linear ramp shows a
-   * visible line where it starts and where its slope changes.
+   * Vertical fade of {@code color} from transparent at 0 to {@code alphaAtContainer} at {@code containerFraction} of
+   * {@code height} and on to {@code alphaAtBottom} at {@code height}. Both parts ease in and out (smoothstep), so the
+   * opacity changes without a jump in its rate: a linear ramp shows a visible line where it starts and where its slope
+   * changes, at the top of the fade and beside the floating container.
    */
-  static Shader newEasedFade (int color, int alphaFrom, int alphaTo) {
+  public static Shader newSmoothFade (float height, int color, float containerFraction, int alphaAtContainer, int alphaAtBottom) {
+    final int rgb = color & 0x00FFFFFF;
+    final float split = Math.max(0f, Math.min(1f, containerFraction));
+    final int steps = SMOOTH_FADE_STEPS;
+    final int[] colors = new int[steps * 2 + 1];
+    final float[] positions = new float[steps * 2 + 1];
+    for (int i = 0; i <= steps * 2; i++) {
+      boolean upper = i <= steps;
+      float t = upper ? (float) i / steps : (float) (i - steps) / steps;
+      float eased = t * t * (3f - 2f * t);
+      float alpha = upper ? alphaAtContainer * eased : alphaAtContainer + (alphaAtBottom - alphaAtContainer) * eased;
+      colors[i] = (Math.round(alpha) << 24) | rgb;
+      positions[i] = upper ? split * t : split + (1f - split) * t;
+    }
+    return new LinearGradient(0, 0, 0, height, colors, positions, Shader.TileMode.CLAMP);
+  }
+
+  /** One eased part of {@link #newSmoothFade}: {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1. */
+  private static Shader newEasedFade (int color, int alphaFrom, int alphaTo) {
     final int rgb = color & 0x00FFFFFF;
     final int steps = SMOOTH_FADE_STEPS;
     final int[] colors = new int[steps + 1];

@@ -17,13 +17,13 @@ package org.thunderdog.challegram.component.chat;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.MotionEvent;
 import android.view.View;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -32,10 +32,6 @@ import me.vkryl.android.AnimatorUtils;
 import me.vkryl.core.ColorUtils;
 
 public class SilentButton extends View {
-  private final int lineWidth;
-  private final int silentWidth;
-  private final float lineHeight;
-
   private boolean isSilent;
 
   private final Drawable icon;
@@ -43,9 +39,6 @@ public class SilentButton extends View {
   public SilentButton (Context context) {
     super(context);
     icon = Drawables.get(getResources(), R.drawable.outline_notifications_24);
-    lineWidth = Screen.dp(2f);
-    lineHeight = Screen.dp(23f);
-    silentWidth = Screen.dp(1.5f);
   }
 
   public boolean setVisible (boolean visible) {
@@ -132,21 +125,11 @@ public class SilentButton extends View {
       return;
     }
 
-    c.save();
-    c.rotate(-45f, cx, cy);
-
-    int padding = Screen.dp(1f);
-    int lineTop = (int) (cy - lineHeight * .5f) + padding;
-    int x = (int) (cx - padding);
-
-    c.clipRect(x, lineTop, x + lineWidth + silentWidth, lineTop + lineHeight * factor);
-    RectF rectF = Paints.getRectF();
-    rectF.set(x, lineTop, x + lineWidth, lineTop + lineHeight);
-
-    int alpha = (int) (255f * Math.min(1f, ((lineHeight * factor) / Screen.dpf(8f))));
-    c.drawRoundRect(rectF, lineWidth / 2, lineWidth / 2, Paints.fillingPaint(alpha == 255 ? Theme.iconColor() : ColorUtils.color(alpha, Theme.iconColor())));
-    c.drawRect(x + lineWidth, lineTop, x + lineWidth + silentWidth, lineTop + lineHeight, Paints.fillingPaint(/*alpha == 255 ? Theme.fillingColor() : */ColorUtils.color((int) (255f * factor), Theme.fillingColor())));
-
-    c.restore();
+    // Slash of Material Symbols "notifications_off"
+    int alpha = (int) (255f * Math.min(1f, ((Screen.dpf(24f) * factor) / Screen.dpf(8f))));
+    DrawAlgorithms.drawCross(c, cx, cy, factor,
+      alpha == 255 ? Theme.iconColor() : ColorUtils.color(alpha, Theme.iconColor()),
+      ColorUtils.color((int) (255f * factor), Theme.fillingColor())
+    );
   }
 }

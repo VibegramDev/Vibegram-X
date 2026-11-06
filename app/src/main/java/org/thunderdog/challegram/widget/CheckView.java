@@ -27,8 +27,7 @@ import android.view.View;
 
 import androidx.annotation.RequiresApi;
 
-import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
@@ -359,74 +358,27 @@ public class CheckView extends View {
           }*/
           case MODE_LOCATION:
           case MODE_GALLERY: {
-            int cx, cy;
-
-            int checkColor = 0xffffffff;
-
+            // M3 selection: primary circle with an onPrimary check (Material Symbols Rounded "check", 24dp).
+            // Gallery keeps its white ring: it is drawn over media, not over a theme surface.
+            final int cx, cy;
             if (mode == MODE_LOCATION) {
               cx = padding + locationRadius;
               cy = padding + locationRadius;
-              checkCanvas.drawCircle(cx, cy, locationRadius, Paints.fillingPaint(Theme.getColor(ColorId.fileAttach))); // theme_color_checkFilling
-              // checkColor = Theme.getColor(ColorId.checkCheck);
+              checkCanvas.drawCircle(cx, cy, locationRadius, Paints.fillingPaint(M3.primary()));
             } else {
               cx = padding + galleryTotalRadius;
               cy = padding + galleryTotalRadius;
-
               checkCanvas.drawCircle(cx, cy, galleryTotalRadius, Paints.fillingPaint(0xffffffff));
-              checkCanvas.drawCircle(cx, cy, galleryInnerRadius, Paints.fillingPaint(Theme.getColor(ColorId.checkActive)));
-              checkColor = Theme.getColor(ColorId.checkContent);
+              checkCanvas.drawCircle(cx, cy, galleryInnerRadius, Paints.fillingPaint(M3.primary()));
             }
 
             final float fx;
-
             if (mode == MODE_LOCATION) {
               fx = checkFactor <= .2f ? 0f : (checkFactor - .2f) / .8f;
             } else {
               fx = checkFactor <= .75f ? 0f : (checkFactor - .75f) / .25f;
             }
-
-            if (fx > 0) {
-              final float t1;
-              final float f1, f2;
-
-              t1 = mode == MODE_LOCATION ? .3f : .45f;
-              f1 = fx <= t1 ? fx / t1 : 1f;
-              f2 = fx <= t1 ? 0f : (fx - t1) / (1f - t1);
-
-              // check
-              checkCanvas.save();
-
-              if (mode == MODE_LOCATION) {
-                checkCanvas.translate(cx / 2 - Screen.dp(2.5f), cy + Screen.dp(1f));
-              } else {
-                checkCanvas.translate(cx / 2 - Screen.dp(2.5f), cy + Screen.dp(2f));
-              }
-              checkCanvas.rotate(-45f);
-
-              final int w2max, h1max;
-
-              if (mode == MODE_LOCATION) {
-                w2max = Screen.dp(14f);
-                h1max = Screen.dp(7f);
-              } else {
-                h1max = Screen.dp(8f);
-                w2max = Screen.dp(15f);
-              }
-
-              final int w2 = (int) ((float) w2max * f2);
-              final int h1 = (int) ((float) h1max * f1);
-
-              final int x1, y1;
-
-              x1 = Screen.dp(4f);
-              y1 = Screen.dp(11f);
-
-              int lineSize = mode == MODE_LOCATION ? Screen.dp(1.5f) : Screen.dp(2.5f);
-              checkCanvas.drawRect(x1, y1 - h1max, x1 + lineSize, y1 - h1max + h1, Paints.fillingPaint(checkColor));
-              checkCanvas.drawRect(x1, y1 - lineSize, x1 + w2, y1, Paints.fillingPaint(checkColor));
-
-              checkCanvas.restore();
-            }
+            CheckBoxView.drawCheckMark(checkCanvas, cx, cy, CheckBoxView.MARK_CHECK, 1f, fx, 0f, M3.onPrimary());
 
             // erase
             if (checkFactor != 1f) {

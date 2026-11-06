@@ -21,6 +21,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -253,10 +254,17 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) bottomBar.getLayoutParams();
       int bottomMargin, leftMargin, rightMargin, barHeight;
       if (isDockStyle()) {
-        // Folder chips: a row above the floating bar (the same bar as in the tablet layout).
+        // Folder chips: a row above the floating bar (the same bar as in the tablet layout), in a short window a row
+        // in line with the bar at the end: the chips end 12dp before it (as far as the first one from the screen edge).
         barHeight = getHeaderHeight();
-        bottomMargin = height + getDockChipsBottom();
-        leftMargin = rightMargin = 0;
+        bottomMargin = height + getDockChipsRowBottom();
+        if (isDockChipsInline() && navigationBar != null) {
+          int endMargin = navigationBar.getCompactBarWidth() + MainNavigationBar.getBarMargin() * 2 - Screen.dp(ViewPagerTopView.CHIP_INSET);
+          leftMargin = Lang.rtl() ? endMargin : 0;
+          rightMargin = Lang.rtl() ? 0 : endMargin;
+        } else {
+          leftMargin = rightMargin = 0;
+        }
       } else {
         barHeight = getHeaderHeight() + Screen.dp(3f) - Screen.dp(1f);
         bottomMargin = height;
@@ -280,40 +288,20 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (dockScrim == null) {
       return;
     }
-    // Dock style: an opaque surface behind the folder chips and the floating bar (chat rows never show through between
-    // the chips, also in landscape where the chips are in the middle of the short screen), the list fades into it.
+    // Dock style: the list washes out towards the bottom of the screen behind the floating bar and the folder chips
+    // (the same fade as the former dock: 70% surface at the top of the bar, 92% at the bottom of the screen).
     boolean visible = navigationBar != null && isDockStyle();
     dockScrim.setVisibility(visible ? View.VISIBLE : View.GONE);
     if (visible) {
+      int barTop = extraBottomInsetWithoutIme + MainNavigationBar.getBarTotalHeight();
+      // From a little above the folder chips (the same distance without folders) to the bottom of the screen.
+      int height = extraBottomInsetWithoutIme + getDockChipsBottom() + getHeaderHeight() + Screen.dp(16f);
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) dockScrim.getLayoutParams();
-      if (params == null || params.height != ViewGroup.LayoutParams.MATCH_PARENT) {
-        // Full height: the opaque top follows the chips and the bar when the player or the hidden chips move them.
-        dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+      if (params == null || params.height != height || params.gravity != Gravity.BOTTOM) {
+        dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.BOTTOM));
       }
-      updateDockScrimOffset();
+      dockScrim.setDockTopOffset(barTop);
     }
-  }
-
-  /**
-   * Dock style: top of the opaque backdrop. The fade starts where the bottom scroll space of the chat list starts
-   * ({@link #getChatListNavigationInset()}: 8dp above the chips row), so it never dims the last chat, and the surface is
-   * opaque from 8dp below the top of the chips row (4dp above the chips) down to the bottom of the screen. While the
-   * chips are hidden on scroll (or there are no folders) the same applies to the floating bar.
-   */
-  private void updateDockScrimOffset () {
-    if (dockScrim == null || dockScrim.getVisibility() != View.VISIBLE) {
-      return;
-    }
-    int fade = M3DockScrimView.getFadeHeight();
-    float y = bottomBarOffsetByPlayer + bottomBarOffsetBySnackBar;
-    // Bar: the list ends 8dp above it (see getChatListNavigationInset), the bar moves only up (invalidateBottomBarOffset).
-    float barOffset = extraBottomInsetWithoutIme + MainNavigationBar.getBarTotalHeight() + Screen.dp(8f) - fade - Math.min(y, 0);
-    float offset = barOffset;
-    if (bottomBar != null && displayTabsAtBottom()) {
-      float chipsOffset = extraBottomInsetWithoutIme + getDockChipsBottom() + getHeaderHeight() + Screen.dp(8f) - fade - y;
-      offset = barOffset + (chipsOffset - barOffset) * isBottomBarVisible.getFloatValue();
-    }
-    dockScrim.setOpaqueTopOffset(offset);
   }
 
   /** Dock style: distance from the bottom (above the system inset) to the bottom of the folder chips row. */
@@ -321,11 +309,47 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return MainNavigationBar.getBarTotalHeight() + Screen.dp(8f);
   }
 
+  /** Window shorter than this (landscape phone, split screen) has no room for two rows at the bottom. */
+  private static final int SHORT_WINDOW_HEIGHT_DP = 480;
+
+  /**
+   * Dock style in a short window (landscape phone, split screen): the folder chips are a row in line with the floating
+   * bar (at its start side, the bar at the end), so the bottom stack takes one row instead of two.
+   */
+  private boolean isDockChipsInline () {
+    if (!isDockStyle() || !displayTabsAtBottom()) {
+      return false;
+    }
+    int heightDp = context.getResources().getConfiguration().screenHeightDp;
+    return heightDp != Configuration.SCREEN_HEIGHT_DP_UNDEFINED && heightDp < SHORT_WINDOW_HEIGHT_DP;
+  }
+
+  /** Dock style: distance from the bottom (above the system inset) to the bottom of the folder chips row as laid out. */
+  private int getDockChipsRowBottom () {
+    if (isDockChipsInline()) {
+      // Vertically centered on the floating bar.
+      return MainNavigationBar.getBarBottomMargin() + (MainNavigationBar.getBarHeight() - getHeaderHeight()) / 2;
+    }
+    return getDockChipsBottom();
+  }
+
+  @Override
+  public void onConfigurationChanged (Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+    // Rotation, split screen resize: the folder chips move between the row above the dock and the row in line with it.
+    if (navigationBar != null && pagerWrap != null) {
+      checkMenu();
+      checkMargins();
+      updateBottomBarMargins();
+      invalidateBottomBarOffset();
+    }
+  }
+
   /** Bottom margin of the folder filter menu shown above the folders at the bottom. */
   private int getFolderMenuBottomMargin () {
     if (isDockStyle()) {
       // Dock style: above the chips row.
-      return getDockChipsBottom() + getHeaderHeight();
+      return getDockChipsRowBottom() + getHeaderHeight();
     }
     return getHeaderHeight();
   }
@@ -1375,6 +1399,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (navigationBar.isBar()) {
       // Tablet and phone dock style: the list scrolls under the floating bar, the last chat can be scrolled above it
       // (phone: and above the folder chips).
+      if (isDockChipsInline()) {
+        // Short window: one row, the chips are in line with the bar.
+        return Math.max(MainNavigationBar.getBarTotalHeight(), getDockChipsRowBottom() + getHeaderHeight()) + Screen.dp(8f);
+      }
       if (isDockStyle() && displayTabsAtBottom()) {
         return getDockChipsBottom() + getHeaderHeight() + Screen.dp(8f);
       }
@@ -1444,6 +1472,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
     navigationBar.setCompactBar(!isTablet && isDockStyle());
+    // Short window with folder chips: the bar at the end, the chips in line with it.
+    navigationBar.setCompactBarAtEnd(isDockChipsInline());
     // Over a section this screen is detached (its insets are 0): the system inset comes from the navigation controller.
     int barInset = navigationInOverlay && overlayNavigation != null ? overlayNavigation.getBottomInsetWithoutIme() : extraBottomInsetWithoutIme;
     navigationBar.setLayoutMode(isBar, isNavBarStyle(), barInset);
@@ -1756,6 +1786,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     int paddingLeft, paddingRight;
     // The tabs are never inside the app bar, so there are no app bar buttons to leave room for.
     paddingLeft = paddingRight = 0;
+    // Chips in line with the dock (short window): from the start of their row, otherwise centered.
+    int gravity = isDockChipsInline() ? (Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT) : Gravity.CENTER_HORIZONTAL;
+    if (params instanceof FrameLayoutFix.LayoutParams && ((FrameLayoutFix.LayoutParams) params).gravity != gravity) {
+      ((FrameLayoutFix.LayoutParams) params).gravity = gravity;
+      recyclerView.setLayoutParams(params);
+    }
     if (displayTabsAtBottom() && isDockStyle()) {
       // First chip starts at the same distance from the screen edge as the dock.
       int edge = MainNavigationBar.getBarMargin() - Screen.dp(ViewPagerTopView.CHIP_INSET);
@@ -3412,7 +3448,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void invalidateBottomBarOffset () {
-    updateDockScrimOffset();
     if (bottomBar != null && isDockStyle()) {
       // Dock style: the folder chips fade and sink a little when hidden on scroll, the dock stays.
       float visible = isBottomBarVisible.getFloatValue();

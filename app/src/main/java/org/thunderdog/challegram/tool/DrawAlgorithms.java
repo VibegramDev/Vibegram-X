@@ -18,6 +18,7 @@ import android.animation.ValueAnimator;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.CornerPathEffect;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -28,6 +29,7 @@ import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.text.Layout;
+import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.TextView;
@@ -68,29 +70,98 @@ import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 
 public class DrawAlgorithms {
-  public static void drawMark (Canvas c, float cx, float cy, float factor, int lineHeight, Paint paint) {
-    int lineRadius = lineHeight / 2;
+  // Code-drawn glyphs follow Material Symbols Rounded (wght 400, opsz 24), like the drawables:
+  // 2dp stroke at 24dp (proportionally for other sizes), round caps and round joins.
+
+  /** Material Symbols "close" at 24dp: arms span 11.2dp (between the cap centres) with a 2dp stroke. */
+  private static final float CLOSE_SPAN_DP = 11.2f;
+  /** Material Symbols chevrons (chevron_left/right, expand_less/more): arms run 4.6dp along each axis. */
+  private static final float CHEVRON_ARM_DP = 4.6f;
+
+  private static Paint glyphPaint;
+
+  public static Paint getGlyphPaint (@ColorInt int color, float strokeWidth) {
+    if (glyphPaint == null) {
+      glyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+      glyphPaint.setStyle(Paint.Style.STROKE);
+      glyphPaint.setStrokeCap(Paint.Cap.ROUND);
+      glyphPaint.setStrokeJoin(Paint.Join.ROUND);
+    }
+    glyphPaint.setColor(color);
+    glyphPaint.setStrokeWidth(strokeWidth);
+    return glyphPaint;
+  }
+
+  private static Path glyphPath;
+
+  private static Path obtainGlyphPath () {
+    if (glyphPath == null) {
+      glyphPath = new Path();
+    } else {
+      glyphPath.reset();
+    }
+    return glyphPath;
+  }
+
+  /** Draws (x1, y1) → (x2, y2) → (x3, y3) as one path, so a translucent colour is not doubled at the joint. */
+  public static void drawGlyphPolyline (Canvas c, float x1, float y1, float x2, float y2, float x3, float y3, Paint paint) {
+    Path path = obtainGlyphPath();
+    path.moveTo(x1, y1);
+    path.lineTo(x2, y2);
+    path.lineTo(x3, y3);
+    c.drawPath(path, paint);
+  }
+
+  /**
+   * arrow_downward: shaft from (cx, top) to the tip at (cx, tipY), arms reaching armSize back along each axis.
+   * With flatTop the shaft ends flat at top (the slit of cloud_download) instead of with a round cap.
+   */
+  public static void drawGlyphArrowDownward (Canvas c, float cx, float top, float tipY, float armSize, Paint paint, boolean flatTop) {
+    Path path = obtainGlyphPath();
+    if (flatTop) {
+      float halfWidth = paint.getStrokeWidth() / 2f;
+      Paint.Style style = paint.getStyle();
+      paint.setStyle(Paint.Style.FILL);
+      c.drawRect(cx - halfWidth, top, cx + halfWidth, tipY, paint);
+      paint.setStyle(style);
+    } else {
+      path.moveTo(cx, top);
+      path.lineTo(cx, tipY);
+    }
+    path.moveTo(cx - armSize, tipY - armSize);
+    path.lineTo(cx, tipY);
+    path.lineTo(cx + armSize, tipY - armSize);
+    c.drawPath(path, paint);
+  }
+
+  // Animated "close": the first arm grows, then the second one.
+  private static void drawCloseArms (Canvas c, float cx, float cy, float factor, float span, Paint paint) {
     float f1 = factor < .5f ? AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(factor / .5f) : 1f;
     float f2 = factor <= .5f ? 0f : AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation((factor - .5f) / .5f);
-    if (Lang.rtl()) {
-      if (f1 > 0f) {
-        int d = (int) ((float) lineHeight * f1);
-        c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-      }
-      if (f2 > 0f) {
-        int d = (int) ((float) lineHeight * f2);
-        c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-      }
-    } else {
-      if (f1 > 0f) {
-        int d = (int) ((float) lineHeight * f1);
-        c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-      }
-      if (f2 > 0f) {
-        int d = (int) ((float) lineHeight * f2);
-        c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-      }
+    if (f1 <= 0f) {
+      return;
     }
+    float radius = span / 2f;
+    float startX = Lang.rtl() ? cx - radius : cx + radius;
+    float direction = Lang.rtl() ? 1f : -1f;
+    Path path = obtainGlyphPath();
+    float d = span * f1;
+    path.moveTo(startX, cy - radius);
+    path.lineTo(startX + d * direction, cy - radius + d);
+    if (f2 > 0f) {
+      d = span * f2;
+      path.moveTo(startX + span * direction, cy - radius);
+      path.lineTo(startX + span * direction - d * direction, cy - radius + d);
+    }
+    c.drawPath(path, paint);
+  }
+
+  /**
+   * Material Symbols "close" with the caller's stroke.
+   * Callers pass the cross size of the legacy 24dp TGX glyph (9dp), which maps to the 11.2dp span of the symbol.
+   */
+  public static void drawMark (Canvas c, float cx, float cy, float factor, int lineHeight, Paint paint) {
+    drawCloseArms(c, cx, cy, factor, lineHeight * (CLOSE_SPAN_DP / 9f), getGlyphPaint(paint.getColor(), paint.getStrokeWidth()));
   }
 
   public static void drawRoundRect (Canvas c, float radius, float left, float top, float right, float bottom, Paint paint) {
@@ -179,60 +250,51 @@ public class DrawAlgorithms {
   public static void drawCross (Canvas c, float cx, float cy, float factor, @ColorInt int iconColor, @ColorInt int backgroundColor) {
     drawCross(c, cx, cy, factor, iconColor, backgroundColor, Screen.dp(23f));
   }
+  /**
+   * Slash of the Material Symbols "*_off" icons (mic_off, notifications_off) over a 24dp icon centred at (cx, cy):
+   * a 2dp round-capped stroke from (2.8, 4.2) to (19.8, 21.2), 1dp below-left of the centre, with a 2dp gap cut
+   * into the icon above-right of it. It grows from the top-left end with factor.
+   * lineHeight is the legacy TGX slash length for a 24dp icon (23dp); other values scale the glyph.
+   */
   public static void drawCross (Canvas c, float cx, float cy, float factor, @ColorInt int iconColor, @ColorInt int backgroundColor, int lineHeight) {
     if (factor <= 0f) {
       return;
     }
 
+    final float scale = lineHeight / Screen.dpf(23f);
+    final float lineWidth = Screen.dpf(2f) * scale;
+    final float gapWidth = Screen.dpf(2f) * scale;
+    final float halfLength = Screen.dpf(12f) * scale;
+
     c.save();
     c.rotate(-45f, cx, cy);
 
-    int lineWidth = Screen.dp(2f);
-    int silentWidth = Screen.dp(1.5f);
+    // After the rotation +x points up-right and +y down-right.
+    final float x = cx - Screen.dpf(1f) * scale;
+    final float startY = cy - halfLength;
+    final float endY = startY + halfLength * 2f * factor;
 
-    int padding = Screen.dp(1f);
-    int lineTop = (int) (cy - lineHeight * .5f) + padding;
-    int x = (int) (cx - padding) - Screen.dp(.5f);
-
-    c.clipRect(x, lineTop, x + lineWidth + silentWidth, lineTop + lineHeight * factor);
-    RectF rectF = Paints.getRectF();
-    rectF.set(x, lineTop, x + lineWidth, lineTop + lineHeight);
-
-    c.drawRoundRect(rectF, lineWidth / 2, lineWidth / 2, Paints.fillingPaint(iconColor));
-    c.drawRect(x + lineWidth, lineTop, x + lineWidth + silentWidth, lineTop + lineHeight, Paints.fillingPaint(backgroundColor));
+    c.drawRect(x, startY, x + lineWidth / 2f + gapWidth, endY, Paints.fillingPaint(backgroundColor));
+    c.drawLine(x, startY, x, endY, getGlyphPaint(iconColor, lineWidth));
 
     c.restore();
   }
 
+  /** Chevron of the voice-call slide hints: chevron_right (or chevron_left), as positioned by the legacy glyph. */
   public static void drawHorizontalDirection (Canvas c, float cx, float cy, @ColorInt int lineColor, boolean isRight) {
-    c.save();
-
-    int lineWidth = Screen.dp(2f);
-    int lineHeight = Screen.dp(9f);
-
-    int lineLeft = (int) cx - lineHeight / 2;
-    int lineBottom = (int) cy + lineHeight / 2;
-
-    c.translate(0, -lineHeight / 2);
-    c.rotate(45f, lineLeft, lineBottom);
-    c.translate(0, -Screen.dp(5f));
-    if (isRight) {
-      c.drawRect(lineLeft, lineBottom + lineHeight, lineLeft - lineWidth, lineBottom + lineWidth, Paints.fillingPaint(lineColor));
-      c.drawRect(lineLeft, lineBottom + lineWidth, lineLeft - lineHeight, lineBottom, Paints.fillingPaint(lineColor));
-    } else {
-      c.drawRect(lineLeft, lineBottom - lineHeight, lineLeft + lineWidth, lineBottom - lineWidth, Paints.fillingPaint(lineColor));
-      c.drawRect(lineLeft, lineBottom - lineWidth, lineLeft + lineHeight, lineBottom, Paints.fillingPaint(lineColor));
-    }
-
-    c.restore();
+    drawDirection(c, cx - Screen.dpf(1f), cy - Screen.dpf(3.5f), lineColor, isRight ? Gravity.RIGHT : Gravity.LEFT);
   }
 
+  /**
+   * expand_more (openFactor 0) rotating into expand_less (openFactor 1), morphing into close with crossFactor.
+   */
   public static void drawCollapse (Canvas c, float cx, float cy, @ColorInt int color, float openFactor, float crossFactor) {
-    Paint paint = Paints.getProgressPaint(color, Screen.dp(2f));
+    Paint paint = getGlyphPaint(color, Screen.dp(2f));
 
     double rad = Math.toRadians(MathUtils.fromTo(135f, 45f, openFactor));
 
-    float distance = Screen.dp(6f);
+    // Arm length: from the chevron arm (4.6dp along each axis) to half of the close diagonal (5.6dp along each axis).
+    float distance = MathUtils.fromTo(Screen.dpf(CHEVRON_ARM_DP), Screen.dpf(CLOSE_SPAN_DP / 2f), crossFactor) * (float) Math.sqrt(2.0);
 
     float diffX = (float) ((double) distance * Math.sin(rad));
     float diffY = (float) ((double) distance * Math.cos(rad));
@@ -241,36 +303,50 @@ public class DrawAlgorithms {
 
     float y = cy + diffY;
 
-    c.drawLine(cx + diffX, y, cx - diffX * crossFactor, cy - diffY * crossFactor, paint);
-    c.drawLine(cx - diffX, y, cx + diffX * crossFactor, cy - diffY * crossFactor, paint);
+    // One path, so a translucent colour is not doubled where the arms meet.
+    Path path = obtainGlyphPath();
+    path.moveTo(cx + diffX, y);
+    path.lineTo(cx - diffX * crossFactor, cy - diffY * crossFactor);
+    path.moveTo(cx - diffX, y);
+    path.lineTo(cx + diffX * crossFactor, cy - diffY * crossFactor);
+    c.drawPath(path, paint);
   }
 
+  /**
+   * chevron_left / chevron_right / expand_less / expand_more pointing to gravity: 2dp stroke, round caps and join,
+   * arms 4.6dp along each axis. (cx, cy) is the outer point of the tip.
+   */
   public static void drawDirection (Canvas c, float cx, float cy, @ColorInt int lineColor, int gravity) {
-    c.save();
-
-    int lineWidth = Screen.dp(2f);
-    int lineHeight = Screen.dp(9f);
-
-    int rotation = 45;
+    float dx, dy; // Direction the tip points to
     switch (gravity) {
       case Gravity.TOP:
-        rotation += 90;
+        dx = 0f; dy = -1f;
         break;
       case Gravity.BOTTOM:
-        rotation -= 90;
+        dx = 0f; dy = 1f;
         break;
       case Gravity.RIGHT:
-        rotation += 180;
+        dx = 1f; dy = 0f;
         break;
       case Gravity.LEFT:
-        // nothing
+      default:
+        dx = -1f; dy = 0f;
         break;
     }
-    c.rotate(rotation, cx, cy);
-    c.drawRect(cx, cy - lineHeight, cx + lineWidth, cy, Paints.fillingPaint(lineColor));
-    c.drawRect(cx + lineWidth, cy - lineWidth, cx + lineHeight, cy, Paints.fillingPaint(lineColor));
-
-    c.restore();
+    final float lineWidth = Screen.dpf(2f);
+    final float arm = Screen.dpf(CHEVRON_ARM_DP);
+    // Stroke centre at the tip
+    final float tipX = cx - dx * lineWidth / 2f;
+    final float tipY = cy - dy * lineWidth / 2f;
+    // Middle between the two arm ends
+    final float baseX = tipX - dx * arm;
+    final float baseY = tipY - dy * arm;
+    drawGlyphPolyline(c,
+      baseX - dy * arm, baseY + dx * arm,
+      tipX, tipY,
+      baseX + dy * arm, baseY - dx * arm,
+      getGlyphPaint(lineColor, lineWidth)
+    );
   }
 
   public static void drawIcon (Canvas c, Receiver receiver, float degrees, float factor, int contentReplaceColor, Drawable drawable, Paint drawablePaint) {
@@ -338,24 +414,15 @@ public class DrawAlgorithms {
     }
 
     if (factor < 1f) {
-      int baseRadius = Screen.dp(15f);
-      int radiusStartLeft = Screen.dp(12);
-      int radiusStartRight = Screen.dp(10f);
-      int xLeft = -Screen.dp(12f);
-      int yLeft = Screen.dp(6f);
-      int xRight = Screen.dp(14f);
-      int yRight = Screen.dp(8f);
-
-      if (originRadius != baseRadius) {
-        float scale = (float) originRadius / (float) baseRadius;
-        baseRadius = originRadius;
-        radiusStartLeft *= scale;
-        radiusStartRight *= scale;
-        xLeft *= scale;
-        yLeft *= scale;
-        xRight *= scale;
-        yRight *= scale;
-      }
+      // Material Symbols "cloud", relative to its main circle (r = 7dp at 24dp, centre at (12, 11)):
+      // left lobe r 5.5dp at (-5.5, +3.5), right lobe r 4.5dp at (+6.5, +4.5), flat bottom 9dp below the centre.
+      float baseRadius = originRadius;
+      float radiusStartLeft = baseRadius * (5.5f / 7f);
+      float radiusStartRight = baseRadius * (4.5f / 7f);
+      float xLeft = -baseRadius * (5.5f / 7f);
+      float yLeft = baseRadius * (3.5f / 7f);
+      float xRight = baseRadius * (6.5f / 7f);
+      float yRight = baseRadius * (4.5f / 7f);
 
       float radiusLeft = radiusStartLeft + (baseRadius - radiusStartLeft) * factor;
       float radiusRight = radiusStartRight + (baseRadius - radiusStartRight) * factor;
@@ -813,11 +880,41 @@ public class DrawAlgorithms {
       if (rotation != 0)
         c.rotate(rotation, 0, 0);
     }
-    c.drawPath(path, Paints.getPlayPausePaint(color, Paint.Style.FILL));
+    c.drawPath(path, getPlayPausePaint(color, path));
     if (saved) {
       c.restore();
     }
     // c.drawCircle(cx, cy, Screen.dp(2f), Paints.fillingPaint(0xffff0000));
+  }
+
+  private static Paint playPausePaint;
+  private static SparseArray<CornerPathEffect> playPauseCorners;
+  private static RectF playPauseBounds;
+
+  // Rounded corners of Material Symbols play_arrow / pause (FILL 1): 3.5 units of the 21-unit glyph height
+  // (CornerPathEffect clamps it to half of the bar width, giving the fully rounded pause bars).
+  // Measured on the path, as some callers draw a path built for another size.
+  private static final float PLAY_PAUSE_CORNER_RADIUS = 3.5f / 21f;
+
+  private static Paint getPlayPausePaint (@ColorInt int color, Path path) {
+    if (playPausePaint == null) {
+      playPausePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+      playPausePaint.setStyle(Paint.Style.FILL);
+      playPauseCorners = new SparseArray<>();
+      playPauseBounds = new RectF();
+    }
+    path.computeBounds(playPauseBounds, false);
+    int cornerRadius = Math.max(1, Math.round(Math.max(playPauseBounds.width(), playPauseBounds.height()) * PLAY_PAUSE_CORNER_RADIUS));
+    CornerPathEffect effect = playPauseCorners.get(cornerRadius);
+    if (effect == null) {
+      effect = new CornerPathEffect(cornerRadius);
+      playPauseCorners.put(cornerRadius, effect);
+    }
+    if (playPausePaint.getPathEffect() != effect) {
+      playPausePaint.setPathEffect(effect);
+    }
+    playPausePaint.setColor(color);
+    return playPausePaint;
   }
 
   public static float buildPlayPause (Path path, int sourcePauseWidth, float drawFactor, float factor) {
@@ -830,12 +927,14 @@ public class DrawAlgorithms {
     path.reset();
     path.setFillType(Path.FillType.EVEN_ODD);
 
+    // Material Symbols Rounded pause / play_arrow (FILL 1), in units of the pause glyph width (6 + 6 + 6):
+    // bars 6 x 21 with 6 between them; the play triangle is 16.5 x 21 with its left edge 6 left of the centre.
     int pauseWidth = Screen.dp(6f);
     int pauseSpacing = Screen.dp(6f);
     int pauseHeight = Screen.dp(21f);
 
-    int width = Screen.dp(18f);
-    int height = Screen.dp(22f);
+    int width = Screen.dp(16.5f);
+    int height = Screen.dp(21f);
 
     float scale = (float) sourcePauseWidth / (float) (pauseWidth * 2 + pauseSpacing);
 
@@ -846,7 +945,7 @@ public class DrawAlgorithms {
     width *= scale;
     height *= scale;
 
-    int baseStartX = -(int) (width * .75f) / 2;
+    int baseStartX = -pauseWidth;
     int baseStartY = -height / 2;
 
     if (factor == 0f) {
@@ -1407,31 +1506,12 @@ public class DrawAlgorithms {
     c.restore();
   }*/
 
+ /**
+  * Animated Material Symbols "close" with a 2dp round-capped stroke: lineHeight is the span of the arms
+  * (11.2dp in a 24dp icon).
+  */
  public static void drawAnimatedCross (Canvas c, float cx, float cy, float factor, int color, int lineHeight) {
-   final int lineRadius = (int) ((float) lineHeight * .5f);
-
-   float f1 = factor < .5f ? AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(factor / .5f) : 1f;
-   float f2 = factor <= .5f ? 0f : AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation((factor - .5f) / .5f);
-   Paint paint = Paints.getProgressPaint(color, Screen.dp(2f));
-   if (Lang.rtl()) {
-     if (f1 > 0f) {
-       int d = (int) ((float) lineHeight * f1);
-       c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-     }
-     if (f2 > 0f) {
-       int d = (int) ((float) lineHeight * f2);
-       c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-     }
-   } else {
-     if (f1 > 0f) {
-       int d = (int) ((float) lineHeight * f1);
-       c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-     }
-     if (f2 > 0f) {
-       int d = (int) ((float) lineHeight * f2);
-       c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-     }
-   }
+   drawCloseArms(c, cx, cy, factor, lineHeight, getGlyphPaint(color, Screen.dp(2f)));
  }
 
  public static void drawSticker (Canvas c, TGStickerSetInfo info, GifReceiver gifReceiver, ImageReceiver receiver, Path contour) {

@@ -15,12 +15,12 @@
 package org.thunderdog.challegram.widget;
 
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Path;
 import android.view.Gravity;
 import android.view.View;
 
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.TextColorSet;
@@ -32,6 +32,7 @@ import me.vkryl.core.ColorUtils;
 
 public class ExpanderView implements FactorAnimator.Target {
   private final Path path;
+  private final Paint paint;
   private final BoolAnimator expandAnimator = new BoolAnimator(0, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
 
   private Counter counter;
@@ -42,15 +43,20 @@ public class ExpanderView implements FactorAnimator.Target {
     this.parentView = parentView;
     this.path = new Path();
 
-    int width = Screen.dp(10f);
-    int height = Screen.dp(5f);
+    // Material Symbols Rounded `expand_more`: 2dp chevron with round caps and join, 9.2dp wide, 4.6dp tall
+    // (centre line), centred on the rotation point.
+    float halfWidth = Screen.dpf(4.6f);
+    float halfHeight = Screen.dpf(2.3f);
 
-    path.setFillType(Path.FillType.EVEN_ODD);
-    path.moveTo(-width / 2f, -height / 2f);
-    path.rLineTo(width, 0);
-    path.rLineTo(-width / 2f, height);
-    path.rLineTo(-width / 2f, -height);
-    path.close();
+    path.moveTo(-halfWidth, -halfHeight);
+    path.lineTo(0, halfHeight);
+    path.lineTo(halfWidth, -halfHeight);
+
+    this.paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+    paint.setStyle(Paint.Style.STROKE);
+    paint.setStrokeWidth(Screen.dp(2f));
+    paint.setStrokeCap(Paint.Cap.ROUND);
+    paint.setStrokeJoin(Paint.Join.ROUND);
   }
 
   public void setUnreadCount (int unreadCount, boolean isMuted, boolean animated) {
@@ -103,7 +109,8 @@ public class ExpanderView implements FactorAnimator.Target {
     if (degrees != 0) {
       c.rotate(degrees);
     }
-    c.drawPath(path, Paints.fillingPaint(color));
+    paint.setColor(color);
+    c.drawPath(path, paint);
     c.restore();
 
     if (counter != null && expandFactor < 1f) {

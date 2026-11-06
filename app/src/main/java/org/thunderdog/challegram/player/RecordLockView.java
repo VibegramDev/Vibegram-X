@@ -16,7 +16,7 @@ package org.thunderdog.challegram.player;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -131,6 +131,7 @@ public class RecordLockView extends View {
 
 
   private static final RectF tmpRect = new RectF();
+  private final Path pausePath = new Path(), shacklePath = new Path();
 
   @Override
   protected void onDraw (Canvas c) {
@@ -151,26 +152,37 @@ public class RecordLockView extends View {
     final int grayColor = Theme.iconColor();
     final int redColor = Theme.getColor(ColorId.iconNegative);
 
-    int totalDy = (int) (Screen.dp(2f) * collapseFactor * (1f - sendFactor));
+    // Lock: Material Symbols "lock" (filled body): 16 x 14dp body with 2dp corners and a 2dp keyhole, shackle of
+    // radius 4dp (stroke centre) standing 2dp above the body. As in the 24dp symbol, the body centre sits 3dp low.
+    int totalDy = (int) (Screen.dp(3f) * collapseFactor * (1f - sendFactor));
 
     int width = (int) (Screen.dp(6f) + Screen.dp(2f) * (1f - sendFactor));
     int height = (int) (Screen.dp(6f) + Screen.dp(1f) * (mode == MODE_DEFAULT ? (1f - sendFactor) : 1f));
     int dy = (int) (Screen.dp(BUTTON_SIZE) / 3f * (1f - collapseFactor));
     rectF.set(cx - width, cy - height + dy + totalDy, cx + width, cy + height + dy + totalDy);
 
-    final float r = Screen.dp(2) * (1f - sendFactor);
+    final float bodyRadius = Screen.dp(2f);
     if (mode == MODE_DEFAULT) {
-      c.drawRoundRect(rectF, Screen.dp(2f), Screen.dp(2f), Paints.fillingPaint(ColorUtils.fromToArgb(grayColor, redColor, sendFactor)));
+      // Turns into Material Symbols "stop" (FILL 1): 12dp square with 2dp corners
+      c.drawRoundRect(rectF, bodyRadius, bodyRadius, Paints.fillingPaint(ColorUtils.fromToArgb(grayColor, redColor, sendFactor)));
     } else {
       final float pauseAlpha = 1f - editFactor;
       final float alpha = editFactor;
 
       if (editFactor < 1f) {
-        c.drawRoundRect(rectF, r, r, Paints.fillingPaint(ColorUtils.alphaColor(pauseAlpha, grayColor)));
-        final float w = Screen.dp(2);
-        final float h = MathUtils.fromTo(Screen.dp(2), rectF.height() / 2f + 1, sendFactor);
-        tmpRect.set(cx - w, rectF.centerY() - h, cx + w, rectF.centerY() + h);
-        c.drawRoundRect(tmpRect, r, r, Paints.fillingPaint(ColorUtils.alphaColor(pauseAlpha, fillingColor)));
+        // Splits into the bars of Material Symbols "pause" (FILL 1): 4 x 14dp, 4dp apart, fully rounded
+        final float halfGap = Screen.dp(2f);
+        final float seam = halfGap * (1f - sendFactor * 2f);
+        pausePath.reset();
+        tmpRect.set(rectF.left, rectF.top, cx + seam, rectF.bottom);
+        pausePath.addRoundRect(tmpRect, bodyRadius, bodyRadius, Path.Direction.CW);
+        tmpRect.set(cx - seam, rectF.top, rectF.right, rectF.bottom);
+        pausePath.addRoundRect(tmpRect, bodyRadius, bodyRadius, Path.Direction.CW);
+        c.drawPath(pausePath, Paints.fillingPaint(ColorUtils.alphaColor(pauseAlpha, grayColor)));
+        // Keyhole, stretching into the gap between the bars
+        final float h = MathUtils.fromTo(halfGap, rectF.height() / 2f + halfGap, sendFactor);
+        tmpRect.set(cx - halfGap, rectF.centerY() - h, cx + halfGap, rectF.centerY() + h);
+        c.drawRoundRect(tmpRect, halfGap, halfGap, Paints.fillingPaint(ColorUtils.alphaColor(pauseAlpha, fillingColor)));
       }
 
       if (editFactor > 0f) {
@@ -182,17 +194,20 @@ public class RecordLockView extends View {
       if (mode == MODE_DEFAULT) {
         c.drawCircle(cx, rectF.centerY(), Screen.dp(2f), Paints.fillingPaint(ColorUtils.alphaColor(1f - sendFactor, fillingColor)));
       }
-      dy /= 2;
-      rectF.offset(0, -dy);
-      Paint paint = Paints.strokeBigPaint(ColorUtils.alphaColor(1f - sendFactor, grayColor));
-      rectF.set(cx - Screen.dp(5f), rectF.top - Screen.dp(5f), cx + Screen.dp(5f), rectF.top + Screen.dp(5f));
-      c.drawArc(rectF, 180f, 180f, false, paint);
-      if (dy > 0) {
-        int x = (int) rectF.left;
-        int y = (int) rectF.centerY();
-        c.drawLine(x, y, x, y + dy, paint);
-        c.drawLine(rectF.right, y, rectF.right, y + Math.min(Screen.dp(2f), dy), paint);
-      }
+      // Shackle, lifted by half of dy while the lock is open: the left leg stays in the body, the right one opens
+      final float shackleRadius = Screen.dp(4f);
+      final float legHeight = Screen.dp(2f);
+      final float bodyTop = rectF.top;
+      final float arcCy = bodyTop - legHeight - dy / 2f;
+      tmpRect.set(cx - shackleRadius, arcCy - shackleRadius, cx + shackleRadius, arcCy + shackleRadius);
+      shacklePath.reset();
+      shacklePath.moveTo(cx - shackleRadius, bodyTop);
+      shacklePath.arcTo(tmpRect, 180f, 180f, false);
+      shacklePath.rLineTo(0, legHeight);
+      c.save();
+      c.clipRect(0, 0, viewWidth, bodyTop);
+      c.drawPath(shacklePath, DrawAlgorithms.getGlyphPaint(ColorUtils.alphaColor(1f - sendFactor, grayColor), Screen.dp(2f)));
+      c.restore();
     }
 
     if (collapseFactor < 1f) {

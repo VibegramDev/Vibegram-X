@@ -20,12 +20,19 @@ import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 
+/**
+ * Floating M3 square icon button with a counter badge (chat search «previous/next result», attach camera).
+ * The container is a rounded square ({@link CircleButton#initSquare}) inside a {@code padding} margin that keeps room
+ * for the elevation shadow; the counter sits in the top-right corner of the button, inside its bounds.
+ */
 public class CircleCounterBadgeView extends FrameLayout implements FactorAnimator.Target {
   private static final float DISABLED_BUTTON_ALPHA = .4f;
 
   public static final int BUTTON_WRAPPER_WIDTH = Screen.dp(118);
-  public static final int BUTTON_PADDING = Screen.dp(24f);
   public static final int PADDING = Screen.dp(4);
+
+  /** Room above the button inside the wrapper (same as the chat scroll-to-bottom button wrapper). */
+  private static final float WRAPPER_EXTRA_HEIGHT = 18f;
 
   public static final int ANIMATOR_ENABLED = 0;
 
@@ -37,20 +44,14 @@ public class CircleCounterBadgeView extends FrameLayout implements FactorAnimato
     super(controller.context());
     Context context = controller.context();
 
-    RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(Screen.dp(BUTTON_WRAPPER_WIDTH), Screen.dp(74f));
+    RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(BUTTON_WRAPPER_WIDTH, ViewGroup.LayoutParams.WRAP_CONTENT);
     params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
     params.addRule(RelativeLayout.ABOVE, R.id.msg_bottom);
     params.rightMargin = params.bottomMargin = Screen.dp(16f) - PADDING;
-
-    FrameLayoutFix.LayoutParams fParams = FrameLayoutFix.newParams(Screen.dp(24f) * 2 + PADDING * 2, Screen.dp(24f) * 2 + PADDING * 2, Gravity.RIGHT | Gravity.BOTTOM);
-    FrameLayoutFix.LayoutParams fParams2 = FrameLayoutFix.newParams(BUTTON_PADDING + fParams.width, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.RIGHT | Gravity.BOTTOM);
-    fParams2.bottomMargin = Screen.dp(24f) * 2 - Screen.dp(28f) / 2;
-
     setLayoutParams(params);
 
     counterBadgeView = new CounterBadgeView(context);
-    counterBadgeView.setLayoutParams(fParams2);
-    counterBadgeView.setPadding(BUTTON_PADDING, 0, 0, 0);
+    counterBadgeView.setLayoutParams(FrameLayoutFix.newParams(0, 0, Gravity.RIGHT | Gravity.BOTTOM));
 
     circleButton = new CircleButton(context);
     circleButton.setId(id);
@@ -61,7 +62,7 @@ public class CircleCounterBadgeView extends FrameLayout implements FactorAnimato
       circleButton.setOnLongClickListener(onLongClickListener);
     }
     circleButton.setTag(counterBadgeView);
-    circleButton.setLayoutParams(fParams);
+    circleButton.setLayoutParams(FrameLayoutFix.newParams(0, 0, Gravity.RIGHT | Gravity.BOTTOM));
 
     controller.addThemeInvalidateListener(counterBadgeView);
     controller.addThemeInvalidateListener(circleButton);
@@ -72,8 +73,38 @@ public class CircleCounterBadgeView extends FrameLayout implements FactorAnimato
     setEnabled(true, false);
   }
 
+  /**
+   * M3 icon button corner radius of the square shape for the given container size
+   * (icon-buttons › Button corner radius › Square button: XS 12dp, S 12dp, M 16dp, L 28dp, XL 28dp).
+   */
+  private static float getSquareCornerRadius (float size) {
+    if (size >= 96f) {
+      return 28f;
+    }
+    if (size >= 56f) {
+      return 16f;
+    }
+    return 12f;
+  }
+
   public void init (@DrawableRes int icon, float size, float padding, @ColorId int backgroundColorId, @ColorId int iconColorId) {
-    circleButton.init(icon, size, padding, backgroundColorId, iconColorId);
+    init(icon, size, getSquareCornerRadius(size), padding, backgroundColorId, iconColorId);
+  }
+
+  public void init (@DrawableRes int icon, float size, float cornerRadius, float padding, @ColorId int backgroundColorId, @ColorId int iconColorId) {
+    final int buttonSize = Screen.dp(size) + Screen.dp(padding) * 2;
+    ViewGroup.LayoutParams params = circleButton.getLayoutParams();
+    params.width = params.height = buttonSize;
+    circleButton.setLayoutParams(params);
+    params = counterBadgeView.getLayoutParams();
+    params.width = params.height = buttonSize;
+    counterBadgeView.setLayoutParams(params);
+    params = getLayoutParams();
+    if (params != null) {
+      params.height = buttonSize + Screen.dp(WRAPPER_EXTRA_HEIGHT);
+      setLayoutParams(params);
+    }
+    circleButton.initSquare(icon, cornerRadius, padding, backgroundColorId, iconColorId);
   }
 
   public void setInProgress (boolean inProgress) {

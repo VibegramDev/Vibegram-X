@@ -275,27 +275,10 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
     }
     float bottomLineEndX = MathUtils.fromTo(cRight - rectWidth - horizontalLineSpacing, cRight, hasMedia.getFloatValue());
 
-    c.drawRect(
-      lineStartX,
-      cTop,
-      topLineEndX,
-      cTop + lineSize,
-      Paints.fillingPaint(contentColor)
-    );
-    c.drawRect(
-      lineStartX,
-      cTop + lineSize + verticalLineSpacing,
-      topLineEndX,
-      cTop + lineSize * 2 + verticalLineSpacing,
-      Paints.fillingPaint(contentColor)
-    );
-    c.drawRect(
-      lineStartX,
-      cTop + lineSize * 2 + verticalLineSpacing * 2,
-      bottomLineEndX,
-      cTop + lineSize * 3 + verticalLineSpacing * 2,
-      Paints.fillingPaint(contentColor)
-    );
+    // Text lines with round caps, like the strokes of Material Symbols Rounded
+    drawTextLine(c, lineStartX, cTop, topLineEndX, contentColor);
+    drawTextLine(c, lineStartX, cTop + lineSize + verticalLineSpacing, topLineEndX, contentColor);
+    drawTextLine(c, lineStartX, cTop + lineSize * 2 + verticalLineSpacing * 2, bottomLineEndX, contentColor);
 
     rebuildPath(cLeft,
       cTop,
@@ -309,6 +292,16 @@ public class LinkPreviewToggleView extends AppCompatImageView implements Tooltip
     /*if (BuildConfig.DEBUG) {
       Drawables.drawCentered(c, Drawables.get(R.drawable.baseline_link_preview_bg_24), getMeasuredWidth() / 2f, getMeasuredHeight() / 2f, Paints.getPorterDuffPaint(0xaaff0000));
     }*/
+  }
+
+  private void drawTextLine (Canvas c, float left, float top, float right, int color) {
+    if (right <= left) {
+      return;
+    }
+    RectF rectF = Paints.getRectF();
+    rectF.set(left, top, right, top + lineSize);
+    float radius = Math.min(lineSize, right - left) / 2f;
+    c.drawRoundRect(rectF, radius, radius, Paints.fillingPaint(color));
   }
 
   private final RectF leftLineRect = new RectF();

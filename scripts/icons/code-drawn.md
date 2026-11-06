@@ -21,7 +21,7 @@ to `app/src/main/java/org/thunderdog/challegram/`.
 | `widget/CheckView.java` | `onDraw` | circular check (selection) |
 | `widget/SendButton.java` | `onDraw` | composer send button: edit-mode checkmark (two rotated bars), progress arc |
 | `component/chat/SilentButton.java` | `onDraw` | slash over `outline_notifications_24` (silent broadcast) |
-| `navigation/BackHeaderButton.java` | `drawButton` | header ☰ menu ↔ ← back ↔ ✕ close morph |
+| ✅ `navigation/BackHeaderButton.java` | `drawButton` | header ☰ menu ↔ ← back ↔ ✕ close morph |
 | `navigation/StopwatchHeaderButton.java` | `onDraw` | stopwatch / self-destruct timer header button |
 | `navigation/TriangleView.java` | `draw` | small dropdown triangle (`ToggleHeaderView`, `RotationControlView`) |
 | `widget/ExpanderView.java` | `draw` | rotating expand arrow (`DrawerHeaderView` account switcher) |

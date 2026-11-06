@@ -503,9 +503,9 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       // single-pane transition faded them out (e.g. back from a chat to the list on the cover screen).
       headerView.resetTitleTransition(controller);
     }
-    if (inPane || HeaderView.getFloatingButtonId(controller) == 0) {
-      // setTitle() only shows the shared floating button; hide the one left from the previous screen
-      // (e.g. edit button of settings), as there's no switch animation in the split layout.
+    if (inPane) {
+      // Screens in the left pane have no shared floating button: hide the one left by the detail screen,
+      // as there's no switch animation in the split layout (setTitle() hides it for detail screens without one).
       floatingButton.setHeightFactor(0f, 0f, false);
     }
     tabletLayout.updateVisibility();

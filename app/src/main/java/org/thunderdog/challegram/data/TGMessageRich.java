@@ -34,6 +34,7 @@ import org.thunderdog.challegram.mediaview.MediaViewThumbLocation;
 import org.thunderdog.challegram.mediaview.data.MediaItem;
 import org.thunderdog.challegram.mediaview.data.MediaStack;
 import org.thunderdog.challegram.telegram.TdlibUi;
+import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -1437,15 +1438,14 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     }
   }
 
+  // Material Symbols expand_more / chevron_right: arms of 4dp along each axis, the symbol's 2dp stroke per 4.6dp of arm
   private void drawChevron (Canvas c, int cx, int cy, boolean expanded, int color) {
-    Paint paint = Paints.getProgressPaint(color, Screen.dp(1.5f));
     int size = Screen.dp(4f);
+    Paint paint = DrawAlgorithms.getGlyphPaint(color, size * (2f / 4.6f));
     if (expanded) {
-      c.drawLine(cx - size, cy - size / 2f, cx, cy + size / 2f, paint);
-      c.drawLine(cx, cy + size / 2f, cx + size, cy - size / 2f, paint);
+      DrawAlgorithms.drawGlyphPolyline(c, cx - size, cy - size / 2f, cx, cy + size / 2f, cx + size, cy - size / 2f, paint);
     } else {
-      c.drawLine(cx - size / 2f, cy - size, cx + size / 2f, cy, paint);
-      c.drawLine(cx + size / 2f, cy, cx - size / 2f, cy + size, paint);
+      DrawAlgorithms.drawGlyphPolyline(c, cx - size / 2f, cy - size, cx + size / 2f, cy, cx - size / 2f, cy + size, paint);
     }
   }
 

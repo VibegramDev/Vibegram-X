@@ -41,8 +41,9 @@ public class ClearButton extends HeaderButton {
 
   private final int totalWidth = Screen.dp(49f);
   private final int cx = (int) ((float) totalWidth * .5f);
-  private final int lineHeight = Screen.dp(12f);
-  private final int lineRadius = (int) ((float) lineHeight * .5f);
+  // Material Symbols "close": arms span 11.2dp with a 2dp round-capped stroke
+  private final int lineHeight = Screen.dp(11.2f);
+  private final int lineRadius = Screen.dp(6f); // progress radius
 
   private final Paint paint;
 
@@ -56,6 +57,7 @@ public class ClearButton extends HeaderButton {
     paint.setStyle(Paint.Style.STROKE);
     paint.setColor(0xffffffff);
     paint.setStrokeWidth(Screen.dp(2f));
+    paint.setStrokeCap(Paint.Cap.ROUND);
 
     setLayoutParams(new LinearLayout.LayoutParams(totalWidth, ViewGroup.LayoutParams.MATCH_PARENT));
   }

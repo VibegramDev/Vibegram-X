@@ -24,8 +24,7 @@ import androidx.annotation.FloatRange;
 
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.loader.Receiver;
-import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
@@ -63,7 +62,7 @@ public class SimplestCheckBox {
   }
 
   public static SimplestCheckBox newInstance (float initialFactor, String counter) {
-    return newInstance(initialFactor, counter, ColorId.checkActive, ColorId.checkContent, MODE_NORMAL, 0f);
+    return newInstance(initialFactor, counter, M3.primary(), M3.onPrimary(), MODE_NORMAL, 0f);
   }
 
   public static SimplestCheckBox newInstance (float initialFactor, String counter, int fillingColor, int contentColor, int checkBoxMode, float squareFactor) {
@@ -118,7 +117,8 @@ public class SimplestCheckBox {
     final int eraseRadius = (int) ((float) radius * (1f - factor));
 
     if (eraseRadius < radius) {
-      final float squareRadius = squareFactor > 0f ? MathUtils.fromTo(radius, Screen.dp(3f), squareFactor) : radius;
+      // Square (multiple answers): M3 checkbox, 18dp with 2dp corners.
+      final float squareRadius = squareFactor > 0f ? MathUtils.fromTo(radius, Screen.dp(2f), squareFactor) : radius;
       RectF rectF = Paints.getRectF();
       if (squareFactor > 0f) {
         rectF.set(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
@@ -141,36 +141,10 @@ public class SimplestCheckBox {
           DrawAlgorithms.drawAnimatedCross(c, centerX, centerY, factor, contentColor, Screen.dp(8f));
         } else {
           final float fx = factor <= .2f ? 0f : (factor - .2f) / .8f;
-
           if (fx > 0f) {
-            final float t1;
-            final float f1, f2;
-
-            t1 = .3f;
-            f1 = fx <= t1 ? fx / t1 : 1f;
-            f2 = fx <= t1 ? 0f : (fx - t1) / (1f - t1);
-
-            // check
-            c.save();
-            c.translate(-Screen.dp(.35f), centerY);
-            c.rotate(-45f);
-
-            final int w2max = Screen.dp(10f);
-            final int h1max = Screen.dp(5f);
-
-            final int w2 = (int) ((float) w2max * f2);
-            final int h1 = (int) ((float) h1max * f1);
-
-            final int x1, y1;
-
-            x1 = Screen.dp(4f);
-            y1 = Screen.dp(11f);
-
-            int lineSize = Screen.dp(2f);
-            c.drawRect(x1, y1 - h1max, x1 + lineSize, y1 - h1max + h1, Paints.fillingPaint(contentColor));
-            c.drawRect(x1, y1 - lineSize, x1 + w2, y1, Paints.fillingPaint(contentColor));
-
-            c.restore();
+            // Material Symbols Rounded "check_circle" mark (the "check_box" one is .4dp higher).
+            final float scale = (float) radius / (float) Screen.dp(10f);
+            CheckBoxView.drawCheckMark(c, centerX, centerY - Screen.dpf(.4f) * scale * squareFactor, CheckBoxView.MARK_CIRCLE, scale, fx, 0f, contentColor);
           }
         }
       } else {
@@ -246,7 +220,8 @@ public class SimplestCheckBox {
   }
 
   public static void draw (Canvas c, int centerX, int centerY, float factor, String counter, SimplestCheckBox frame) {
-    draw(c, centerX, centerY, factor, counter, frame, Theme.checkFillingColor(), Theme.checkCheckColor(), MODE_NORMAL, 0f);
+    // M3 selection: primary circle with an onPrimary check.
+    draw(c, centerX, centerY, factor, counter, frame, M3.primary(), M3.onPrimary(), MODE_NORMAL, 0f);
   }
 
   public static final int MODE_NORMAL = 0;

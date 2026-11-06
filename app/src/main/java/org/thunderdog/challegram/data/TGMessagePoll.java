@@ -37,6 +37,7 @@ import org.thunderdog.challegram.loader.Receiver;
 import org.thunderdog.challegram.navigation.TooltipOverlayView;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
@@ -657,10 +658,12 @@ public class TGMessagePoll extends TGMessage implements ClickHelper.Delegate, Co
       if (explanationActive > 0f) {
         Drawable explanationDrawableActive = getExplanationDrawable(true);
         int progressColor = getProgressColor();
-        int size = Screen.dp(2f);
+        // Rays around Material Symbols "lightbulb" (22dp): the stroke weight of the bulb outline, round caps,
+        // centred on the bulb (2.3dp above the icon centre).
+        float size = Screen.dp(2f) * (22f / 24f);
         Drawables.draw(c, explanationDrawableActive, cx - explanationDrawable.getMinimumWidth() / 2f, cy - explanationDrawable.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(hintVisibility * explanationActive, progressColor)));
 
-        cy -= Screen.dp(2.5f);
+        cy -= Screen.dp(2.3f);
 
         int lineColor = ColorUtils.alphaColor(hintVisibility * explanationActive, progressColor);
         int lineLength = Screen.dp(2.5f);
@@ -674,7 +677,7 @@ public class TGMessagePoll extends TGMessage implements ClickHelper.Delegate, Co
           double rad = Math.toRadians(degrees);
           float sin = (float) Math.sin(rad);
           float cos = (float) Math.cos(rad);
-          c.drawLine(cx - dy1 * sin, cy - dy1 * cos, cx - (dy1 + dy2) * sin, cy - (dy1 + dy2) * cos, Paints.getProgressPaint(lineColor, size));
+          c.drawLine(cx - dy1 * sin, cy - dy1 * cos, cx - (dy1 + dy2) * sin, cy - (dy1 + dy2) * cos, DrawAlgorithms.getGlyphPaint(lineColor, size));
         }
       }
     }

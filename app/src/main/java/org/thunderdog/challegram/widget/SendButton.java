@@ -66,6 +66,7 @@ import tgx.td.Td;
 public class SendButton extends View implements FactorAnimator.Target, TooltipOverlayView.LocationProvider {
 
   private static Paint strokePaint;
+  private final Path checkPath = new Path();
   private final Drawable sendIcon;
   private final Drawable sendIconBg;
 
@@ -80,6 +81,8 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
       strokePaint.setColor(Theme.iconColor());
       ThemeManager.addThemeListener(strokePaint, ColorId.icon);
       strokePaint.setStrokeWidth(Screen.dp(2f));
+      strokePaint.setStrokeCap(Paint.Cap.ROUND);
+      strokePaint.setStrokeJoin(Paint.Join.ROUND);
     }
   }
 
@@ -200,51 +203,56 @@ public class SendButton extends View implements FactorAnimator.Target, TooltipOv
           c.scale(scale, scale, cx, cy);
         }
 
-        final int lineSize = Screen.dp(2f);
-        final int line1Width = Screen.dp(17f);
-        final int line2Height = Screen.dp(6.5f);
-
-        c.translate(Screen.dp(2f), 0);
-        c.rotate(-45f, cx, cy);
-
-        final int left = cx - line1Width / 2;
-        final int top1 = cy - lineSize / 2;
-        final int top2 = cy - line2Height;
-        final int right1 = cx + line1Width / 2;
-        final int right2 = cx - line1Width / 2 + lineSize;
-        final int bottom1 = cy + lineSize / 2;
+        // Material Symbols Rounded `check`: 2dp stroke with round caps and join, centre line in dp
+        // from the short arm end through the corner to the long arm end.
+        final float startX = cx + Screen.dpf(-6.7125f), startY = cy + Screen.dpf(.2875f);
+        final float cornerX = cx + Screen.dpf(-2.45f), cornerY = cy + Screen.dpf(4.575f);
+        final float endX = cx + Screen.dpf(6.725f), endY = cy + Screen.dpf(-4.625f);
 
         if (activeFactor == 1f || activeFactor == 0f) {
-          c.drawRect(left, top1, right1, bottom1, Paints.fillingPaint(color));
-          c.drawRect(left, top2, right2, cy, Paints.fillingPaint(color));
+          checkPath.reset();
+          checkPath.moveTo(startX, startY);
+          checkPath.lineTo(cornerX, cornerY);
+          checkPath.lineTo(endX, endY);
+          strokePaint.setColor(color);
+          c.drawPath(checkPath, strokePaint);
         } else {
           final int inactiveColor = ColorUtils.color((int) (255f * editScaleFactor), Theme.iconLightColor());
           final int activeColor = ColorUtils.color((int) (255f * editScaleFactor), Theme.chatSendButtonColor());
 
-          int diff1x = right1 - left;
-          int diff2y = cy - top2;
-          int totalWidth = (int) ((float) (diff1x + diff2y) * activeFactor);
-
-          diff2y = diff2y - Math.max(0, diff2y - totalWidth);
-          diff1x = diff1x - Math.max(0, diff1x - totalWidth);
-
-          int right1x = left + diff1x;
-          int bottom2y = top2 + diff2y;
-
-          if (right1x != right1) {
-            c.drawRect(right1x, top1, right1, bottom1, Paints.fillingPaint(inactiveColor));
+          // The active colour runs along the stroke from the short arm end.
+          final float shortLength = (float) Math.hypot(cornerX - startX, cornerY - startY);
+          final float longLength = (float) Math.hypot(endX - cornerX, endY - cornerY);
+          final float activeLength = (shortLength + longLength) * activeFactor;
+          final boolean inShortArm = activeLength <= shortLength;
+          final float splitX, splitY;
+          if (inShortArm) {
+            float f = activeLength / shortLength;
+            splitX = MathUtils.fromTo(startX, cornerX, f);
+            splitY = MathUtils.fromTo(startY, cornerY, f);
+          } else {
+            float f = (activeLength - shortLength) / longLength;
+            splitX = MathUtils.fromTo(cornerX, endX, f);
+            splitY = MathUtils.fromTo(cornerY, endY, f);
           }
 
-          if (bottom2y != cy) {
-            c.drawRect(left, top2, right2, cy, Paints.fillingPaint(inactiveColor));
+          checkPath.reset();
+          checkPath.moveTo(splitX, splitY);
+          if (inShortArm) {
+            checkPath.lineTo(cornerX, cornerY);
           }
+          checkPath.lineTo(endX, endY);
+          strokePaint.setColor(inactiveColor);
+          c.drawPath(checkPath, strokePaint);
 
-          if (diff1x > 0) {
-            c.drawRect(left, top1, right1x, bottom1, Paints.fillingPaint(activeColor));
+          checkPath.reset();
+          checkPath.moveTo(startX, startY);
+          if (!inShortArm) {
+            checkPath.lineTo(cornerX, cornerY);
           }
-          if (diff2y > 0) {
-            c.drawRect(left, top2, right2, bottom2y, Paints.fillingPaint(activeColor));
-          }
+          checkPath.lineTo(splitX, splitY);
+          strokePaint.setColor(activeColor);
+          c.drawPath(checkPath, strokePaint);
         }
 
         c.restore();

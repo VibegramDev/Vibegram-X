@@ -110,6 +110,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private boolean isNavBar;
   /** Phone dock style: the floating bar is only as wide as its items, centered. */
   private boolean isCompactBar;
+  /** Phone dock style in a short window (landscape): the compact bar is at the end, the folder chips in line with it. */
+  private boolean isCompactBarAtEnd;
   private static final float NAV_BAR_HEIGHT = 64f;
   private static final float NAV_BAR_INDICATOR_WIDTH = 56f;
   private static final float NAV_BAR_INDICATOR_TOP = 6f;
@@ -345,8 +347,16 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     this.isCompactBar = isCompactBar;
   }
 
+  /**
+   * Phone dock style in a short window: the compact bar is at the end of the screen instead of the center, the folder
+   * chips take the rest of the row (applied by setLayoutMode).
+   */
+  public void setCompactBarAtEnd (boolean isCompactBarAtEnd) {
+    this.isCompactBarAtEnd = isCompactBarAtEnd;
+  }
+
   /** Width of the compact floating bar: 72dp per item and 6dp padding at the ends. */
-  private int getCompactBarWidth () {
+  public int getCompactBarWidth () {
     return Screen.dp(COMPACT_ITEM_WIDTH) * items.length + Screen.dp(COMPACT_PADDING) * 2;
   }
 
@@ -368,7 +378,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       setPadding(0, 0, 0, bottomInset);
     } else {
       if (isCompactBar) {
-        params = FrameLayoutFix.newParams(getCompactBarWidth(), getBarHeight(), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        int horizontalGravity = isCompactBarAtEnd ? (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) : Gravity.CENTER_HORIZONTAL;
+        params = FrameLayoutFix.newParams(getCompactBarWidth(), getBarHeight(), Gravity.BOTTOM | horizontalGravity);
       } else {
         params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
       }

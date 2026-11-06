@@ -1,48 +1,39 @@
 /*
  * This file is a part of Vibegram X
  *
- * Backdrop of the bottom dock (navigation style "dock"): an opaque surface behind the folder chips and the floating
- * dock, so chat rows never show through between the chips or around the dock (portrait and landscape). The list
- * fades into it right below its last row: the fade lies inside the bottom scroll space of the list, so a row
- * scrolled to the end is never dimmed.
+ * Fade behind the bottom dock (navigation style "dock"): the chat list washes out towards the bottom of
+ * the screen, so the floating dock, the search FAB and the folder chips stay readable over any content.
  */
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.view.View;
 
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.ThemeInvalidateListener;
-import org.thunderdog.challegram.tool.Screen;
+
+import me.vkryl.core.MathUtils;
 
 public class M3DockScrimView extends View implements ThemeInvalidateListener {
-  /** Height of the fade above the opaque surface (transparent -> {@code surface}). */
-  public static int getFadeHeight () {
-    return Screen.dp(16f);
-  }
+  /** Opacity of the surface at the top edge of the toolbar and at the bottom of the screen. */
+  private static final int ALPHA_AT_DOCK = 0xB3, ALPHA_AT_BOTTOM = 0xEB;
 
-  // The fade is an eased gradient of unit height stretched by a local matrix (the opaque top follows the folder chips
-  // on every frame of their show/hide animation, the shader is created once per color). No anti-aliasing, so the
-  // fade and the opaque rect meet without a seam.
-  private final Paint fadePaint = new Paint(), fillPaint = new Paint();
-  private final Matrix fadeMatrix = new Matrix();
-  private int fadeColor;
-  private boolean fadeShaderReady;
-  private float opaqueTopOffset;
+  private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private int dockTopOffset;
+  private int shaderColor, shaderHeight, shaderDockTop;
 
   public M3DockScrimView (Context context) {
     super(context);
   }
 
   /**
-   * @param opaqueTopOffset distance from the bottom of this view to the top edge of the opaque surface
+   * @param dockTopOffset distance from the bottom of this view to the top edge of the toolbar
    */
-  public void setOpaqueTopOffset (float opaqueTopOffset) {
-    if (this.opaqueTopOffset != opaqueTopOffset) {
-      this.opaqueTopOffset = opaqueTopOffset;
+  public void setDockTopOffset (int dockTopOffset) {
+    if (this.dockTopOffset != dockTopOffset) {
+      this.dockTopOffset = dockTopOffset;
       invalidate();
     }
   }
@@ -55,23 +46,19 @@ public class M3DockScrimView extends View implements ThemeInvalidateListener {
   @Override
   protected void onDraw (Canvas c) {
     final int height = getHeight();
-    if (height <= 0 || opaqueTopOffset <= 0) {
+    if (height <= 0) {
       return;
     }
     final int surface = M3.surface();
-    if (!fadeShaderReady || fadeColor != surface) {
-      fadeShaderReady = true;
-      fadeColor = surface;
-      fadePaint.setShader(M3BottomScrimView.newEasedFade(surface, 0, 0xFF));
+    final int dockTop = Math.max(0, height - dockTopOffset);
+    if (shaderColor != surface || shaderHeight != height || shaderDockTop != dockTop) {
+      shaderColor = surface;
+      shaderHeight = height;
+      shaderDockTop = dockTop;
+      float dockFraction = MathUtils.clamp((float) dockTop / height, .01f, .99f);
+      // Eased, not linear: no visible line where the fade starts (see M3BottomScrimView.newSmoothFade).
+      paint.setShader(M3BottomScrimView.newSmoothFade(height, surface, dockFraction, ALPHA_AT_DOCK, ALPHA_AT_BOTTOM));
     }
-    final int width = getWidth();
-    final float top = Math.max(0, height - opaqueTopOffset);
-    final int fade = getFadeHeight();
-    fadeMatrix.setScale(1f, fade);
-    fadeMatrix.postTranslate(0, top - fade);
-    fadePaint.getShader().setLocalMatrix(fadeMatrix);
-    c.drawRect(0, top - fade, width, top, fadePaint);
-    fillPaint.setColor(surface);
-    c.drawRect(0, top, width, height, fillPaint);
+    c.drawRect(0, 0, getWidth(), height, paint);
   }
 }

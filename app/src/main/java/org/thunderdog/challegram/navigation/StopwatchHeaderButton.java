@@ -17,6 +17,7 @@ package org.thunderdog.challegram.navigation;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.text.TextPaint;
 import android.view.ViewGroup;
 
@@ -38,6 +39,7 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
 
   // private final TextPaint paint;
   private final Paint circlePaint;
+  private final Path stopwatchPath = new Path();
 
   public static final float WIDTH = 39f;
 
@@ -47,6 +49,8 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
     this.circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     this.circlePaint.setStrokeWidth(Screen.dp(2f));
     this.circlePaint.setStyle(Paint.Style.STROKE);
+    this.circlePaint.setStrokeCap(Paint.Cap.ROUND);
+    this.circlePaint.setStrokeJoin(Paint.Join.ROUND);
     this.circlePaint.setColor(0xffffffff);
 
     setId(R.id.menu_btn_stopwatch);
@@ -289,7 +293,6 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
 
       int sourceColor = getColor(0xffffffff);
       final int color = (Math.max(0, Math.min((int) (255f * visibilityFactor * (1f - Math.min(transformFactor, .5f) / .5f)), 255)) << 24) | sourceColor;
-      final Paint fillingPaint = Paints.fillingPaint(color);
 
       if (transformFactor != 0f) {
         c.save();
@@ -297,32 +300,29 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
         c.scale(scale, scale, cx, cy);
       }
 
-      int width = Screen.dp(2f);
-      int radius = Screen.dp(8f);
+      // Material Symbols Rounded `timer`: 2dp strokes with round caps, centre lines relative to the dial centre:
+      // dial radius 8dp, 4dp button bar 11dp above, 4dp hand, crown from 8dp to 10dp at 45°.
+      // One path, so overlapping strokes do not darken while the glyph fades.
+      final float width = Screen.dpf(2f);
+      final float radius = Screen.dpf(8f);
+      final float barHalfWidth = Screen.dpf(2f);
+      final float barY = cy - Screen.dpf(11f) + width * (stopwatchPressureFactor < .5f ? stopwatchPressureFactor / .5f : 1f - (stopwatchPressureFactor - .5f) / .5f);
+      final float handLength = Screen.dpf(4f);
+      final double handAngle = stopwatchTickFactor != 1f ? Math.toRadians(360f * stopwatchTickFactor) : 0;
+      final float crownStart = radius / (float) Math.sqrt(2f);
+      final float crownEnd = Screen.dpf(10f) / (float) Math.sqrt(2f);
 
-      int left = cx - width / 2;
-      int right = cx + width / 2;
-
-      int pressWidth = Screen.dp(6f);
-      int pressOffset = (int) ((float) width * (stopwatchPressureFactor < .5f ? stopwatchPressureFactor / .5f : 1f - (stopwatchPressureFactor - .5f) / .5f));
-      c.drawRect(cx - pressWidth / 2, cy - radius - width - width + pressOffset, cx + pressWidth / 2, cy - radius - width + pressOffset, fillingPaint);
-
-      if (stopwatchTickFactor != 0f && stopwatchTickFactor != 1f) {
-        c.save();
-        c.rotate(360f * stopwatchTickFactor, cx, cy);
-      }
-      c.drawRect(left, cy - width / 2 - Screen.dp(4f), right, cy + width / 2, fillingPaint);
-      if (stopwatchTickFactor != 0f && stopwatchTickFactor != 1f) {
-        c.restore();
-      }
+      stopwatchPath.reset();
+      stopwatchPath.addCircle(cx, cy, radius, Path.Direction.CW);
+      stopwatchPath.moveTo(cx - barHalfWidth, barY);
+      stopwatchPath.lineTo(cx + barHalfWidth, barY);
+      stopwatchPath.moveTo(cx, cy);
+      stopwatchPath.lineTo(cx + handLength * (float) Math.sin(handAngle), cy - handLength * (float) Math.cos(handAngle));
+      stopwatchPath.moveTo(cx + crownStart, cy - crownStart);
+      stopwatchPath.lineTo(cx + crownEnd, cy - crownEnd);
 
       circlePaint.setColor(color);
-      c.drawCircle(cx, cy, radius, circlePaint);
-
-      c.save();
-      c.rotate(45f, cx, cy);
-      c.drawRect(left, cy - radius - width - width / 2, right, cy - radius, fillingPaint);
-      c.restore();
+      c.drawPath(stopwatchPath, circlePaint);
 
       if (transformFactor != 0f) {
         c.restore();

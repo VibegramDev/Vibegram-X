@@ -1283,14 +1283,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     setReactionButtonFactor(0f);
 
+    // Search «previous/next result»: the same M3 medium square tonal icon buttons as the scroll button, stacked the same way.
+
     goToNextFoundMessageButtonBadge = new CircleCounterBadgeView(this, R.id.btn_search_next, this, null);
-    goToNextFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_up_24, 48f, 4f, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
+    goToNextFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_up_24, FLOATING_BUTTON_SIZE, FLOATING_BUTTON_CORNER, FLOATING_BUTTON_PADDING, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
     goToNextFoundMessageButtonBadge.setTranslationX(CircleCounterBadgeView.BUTTON_WRAPPER_WIDTH);
-    goToNextFoundMessageButtonBadge.setTranslationY(Screen.dp(16 - 74));
+    goToNextFoundMessageButtonBadge.setTranslationY(-getFloatingButtonStep());
     goToNextFoundMessageButtonBadge.setEnabled(false, false);
 
     goToPrevFoundMessageButtonBadge = new CircleCounterBadgeView(this, R.id.btn_search_prev, this, null);
-    goToPrevFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_down_24, 48f, 4f, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
+    goToPrevFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_down_24, FLOATING_BUTTON_SIZE, FLOATING_BUTTON_CORNER, FLOATING_BUTTON_PADDING, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
     goToPrevFoundMessageButtonBadge.setTranslationX(CircleCounterBadgeView.BUTTON_WRAPPER_WIDTH);
     goToPrevFoundMessageButtonBadge.setEnabled(false, false);
     searchNavigationButtonVisibleAnimator.setValue(false, false);
@@ -4475,11 +4477,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void onFocus () {
     super.onFocus();
-    if (floatingButton != null && getFloatingButtonId() == 0 && getParentOrSelf() == this && !isInForceTouchMode() && !inPreviewMode) {
-      // The chat has no floating action button: hide the shared one if the screen transition left the button of the
-      // previous screen over the chat (the «Send message» button of the profile was seen at the bottom right).
-      floatingButton.setHeightFactor(0f, 0f, false);
-    }
     if (promptDraftPrefillOnFocus) {
       promptDraftPrefillOnFocus = false;
       fillDraft(this.fillDraft, true);
@@ -7697,8 +7694,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   /**
-   * Floating chat buttons (scroll down, mentions, reactions): M3 medium square icon buttons, tonal — 56dp container
-   * with 16dp corners (icon-buttons › Button corner radius: «Square button … 16dp» for M; color: «Tonal container …
+   * Floating chat buttons (scroll down, mentions, reactions, search results): M3 medium square icon buttons, tonal —
+   * 56dp container with 16dp corners (icon-buttons › Button corner radius: «Square button … 16dp» for M; color: «Tonal container …
    * Secondary container / On secondary container», ColorId.circleButtonChat in ThemeDelegate), inside a 4dp margin
    * that keeps room for the elevation shadow. Stacked with an 8dp gap.
    */
@@ -7752,7 +7749,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       goToPrevFoundMessageButtonBadge.setTranslationY(offsetY);
     }
     if (goToNextFoundMessageButtonBadge != null) {
-      goToNextFoundMessageButtonBadge.setTranslationY(offsetY - Screen.dp(74 - 16));
+      goToNextFoundMessageButtonBadge.setTranslationY(offsetY - getFloatingButtonStep());
     }
     updateBottomBarStyle();
   }
