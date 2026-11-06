@@ -564,3 +564,12 @@ to `app/src/main/java/org/thunderdog/challegram/`.
 | `data/TGMessageRich.java` | `drawChevron` | expand/collapse chevron (quote/rich blocks) |
 | `data/TGMessageChecklist.java` | `drawContent` | done checkmark of checklist items (plus `SimplestCheckBox`) |
 | `data/TGMessagePoll.java` | `drawContent` | light rays around the poll explanation lamp (`deproko_baseline_lamp_*`) |
+
+## Telegram for Android icon set (since build -81)
+
+Icons are being moved to the official Telegram for Android 12.3.1 set (last release before the 2026 redesign).
+`scripts/icons/tg-mapping.tsv` maps each of our files to a Telegram drawable (confidence high/medium/low);
+`scripts/icons/tg_apply.py <Telegram res dir>` applies high+medium rows: same dp size → Telegram's own PNG per
+density (mdpi..xxhdpi), smaller Telegram glyph → centred without resampling, larger → downscaled; large
+(>40dp) icons that would need upscaling stay Material until redrawn. Remaining Material icons (low/none and
+those large ones) are being replaced with icons from Telegram Desktop / iOS or drawn in Telegram's style.

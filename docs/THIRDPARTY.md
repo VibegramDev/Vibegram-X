@@ -62,3 +62,10 @@ Voice messages are transcribed on the device. The native libraries are prebuilt 
 
 The WEB proxy transport (`app/src/main/java/org/thunderdog/challegram/proxy/`) and the format of `webproxy` links are based on
 the WEB proxy implementation of [Telegram for Android](https://github.com/DrKLO/Telegram) (licensed under GNU GPL v. 2 or later).
+
+## Telegram for Android icons (v12.3.1)
+
+354 icon drawables in `app/src/main/res/drawable*/` (PNG alpha masks and a few vectors) are taken from
+[Telegram for Android](https://github.com/DrKLO/Telegram), commit `d7deedfa` ("update to 12.3.1"),
+licensed under GPL-2.0-or-later. They replace the Material Symbols drawables of the same name;
+the list is `scripts/icons/tg-mapping.tsv`, the conversion is `scripts/icons/tg_apply.py`.
