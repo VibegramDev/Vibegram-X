@@ -69,6 +69,7 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
 
     paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     paint.setStrokeWidth(Screen.dp(2f));
+    paint.setStrokeCap(Paint.Cap.ROUND);
     paint.setColor(Theme.headerBackColor());
   }
 
@@ -201,30 +202,30 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
 
     c.save();
     c.translate(getPaddingLeft() + getMeasuredWidth() / 2, getMeasuredHeight() / 2);
-    float scale = 1f - Math.min(factor, 1f) * .12f;
-    c.scale(scale, scale);
-    int _9 = Screen.dp(9f);
-    int _85 = Screen.dp(8.5f);
-    int _5 = Screen.dp(5f);
-    int _35 = Screen.dp(3.5f);
-    int _05 = Screen.dp(0.5f);
-    int _1 = Screen.dp(1f);
+
+    // Telegram MenuDrawable / BackDrawable geometry (2dp stroke with round caps), centre lines in dp:
+    // menu: three 16dp bars 5dp apart (18dp with the caps); back: shaft from 6.75 behind the tip side to 7,
+    // arms from the tip (7.25, ±0.25) to (0, ±6.5); close: a ±8dp plus turned by 45° (BackDrawable at rotation 1).
+    // The glyph is built in a frame turned by 180°, so the arrow tip lies on local +x (mirrored in RTL).
+    final float dir = Lang.rtl() ? -1f : 1f;
+    final float menuHalfWidth = Screen.dpf(8f);
+    final float menuGap = Screen.dpf(5f);
+    final float arrowTip = Screen.dpf(6.75f);
+    final float arrowHeadTip = Screen.dpf(7.25f);
+    final float arrowHeadTipY = Screen.dpf(.25f);
+    final float arrowTail = Screen.dpf(7f);
+    final float arrowHead = Screen.dpf(6.5f);
+    final float closeHalfSize = Screen.dpf(8f);
 
     if (factor <= 1f) {
+      final float f = Math.abs(factor);
       c.rotate(factor * (reverseAngle ? -180f : 180f));
-      c.drawLine(-_9, 0, _9 - _1 * factor, 0, paint);
+      c.drawLine(dir * MathUtils.fromTo(-menuHalfWidth, -arrowTail, f), 0, dir * MathUtils.fromTo(menuHalfWidth, arrowTip, f), 0, paint);
 
-      final float startY = _5 + _35 * Math.abs(factor);
-      final float endY = _5 * (1 - Math.abs(factor)) - _05 * Math.abs(factor);
-
-      float startX, endX;
-      if (Lang.rtl()) {
-        startX = _9 - _85 * Math.abs(factor);
-        endX = -_9 + _05 * Math.abs(factor);
-      } else {
-        startX = -_9 + _85 * Math.abs(factor);
-        endX = _9 - _05 * Math.abs(factor);
-      }
+      final float startX = dir * MathUtils.fromTo(-menuHalfWidth, 0, f);
+      final float startY = MathUtils.fromTo(menuGap, arrowHead, f);
+      final float endX = dir * MathUtils.fromTo(menuHalfWidth, arrowHeadTip, f);
+      final float endY = MathUtils.fromTo(menuGap, arrowHeadTipY, f);
 
       c.drawLine(startX, -startY, endX, -endY, paint);
       c.drawLine(startX, startY, endX, endY, paint);
@@ -239,28 +240,19 @@ public class BackHeaderButton extends HeaderButton implements View.OnClickListen
         c.drawCircle(badgeCenterX, badgeCenterY, Screen.dp(3f) * badgeVisibility, Paints.fillingPaint(badgeColor));
       }
     } else {
-      float factor = this.factor - 1f;
+      final float f = this.factor - 1f;
 
-      c.rotate((reverseAngle ? 180 + (factor * -135f) : 180f + (factor * 135f)) * (Lang.rtl() ? -1 : 1));
+      c.rotate((reverseAngle ? 180 + (f * -135f) : 180f + (f * 135f)) * (Lang.rtl() ? -1 : 1));
 
-      c.drawLine(-_9, 0, _9 - _1, 0, paint);
+      // Arrow -> plus: the shaft becomes the horizontal bar, the arms fold into the vertical one.
+      c.drawLine(dir * MathUtils.fromTo(-arrowTail, -closeHalfSize, f), 0, dir * MathUtils.fromTo(arrowTip, closeHalfSize, f), 0, paint);
 
-      float xDiff = (_9 - _05 + _9 - _85) * factor;
+      final float startY = MathUtils.fromTo(arrowHead, closeHalfSize, f);
+      final float endX = dir * MathUtils.fromTo(arrowHeadTip, 0, f);
+      final float endY = MathUtils.fromTo(arrowHeadTipY, 0, f);
 
-      if (Lang.rtl()) {
-        float startX, endX;
-        startX = _9 - _85;
-        endX = -_9 + _05;
-
-        final float startY = _5 + _35;
-        final float endY = -_05;
-
-        c.drawLine(startX, -startY, endX + xDiff, -endY, paint);
-        c.drawLine(startX, startY, endX + xDiff, endY, paint);
-      } else {
-        c.drawLine(-_9 + _85, -_5 - _35, _9 - _05 - xDiff, _05, paint);
-        c.drawLine(-_9 + _85, _5 + _35,  _9 - _05 - xDiff, -_05, paint);
-      }
+      c.drawLine(0, -startY, endX, -endY, paint);
+      c.drawLine(0, startY, endX, endY, paint);
     }
 
     c.restore();

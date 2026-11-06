@@ -1,13 +1,38 @@
+<!-- Vibegram-X, drawn in Telegram for Android 12.3.1 style -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
   android:width="24dp"
   android:height="24dp"
-  android:viewportWidth="24.0"
-  android:viewportHeight="24.0">
+  android:viewportWidth="24"
+  android:viewportHeight="24">
+  <group
+    android:rotation="45"
+    android:pivotX="10"
+    android:pivotY="12.667">
+    <path
+      android:pathData="M7.333 8 H12.667 A2 2 0 0,1 14.667 10 V15.334 A2 2 0 0,1 12.667 17.334 H7.333 A2 2 0 0,1 5.333 15.334 V10 A2 2 0 0,1 7.333 8 Z"
+      android:strokeColor="#FFFFFFFF"
+      android:strokeWidth="1.667"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round" />
+  </group>
   <path
-    android:fillColor="#FF000000"
-    android:pathData="M16.56,8.94L7.62,0 6.21,1.41l2.38,2.38 -5.15,5.15c-0.59,0.59 -0.59,1.54 0,2.12l5.5,5.5c0.29,0.29 0.68,0.44 1.06,0.44s0.77,-0.15 1.06,-0.44l5.5,-5.5c0.59,-0.58 0.59,-1.53 0,-2.12zM5.21,10L10,5.21 14.79,10H5.21zM19,11.5s-2,2.17 -2,3.5c0,1.1 0.9,2 2,2s2,-0.9 2,-2c0,-1.33 -2,-3.5 -2,-3.5z" />
+    android:pathData="M4 3.333 L9.9 7.045"
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.667"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
+  <group>
+    <clip-path android:pathData="M0,13 H24 V24 H0 Z" />
+    <group
+      android:rotation="45"
+      android:pivotX="10"
+      android:pivotY="12.667">
+      <path
+        android:pathData="M8.099 10.166 H11.901 A0.6 0.6 0 0,1 12.501 10.766 V14.568 A0.6 0.6 0 0,1 11.901 15.168 H8.099 A0.6 0.6 0 0,1 7.499 14.568 V10.766 A0.6 0.6 0 0,1 8.099 10.166 Z"
+        android:fillColor="#FFFFFFFF" />
+    </group>
+  </group>
   <path
-    android:fillColor="#FF000000"
-    android:pathData="M0,20h24v4H0z"
-    android:fillAlpha=".36" />
+    android:pathData="M19.667,13 C20.667,14.5 21.5,15.667 21.5,16.833 A1.833,1.833 0 0,1 17.833,16.833 C17.833,15.667 18.667,14.5 19.667,13 Z"
+    android:fillColor="#FFFFFFFF" />
 </vector>

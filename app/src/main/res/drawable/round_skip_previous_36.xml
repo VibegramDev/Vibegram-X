@@ -1,9 +1,18 @@
+<!-- Telegram for Android 12.3.1 "ic_action_previous" (GPL-2.0-or-later), scripts/icons/tg_apply.py -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-  android:width="36dp"
-  android:height="36dp"
-  android:viewportWidth="24.0"
-  android:viewportHeight="24.0">
-  <path
-    android:fillColor="#FF000000"
-    android:pathData="M7,6c0.55,0 1,0.45 1,1v10c0,0.55 -0.45,1 -1,1s-1,-0.45 -1,-1L6,7c0,-0.55 0.45,-1 1,-1zM10.66,12.82l5.77,4.07c0.66,0.47 1.58,-0.01 1.58,-0.82L18.01,7.93c0,-0.81 -0.91,-1.28 -1.58,-0.82l-5.77,4.07c-0.57,0.4 -0.57,1.24 0,1.64z" />
+    android:viewportWidth="36"
+    android:viewportHeight="36"
+    android:width="36dp"
+    android:height="36dp">
+    <group
+        android:scaleX="-1"
+        android:translateX="27"
+        android:translateY="7">
+        <path
+            android:pathData="M14.723483 11.400039L0.9748068 20.764527C0.690112 20.958438 0.3021252 20.884844 0.108214 20.600149 0.0377075 20.496633 -0.0000003 20.374288 -0.0000003 20.249042l0 -18.7290455c0 -0.34446 0.27924 -0.62369996 0.6237 -0.62369996 0.1252471 0 0.2475929 0.0377083 0.3511089 0.10821556L14.723485 10.369069c0.284694 0.193912 0.358287 0.581899 0.164375 0.866594 -0.04401 0.06461 -0.09977 0.12037 -0.164377 0.164376z"
+            android:fillColor="#ffffff" />
+        <path
+            android:pathData="M14 1l2 0c0.554 0 1 0.446 1 1l0 18c0 0.554 -0.446 1 -1 1l-2 0c-0.554 0 -1 -0.446 -1 -1L13 2c0 -0.554 0.446 -1 1 -1z"
+            android:fillColor="#ffffff" />
+    </group>
 </vector>

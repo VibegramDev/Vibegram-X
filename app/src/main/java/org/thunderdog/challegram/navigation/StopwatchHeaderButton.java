@@ -17,6 +17,7 @@ package org.thunderdog.challegram.navigation;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.text.TextPaint;
 import android.view.ViewGroup;
 
@@ -25,6 +26,7 @@ import androidx.annotation.Nullable;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.theme.ThemeDeprecated;
+import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.util.text.Letters;
@@ -38,6 +40,7 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
 
   // private final TextPaint paint;
   private final Paint circlePaint;
+  private final Path stopwatchPath = new Path();
 
   public static final float WIDTH = 39f;
 
@@ -45,8 +48,10 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
     super(context);
 
     this.circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    this.circlePaint.setStrokeWidth(Screen.dp(2f));
+    this.circlePaint.setStrokeWidth(Screen.dpf(DrawAlgorithms.GLYPH_STROKE_DP));
     this.circlePaint.setStyle(Paint.Style.STROKE);
+    this.circlePaint.setStrokeCap(Paint.Cap.ROUND);
+    this.circlePaint.setStrokeJoin(Paint.Join.ROUND);
     this.circlePaint.setColor(0xffffffff);
 
     setId(R.id.menu_btn_stopwatch);
@@ -289,7 +294,6 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
 
       int sourceColor = getColor(0xffffffff);
       final int color = (Math.max(0, Math.min((int) (255f * visibilityFactor * (1f - Math.min(transformFactor, .5f) / .5f)), 255)) << 24) | sourceColor;
-      final Paint fillingPaint = Paints.fillingPaint(color);
 
       if (transformFactor != 0f) {
         c.save();
@@ -297,32 +301,33 @@ public class StopwatchHeaderButton extends HeaderButton implements FactorAnimato
         c.scale(scale, scale, cx, cy);
       }
 
-      int width = Screen.dp(2f);
-      int radius = Screen.dp(8f);
+      // Telegram `msg_stories_timer` stopwatch at the weight of the msg_* icons (1.67dp, round caps), centre lines
+      // relative to the icon centre: dial radius 9.5dp centred 0.9dp low, 2dp button stem on top of it, 5.7dp hand
+      // from a 2.67dp hub, crown from 9.5dp to 11.2dp at 40° right of the stem.
+      // One path, so overlapping strokes do not darken while the glyph fades.
+      final float width = Screen.dpf(DrawAlgorithms.GLYPH_STROKE_DP);
+      final float radius = Screen.dpf(9.5f);
+      final float dialCy = cy + Screen.dpf(.9f);
+      final float stemBottom = dialCy - radius;
+      final float stemTop = stemBottom - Screen.dpf(2f) + width * (stopwatchPressureFactor < .5f ? stopwatchPressureFactor / .5f : 1f - (stopwatchPressureFactor - .5f) / .5f);
+      final float handLength = Screen.dpf(5.7f);
+      final float hubRadius = Screen.dpf(1.33f) - width / 2f;
+      final double handAngle = stopwatchTickFactor != 1f ? Math.toRadians(360f * stopwatchTickFactor) : 0;
+      final float crownSin = (float) Math.sin(Math.toRadians(40.0)), crownCos = (float) Math.cos(Math.toRadians(40.0));
+      final float crownEnd = Screen.dpf(11.2f);
 
-      int left = cx - width / 2;
-      int right = cx + width / 2;
-
-      int pressWidth = Screen.dp(6f);
-      int pressOffset = (int) ((float) width * (stopwatchPressureFactor < .5f ? stopwatchPressureFactor / .5f : 1f - (stopwatchPressureFactor - .5f) / .5f));
-      c.drawRect(cx - pressWidth / 2, cy - radius - width - width + pressOffset, cx + pressWidth / 2, cy - radius - width + pressOffset, fillingPaint);
-
-      if (stopwatchTickFactor != 0f && stopwatchTickFactor != 1f) {
-        c.save();
-        c.rotate(360f * stopwatchTickFactor, cx, cy);
-      }
-      c.drawRect(left, cy - width / 2 - Screen.dp(4f), right, cy + width / 2, fillingPaint);
-      if (stopwatchTickFactor != 0f && stopwatchTickFactor != 1f) {
-        c.restore();
-      }
+      stopwatchPath.reset();
+      stopwatchPath.addCircle(cx, dialCy, radius, Path.Direction.CW);
+      stopwatchPath.addCircle(cx, dialCy, hubRadius, Path.Direction.CW);
+      stopwatchPath.moveTo(cx, stemTop);
+      stopwatchPath.lineTo(cx, stemBottom);
+      stopwatchPath.moveTo(cx, dialCy);
+      stopwatchPath.lineTo(cx + handLength * (float) Math.sin(handAngle), dialCy - handLength * (float) Math.cos(handAngle));
+      stopwatchPath.moveTo(cx + radius * crownSin, dialCy - radius * crownCos);
+      stopwatchPath.lineTo(cx + crownEnd * crownSin, dialCy - crownEnd * crownCos);
 
       circlePaint.setColor(color);
-      c.drawCircle(cx, cy, radius, circlePaint);
-
-      c.save();
-      c.rotate(45f, cx, cy);
-      c.drawRect(left, cy - radius - width - width / 2, right, cy - radius, fillingPaint);
-      c.restore();
+      c.drawPath(stopwatchPath, circlePaint);
 
       if (transformFactor != 0f) {
         c.restore();

@@ -753,6 +753,11 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   private static final float COMPACT_PREVIEW_OFFSET = 12f, COMPACT_DURATION_GAP = 12f;
 
   private @Nullable SttBlock stt;
+
+  @Override
+  public @Nullable String getTranscriptionText () {
+    return stt != null && stt.isEnabled() ? stt.getCopyText() : null;
+  }
   /** The transcription is shown: the message is drawn as a bubble with a small round. */
   private boolean compact;
   private Waveform waveform;

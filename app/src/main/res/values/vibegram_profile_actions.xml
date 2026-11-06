@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: profile → row of action buttons under the name (ProfileActionsView) -->
+<resources>
+  <item type="id" name="btn_vgProfileActions" />
+  <item type="id" name="btn_vgProfileChat" />
+  <item type="id" name="btn_vgProfileSound" />
+  <item type="id" name="btn_vgProfileCall" />
+  <item type="id" name="btn_vgProfileShare" />
+  <item type="id" name="btn_vgProfileEdit" />
+  <item type="id" name="btn_vgProfileBlockBot" />
+  <item type="id" name="btn_vgProfileDiscuss" />
+  <item type="id" name="btn_vgProfileLeaveJoin" />
+
+  <string name="vg_ProfileActionChat">Chat</string>
+  <string name="vg_ProfileActionSound">Sound</string>
+  <string name="vg_ProfileActionMuted">Muted</string>
+  <string name="vg_ProfileActionCall">Call</string>
+  <string name="vg_ProfileActionShare">Share</string>
+  <string name="vg_ProfileActionEdit">Edit</string>
+  <string name="vg_ProfileActionStopBot">Stop</string>
+  <string name="vg_ProfileActionStartBot">Start</string>
+  <string name="vg_ProfileActionDiscuss">Discuss</string>
+  <string name="vg_ProfileActionLeave">Leave</string>
+  <string name="vg_ProfileActionJoin">Join</string>
+</resources>

@@ -123,7 +123,11 @@ public class M3ButtonView extends View {
   private final TextColorSet labelColorSet = this::labelColor;
 
   private void buildText (int maxWidth) {
-    if (textBuiltWidth == maxWidth) {
+    maxWidth = Math.max(0, maxWidth);
+    // A label built for a wider space is kept while it fits. Rebuilt for exactly its own width (wrap_content: the
+    // measured width is the label width) it was ellipsized, as Text rounds the widths of words down and the last word
+    // no longer fit; so the label is ellipsized only when it is wider than the space available to the button.
+    if (textBuiltWidth == maxWidth || (textBuiltWidth > maxWidth && (text == null || text.getWidth() <= maxWidth))) {
       return;
     }
     textBuiltWidth = maxWidth;
@@ -178,7 +182,8 @@ public class M3ButtonView extends View {
       width = specWidth;
     } else {
       buildText(MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED ? Screen.currentWidth() : specWidth - horizontalPadding() * 2);
-      width = Math.max(Screen.dp(48f), (text != null ? text.getWidth() : 0) + horizontalPadding() * 2);
+      // Content width, but not less than the minimum width set with setMinimumWidth (default: the 48dp target).
+      width = Math.max(Math.max(Screen.dp(48f), getSuggestedMinimumWidth()), (text != null ? text.getWidth() : 0) + horizontalPadding() * 2);
       if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.AT_MOST) {
         width = Math.min(width, specWidth);
       }

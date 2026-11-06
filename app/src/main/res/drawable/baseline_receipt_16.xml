@@ -1,9 +1,19 @@
+<!-- Vibegram-X, drawn in Telegram for Android 12.3.1 style -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
   android:width="16dp"
   android:height="16dp"
-  android:viewportWidth="24.0"
-  android:viewportHeight="24.0">
+  android:viewportWidth="16"
+  android:viewportHeight="16">
   <path
-    android:fillColor="#FF000000"
-    android:pathData="M18,17L6,17v-2h12v2zM18,13L6,13v-2h12v2zM18,9L6,9L6,7h12v2zM3,22l1.5,-1.5L6,22l1.5,-1.5L9,22l1.5,-1.5L12,22l1.5,-1.5L15,22l1.5,-1.5L18,22l1.5,-1.5L21,22L21,2l-1.5,1.5L18,2l-1.5,1.5L15,2l-1.5,1.5L12,2l-1.5,1.5L9,2 7.5,3.5 6,2 4.5,3.5 3,2v20z" />
+    android:pathData="M3.333 14.167 V3.833 A2,2 0 0,1 5.333 1.833 H10.667 A2,2 0 0,1 12.667 3.833 V14.167 L11.111 12.834 L9.556 14.167 L8 12.834 L6.444 14.167 L4.889 12.834 L3.333 14.167"
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.4"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
+  <path
+    android:pathData="M6 5.667 L10 5.667 M6 8.667 L10 8.667"
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.4"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
 </vector>

@@ -1,9 +1,32 @@
+<!-- Vibegram-X, drawn in Telegram for Android 12.3.1 style -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
   android:width="14dp"
   android:height="14dp"
-  android:viewportWidth="24.0"
-  android:viewportHeight="24.0">
-  <path
-    android:fillColor="#FF000000"
-    android:pathData="M18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32L13.5,4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2zM13,16h-2v-2h2v2zM13,12h-2L11,8h2v4zM12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2z" />
+  android:viewportWidth="14"
+  android:viewportHeight="14">
+  <group
+    android:scaleX="0.583"
+    android:scaleY="0.583">
+    <path
+      android:pathData="M2.833,19.167 H21.167 M5.167,16.833 V10.667 A6.833,6.833 0 0,1 18.833,10.667 V16.833 M5.167,16.833 L2.833,19.167 M18.833,16.833 L21.167,19.167"
+      android:strokeColor="#FFFFFFFF"
+      android:strokeWidth="2.571"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round" />
+    <path
+      android:pathData="M10.5,4.5 V2 A1,1 0 0,1 11.5,1 H12.5 A1,1 0 0,1 13.5,2 V4.5 Z"
+      android:fillColor="#FFFFFFFF" />
+    <path
+      android:pathData="M9.667,21.333 H14.333 A2.333,2.333 0 0,1 9.667,21.333 Z"
+      android:fillColor="#FFFFFFFF" />
+    <path
+      android:pathData="M12 8 L12 11.833"
+      android:strokeColor="#FFFFFFFF"
+      android:strokeWidth="2.571"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round" />
+    <path
+      android:pathData="M10.667 15 A1.333 1.333 0 1,1 13.333 15 A1.333 1.333 0 1,1 10.667 15 Z"
+      android:fillColor="#FFFFFFFF" />
+  </group>
 </vector>

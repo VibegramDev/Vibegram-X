@@ -16,7 +16,6 @@ package org.thunderdog.challegram.widget.emoji.section;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Path;
 import android.view.View;
 
@@ -26,11 +25,8 @@ import androidx.annotation.Nullable;
 import org.thunderdog.challegram.data.TGStickerSetInfo;
 import org.thunderdog.challegram.loader.ImageReceiver;
 import org.thunderdog.challegram.loader.gif.GifReceiver;
-import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.PorterDuffColorId;
-import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
-import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 
 import me.vkryl.android.AnimatorUtils;
@@ -141,27 +137,18 @@ public class StickerSectionView extends View implements Destroyable, FactorAnima
 
     final boolean saved = selectionFactor != 0f;
     if (saved) {
-      final int selectionColor = Theme.chatSelectionColor();
-      final int selectionAlpha = Color.alpha(selectionColor);
-      int color = ColorUtils.color((int) ((float) selectionAlpha * selectionFactor), selectionColor);
-      int radius = Screen.dp(18f) - (int) ((float) Screen.dp(4f) * (1f - selectionFactor));
-
-      c.drawCircle(cx, cy, radius, Paints.fillingPaint(color));
+      // Same M3 active indicator as the section icons (EmojiSection); the set thumbnail keeps its own colors.
+      EmojiSection.drawIndicator(c, cx, cy, Math.min(cx, cy) * 2, selectionFactor, null);
       c.save();
       float scale = .85f + .15f * (1f - selectionFactor);
       c.scale(scale, scale, cx, cy);
     }
 
     if (info.needThemedColorFilter()) {
-      if (selectionFactor == 0f || selectionFactor == 1f) {
-        @PorterDuffColorId int colorId = selectionFactor == 0f ? ColorId.icon : ColorId.iconActive;
-        receiver.setThemedPorterDuffColorId(colorId);
-        gifReceiver.setThemedPorterDuffColorId(colorId);
-      } else {
-        int color = ColorUtils.fromToArgb(Theme.getColor(ColorId.icon), Theme.getColor(ColorId.iconActive), selectionFactor);
-        receiver.setPorterDuffColorFilter(color);
-        gifReceiver.setPorterDuffColorFilter(color);
-      }
+      // Monochrome sets are tinted like the section icons: on surface variant, on secondary container when selected.
+      int color = ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.onSecondaryContainer(), selectionFactor);
+      receiver.setPorterDuffColorFilter(color);
+      gifReceiver.setPorterDuffColorFilter(color);
     } else {
       receiver.disablePorterDuffColorFilter();
       gifReceiver.disablePorterDuffColorFilter();

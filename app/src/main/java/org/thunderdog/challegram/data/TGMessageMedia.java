@@ -457,7 +457,9 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
 
   @Override
   protected int getBubbleContentPadding () {
-    return xBubblePaddingSmall;
+    // Photos and videos fill the bubble up to its edges and take its shape: the bubble colour no longer shows as a
+    // frame around them, so media bubbles look like the other bubbles of the chat.
+    return 0;
   }
 
   @Override
@@ -1038,6 +1040,11 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
     }
     // the whole audio track is decoded into memory: longer videos are not transcribed
     return stt.setFile(video.video, video.duration, SttManager.MAX_VIDEO_SECONDS, R.string.vg_SttVideoTooLong, false);
+  }
+
+  @Override
+  public @Nullable String getTranscriptionText () {
+    return stt != null && stt.isEnabled() ? stt.getCopyText() : null;
   }
 
   private boolean hasSttBlock () {

@@ -138,7 +138,8 @@ public class SettingsController extends ViewController<Void> implements
 
   @Override
   protected int getBackButton () {
-    return BackHeaderButton.TYPE_BACK;
+    // Top-level dock destination: no navigation icon.
+    return isTopLevelDestination() ? BackHeaderButton.TYPE_NONE : BackHeaderButton.TYPE_BACK;
   }
 
   private boolean oneShot;

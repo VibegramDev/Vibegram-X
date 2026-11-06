@@ -95,6 +95,7 @@ import org.thunderdog.challegram.component.chat.AttachLinearLayout;
 import org.thunderdog.challegram.component.chat.AudioFile;
 import org.thunderdog.challegram.component.chat.BotForumThreadHint;
 import org.thunderdog.challegram.component.chat.ChatBottomBarView;
+import org.thunderdog.challegram.component.chat.ChatDropTarget;
 import org.thunderdog.challegram.component.chat.ChatHeaderView;
 import org.thunderdog.challegram.component.chat.ChatSearchMembersView;
 import org.thunderdog.challegram.component.chat.CircleCounterBadgeView;
@@ -254,6 +255,7 @@ import org.thunderdog.challegram.widget.FillingSpace;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.KeyboardFrameLayout;
 import org.thunderdog.challegram.widget.M3BottomScrimView;
+import org.thunderdog.challegram.widget.M3ButtonView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.PopupLayout;
@@ -627,8 +629,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     iterateMediaTabs(c ->
       c.setBottomInset(extraBottomInset, extraBottomInsetWithoutIme)
     );
-    Views.setLayoutHeight(bottomBar, Screen.dp(48f) + extraBottomInsetWithoutIme);
-    Views.setPaddingBottom(bottomBar, extraBottomInsetWithoutIme);
+    updateBottomBarLayout();
     checkScrollButtonOffsets();
     updateMessagesViewInset();
     onMessagesFrameChanged();
@@ -668,8 +669,14 @@ public class MessagesController extends ViewController<MessagesController.Argume
    * player must be clipped at the composer, not at the bottom of the list (it was drawn over the input field).
    */
   public int getFloatingComposerTop (View view) {
+    if (composerFloating && actionShowing && actionButtonWrap != null && actionButtonWrap.getVisibility() == View.VISIBLE && actionButtonWrap.getHeight() > 0 && bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE) {
+      // The join button / status container floats in place of the composer.
+      final int actionTop = Views.getLocationInWindow(actionButtonWrap)[1];
+      final int viewTop = Views.getLocationInWindow(view)[1];
+      return actionTop - viewTop;
+    }
     if (!composerFloating || inputView == null || bottomWrap == null || bottomWrap.getVisibility() != View.VISIBLE || inputView.getVisibility() != View.VISIBLE || inputView.getHeight() == 0) {
-      return -1;
+      return getBottomBarTop(view);
     }
     // Views.getLocationInWindow returns one shared array: copy the value before the second call.
     final int inputTop = Views.getLocationInWindow(inputView)[1];
@@ -677,10 +684,28 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return Math.round(inputTop - getReplyOffset()) - viewTop;
   }
 
+  /** Top edge of the bottom button floating in place of the composer, -1 when there is none or it is collapsed. */
+  private int getBottomBarTop (View view) {
+    if (!composerFloating || bottomBar == null || bottomBar.getVisibility() != View.VISIBLE || scrollToBottomVisible.getFloatValue() > 0f) {
+      return -1;
+    }
+    RectF rect = Paints.getRectF();
+    if (!bottomBar.getButtonRect(rect)) {
+      return -1;
+    }
+    final int barTop = Views.getLocationInWindow(bottomBar)[1];
+    final int viewTop = Views.getLocationInWindow(view)[1];
+    return Math.round(barTop + rect.top) - viewTop;
+  }
+
   /** Bounds of the floating composer (reply bar + input field) in the coordinates of the scrim. */
   private boolean getComposerShape (M3BottomScrimView view, RectF out) {
+    if (getActionShape(view, out)) {
+      return true;
+    }
     if (!composerFloating || inputView == null || bottomWrap == null || bottomWrap.getVisibility() != View.VISIBLE || inputView.getVisibility() != View.VISIBLE || inputView.getWidth() == 0) {
-      return false;
+      // No composer: the bottom button (subscribe, mute...) floats in its place.
+      return getBottomBarShape(view, out);
     }
     float wrapTop = bottomWrap.getTop() + bottomWrap.getTranslationY() - view.getTop();
     float top = wrapTop + inputView.getTop();
@@ -689,6 +714,24 @@ public class MessagesController extends ViewController<MessagesController.Argume
       top -= replyOffset;
     }
     out.set(inputView.getLeft(), top, inputView.getRight(), wrapTop + inputView.getBottom());
+    return true;
+  }
+
+  /**
+   * The action shown instead of the composer (join button or status container) sits on the same fade and casts the
+   * same shadow as the composer: its bounds in the coordinates of the scrim.
+   */
+  private boolean getActionShape (M3BottomScrimView view, RectF out) {
+    if (!composerFloating || !actionShowing || actionButtonWrap == null || bottomWrap == null || bottomWrap.getVisibility() != View.VISIBLE || actionButtonWrap.getVisibility() != View.VISIBLE) {
+      return false;
+    }
+    View shape = actionButton.getVisibility() == View.VISIBLE ? actionButton : actionStatusView;
+    if (shape.getWidth() == 0 || shape.getHeight() == 0) {
+      return false;
+    }
+    float left = bottomWrap.getLeft() - view.getLeft() + actionButtonWrap.getLeft() + shape.getLeft();
+    float top = bottomWrap.getTop() + bottomWrap.getTranslationY() - view.getTop() + actionButtonWrap.getTop() + shape.getTop();
+    out.set(left, top, left + shape.getWidth(), top + shape.getHeight());
     return true;
   }
 
@@ -779,7 +822,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       return;
     }
     composerInsetSource = getFloatingComposerInset();
-    int requestedInset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? composerInsetSource : extraBottomInset;
+    int requestedInset = bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE ? composerInsetSource : extraBottomInset + getBottomBarInset();
     BotForumThreadHint threadHint = getBotForumThreadHint();
     if (threadHint != null && messagesView.getMeasuredWidth() > 0) {
       requestedInset += threadHint.getHeight(messagesView.getMeasuredWidth());
@@ -1117,7 +1160,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     // Mention button
 
-    params = new RelativeLayout.LayoutParams(Screen.dp(118f), Screen.dp(74f));
+    params = new RelativeLayout.LayoutParams(Screen.dp(118f), Screen.dp(FLOATING_BUTTON_SIZE + FLOATING_BUTTON_PADDING * 2 + 18f));
     params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
     params.addRule(RelativeLayout.ABOVE, R.id.msg_bottom);
 
@@ -1125,8 +1168,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     mentionButtonWrap.setLayoutParams(params);
     setMentionButtonFactor(0f);
 
-    final int padding = Screen.dp(4);
-    FrameLayoutFix.LayoutParams fparams = FrameLayoutFix.newParams(Screen.dp(24f) * 2 + padding * 2, Screen.dp(24f) * 2 + padding * 2, Gravity.RIGHT | Gravity.BOTTOM);
+    final int padding = Screen.dp(FLOATING_BUTTON_PADDING);
+    final int buttonSize = Screen.dp(FLOATING_BUTTON_SIZE) + padding * 2;
+    FrameLayoutFix.LayoutParams fparams = FrameLayoutFix.newParams(buttonSize, buttonSize, Gravity.RIGHT | Gravity.BOTTOM);
     params.rightMargin = params.bottomMargin = Screen.dp(16f) - padding;
 
     mentionButton = new CircleButton(context);
@@ -1146,7 +1190,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       return false;
     });
     addThemeInvalidateListener(mentionButton);
-    mentionButton.init(R.drawable.baseline_alternate_email_24, 48f, 4f, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
+    mentionButton.initSquare(R.drawable.baseline_alternate_email_24, FLOATING_BUTTON_CORNER, FLOATING_BUTTON_PADDING, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
     mentionButton.setLayoutParams(fparams);
     mentionButtonWrap.addView(mentionButton);
 
@@ -1162,7 +1206,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     // Scroll button
 
-    params = new RelativeLayout.LayoutParams(Screen.dp(118f), Screen.dp(74f));
+    params = new RelativeLayout.LayoutParams(Screen.dp(118f), Screen.dp(FLOATING_BUTTON_SIZE + FLOATING_BUTTON_PADDING * 2 + 18f));
     params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
     params.addRule(RelativeLayout.ABOVE, R.id.msg_bottom);
 
@@ -1173,7 +1217,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       scrollToBottomButtonWrap.setTranslationY(-Screen.dp(16f) + Screen.dp(4f));
     }
 
-    fparams = FrameLayoutFix.newParams(Screen.dp(24f) * 2 + padding * 2, Screen.dp(24f) * 2 + padding * 2, Gravity.RIGHT | Gravity.BOTTOM);
+    fparams = FrameLayoutFix.newParams(buttonSize, buttonSize, Gravity.RIGHT | Gravity.BOTTOM);
     params.rightMargin = params.bottomMargin = Screen.dp(16f) - padding;
 
     scrollToBottomButton = new CircleButton(context());
@@ -1184,7 +1228,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       return true;
     });
     addThemeInvalidateListener(scrollToBottomButton);
-    scrollToBottomButton.init(R.drawable.baseline_arrow_downward_24, 48f, 4f, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
+    scrollToBottomButton.initSquare(R.drawable.baseline_arrow_downward_24, FLOATING_BUTTON_CORNER, FLOATING_BUTTON_PADDING, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
     scrollToBottomButton.setLayoutParams(fparams);
     scrollToBottomButtonWrap.addView(scrollToBottomButton);
 
@@ -1198,21 +1242,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     // Reaction button
 
-    params = new RelativeLayout.LayoutParams(Screen.dp(118f), Screen.dp(74f));
+    params = new RelativeLayout.LayoutParams(Screen.dp(118f), Screen.dp(FLOATING_BUTTON_SIZE + FLOATING_BUTTON_PADDING * 2 + 18f));
     params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
     params.addRule(RelativeLayout.ABOVE, R.id.msg_bottom);
 
     reactionsButtonWrap = new FrameLayoutFix(context);
     reactionsButtonWrap.setLayoutParams(params);
 
-    fparams = FrameLayoutFix.newParams(Screen.dp(24f) * 2 + padding * 2, Screen.dp(24f) * 2 + padding * 2, Gravity.RIGHT | Gravity.BOTTOM);
+    fparams = FrameLayoutFix.newParams(buttonSize, buttonSize, Gravity.RIGHT | Gravity.BOTTOM);
     params.rightMargin = params.bottomMargin = Screen.dp(16f) - padding;
 
     reactionsButton = new CircleButton(context(), tdlib);
     reactionsButton.setId(R.id.btn_reaction);
     reactionsButton.setOnClickListener(this);
     addThemeInvalidateListener(reactionsButton);
-    reactionsButton.init(R.drawable.baseline_favorite_20, 48f, 4f, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
+    reactionsButton.initSquare(R.drawable.baseline_favorite_20, FLOATING_BUTTON_CORNER, FLOATING_BUTTON_PADDING, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
     reactionsButton.setLayoutParams(fparams);
     reactionsButton.setOnClickListener(this);
     reactionsButton.setOnLongClickListener(v -> {
@@ -1240,14 +1284,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     setReactionButtonFactor(0f);
 
+    // Search «previous/next result»: the same M3 medium square tonal icon buttons as the scroll button, stacked the same way.
+
     goToNextFoundMessageButtonBadge = new CircleCounterBadgeView(this, R.id.btn_search_next, this, null);
-    goToNextFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_up_24, 48f, 4f, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
+    goToNextFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_up_24, FLOATING_BUTTON_SIZE, FLOATING_BUTTON_CORNER, FLOATING_BUTTON_PADDING, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
     goToNextFoundMessageButtonBadge.setTranslationX(CircleCounterBadgeView.BUTTON_WRAPPER_WIDTH);
-    goToNextFoundMessageButtonBadge.setTranslationY(Screen.dp(16 - 74));
+    goToNextFoundMessageButtonBadge.setTranslationY(-getFloatingButtonStep());
     goToNextFoundMessageButtonBadge.setEnabled(false, false);
 
     goToPrevFoundMessageButtonBadge = new CircleCounterBadgeView(this, R.id.btn_search_prev, this, null);
-    goToPrevFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_down_24, 48f, 4f, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
+    goToPrevFoundMessageButtonBadge.init(R.drawable.baseline_keyboard_arrow_down_24, FLOATING_BUTTON_SIZE, FLOATING_BUTTON_CORNER, FLOATING_BUTTON_PADDING, ColorId.circleButtonChat, ColorId.circleButtonChatIcon);
     goToPrevFoundMessageButtonBadge.setTranslationX(CircleCounterBadgeView.BUTTON_WRAPPER_WIDTH);
     goToPrevFoundMessageButtonBadge.setEnabled(false, false);
     searchNavigationButtonVisibleAnimator.setValue(false, false);
@@ -1630,7 +1676,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     // Bottom bar
 
-    params = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(48f) + extraBottomInsetWithoutIme);
+    params = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, getBottomBarHeight());
     params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
 
     bottomBar = new ChatBottomBarView(context, tdlib) {
@@ -1640,9 +1686,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
         updateBottomBarStyle();
       }
     };
-    Views.setPaddingBottom(bottomBar, extraBottomInsetWithoutIme);
     bottomBar.setOnClickListener(this);
     bottomBar.setLayoutParams(params);
+    updateBottomBarLayout();
     addThemeInvalidateListener(bottomBar);
     checkScrollButtonOffsets();
     updateMessagesViewInset();
@@ -1716,6 +1762,29 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     TGLegacyManager.instance().addEmojiListener(this);
     tdlib.context().dateManager().addListener(this);
+
+    if (previewMode == PREVIEW_MODE_NONE && !isInForceTouchMode()) {
+      // Vibegram: drag & drop of files from other apps (API 24+, see ChatDropTarget).
+      ChatDropTarget.attach(contentView, inputView, new ChatDropTarget.Callback() {
+        @Override
+        public boolean canAcceptDrop () {
+          return chat != null && !isDestroyed() && isFocused() && canWriteMessages() && !inPreviewMode;
+        }
+
+        @Override
+        public void onFilesDropped (List<String> paths, List<String> mimeTypes) {
+          onDroppedFiles(paths, mimeTypes);
+        }
+
+        @Override
+        public void onTextDropped (CharSequence text) {
+          if (inputView != null && canWriteMessages()) {
+            int at = Math.max(0, inputView.getSelectionEnd());
+            inputView.getText().insert(Math.min(at, inputView.getText().length()), text);
+          }
+        }
+      });
+    }
 
     if (needTabs()) {
       pagerHeaderView = new ViewPagerHeaderViewCompact(context);
@@ -2281,9 +2350,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (viewId == R.id.btn_openDirectMessages) {
       openLinkedChat(true);
     } else if (viewId == R.id.btn_test) {
-      bottomBar.setAction(R.id.btn_test_crash1, "try again", R.drawable.baseline_remove_circle_24, true);
+      bottomBar.setAction(R.id.btn_test_crash1, "try again", R.drawable.baseline_remove_circle_24, false, true);
     } else if (viewId == R.id.btn_test_crash1) {
-      bottomBar.setAction(R.id.btn_test, "test", R.drawable.baseline_warning_24, true);
+      bottomBar.setAction(R.id.btn_test, "test", R.drawable.baseline_warning_24, false, true);
     } else if (viewId == R.id.btn_follow) {
       joinChat();
     } else if (viewId == R.id.btn_unpinAll) {
@@ -5058,7 +5127,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private static OptionItem readItem (Tdlib tdlib, int readDate) {
     return new OptionItem.Builder()
       .name(Lang.getRelativeDate(readDate, TimeUnit.SECONDS, tdlib.currentTimeMillis(), TimeUnit.MILLISECONDS, false, 0, R.string.ReadDate, false))
-      .icon(R.drawable.deproko_baseline_check_double_24)
+      .icon(R.drawable.vg_menu_seen_24)
       .color(OptionColor.LIGHT, OptionColor.BLUE)
       .build();
   }
@@ -6458,6 +6527,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
         }
         startTextSelection(selectedMessage);
         return true;
+      } else if (id == R.id.btn_messageCopyTranscription) {
+        String text = selectedMessage.getTranscriptionText();
+        if (text != null) {
+          UI.copyText(text, R.string.CopiedText);
+        }
+        return true;
       } else if (id == R.id.btn_copyTranslation || id == R.id.btn_messageCopy) {
         if (!selectedMessage.canBeSaved()) {
           context().tooltipManager().builder(itemView).show(tdlib, R.string.ChannelNoCopy).hideDelayed();
@@ -6609,44 +6684,73 @@ public class MessagesController extends ViewController<MessagesController.Argume
     boolean needBigPadding = bottomBarVisible.getValue(); //  && !scrollToBottomVisible;
     if (this.needBigPadding != needBigPadding) {
       this.needBigPadding = needBigPadding;
-      manager.rebuildLastItem();
+      updateMessagesViewInset();
     }
   }
 
-  public boolean needExtraBigPadding () {
-    return needBigPadding && !inWallpaperPreviewMode();
+  /**
+   * Bottom button floats in place of the composer (owner): 56dp tall, with the margins of the dock pill and the
+   * composer — 12dp at the sides and above the navigation.
+   */
+  private int getBottomBarHeight () {
+    return MainNavigationBar.getBarHeight() + MainNavigationBar.getBarBottomMargin() + extraBottomInsetWithoutIme;
+  }
+
+  private void updateBottomBarLayout () {
+    if (bottomBar == null) {
+      return;
+    }
+    Views.setLayoutHeight(bottomBar, getBottomBarHeight());
+    final int margin = MainNavigationBar.getBarMargin();
+    bottomBar.setPadding(margin, 0, margin, MainNavigationBar.getBarBottomMargin() + extraBottomInsetWithoutIme);
+  }
+
+  /** List padding that keeps the last message above the bottom button (messages scroll under it and fade out). */
+  private int getBottomBarInset () {
+    return needBigPadding && !inWallpaperPreviewMode() ? MainNavigationBar.getBarHeight() + MainNavigationBar.getBarBottomMargin() : 0;
+  }
+
+  /** Bounds of the bottom button in the coordinates of the scrim, while it is not collapsed into a floating button. */
+  private boolean getBottomBarShape (M3BottomScrimView view, RectF out) {
+    if (bottomBar == null || bottomBar.getVisibility() != View.VISIBLE || (bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE) || !bottomBar.getButtonRect(out)) {
+      return false;
+    }
+    out.offset(bottomBar.getLeft() + bottomBar.getTranslationX() - view.getLeft(), bottomBar.getTop() + bottomBar.getTranslationY() - view.getTop());
+    return true;
   }
 
   private void showBottomButton (int bottomButtonAction, long bottomButtonData, boolean animated) {
     this.bottomButtonAction = bottomButtonAction;
     boolean animateButtonContent = animated && bottomBarVisible.getFloatValue() > 0f;
+    // Subscribing (and applying a previewed wallpaper) is the final action of the screen: filled button; the others
+    // are tonal with their icon.
     switch (bottomButtonAction) {
       case BOTTOM_ACTION_FOLLOW:
-        bottomBar.setAction(R.id.btn_follow, Lang.getString(R.string.Follow),  R.drawable.baseline_group_add_24, animateButtonContent);
+        bottomBar.setAction(R.id.btn_follow, Lang.getString(R.string.Follow),  R.drawable.baseline_group_add_24, true, animateButtonContent);
         bottomBar.clearPreviewChat();
         break;
       case BOTTOM_ACTION_DISCUSS:
-        bottomBar.setAction(R.id.btn_openLinkedChat, Lang.getString(R.string.Discuss), R.drawable.baseline_chat_bubble_24, animateButtonContent);
+        bottomBar.setAction(R.id.btn_openLinkedChat, Lang.getString(R.string.Discuss), R.drawable.baseline_chat_bubble_24, false, animateButtonContent);
         bottomBar.setPreviewChatId(null, bottomButtonData, null);
         break;
       case BOTTOM_ACTION_TOGGLE_MUTE: {
         boolean notificationsEnabled = tdlib.chatNotificationsEnabled(getChatId());
-        bottomBar.setAction(R.id.btn_mute, Lang.getString(notificationsEnabled ? R.string.Mute : R.string.Unmute), notificationsEnabled ? R.drawable.baseline_notifications_off_24 : R.drawable.baseline_notifications_active_24, animateButtonContent);
+        bottomBar.setAction(R.id.btn_mute, Lang.getString(notificationsEnabled ? R.string.Mute : R.string.Unmute), notificationsEnabled ? R.drawable.baseline_notifications_off_24 : R.drawable.baseline_notifications_active_24, false, animateButtonContent);
         bottomBar.clearPreviewChat();
         break;
       }
       case BOTTOM_ACTION_UNPIN_ALL: {
-        bottomBar.setAction(R.id.btn_unpinAll, Lang.getString(canPinAnyMessage(false) ? R.string.UnpinAll : R.string.DismissAllPinned), R.drawable.deproko_baseline_pin_undo_24, animated);
+        bottomBar.setAction(R.id.btn_unpinAll, Lang.getString(canPinAnyMessage(false) ? R.string.UnpinAll : R.string.DismissAllPinned), R.drawable.deproko_baseline_pin_undo_24, false, animated);
         bottomBar.clearPreviewChat();
         break;
       }
       case BOTTOM_ACTION_TEST: {
-        bottomBar.setAction(R.id.btn_test, "test", R.drawable.baseline_warning_24, animateButtonContent);
+        bottomBar.setAction(R.id.btn_test, "test", R.drawable.baseline_warning_24, false, animateButtonContent);
         bottomBar.clearPreviewChat();
         break;
       }
       case BOTTOM_ACTION_APPLY_WALLPAPER: {
-        bottomBar.setAction(R.id.btn_applyWallpaper, Lang.getString(R.string.ChatBackgroundApply), R.drawable.baseline_warning_24, animateButtonContent);
+        bottomBar.setAction(R.id.btn_applyWallpaper, Lang.getString(R.string.ChatBackgroundApply), R.drawable.baseline_check_24, true, animateButtonContent);
         bottomBar.clearPreviewChat();
         break;
       }
@@ -6665,20 +6769,32 @@ public class MessagesController extends ViewController<MessagesController.Argume
       return;
     float bottomButtonFactor = bottomBarVisible.getFloatValue();
     float detachFactor = scrollToBottomVisible.getFloatValue();
-    int barHeight = Screen.dp(48f) + extraBottomInset;
+    int barHeight = MainNavigationBar.getBarHeight() + MainNavigationBar.getBarBottomMargin() + extraBottomInset;
     int baseY = needSearchControlsTranslate() ? (int) ((float) barHeight * MathUtils.clamp(searchControlsFactor)) : 0;
     float fromY = bottomButtonFactor == 1f ? baseY : baseY + (int) ((float) barHeight * (1f - bottomButtonFactor));
     float alpha = (1f - 1f * detachFactor * (1f - bottomButtonFactor)) * (1f - searchControlsFactor);
-    int moveBy = Screen.dp(74f) - Screen.dp(16f);
-    float toY = -getButtonsOffset() - Screen.dp(16f) - moveBy - moveBy * mentionButtonFactor + (bottomWrap.getVisibility() == View.VISIBLE ? 0 : extraBottomInsetWithoutIme); //  -getReplyOffset() - (Screen.dp(74f) - Screen.dp(48f)) / 2f;
+    int moveBy = getFloatingButtonStep();
+    // Collapsed into the floating button stacked above the scroll button (and the mention and reaction ones): the
+    // centre of the button (above the bottom margin of the pill) goes to the centre of that slot (above the 16dp margin
+    // of the floating buttons).
+    float toY = -getButtonsOffset() - Screen.dp(16f) + MainNavigationBar.getBarBottomMargin() - moveBy * (1f + mentionButtonFactor + reactionButtonFactor) + (bottomWrap.getVisibility() == View.VISIBLE ? 0 : extraBottomInsetWithoutIme);
     bottomBar.setCollapseFactor(detachFactor);
     bottomBar.setAlpha(alpha);
-    int dx = (int) ((bottomBar.getMeasuredWidth() / 2f - Screen.dp(16f) - Screen.dp(48f) / 2f) * detachFactor);
+    int dx = (int) ((bottomBar.getMeasuredWidth() / 2f - Screen.dp(16f) - Screen.dp(FLOATING_BUTTON_SIZE) / 2f) * detachFactor);
     bottomBar.setTranslationY(bottomButtonFactor == 1f && detachFactor == 0f ? fromY : fromY + (toY - fromY) * detachFactor);
     bottomBar.setTranslationX(dx);
     int desiredVisibility = (bottomButtonFactor > 0f && searchControlsFactor != 1f) ? View.VISIBLE : View.GONE;
     if (bottomBar.getVisibility() != desiredVisibility) {
       bottomBar.setVisibility(desiredVisibility);
+    }
+    if (composerScrim != null) {
+      // The fade under the pill goes away as it collapses into a floating button (those have no fade).
+      boolean barIsShape = desiredVisibility == View.VISIBLE && bottomWrap.getVisibility() != View.VISIBLE;
+      float scrimAlpha = barIsShape ? (1f - detachFactor) * alpha : 1f;
+      if (composerScrim.getAlpha() != scrimAlpha) {
+        composerScrim.setAlpha(scrimAlpha);
+      }
+      invalidateComposerScrim();
     }
   }
 
@@ -6699,7 +6815,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private static final int ACTION_AWAITING_REPLY = 8;
 
   private FrameLayoutFix actionButtonWrap;
-  private TextView actionButton;
+  /** Action that unblocks the chat (join, start the bot, unblock...): M3 filled button in place of the composer. */
+  private M3ButtonView actionButton;
+  /** Why nothing can be sent (restrictions, secret chat state): text in a container shaped as the composer. */
+  private TextView actionStatusView;
+  private final M3.RoleShape actionStatusBackground = new M3.RoleShape(M3.SURFACE_CONTAINER);
   private boolean actionShowing;
   private int actionMode;
 
@@ -6767,11 +6887,15 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private void updateActionButton (CharSequence text, int mode, boolean isActive) {
     actionMode = mode;
-    actionButton.setEnabled(isActive);
-    actionButton.setTextColor(isActive ? Theme.textLinkColor() : Theme.textAccentColor());
-    removeThemeListenerByTarget(actionButton);
-    addThemeTextColorListener(actionButton, isActive ? ColorId.textLink : ColorId.text);
-    Views.setMediumText(actionButton, text);
+    actionButton.setVisibility(isActive ? View.VISIBLE : View.GONE);
+    actionStatusView.setVisibility(isActive ? View.GONE : View.VISIBLE);
+    if (isActive) {
+      actionButton.setText(text);
+      actionButton.setContentDescription(text);
+    } else {
+      actionStatusView.setText(text);
+    }
+    invalidateComposerScrim();
   }
 
   public void showActionButton (CharSequence text, int mode, boolean isActive) {
@@ -6784,22 +6908,39 @@ public class MessagesController extends ViewController<MessagesController.Argume
     boolean initialized;
 
     if (actionButtonWrap == null) {
+      // Floats in place of the composer (owner): the height of the composer and the dock pill (56dp), their margins
+      // (12dp, above the navigation); messages scroll under it and fade out (getComposerShape).
+      final int barHeight = MainNavigationBar.getBarHeight();
+      LinearLayout.LayoutParams wrapParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, barHeight);
+      wrapParams.leftMargin = wrapParams.rightMargin = MainNavigationBar.getBarMargin();
+      wrapParams.bottomMargin = MainNavigationBar.getBarBottomMargin();
       actionButtonWrap = new FrameLayoutFix(context());
-      actionButtonWrap.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(49f)));
+      actionButtonWrap.setLayoutParams(wrapParams);
+      // The fade and the shadow follow the width of the button (it changes with the label).
+      actionButtonWrap.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> invalidateComposerScrim());
 
-      actionButton = new NoScrollTextView(context());
+      // Filled button, «used for final or unblocking actions» (buttons): centred, fully rounded, as wide as its label
+      // with 24dp padding, at least 120dp.
+      actionButton = new M3ButtonView(context(), M3ButtonView.STYLE_FILLED, M3ButtonView.SIZE_MEDIUM).addThemeListeners(this);
       actionButton.setId(R.id.btn_chatAction);
       actionButton.setOnClickListener(this);
-      actionButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f);
-      actionButton.setTypeface(Fonts.getRobotoMedium());
-      actionButton.setPadding(Screen.dp(12f), 0, Screen.dp(12f), 0);
-      // actionButton.setSingleLine(false);
-      RippleSupport.setSimpleWhiteBackground(actionButton, this);
-      actionButton.setEllipsize(TextUtils.TruncateAt.END);
-      actionButton.setGravity(Gravity.CENTER);
-      actionButton.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
+      actionButton.setMinimumWidth(Screen.dp(120f));
+      actionButton.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, barHeight, Gravity.CENTER));
       actionButtonWrap.addView(actionButton);
+
+      actionStatusView = new NoScrollTextView(context());
+      actionStatusView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
+      actionStatusView.setTypeface(Fonts.getRobotoRegular());
+      actionStatusView.setTextColor(M3.onSurfaceVariant());
+      actionStatusView.setPadding(Screen.dp(24f), 0, Screen.dp(24f), 0);
+      actionStatusView.setMaxLines(2);
+      actionStatusView.setEllipsize(TextUtils.TruncateAt.END);
+      actionStatusView.setGravity(Gravity.CENTER);
+      actionStatusBackground.setRadii(MainNavigationBar.getBarRadius(), MainNavigationBar.getBarRadius());
+      ViewUtils.setBackground(actionStatusView, actionStatusBackground);
+      addThemeInvalidateListener(actionStatusView);
+      actionStatusView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+      actionButtonWrap.addView(actionStatusView);
 
       if (mode == ACTION_EVENT_LOG_SETTINGS) {
         ImageView imageView = new ImageView(context());
@@ -7582,8 +7723,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return getReplyOffset() + getAttachedFilesOffset() + getSearchControlsOffset() + getKeyboardOffset() + (bottomWrap.getVisibility() == View.VISIBLE ? 0 : extraBottomInsetWithoutIme);
   }
 
+  /**
+   * Floating chat buttons (scroll down, mentions, reactions, search results): M3 medium square icon buttons, tonal —
+   * 56dp container with 16dp corners (icon-buttons › Button corner radius: «Square button … 16dp» for M; color: «Tonal container …
+   * Secondary container / On secondary container», ColorId.circleButtonChat in ThemeDelegate), inside a 4dp margin
+   * that keeps room for the elevation shadow. Stacked with an 8dp gap.
+   */
+  private static final float FLOATING_BUTTON_SIZE = 56f, FLOATING_BUTTON_CORNER = 16f, FLOATING_BUTTON_PADDING = 4f;
+
+  /** Vertical distance between two stacked floating buttons. */
+  private static int getFloatingButtonStep () {
+    return Screen.dp(FLOATING_BUTTON_SIZE + 8f);
+  }
+
   private float getMentionButtonY () {
-    int moveY = Screen.dp(74f) - Screen.dp(16f);
+    int moveY = getFloatingButtonStep();
     float y = -getButtonsOffset() - moveY * scrollToBottomVisible.getFloatValue();
     if (isInForceTouchMode()) {
       y += -Screen.dp(16f) + Screen.dp(4f);
@@ -7592,8 +7746,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private float getReactionButtonY () {
-    int scrollToBottomOffset = Screen.dp(74f) - Screen.dp(16f);
-    int mentionButtonOffset = Screen.dp(74f) - Screen.dp(16f);
+    int scrollToBottomOffset = getFloatingButtonStep();
+    int mentionButtonOffset = getFloatingButtonStep();
 
     float y = -getButtonsOffset();
     y -= scrollToBottomOffset * scrollToBottomVisible.getFloatValue();
@@ -7625,7 +7779,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       goToPrevFoundMessageButtonBadge.setTranslationY(offsetY);
     }
     if (goToNextFoundMessageButtonBadge != null) {
-      goToNextFoundMessageButtonBadge.setTranslationY(offsetY - Screen.dp(74 - 16));
+      goToNextFoundMessageButtonBadge.setTranslationY(offsetY - getFloatingButtonStep());
     }
     updateBottomBarStyle();
   }
@@ -8287,7 +8441,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void openCommandsKeyboard (long messageId, TdApi.ReplyMarkupShowKeyboard keyboard, boolean force, boolean byUserEvent) {
     if (keyboardLayout == null) {
       keyboardWrapper = new ScrollView(context());
-      ViewSupport.setThemedBackground(keyboardWrapper, ColorId.chatKeyboard, this);
+      ViewUtils.setBackground(keyboardWrapper, M3.roleDrawable(M3.SURFACE_CONTAINER));
+      addThemeInvalidateListener(keyboardWrapper);
 
       keyboardLayout = new CommandKeyboardLayout(context());
       keyboardLayout.setThemeProvider(this);
@@ -11497,6 +11652,158 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  // Vibegram: drag & drop. Photos and videos open in the gallery preview (caption, selection, "send as file"),
+  // anything else (documents, GIFs, mixed drops) is confirmed first and sent as files. Nothing is sent directly.
+  private static boolean isDroppedPhoto (String mime) {
+    return mime != null && mime.startsWith("image/") && !"image/gif".equals(mime) && !"image/svg+xml".equals(mime);
+  }
+
+  private void onDroppedFiles (List<String> paths, List<String> mimeTypes) {
+    if (isDestroyed() || chat == null || !canWriteMessages()) {
+      return;
+    }
+    boolean allMedia = true;
+    for (String mime : mimeTypes) {
+      if (!isDroppedPhoto(mime) && (mime == null || !mime.startsWith("video/"))) {
+        allMedia = false;
+        break;
+      }
+    }
+    if (allMedia && canSendPhotosAndVideos()) {
+      openDroppedMedia(paths, mimeTypes);
+    } else {
+      confirmDroppedFiles(paths);
+    }
+  }
+
+  private void confirmDroppedFiles (List<String> paths) {
+    StringBuilder names = new StringBuilder();
+    for (int i = 0; i < paths.size() && i < 3; i++) {
+      if (i > 0) names.append(", ");
+      names.append(new File(paths.get(i)).getName());
+    }
+    if (paths.size() > 3) {
+      names.append(" +").append(paths.size() - 3);
+    }
+    showOptions(names.toString(), new int[] {R.id.btn_send, R.id.btn_cancel}, new String[] {Lang.getString(paths.size() == 1 ? R.string.DropSendFile : R.string.DropSendFiles), Lang.getString(R.string.Cancel)}, null, new int[] {R.drawable.baseline_insert_drive_file_24, R.drawable.baseline_cancel_24}, (v, optionId) -> {
+      if (optionId == R.id.btn_send && !isDestroyed()) {
+        sendFiles(mediaButton, paths, paths.size() > 1, true, Td.newSendOptions());
+      }
+      return true;
+    });
+  }
+
+  private void openDroppedMedia (List<String> paths, List<String> mimeTypes) {
+    final int count = paths.size();
+    final ImageGalleryFile[] files = new ImageGalleryFile[count];
+    final int[] remaining = {count};
+    for (int i = 0; i < count; i++) {
+      final int index = i;
+      U.toGalleryFile(new File(paths.get(i)), mimeTypes.get(i).startsWith("video/"), galleryFile -> {
+        files[index] = galleryFile;
+        if (--remaining[0] > 0) {
+          return;
+        }
+        List<ImageGalleryFile> ready = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        for (int j = 0; j < count; j++) {
+          if (files[j] != null) {
+            ready.add(files[j]);
+          } else {
+            failed.add(paths.get(j));
+          }
+        }
+        if (isDestroyed()) {
+          for (ImageGalleryFile file : ready) {
+            ImageStrictCache.instance().forget(file);
+          }
+          return;
+        }
+        if (ready.isEmpty()) {
+          confirmDroppedFiles(paths);
+          return;
+        }
+        if (!failed.isEmpty()) {
+          // Undecodable media (e.g. unsupported codec) go as files after the preview is handled.
+          UI.showToast(R.string.DropSomeAsFiles, Toast.LENGTH_SHORT);
+        }
+        showDroppedMediaPreview(ready, failed);
+      });
+    }
+  }
+
+  private void showDroppedMediaPreview (List<ImageGalleryFile> files, List<String> failedPaths) {
+    MediaStack stack = new MediaStack(context, tdlib);
+    ArrayList<MediaItem> items = new ArrayList<>(files.size());
+    for (ImageGalleryFile file : files) {
+      items.add(new MediaItem(context, tdlib, file));
+    }
+    stack.set(0, items);
+    final ArrayList<ImageGalleryFile> selected = new ArrayList<>(files);
+    MediaSelectDelegate selectDelegate = files.size() == 1 ? null : new MediaSelectDelegate() {
+      @Override
+      public boolean isMediaItemSelected (int index, MediaItem item) {
+        return selected.contains(item.getSourceGalleryFile());
+      }
+
+      @Override
+      public void setMediaItemSelected (int index, MediaItem item, boolean isSelected) {
+        ImageGalleryFile file = item.getSourceGalleryFile();
+        if (isSelected) {
+          if (!selected.contains(file)) selected.add(file);
+        } else {
+          selected.remove(file);
+        }
+      }
+
+      @Override
+      public int getSelectedMediaCount () {
+        return selected.size();
+      }
+
+      @Override
+      public long getOutputChatId () {
+        return getChatId();
+      }
+
+      @Override
+      public boolean canDisableMarkdown () {
+        return true;
+      }
+
+      @Override
+      public ArrayList<ImageFile> getSelectedMediaItems (boolean copy) {
+        ArrayList<ImageFile> result = new ArrayList<>(selected.size());
+        // Keep the drop order, not the order of (re)selection.
+        for (ImageGalleryFile file : files) {
+          if (selected.contains(file)) result.add(file);
+        }
+        return result;
+      }
+    };
+    MediaViewController controller = new MediaViewController(context, tdlib);
+    controller.setArguments(
+      MediaViewController.Args.fromGallery(this, null, selectDelegate,
+        new MediaSpoilerSendDelegate() {
+          @Override
+          public boolean sendSelectedItems (View view, ArrayList<ImageFile> images, TdApi.MessageSendOptions options, boolean disableMarkdown, boolean asFiles, boolean showCaptionAboveMedia, boolean hasSpoiler) {
+            ImageGalleryFile[] out = new ImageGalleryFile[images.size()];
+            for (int i = 0; i < out.length; i++) {
+              out[i] = (ImageGalleryFile) images.get(i);
+            }
+            sendPhotosAndVideosCompressed(out, true, options, disableMarkdown, asFiles, showCaptionAboveMedia, hasSpoiler);
+            if (!failedPaths.isEmpty()) {
+              sendFiles(view, failedPaths, failedPaths.size() > 1, true, null, Td.newSendOptions());
+            }
+            return true;
+          }
+        },
+        stack, areScheduledOnly()
+      ).setReceiverChatId(getChatId())
+    );
+    controller.open();
+  }
+
   public void sendFiles (View view, final List<String> paths, boolean needGroupMedia, boolean allowReply, TdApi.MessageSendOptions initialSendOptions) {
     sendFiles(view, paths, needGroupMedia, allowReply, paths != null && !paths.isEmpty() ? takeComposerTextAsCaption(true) : null, initialSendOptions);
   }
@@ -14041,6 +14348,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
   public void onThemeColorsChanged (boolean areTemp, ColorState state) {
     super.onThemeColorsChanged(areTemp, state);
     applyComposerContentColors();
+    if (actionStatusView != null) {
+      actionStatusView.setTextColor(M3.onSurfaceVariant());
+    }
     if (attachedFiles != null) {
       attachedFiles.getThemeProvider().onThemeColorsChanged(areTemp);
     }

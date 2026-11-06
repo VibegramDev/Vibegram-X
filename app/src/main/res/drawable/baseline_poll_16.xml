@@ -1,9 +1,26 @@
+<!-- Telegram for Android 12.3.1 "mini_stats" (GPL-2.0-or-later), scripts/icons/tg_apply.py -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-  android:width="16dp"
-  android:height="16dp"
-  android:viewportWidth="24.0"
-  android:viewportHeight="24.0">
-  <path
-    android:fillColor="#FF000000"
-    android:pathData="M19,3L5,3c-1.1,0 -2,0.9 -2,2v14c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2L21,5c0,-1.1 -0.9,-2 -2,-2zM9,17L7,17v-7h2v7zM13,17h-2L11,7h2v10zM17,17h-2v-4h2v4z" />
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <group
+            android:translateX="3.000000">
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:strokeWidth="1"
+            android:pathData="M 3.55555558 12 L 6.44444442 12 Q 10 12 10 15.55555558 L 10 40.44444442 Q 10 44 6.44444442 44 L 3.55555558 44 Q 0 44 0 40.44444442 L 0 15.55555558 Q 0 12 3.55555558 12 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:strokeWidth="1"
+            android:pathData="M 19.55555558 0 L 22.44444442 0 Q 26 0 26 3.55555558 L 26 40.44444442 Q 26 44 22.44444442 44 L 19.55555558 44 Q 16 44 16 40.44444442 L 16 3.55555558 Q 16 0 19.55555558 0 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:strokeWidth="1"
+            android:pathData="M 35.55555558 21 L 38.44444442 21 Q 42 21 42 24.55555558 L 42 40.44444442 Q 42 44 38.44444442 44 L 35.55555558 44 Q 32 44 32 40.44444442 L 32 24.55555558 Q 32 21 35.55555558 21 Z" />
+    </group>
 </vector>

@@ -341,6 +341,9 @@ public class FloatingButton extends View implements Destroyable, RootFrameLayout
   public void setShowFactor (float factor) {
     if (this.showFactor != factor) {
       this.showFactor = factor;
+      // Same visual state as setHeightFactor(): keep its cache in sync, otherwise a later transition
+      // with the cached value (e.g. hiding after hide() + show()) would be skipped and leave the button visible.
+      this.scaleFactor = factor;
       setAlpha(MathUtils.clamp(factor));
       final float scale = MIN_SCALE + (1f - MIN_SCALE) * factor;
       setScaleX(scale);

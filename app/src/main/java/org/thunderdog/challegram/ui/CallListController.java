@@ -34,6 +34,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.CallItem;
 import org.thunderdog.challegram.data.CallSection;
 import org.thunderdog.challegram.data.TGFoundChat;
+import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
@@ -84,6 +85,13 @@ public class CallListController extends RecyclerViewController<Void> implements
   @Override
   public CharSequence getName () {
     return Lang.getString(R.string.Calls);
+  }
+
+  @Override
+  protected int getBackButton () {
+    // M3 top-level destination opened from the dock: no navigation icon, the dock switches destinations
+    // (m3.material.io/components/app-bars › Leading button: "A back arrow, which returns to the previous screen").
+    return isTopLevelDestination() ? BackHeaderButton.TYPE_NONE : super.getBackButton();
   }
 
   @Override

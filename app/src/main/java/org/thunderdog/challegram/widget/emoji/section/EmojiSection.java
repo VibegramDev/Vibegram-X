@@ -15,7 +15,7 @@
 package org.thunderdog.challegram.widget.emoji.section;
 
 import android.graphics.Canvas;
-import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 
@@ -23,15 +23,19 @@ import androidx.annotation.DrawableRes;
 import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
-import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.ThemeDelegate;
 import org.thunderdog.challegram.theme.ThemeId;
+import org.thunderdog.challegram.theme.ThemeSet;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
+import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.widget.emoji.EmojiLayoutRecyclerController;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
+import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 
 public class EmojiSection implements FactorAnimator.Target {
   public static final int SECTION_EMOJI_RECENT = 0;
@@ -257,36 +261,60 @@ public class EmojiSection implements FactorAnimator.Target {
     }
   }
 
+  // M3 selection of a section icon (m3.material.io/components/icon-buttons, "Color"): the selected section is a tonal
+  // icon button ("Tonal container / Tonal icon | Secondary container / On secondary container"), the others are
+  // standard icon buttons ("Standard icon | On surface variant"). Container: "Small - 40dp (default)", "Round button |
+  // Full". Navigation items (m3.material.io/components/navigation-bar): "When selected, the icon fills, darkens, and is
+  // backed by an active indicator shape"; "The active indicator animation should only apply on one axis".
+
+  /** Diameter of the active indicator behind a section icon or a sticker set thumbnail. */
+  public static final float INDICATOR_SIZE = 40f;
+
+  public static @Nullable ThemeDelegate forcedTheme (boolean useDarkMode) {
+    return useDarkMode ? ThemeSet.getBuiltinTheme(ThemeId.NIGHT_BLACK) : null;
+  }
+
+  /**
+   * Active indicator of a selected section: secondary container circle, expands horizontally from the centre.
+   * {@code maxSize}: the item size, the indicator never gets clipped by the item bounds.
+   */
+  public static void drawIndicator (Canvas c, float cx, float cy, float maxSize, float selectionFactor, @Nullable ThemeDelegate forcedTheme) {
+    if (selectionFactor <= 0f) {
+      return;
+    }
+    float height = Math.min(Screen.dp(INDICATOR_SIZE), maxSize);
+    float width = MathUtils.fromTo(height / 2f, height, selectionFactor);
+    RectF rect = Paints.getRectF();
+    rect.set(cx - width / 2f, cy - height / 2f, cx + width / 2f, cy + height / 2f);
+    int color = ColorUtils.alphaColor(selectionFactor, M3.get(M3.SECONDARY_CONTAINER, forcedTheme));
+    c.drawRoundRect(rect, height / 2f, height / 2f, Paints.fillingPaint(color));
+  }
+
   public void draw (Canvas c, int cx, int cy) {
-    boolean isUseDarkMode = callback.isUseDarkMode();
+    final ThemeDelegate forcedTheme = forcedTheme(callback.isUseDarkMode());
+    final int inactiveColor = M3.get(M3.ON_SURFACE_VARIANT, forcedTheme);
+    final int activeColor = M3.get(M3.ON_SECONDARY_CONTAINER, forcedTheme);
 
     if (selectionFactor == 0f || activeDisabled) {
-      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, isUseDarkMode ? Paints.getPorterDuffPaint(Theme.getColor(ColorId.icon, ThemeId.NIGHT_BLACK)) : Paints.getIconGrayPorterDuffPaint());
+      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, Paints.getPorterDuffPaint(inactiveColor));
     } else if (selectionFactor == 1f) {
+      drawIndicator(c, cx, cy, Math.min(cx, cy) * 2, 1f, forcedTheme);
       final Drawable icon = this.activeIcon != null ? activeIcon : this.icon;
-      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, isUseDarkMode ? Paints.getPorterDuffPaint(Theme.getColor(ColorId.iconActive, ThemeId.NIGHT_BLACK)) : Paints.getActiveKeyboardPaint());
+      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, Paints.getPorterDuffPaint(activeColor));
     } else {
-      final Paint grayPaint = isUseDarkMode ? Paints.getPorterDuffPaint(Theme.getColor(ColorId.icon, ThemeId.NIGHT_BLACK)) : Paints.getIconGrayPorterDuffPaint();
-      final int grayAlpha = grayPaint.getAlpha();
+      drawIndicator(c, cx, cy, Math.min(cx, cy) * 2, selectionFactor, forcedTheme);
 
+      float iconAlpha = 1f;
       if (makeFirstTransparent) {
-        int newAlpha = (int) ((float) grayAlpha * (1f - selectionFactor));
-        grayPaint.setAlpha(newAlpha);
+        iconAlpha = 1f - selectionFactor;
       } else if (isPanda) {
-        int newAlpha = (int) ((float) grayAlpha * (1f - (1f - AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(1f - selectionFactor))));
-        grayPaint.setAlpha(newAlpha);
+        iconAlpha = AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(1f - selectionFactor);
       }
-
-      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, grayPaint);
-      grayPaint.setAlpha(grayAlpha);
+      int iconColor = ColorUtils.fromToArgb(inactiveColor, activeColor, selectionFactor);
+      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, Paints.getPorterDuffPaint(ColorUtils.alphaColor(iconAlpha, iconColor)));
 
       final Drawable icon = this.activeIcon != null ? activeIcon : this.icon;
-      final Paint iconPaint = Paints.getActiveKeyboardPaint();
-      final int sourceIconAlpha = iconPaint.getAlpha();
-      int alpha = (int) ((float) sourceIconAlpha * selectionFactor);
-      iconPaint.setAlpha(alpha);
-      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, iconPaint);
-      iconPaint.setAlpha(sourceIconAlpha);
+      Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2, cy - icon.getMinimumHeight() / 2, Paints.getPorterDuffPaint(ColorUtils.alphaColor(selectionFactor, activeColor)));
     }
   }
 }

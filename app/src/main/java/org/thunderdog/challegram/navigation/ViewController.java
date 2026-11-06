@@ -2111,6 +2111,27 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     addThemeInvalidateListener(recyclerView);
 
     DialogLayout dialog = new DialogLayout(context, this, null);
+    // M3 headline (HeadlineSmall, onSurface): "A dialog's purpose should be communicated by its headline and buttons or
+    // actionable items" (m3.material.io/components/dialogs). Without an explicit one, the title of the settings row that
+    // opened the dialog (same id) says what is being chosen; skipped when the header text already repeats it.
+    CharSequence headline = b.headline;
+    View ownView = getWrapUnchecked();
+    if (headline == null && b.id != 0 && b.id != View.NO_ID && ownView != null) {
+      View rowView = ownView.findViewById(b.id);
+      if (rowView instanceof SettingView && rowView.getTag() instanceof ListItem) {
+        headline = ((ListItem) rowView.getTag()).getString();
+        if (headline != null && b.headerItems != null) {
+          for (ListItem headerItem : b.headerItems) {
+            CharSequence headerText = headerItem.getString();
+            if (headerText != null && StringUtils.equalsOrBothEmpty(headerText.toString(), headline.toString())) {
+              headline = null;
+              break;
+            }
+          }
+        }
+      }
+    }
+    dialog.setHeadline(headline);
     dialog.setListView(recyclerView);
     if (!b.disableFooter) {
       settings.cancelButton = dialog.addButton(R.id.btn_cancel, b.cancelStr, onClickListener);

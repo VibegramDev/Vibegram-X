@@ -31,7 +31,10 @@
 * [Konfetti](https://github.com/DanielMartinus/Konfetti): confetti animation
 * [ZXing](https://github.com/zxing/zxing/): QR scanning on devices where Google Play Services are not available
 
-* [Google's Material Icons](https://material.io/resources/icons): most of application icons
+* [Material Symbols](https://github.com/google/material-design-icons) (Rounded), licensed under
+  [Apache-2.0](https://github.com/google/material-design-icons/blob/master/LICENSE): most of application icons,
+  see [ICONS.md](ICONS.md) and [scripts/icons](/scripts/icons)
+* [Google's Material Icons](https://material.io/resources/icons): icons not yet converted to Material Symbols
 * [Material Design Icons](https://materialdesignicons.com): various icons by [Austin Andrews](https://twitter.com/Templarian), [Yasmina Lembachar](https://twitter.com/belledeboheme), [Haley Halcyon](https://twitter.com/itsspelledhaley), [Michael Richins](https://twitter.com/MrGrigri)
 
 * [Klaxon](https://github.com/cbeust/klaxon): JSON parser used in build scripts
@@ -59,3 +62,23 @@ Voice messages are transcribed on the device. The native libraries are prebuilt 
 
 The WEB proxy transport (`app/src/main/java/org/thunderdog/challegram/proxy/`) and the format of `webproxy` links are based on
 the WEB proxy implementation of [Telegram for Android](https://github.com/DrKLO/Telegram) (licensed under GNU GPL v. 2 or later).
+
+## Telegram for Android icons (v12.3.1)
+
+354 icon drawables in `app/src/main/res/drawable*/` (PNG alpha masks and a few vectors) are taken from
+[Telegram for Android](https://github.com/DrKLO/Telegram), commit `d7deedfa` ("update to 12.3.1"),
+licensed under GPL-2.0-or-later. They replace the Material Symbols drawables of the same name;
+the list is `scripts/icons/tg-mapping.tsv`, the conversion is `scripts/icons/tg_apply.py`.
+
+## Telegram Desktop and Telegram for iOS icons
+
+95 icon drawables in `app/src/main/res/drawable-{mdpi,hdpi,xhdpi,xxhdpi}/` (white PNG alpha masks) are rendered from
+icons of [Telegram Desktop](https://github.com/telegramdesktop/tdesktop), commit `93624f69`, licensed under
+GPL-3.0-or-later (with an OpenSSL linking exception, not needed here), and [Telegram for iOS](https://github.com/TelegramMessenger/Telegram-iOS),
+commit `279f89e4`, licensed under GPL-2.0-or-later (per https://telegram.org/apps; the repository itself has no LICENSE file). They are used where Telegram for Android has no matching icon and replace
+the Material Symbols drawables of the same name. Glyphs are rescaled, centred and their stroke weight adjusted to
+match the Telegram for Android set. The list (source file, commit, licence, scale and stroke change per icon) is
+`scripts/icons/tg-extra.tsv`, the conversion is `scripts/icons/tg_extra.py`.
+
+Licence compatibility (checked 06.11.2026): Vibegram-X / Telegram X are GPL-3.0; Telegram for Android and Telegram for iOS
+are GPL-2.0-or-later and are used under GPL-3.0; Telegram Desktop is GPL-3.0-or-later. All icons are distributed under GPL-3.0.

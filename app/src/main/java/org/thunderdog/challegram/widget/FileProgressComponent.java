@@ -1221,8 +1221,6 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
     }
   }
 
-  private static Path triangleSmall, triangleBig;
-
   private void drawCloudState (Canvas c, float alpha) {
     float hideFactor = calculateCloudHideFactor();
     if (hideFactor == 1f) {
@@ -1293,12 +1291,10 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
       }
     }
 
-    if (isTrack) {
-      int size = (int) (Screen.dp(6.5f) * (progressFactor));
-      int left = x - size / 2;
-      int top = y - size / 2;
-      c.drawLine(left, top, left + size, top + size, Paints.getProgressPaint(cloudColor, Screen.dp(2f)));
-      c.drawLine(left, top + size, left + size, top, Paints.getProgressPaint(cloudColor, Screen.dp(2f)));
+    if (isTrack && progressFactor > 0f) {
+      // Cancel: Telegram MediaActionDrawable ICON_CANCEL (arms ±7dp with a 3dp stroke at 48dp, i.e. a 7dp span
+      // and a 1.5dp stroke in the 24dp circle)
+      DrawAlgorithms.drawAnimatedCross(c, x, y, 1f, cloudColor, (int) (Screen.dp(7f) * progressFactor), Screen.dpf(1.5f));
     }
 
     alpha *= (1f - progressFactor) * (1f - hideFactor);
@@ -1307,6 +1303,12 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
       return;
     }
 
+    // Glyphs inside the cloud follow Telegram's MediaActionDrawable (ICON_CHECK / ICON_DOWNLOAD) in units of the
+    // main circle of the cloud, like Telegram's mini download badge; the stroke is the mini one (2dp at r = 11dp),
+    // slightly heavier as the cloud circle is smaller.
+    final float glyphRadius = originRadius * (1f - hideFactor);
+    final float strokeWidth = glyphRadius * .22f;
+
     switch (currentState) {
       case TdlibFilesManager.STATE_DOWNLOADED_OR_UPLOADED: {
         float factor = calculateCloudDoneFactor();
@@ -1314,95 +1316,37 @@ public class FileProgressComponent implements TdlibFilesManager.FileListener, Fa
           break;
         }
 
-        int size, h1max, w2max;
-
-        if (isTrack) {
-          size = Screen.dp(2f);
-          h1max = Screen.dp(2.5f) + size;
-          w2max = Screen.dp(5.5f);
-        } else {
-          size = Screen.dp(2f);
-          h1max = Screen.dp(2f) + size;
-          w2max = Screen.dp(4.5f);
-        }
-
-        int totalDistance = (int) ((h1max + w2max) * factor);
-
-        int h = totalDistance < h1max ? totalDistance : h1max;
-        int w = totalDistance >= h1max ? totalDistance - h1max : 0;
-
-        int cx = x; int cy = y;
-
         int progressColor = isTrack ? ColorUtils.alphaColor(alpha, Theme.fillingColor()) : ((int) (255f * alpha) << 24) | 0xffffff;
 
-        if (totalDistance > 0) {
-          c.save();
-          int tx = -Screen.dp(2f);
-          int ty = isTrack ? Screen.dp(2.25f) : Screen.dp(2.15f);
-          float scale = 1f - hideFactor;
-          if (scale != 1f) {
-            c.scale(scale, scale, x, y);
-          }
-          c.translate(tx, ty);
-          c.rotate(-45f, cx + tx, cy + ty);
-          c.drawRect(cx, cy, cx + size, cy + h, Paints.fillingPaint(progressColor));
-          if (w > 0) {
-            c.drawRect(cx + size, cy + h - size, cx + size + w, cy + h, Paints.fillingPaint(progressColor));
-          }
-          c.restore();
+        // Telegram check (-.375, .042) → (-.125, .292) → (.375, -.208), moved down by .14 to the middle of the
+        // cloud body (the lobes reach 1.29 below the centre); the short arm grows first.
+        final float shortArm = .25f, longArm = .5f;
+        final float x1 = x - glyphRadius * .375f, y1 = y + glyphRadius * .182f;
+        final float x2 = x1 + glyphRadius * shortArm, y2 = y1 + glyphRadius * shortArm;
+        final float distance = (shortArm + longArm) * factor;
+        final Paint paint = DrawAlgorithms.getGlyphPaint(progressColor, strokeWidth);
+        if (distance <= shortArm) {
+          float d = glyphRadius * distance;
+          c.drawLine(x1, y1, x1 + d, y1 + d, paint);
+        } else {
+          float d = glyphRadius * (distance - shortArm);
+          DrawAlgorithms.drawGlyphPolyline(c, x1, y1, x2, y2, x2 + d, y2 - d, paint);
         }
-
         break;
       }
       default: {
         int color;
-        Path path;
-
-        int length, cy;
         if (isTrack) {
           color = ColorUtils.alphaColor(alpha, Theme.fillingColor());
-          if (triangleBig == null) {
-            int width = Screen.dp(9f);
-            int height = Screen.dp(4f);
-            triangleBig = new Path();
-            triangleBig.setFillType(Path.FillType.EVEN_ODD);
-            triangleBig.moveTo(-width / 2, 0);
-            triangleBig.lineTo(width / 2, 0);
-            triangleBig.lineTo(0, height);
-            triangleBig.close();
-          }
-          path = triangleBig;
-
-          length = Screen.dp(3.5f);
-          cy = y - (length / 2 + Screen.dp(1f)) + Screen.dp(.2f);
         } else {
           color = ColorUtils.color((int) (255f * alpha), 0xffffffff);
-          if (triangleSmall == null) {
-            int width = Screen.dp(7f);
-            int height = Screen.dp(3f);
-            triangleSmall = new Path();
-            triangleSmall.setFillType(Path.FillType.EVEN_ODD);
-            triangleSmall.moveTo(-width / 2, 0);
-            triangleSmall.lineTo(width / 2, 0);
-            triangleSmall.lineTo(0, height);
-            triangleSmall.close();
-          }
-          path = triangleSmall;
-
-          length = Screen.dp(2.5f);
-          cy = y - (length / 2 + Screen.dp(1f)) + Screen.dp(.2f);
         }
-
-        c.drawRect(x - length / 2, cy, x + length / 2, cy + length, Paints.fillingPaint(color));
-
-        c.save();
-        c.translate(x, cy + length);
-        c.drawPath(path, Paints.fillingPaint(color));
-        c.restore();
+        // Telegram download arrow (shaft of .75 with a 90° head, arms .333 long along each axis), moved down by .14
+        // to the middle of the cloud body
+        DrawAlgorithms.drawGlyphArrowDownward(c, x, y - glyphRadius * .235f, y + glyphRadius * .515f, glyphRadius * .333f, DrawAlgorithms.getGlyphPaint(color, strokeWidth), false);
         break;
       }
     }
-
   }
 
   private boolean isTrack, isTrackCurrent;

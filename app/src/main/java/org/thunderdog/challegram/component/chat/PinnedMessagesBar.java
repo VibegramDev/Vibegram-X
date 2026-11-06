@@ -140,8 +140,9 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
 
         //
 
-        final int defaultFillColor = ColorUtils.alphaColor(alpha, Theme.chatVerticalLineColor());
-        final int defaultBackgroundColor = ColorUtils.alphaColor(.3f * alpha, defaultFillColor);
+        // M3: the accent line uses the primary role in every theme, not the sender's accent colour
+        final int fillColor = ColorUtils.alphaColor(alpha, M3.primary());
+        final int backgroundColor = ColorUtils.alphaColor(.3f * alpha, fillColor);
 
         //
 
@@ -187,25 +188,6 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
         for (int position = fromPosition; position < toPosition; position++) {
           float lineEndY = lineBeginY - (float) Math.ceil((lineHeight + spacingBetweenItems) * position);
           float lineStartY = lineEndY - lineHeight;
-
-          int dataPosition;
-          if (reverseLayout) {
-            dataPosition = position;
-          } else {
-            dataPosition = scrollItemCount - 1 - position;
-          }
-          Entry entry = null;
-          if (messagesAdapter != null && dataPosition >= 0 && dataPosition < messagesAdapter.getItemCount()) {
-            entry = (Entry) messagesAdapter.getItems().get(dataPosition).getData();
-          }
-          final int fillColor, backgroundColor;
-          if (entry != null && entry.accentColor != null) {
-            fillColor = ColorUtils.alphaColor(alpha, entry.accentColor.getVerticalLineColor());
-            backgroundColor = ColorUtils.alphaColor(.3f * alpha, fillColor);
-          } else {
-            fillColor = defaultFillColor;
-            backgroundColor = defaultBackgroundColor;
-          }
 
           boolean isFull = focusPosition == position || (position > (int) focusPosition && position < (int) (focusPosition + visibleItemCount));
 

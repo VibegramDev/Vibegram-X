@@ -24,4 +24,5 @@
   <string name="vg_SttProgress">Распознаю… %1$d%%</string>
   <string name="vg_SttPreparing">Подготовка…</string>
   <string name="vg_SttVideoTooLong">Расшифровать можно только видео до 5 минут</string>
+  <string name="vg_SttCopy">Копировать расшифровку</string>
 </resources>

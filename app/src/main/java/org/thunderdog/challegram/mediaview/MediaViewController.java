@@ -7907,8 +7907,8 @@ public class MediaViewController extends ViewController<MediaViewController.Args
 
   private static final int[][] PROPORTION_MODES = {
     {1, 1, R.id.btn_proportion_square, R.drawable.baseline_crop_square_24}, // Square
-    {3, 2, R.id.btn_proportion_3_2, R.drawable.baseline_crop_5_4_24}, // 3:2
-    {4, 3, R.id.btn_proportion_4_3, R.drawable.baseline_crop_3_2_24}, // 4:3
+    {3, 2, R.id.btn_proportion_3_2, R.drawable.baseline_crop_3_2_24}, // 3:2
+    {4, 3, R.id.btn_proportion_4_3, R.drawable.baseline_crop_5_4_24}, // 4:3
     // {7, 5, R.id.btn_proportion_16_10, R.drawable.ic_crop_7_5_black_24dp}, // 16:10
     {16, 9, R.id.btn_proportion_16_9, R.drawable.baseline_crop_16_9_24}, // 16:9
 

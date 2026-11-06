@@ -97,7 +97,12 @@ import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.Destroyable;
 
 public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener, View.OnClickListener, View.OnLongClickListener, Destroyable, TGLegacyManager.EmojiLoadListener, FactorAnimator.Target {
-  public static final @Dimension(unit = Dimension.DP) float SELECTION_HEIGHT = 3f; // M3 PrimaryNavigationTabTokens.ActiveIndicatorHeight
+  /** M3 tabs, "Primary active indicator height | 3dp". */
+  public static final @Dimension(unit = Dimension.DP) float SELECTION_HEIGHT = 3f;
+  /** M3 tabs, "Active indicator shape | 3, 3, 0, 0". */
+  public static final @Dimension(unit = Dimension.DP) float SELECTION_CORNER = 3f;
+  /** M3 tabs, "Active indicator minimum length | 24dp". */
+  public static final @Dimension(unit = Dimension.DP) float SELECTION_MIN_LENGTH = 24f;
   public static final @Dimension(unit = Dimension.DP) float ICON_SIZE = 24f;
   public static final @Dimension(unit = Dimension.DP) float DEFAULT_ITEM_PADDING = 19f;
   public static final @Dimension(unit = Dimension.DP) float COMPACT_ITEM_PADDING = 10f;
@@ -560,10 +565,12 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   }
   private CounterAlphaProvider counterAlphaProvider = DEFAULT_COUNTER_ALPHA_PROVIDER;
 
-  private @ColorId int fromTextColorId = ColorId.NONE, toTextColorId = ColorId.headerText;
+  // M3 primary tabs (m3.material.io/components/tabs, "Primary tab color roles"): active label and active indicator
+  // primary, inactive label on surface variant. The theme maps the header tab colors to these roles (ThemeDelegate).
+  private @ColorId int fromTextColorId = ColorId.headerTabInactiveText, toTextColorId = ColorId.headerTabActiveText;
   private @PropertyId int fromTextColorAlphaId = PropertyId.NONE;
 
-  private @ColorId int selectionColorId = ColorId.NONE;
+  private @ColorId int selectionColorId = ColorId.headerTabActive;
   private @FloatRange(from = 0.0, to = 1.0) float selectionAlpha = 1f;
 
   public ViewPagerTopView (Context context) {
@@ -716,16 +723,6 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
   public boolean isChipStyle () {
     return chipStyle;
-  }
-
-  private boolean primaryTabsStyle;
-
-  /** M3 primary tabs on a surface (PrimaryNavigationTabTokens): label onSurfaceVariant → primary, indicator primary. */
-  public void setPrimaryTabsStyle (boolean primaryTabsStyle) {
-    if (this.primaryTabsStyle != primaryTabsStyle) {
-      this.primaryTabsStyle = primaryTabsStyle;
-      invalidate();
-    }
   }
 
   private void applyItemBackground (View view) {
@@ -1328,6 +1325,27 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     return itemPadding * 2 + items.get(itemIndex).getExpandedWidth();
   }
 
+  /** Width of the drawn content (label, icon, counter) of the tab at {@code itemIndex}, without the tab padding. */
+  private int getItemContentWidth (int itemIndex, float selectionFactor) {
+    Item item = items.get(itemIndex);
+    float labelFactor = getLabelFactor(itemIndex, selectionFactor);
+    return Math.min(item.getContentWidth(labelFactor), item.getWidth(labelFactor));
+  }
+
+  /** Length of the primary tab indicator: content width of the selected tab, interpolated while scrolling. */
+  private int getIndicatorWidth (float selectionFactor) {
+    if (items == null || items.isEmpty()) {
+      return 0;
+    }
+    int index = MathUtils.clamp((int) selectionFactor, 0, items.size() - 1);
+    float remainFactor = selectionFactor - (float) ((int) selectionFactor);
+    int fromWidth = getItemContentWidth(index, selectionFactor);
+    if (remainFactor == 0f || index + 1 >= items.size()) {
+      return fromWidth;
+    }
+    return MathUtils.fromTo(fromWidth, getItemContentWidth(index + 1, selectionFactor), remainFactor);
+  }
+
   public void updateAnchorPosition (boolean animated) {
     if (selectionChangeListener != null && getItemCount() > 0) {
       int firstItemWidth = getItemExpandedWidth(0);
@@ -1472,28 +1490,29 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     final boolean wrapContent = shouldWrapContent();
 
     if (overlayFactor != 1f) {
-      int textToColor = chipStyle ? M3.onSecondaryContainer() : primaryTabsStyle ? M3.primary() : Theme.getColor(toTextColorId);
-      int textFromColor = chipStyle || primaryTabsStyle ? M3.onSurfaceVariant() : fromTextColorId != ColorId.NONE ?
+      int textToColor = chipStyle ? M3.onSecondaryContainer() : Theme.getColor(toTextColorId);
+      int textFromColor = chipStyle ? M3.onSurfaceVariant() : fromTextColorId != ColorId.NONE ?
         ColorUtils.alphaColor(fromTextColorAlphaId != PropertyId.NONE ? Theme.getProperty(fromTextColorAlphaId) : 1f, Theme.getColor(fromTextColorId)) :
         ColorUtils.alphaColor(Theme.getSubtitleAlpha(), Theme.getColor(ColorId.headerText));
-      int selectionColor = primaryTabsStyle ? M3.primary() : selectionColorId != ColorId.NONE ?
+      int selectionColor = selectionColorId != ColorId.NONE ?
         ColorUtils.alphaColor(selectionAlpha, Theme.getColor(selectionColorId)) :
         ColorUtils.alphaColor(.9f, Theme.getColor(ColorId.headerText));
 
       boolean rtl = Lang.rtl();
 
+      // M3 primary tab active indicator (m3.material.io/components/tabs, "Measurements"): "Primary active indicator
+      // height | 3dp", "Active indicator shape | 3, 3, 0, 0" (only the corners facing the label are rounded),
+      // "Active indicator minimum length | 24dp". Its length follows the label (content) of the selected tab,
+      // not the whole tab, and is interpolated between two tabs while the pager scrolls.
       int selectionHeight = Screen.dp(SELECTION_HEIGHT);
-      int selectionLeft = rtl ? this.totalWidth - this.selectionLeft - this.selectionWidth : this.selectionLeft;
-      int selectionRight = selectionLeft + this.selectionWidth;
-      // M3 primary tab indicator: content width (min 24dp), 3dp, rounded corners facing the label.
-      int contentInset = Math.max(0, Math.min(itemPadding, (this.selectionWidth - Screen.dp(24f)) / 2));
-      selectionLeft += contentInset;
-      selectionRight -= contentInset;
+      int indicatorWidth = Math.min(this.selectionWidth, Math.max(Screen.dp(SELECTION_MIN_LENGTH), getIndicatorWidth(selectionFactor)));
+      int selectionLeft = (rtl ? this.totalWidth - this.selectionLeft - this.selectionWidth : this.selectionLeft) + (this.selectionWidth - indicatorWidth) / 2;
+      int selectionRight = selectionLeft + indicatorWidth;
       int selectionTop = this.drawSelectionAtTop ? 0 : viewHeight - selectionHeight;
       int selectionBottom = selectionTop + selectionHeight;
 
       final int finalSelectionColor = disabledFactor == 0f ? selectionColor : ColorUtils.fromToArgb(selectionColor, textFromColor, disabledFactor);
-      float indicatorRadius = selectionHeight;
+      float indicatorRadius = Screen.dp(SELECTION_CORNER);
       RectF indicatorRect = Paints.getRectF();
       if (this.drawSelectionAtTop) {
         indicatorRect.set(selectionLeft, selectionTop - indicatorRadius, selectionRight, selectionBottom);

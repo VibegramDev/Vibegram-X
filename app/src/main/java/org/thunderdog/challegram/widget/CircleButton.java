@@ -147,6 +147,19 @@ public class CircleButton extends View implements FactorAnimator.Target, Reactio
     RippleSupport.setCircleBackground(this, size, padding, backgroundColorId, needShadow, null);
   }
 
+  /**
+   * M3 square icon button: a rounded-square container with {@code cornerRadius}dp corners filling the view inside
+   * {@code padding}dp (room for the elevation shadow), e.g. the medium icon button — 56dp, 16dp corners.
+   */
+  public void initSquare (@DrawableRes int icon, float cornerRadius, float padding, @ColorId int backgroundColorId, @ColorId int iconColorId) {
+    this.icon = Drawables.get(icon);
+    this.offsetLeft = 0;
+    this.backgroundColorId = backgroundColorId;
+    this.iconColorIsId = true;
+    this.iconColor = iconColorId;
+    RippleSupport.setRectBackground(this, cornerRadius, padding, backgroundColorId);
+  }
+
   public void setCrossColorId (@ColorId int backgroundColorId, @ColorId int iconColorId) {
     this.crossBackgroundColorId = backgroundColorId;
     this.crossIconColorId = iconColorId;

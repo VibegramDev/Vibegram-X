@@ -18,6 +18,7 @@ import android.animation.ValueAnimator;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.CornerPathEffect;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -28,6 +29,7 @@ import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.text.Layout;
+import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.TextView;
@@ -68,29 +70,101 @@ import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 
 public class DrawAlgorithms {
-  public static void drawMark (Canvas c, float cx, float cy, float factor, int lineHeight, Paint paint) {
-    int lineRadius = lineHeight / 2;
+  // Code-drawn glyphs follow Telegram for Android 12.3.1, like the drawables: its code-drawn glyphs
+  // (BackDrawable, MediaActionDrawable, CheckBoxBase, ...) and its 24dp icons (1.67dp outline, round caps and joins,
+  // 90° arrow heads).
+
+  /** Telegram close (BackDrawable / CloseProgressDrawable2): arms of 8dp from the centre at 45°, i.e. a 11.31dp span. */
+  private static final float CLOSE_SPAN_DP = 11.31f;
+  /** Telegram 24dp chevron (msg_arrowright): arms run 5.33dp along each axis, 90° tip. */
+  public static final float CHEVRON_ARM_DP = 5.33f;
+  /** Stroke of the Telegram 24dp icons (msg_*): 5px at xxhdpi. */
+  public static final float GLYPH_STROKE_DP = 1.67f;
+
+  private static Paint glyphPaint;
+
+  public static Paint getGlyphPaint (@ColorInt int color, float strokeWidth) {
+    if (glyphPaint == null) {
+      glyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+      glyphPaint.setStyle(Paint.Style.STROKE);
+      glyphPaint.setStrokeCap(Paint.Cap.ROUND);
+      glyphPaint.setStrokeJoin(Paint.Join.ROUND);
+    }
+    glyphPaint.setColor(color);
+    glyphPaint.setStrokeWidth(strokeWidth);
+    return glyphPaint;
+  }
+
+  private static Path glyphPath;
+
+  private static Path obtainGlyphPath () {
+    if (glyphPath == null) {
+      glyphPath = new Path();
+    } else {
+      glyphPath.reset();
+    }
+    return glyphPath;
+  }
+
+  /** Draws (x1, y1) → (x2, y2) → (x3, y3) as one path, so a translucent colour is not doubled at the joint. */
+  public static void drawGlyphPolyline (Canvas c, float x1, float y1, float x2, float y2, float x3, float y3, Paint paint) {
+    Path path = obtainGlyphPath();
+    path.moveTo(x1, y1);
+    path.lineTo(x2, y2);
+    path.lineTo(x3, y3);
+    c.drawPath(path, paint);
+  }
+
+  /**
+   * arrow_downward: shaft from (cx, top) to the tip at (cx, tipY), arms reaching armSize back along each axis.
+   * With flatTop the shaft ends flat at top (the slit of cloud_download) instead of with a round cap.
+   */
+  public static void drawGlyphArrowDownward (Canvas c, float cx, float top, float tipY, float armSize, Paint paint, boolean flatTop) {
+    Path path = obtainGlyphPath();
+    if (flatTop) {
+      float halfWidth = paint.getStrokeWidth() / 2f;
+      Paint.Style style = paint.getStyle();
+      paint.setStyle(Paint.Style.FILL);
+      c.drawRect(cx - halfWidth, top, cx + halfWidth, tipY, paint);
+      paint.setStyle(style);
+    } else {
+      path.moveTo(cx, top);
+      path.lineTo(cx, tipY);
+    }
+    path.moveTo(cx - armSize, tipY - armSize);
+    path.lineTo(cx, tipY);
+    path.lineTo(cx + armSize, tipY - armSize);
+    c.drawPath(path, paint);
+  }
+
+  // Animated "close": the first arm grows, then the second one.
+  private static void drawCloseArms (Canvas c, float cx, float cy, float factor, float span, Paint paint) {
     float f1 = factor < .5f ? AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(factor / .5f) : 1f;
     float f2 = factor <= .5f ? 0f : AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation((factor - .5f) / .5f);
-    if (Lang.rtl()) {
-      if (f1 > 0f) {
-        int d = (int) ((float) lineHeight * f1);
-        c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-      }
-      if (f2 > 0f) {
-        int d = (int) ((float) lineHeight * f2);
-        c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-      }
-    } else {
-      if (f1 > 0f) {
-        int d = (int) ((float) lineHeight * f1);
-        c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-      }
-      if (f2 > 0f) {
-        int d = (int) ((float) lineHeight * f2);
-        c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-      }
+    if (f1 <= 0f) {
+      return;
     }
+    float radius = span / 2f;
+    float startX = Lang.rtl() ? cx - radius : cx + radius;
+    float direction = Lang.rtl() ? 1f : -1f;
+    Path path = obtainGlyphPath();
+    float d = span * f1;
+    path.moveTo(startX, cy - radius);
+    path.lineTo(startX + d * direction, cy - radius + d);
+    if (f2 > 0f) {
+      d = span * f2;
+      path.moveTo(startX + span * direction, cy - radius);
+      path.lineTo(startX + span * direction - d * direction, cy - radius + d);
+    }
+    c.drawPath(path, paint);
+  }
+
+  /**
+   * Telegram close with the caller's stroke.
+   * Callers pass the cross size of the legacy 24dp TGX glyph (9dp), which maps to the 11.31dp span of Telegram's close.
+   */
+  public static void drawMark (Canvas c, float cx, float cy, float factor, int lineHeight, Paint paint) {
+    drawCloseArms(c, cx, cy, factor, lineHeight * (CLOSE_SPAN_DP / 9f), getGlyphPaint(paint.getColor(), paint.getStrokeWidth()));
   }
 
   public static void drawRoundRect (Canvas c, float radius, float left, float top, float right, float bottom, Paint paint) {
@@ -179,60 +253,53 @@ public class DrawAlgorithms {
   public static void drawCross (Canvas c, float cx, float cy, float factor, @ColorInt int iconColor, @ColorInt int backgroundColor) {
     drawCross(c, cx, cy, factor, iconColor, backgroundColor, Screen.dp(23f));
   }
+  /**
+   * Slash of the Telegram "off" icons (msg_mute, msg_block-free variants, CrossOutDrawable) over a 24dp icon centred at
+   * (cx, cy): a 1.67dp round-capped stroke from (3.67, 3.67) to (20.33, 20.33) through the centre, with the icon cut by a
+   * band of 1.33dp clear gap on both sides (straight cut ends). It grows from the top-left end with factor.
+   * lineHeight is the legacy TGX slash length for a 24dp icon (23dp); other values scale the glyph.
+   */
   public static void drawCross (Canvas c, float cx, float cy, float factor, @ColorInt int iconColor, @ColorInt int backgroundColor, int lineHeight) {
     if (factor <= 0f) {
       return;
     }
 
+    final float scale = lineHeight / Screen.dpf(23f);
+    final float lineWidth = Screen.dpf(GLYPH_STROKE_DP) * scale;
+    final float gapWidth = Screen.dpf(1.33f) * scale;
+    final float halfLength = Screen.dpf(8.33f) * (float) Math.sqrt(2.0) * scale;
+
     c.save();
     c.rotate(-45f, cx, cy);
 
-    int lineWidth = Screen.dp(2f);
-    int silentWidth = Screen.dp(1.5f);
+    // After the rotation +x points up-right and +y down-right.
+    final float x = cx;
+    final float startY = cy - halfLength;
+    final float endY = startY + halfLength * 2f * factor;
+    final float cut = lineWidth / 2f + gapWidth;
 
-    int padding = Screen.dp(1f);
-    int lineTop = (int) (cy - lineHeight * .5f) + padding;
-    int x = (int) (cx - padding) - Screen.dp(.5f);
-
-    c.clipRect(x, lineTop, x + lineWidth + silentWidth, lineTop + lineHeight * factor);
-    RectF rectF = Paints.getRectF();
-    rectF.set(x, lineTop, x + lineWidth, lineTop + lineHeight);
-
-    c.drawRoundRect(rectF, lineWidth / 2, lineWidth / 2, Paints.fillingPaint(iconColor));
-    c.drawRect(x + lineWidth, lineTop, x + lineWidth + silentWidth, lineTop + lineHeight, Paints.fillingPaint(backgroundColor));
+    c.drawRect(x - cut, startY, x + cut, endY, Paints.fillingPaint(backgroundColor));
+    c.drawLine(x, startY, x, endY, getGlyphPaint(iconColor, lineWidth));
 
     c.restore();
   }
 
+  /** Chevron of the voice-call slide hints: chevron_right (or chevron_left), as positioned by the legacy glyph. */
   public static void drawHorizontalDirection (Canvas c, float cx, float cy, @ColorInt int lineColor, boolean isRight) {
-    c.save();
-
-    int lineWidth = Screen.dp(2f);
-    int lineHeight = Screen.dp(9f);
-
-    int lineLeft = (int) cx - lineHeight / 2;
-    int lineBottom = (int) cy + lineHeight / 2;
-
-    c.translate(0, -lineHeight / 2);
-    c.rotate(45f, lineLeft, lineBottom);
-    c.translate(0, -Screen.dp(5f));
-    if (isRight) {
-      c.drawRect(lineLeft, lineBottom + lineHeight, lineLeft - lineWidth, lineBottom + lineWidth, Paints.fillingPaint(lineColor));
-      c.drawRect(lineLeft, lineBottom + lineWidth, lineLeft - lineHeight, lineBottom, Paints.fillingPaint(lineColor));
-    } else {
-      c.drawRect(lineLeft, lineBottom - lineHeight, lineLeft + lineWidth, lineBottom - lineWidth, Paints.fillingPaint(lineColor));
-      c.drawRect(lineLeft, lineBottom - lineWidth, lineLeft + lineHeight, lineBottom, Paints.fillingPaint(lineColor));
-    }
-
-    c.restore();
+    drawDirection(c, cx - Screen.dpf(1f), cy - Screen.dpf(3.5f), lineColor, isRight ? Gravity.RIGHT : Gravity.LEFT);
   }
 
+  /**
+   * Telegram chevron down (openFactor 0) rotating into the chevron up (openFactor 1), morphing into Telegram's close
+   * (2dp, as in BackDrawable) with crossFactor.
+   */
   public static void drawCollapse (Canvas c, float cx, float cy, @ColorInt int color, float openFactor, float crossFactor) {
-    Paint paint = Paints.getProgressPaint(color, Screen.dp(2f));
+    Paint paint = getGlyphPaint(color, MathUtils.fromTo(Screen.dpf(GLYPH_STROKE_DP), Screen.dpf(2f), crossFactor));
 
     double rad = Math.toRadians(MathUtils.fromTo(135f, 45f, openFactor));
 
-    float distance = Screen.dp(6f);
+    // Arm length: from the chevron arm (5.33dp along each axis) to half of the close diagonal (5.66dp along each axis).
+    float distance = MathUtils.fromTo(Screen.dpf(CHEVRON_ARM_DP), Screen.dpf(CLOSE_SPAN_DP / 2f), crossFactor) * (float) Math.sqrt(2.0);
 
     float diffX = (float) ((double) distance * Math.sin(rad));
     float diffY = (float) ((double) distance * Math.cos(rad));
@@ -241,36 +308,56 @@ public class DrawAlgorithms {
 
     float y = cy + diffY;
 
-    c.drawLine(cx + diffX, y, cx - diffX * crossFactor, cy - diffY * crossFactor, paint);
-    c.drawLine(cx - diffX, y, cx + diffX * crossFactor, cy - diffY * crossFactor, paint);
+    // One path, so a translucent colour is not doubled where the arms meet.
+    Path path = obtainGlyphPath();
+    path.moveTo(cx + diffX, y);
+    path.lineTo(cx - diffX * crossFactor, cy - diffY * crossFactor);
+    path.moveTo(cx - diffX, y);
+    path.lineTo(cx + diffX * crossFactor, cy - diffY * crossFactor);
+    c.drawPath(path, paint);
   }
 
+  /**
+   * Telegram chevron (msg_arrowright, rotated) pointing to gravity: 1.67dp stroke, round caps and join,
+   * arms 5.33dp along each axis (90° tip). (cx, cy) is the outer point of the tip.
+   */
   public static void drawDirection (Canvas c, float cx, float cy, @ColorInt int lineColor, int gravity) {
-    c.save();
+    drawDirection(c, cx, cy, lineColor, gravity, Screen.dpf(CHEVRON_ARM_DP), Screen.dpf(CHEVRON_ARM_DP), Screen.dpf(GLYPH_STROKE_DP));
+  }
 
-    int lineWidth = Screen.dp(2f);
-    int lineHeight = Screen.dp(9f);
-
-    int rotation = 45;
+  /**
+   * Chevron pointing to gravity with arms reaching armBack behind the tip and armSide to each side of it.
+   * (cx, cy) is the outer point of the tip.
+   */
+  public static void drawDirection (Canvas c, float cx, float cy, @ColorInt int lineColor, int gravity, float armBack, float armSide, float lineWidth) {
+    float dx, dy; // Direction the tip points to
     switch (gravity) {
       case Gravity.TOP:
-        rotation += 90;
+        dx = 0f; dy = -1f;
         break;
       case Gravity.BOTTOM:
-        rotation -= 90;
+        dx = 0f; dy = 1f;
         break;
       case Gravity.RIGHT:
-        rotation += 180;
+        dx = 1f; dy = 0f;
         break;
       case Gravity.LEFT:
-        // nothing
+      default:
+        dx = -1f; dy = 0f;
         break;
     }
-    c.rotate(rotation, cx, cy);
-    c.drawRect(cx, cy - lineHeight, cx + lineWidth, cy, Paints.fillingPaint(lineColor));
-    c.drawRect(cx + lineWidth, cy - lineWidth, cx + lineHeight, cy, Paints.fillingPaint(lineColor));
-
-    c.restore();
+    // Stroke centre at the tip
+    final float tipX = cx - dx * lineWidth / 2f;
+    final float tipY = cy - dy * lineWidth / 2f;
+    // Middle between the two arm ends
+    final float baseX = tipX - dx * armBack;
+    final float baseY = tipY - dy * armBack;
+    drawGlyphPolyline(c,
+      baseX - dy * armSide, baseY + dx * armSide,
+      tipX, tipY,
+      baseX + dy * armSide, baseY - dx * armSide,
+      getGlyphPaint(lineColor, lineWidth)
+    );
   }
 
   public static void drawIcon (Canvas c, Receiver receiver, float degrees, float factor, int contentReplaceColor, Drawable drawable, Paint drawablePaint) {
@@ -338,24 +425,15 @@ public class DrawAlgorithms {
     }
 
     if (factor < 1f) {
-      int baseRadius = Screen.dp(15f);
-      int radiusStartLeft = Screen.dp(12);
-      int radiusStartRight = Screen.dp(10f);
-      int xLeft = -Screen.dp(12f);
-      int yLeft = Screen.dp(6f);
-      int xRight = Screen.dp(14f);
-      int yRight = Screen.dp(8f);
-
-      if (originRadius != baseRadius) {
-        float scale = (float) originRadius / (float) baseRadius;
-        baseRadius = originRadius;
-        radiusStartLeft *= scale;
-        radiusStartRight *= scale;
-        xLeft *= scale;
-        yLeft *= scale;
-        xRight *= scale;
-        yRight *= scale;
-      }
+      // Material Symbols "cloud", relative to its main circle (r = 7dp at 24dp, centre at (12, 11)):
+      // left lobe r 5.5dp at (-5.5, +3.5), right lobe r 4.5dp at (+6.5, +4.5), flat bottom 9dp below the centre.
+      float baseRadius = originRadius;
+      float radiusStartLeft = baseRadius * (5.5f / 7f);
+      float radiusStartRight = baseRadius * (4.5f / 7f);
+      float xLeft = -baseRadius * (5.5f / 7f);
+      float yLeft = baseRadius * (3.5f / 7f);
+      float xRight = baseRadius * (6.5f / 7f);
+      float yRight = baseRadius * (4.5f / 7f);
 
       float radiusLeft = radiusStartLeft + (baseRadius - radiusStartLeft) * factor;
       float radiusRight = radiusStartRight + (baseRadius - radiusStartRight) * factor;
@@ -813,11 +891,41 @@ public class DrawAlgorithms {
       if (rotation != 0)
         c.rotate(rotation, 0, 0);
     }
-    c.drawPath(path, Paints.getPlayPausePaint(color, Paint.Style.FILL));
+    c.drawPath(path, getPlayPausePaint(color, path));
     if (saved) {
       c.restore();
     }
     // c.drawCircle(cx, cy, Screen.dp(2f), Paints.fillingPaint(0xffff0000));
+  }
+
+  private static Paint playPausePaint;
+  private static SparseArray<CornerPathEffect> playPauseCorners;
+  private static RectF playPauseBounds;
+
+  // Rounded corners of Telegram's play / pause (Theme.playPauseAnimator): 1.2dp at the 16.4dp play height
+  // (the pause bars get 1.1dp, Telegram's 4-unit corners at its 0.293 scale).
+  // Measured on the path, as some callers draw a path built for another size.
+  private static final float PLAY_PAUSE_CORNER_RADIUS = 1.2f / 16.4f;
+
+  private static Paint getPlayPausePaint (@ColorInt int color, Path path) {
+    if (playPausePaint == null) {
+      playPausePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+      playPausePaint.setStyle(Paint.Style.FILL);
+      playPauseCorners = new SparseArray<>();
+      playPauseBounds = new RectF();
+    }
+    path.computeBounds(playPauseBounds, false);
+    int cornerRadius = Math.max(1, Math.round(Math.max(playPauseBounds.width(), playPauseBounds.height()) * PLAY_PAUSE_CORNER_RADIUS));
+    CornerPathEffect effect = playPauseCorners.get(cornerRadius);
+    if (effect == null) {
+      effect = new CornerPathEffect(cornerRadius);
+      playPauseCorners.put(cornerRadius, effect);
+    }
+    if (playPausePaint.getPathEffect() != effect) {
+      playPausePaint.setPathEffect(effect);
+    }
+    playPausePaint.setColor(color);
+    return playPausePaint;
   }
 
   public static float buildPlayPause (Path path, int sourcePauseWidth, float drawFactor, float factor) {
@@ -830,76 +938,44 @@ public class DrawAlgorithms {
     path.reset();
     path.setFillType(Path.FillType.EVEN_ODD);
 
-    int pauseWidth = Screen.dp(6f);
-    int pauseSpacing = Screen.dp(6f);
-    int pauseHeight = Screen.dp(21f);
+    // Telegram MediaActionDrawable / PlayPauseDrawable (Theme.playPauseAnimator) in the 48dp file button, which
+    // callers describe with a 13dp pause width: pause bars 4.69 x 15.24dp, 2.93dp apart; the play triangle is
+    // 14.03 x 16.4dp with its left edge 6.03dp left of the centre (Telegram shifts play by 1dp to the right).
+    final float scale = (float) sourcePauseWidth / Screen.dpf(13f);
 
-    int width = Screen.dp(18f);
-    int height = Screen.dp(22f);
+    final float pauseWidth = Screen.dpf(4.69f) * scale;
+    final float pauseSpacing = Screen.dpf(2.93f) * scale;
+    final float pauseHeight = Screen.dpf(15.24f) * scale;
 
-    float scale = (float) sourcePauseWidth / (float) (pauseWidth * 2 + pauseSpacing);
+    final float width = Screen.dpf(14.03f) * scale;
+    final float height = Screen.dpf(16.4f) * scale;
+    final float playLeft = -Screen.dpf(6.03f) * scale;
 
-    pauseWidth *= scale;
-    pauseSpacing *= scale;
-    pauseHeight *= scale;
-
-    width *= scale;
-    height *= scale;
-
-    int baseStartX = -(int) (width * .75f) / 2;
-    int baseStartY = -height / 2;
+    float baseStartX = playLeft;
+    float baseStartY = -height / 2f;
 
     if (factor == 0f) {
       path.moveTo(baseStartX, baseStartY);
-      path.lineTo(baseStartX + width, baseStartY + height / 2);
+      path.lineTo(baseStartX + width, baseStartY + height / 2f);
       path.lineTo(baseStartX, baseStartY + height);
       path.close();
-    } else if (factor == 1f && false) {
-      int startX = -(pauseWidth * 2 + pauseSpacing) / 2;
-      int startY = -pauseHeight / 2;
-
-      path.moveTo(startX, startY);
-      path.lineTo(startX + pauseWidth, startY);
-      path.lineTo(startX + pauseWidth, startY + pauseHeight);
-      path.lineTo(startX, startY + pauseHeight);
-      path.lineTo(startX, startY);
-      path.close();
-
-      startX += pauseWidth + pauseSpacing;
-
-      path.moveTo(startX, startY);
-      path.lineTo(startX + pauseWidth, startY);
-      path.lineTo(startX + pauseWidth, startY + pauseHeight);
-      path.lineTo(startX, startY + pauseHeight);
-      path.lineTo(startX, startY);
-      path.close();
     } else {
-      int fromTargetWidth = height;
-      int toTargetWidth = pauseWidth * 2 + pauseSpacing;
-      if (fromTargetWidth != toTargetWidth) {
-        baseStartY -= (int) ((toTargetWidth - fromTargetWidth) * factor) / 2;
-      }
+      // The triangle splits into the two bars while the caller turns it by 90°:
+      // local x becomes the vertical axis of the pause bars.
+      final float toTargetWidth = pauseWidth * 2f + pauseSpacing;
+      baseStartY -= (toTargetWidth - height) * factor / 2f;
+      baseStartX = MathUtils.fromTo(playLeft, -pauseHeight / 2f, factor);
 
-      int fromTargetHeight = width;
-      int toTargetHeight = pauseHeight;
-      if (fromTargetHeight != toTargetHeight) {
-        baseStartX -= (int) ((toTargetHeight - fromTargetHeight) * factor);
-      }
+      final float topWidth = MathUtils.fromTo(height / 2f, pauseWidth, factor);
+      final float bottomWidth = topWidth * factor;
+      final float spacing = pauseSpacing * factor;
+      final float commonHeight = MathUtils.fromTo(width, pauseHeight, factor);
 
-      int fromTopWidth = height / 2;
-      int toTopWidth = pauseWidth;
-      int spacing = (int) (pauseSpacing * factor);
-
-      int topWidth = fromTopWidth + (int) ((toTopWidth - fromTopWidth) * factor);
-      int bottomWidth = (int) (topWidth * factor);
-
-      int commonHeight = width + (int) ((pauseHeight - width) * factor);
-
-      if (spacing > 0) {
+      if (spacing > 0f) {
         path.moveTo(baseStartX + commonHeight, baseStartY + topWidth);
         path.lineTo(baseStartX, baseStartY + topWidth);
         path.lineTo(baseStartX, baseStartY);
-        if (bottomWidth > 0) {
+        if (bottomWidth > 0f) {
           path.lineTo(baseStartX + commonHeight, baseStartY + topWidth - bottomWidth);
         }
         path.close();
@@ -909,7 +985,7 @@ public class DrawAlgorithms {
         path.moveTo(baseStartX + commonHeight, baseStartY);
         path.lineTo(baseStartX, baseStartY);
         path.lineTo(baseStartX, baseStartY + topWidth);
-        if (bottomWidth > 0) {
+        if (bottomWidth > 0f) {
           path.lineTo(baseStartX + commonHeight, baseStartY + bottomWidth);
         }
         path.close();
@@ -917,7 +993,7 @@ public class DrawAlgorithms {
         path.moveTo(baseStartX, baseStartY);
         path.lineTo(baseStartX, baseStartY + topWidth + topWidth);
         path.lineTo(baseStartX + commonHeight, baseStartY + topWidth + bottomWidth);
-        if (bottomWidth > 0) {
+        if (bottomWidth > 0f) {
           path.lineTo(baseStartX + commonHeight, baseStartY + topWidth - bottomWidth);
         }
         path.close();
@@ -1407,31 +1483,17 @@ public class DrawAlgorithms {
     c.restore();
   }*/
 
+ /**
+  * Animated Telegram close with a 2dp round-capped stroke (BackDrawable, CloseProgressDrawable2): lineHeight is the
+  * span of the arms (11.31dp in a 24dp icon).
+  */
  public static void drawAnimatedCross (Canvas c, float cx, float cy, float factor, int color, int lineHeight) {
-   final int lineRadius = (int) ((float) lineHeight * .5f);
+   drawAnimatedCross(c, cx, cy, factor, color, lineHeight, Screen.dp(2f));
+ }
 
-   float f1 = factor < .5f ? AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(factor / .5f) : 1f;
-   float f2 = factor <= .5f ? 0f : AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation((factor - .5f) / .5f);
-   Paint paint = Paints.getProgressPaint(color, Screen.dp(2f));
-   if (Lang.rtl()) {
-     if (f1 > 0f) {
-       int d = (int) ((float) lineHeight * f1);
-       c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-     }
-     if (f2 > 0f) {
-       int d = (int) ((float) lineHeight * f2);
-       c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-     }
-   } else {
-     if (f1 > 0f) {
-       int d = (int) ((float) lineHeight * f1);
-       c.drawLine(cx + lineRadius, cy - lineRadius, cx + lineRadius - d, cy - lineRadius + d, paint);
-     }
-     if (f2 > 0f) {
-       int d = (int) ((float) lineHeight * f2);
-       c.drawLine(cx - lineRadius, cy - lineRadius, cx - lineRadius + d, cy - lineRadius + d, paint);
-     }
-   }
+ /** Animated Telegram close with the given stroke (MediaActionDrawable's cancel uses 3dp per 48dp of button). */
+ public static void drawAnimatedCross (Canvas c, float cx, float cy, float factor, int color, int lineHeight, float lineWidth) {
+   drawCloseArms(c, cx, cy, factor, lineHeight, getGlyphPaint(color, lineWidth));
  }
 
  public static void drawSticker (Canvas c, TGStickerSetInfo info, GifReceiver gifReceiver, ImageReceiver receiver, Path contour) {

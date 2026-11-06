@@ -38,6 +38,7 @@ import org.thunderdog.challegram.telegram.TdlibCounter;
 import org.thunderdog.challegram.telegram.TdlibStatusManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PorterDuffColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Icons;
@@ -50,6 +51,7 @@ import org.thunderdog.challegram.util.ReactionsCounterDrawable;
 import org.thunderdog.challegram.util.ReactionsListAnimator;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.util.text.TextColorSetOverride;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.util.text.TextEntity;
@@ -71,6 +73,7 @@ import me.vkryl.android.animator.BounceAnimator;
 import me.vkryl.android.util.MultipleViewProvider;
 import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.BitwiseUtils;
+import me.vkryl.core.ColorUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntList;
 import me.vkryl.core.lambda.Destroyable;
@@ -202,15 +205,11 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       AnimatorUtils.DECELERATE_INTERPOLATOR,
       MessagesRecyclerView.ITEM_ANIMATOR_DURATION + 50L);
     this.reactionsCounterDrawable = new ReactionsCounterDrawable(reactionsAnimator);
-    this.counter = new Counter.Builder().callback(this).build();
-    this.mentionCounter = new Counter.Builder()
-      .drawable(R.drawable.baseline_at_16, 16f, 0f, Gravity.CENTER)
-      .callback(this)
-      .build();
-    this.reactionsCounter = new Counter.Builder()
-      .drawable(R.drawable.baseline_favorite_14, 16f, 0f, Gravity.CENTER)
-      .callback(this)
-      .build();
+    this.counter = newRowCounter(new Counter.Builder(), true);
+    this.mentionCounter = newRowCounter(new Counter.Builder()
+      .drawable(R.drawable.baseline_at_16, 16f, 0f, Gravity.CENTER), false);
+    this.reactionsCounter = newRowCounter(new Counter.Builder()
+      .drawable(R.drawable.baseline_favorite_14, 16f, 0f, Gravity.CENTER), false);
     this.viewCounter = new Counter.Builder()
       .textSize(11f)
       .callback(this)
@@ -244,15 +243,11 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       AnimatorUtils.DECELERATE_INTERPOLATOR,
       MessagesRecyclerView.ITEM_ANIMATOR_DURATION + 50L);
     this.reactionsCounterDrawable = new ReactionsCounterDrawable(reactionsAnimator);
-    this.counter = new Counter.Builder().callback(this).build();
-    this.mentionCounter = new Counter.Builder()
-      .drawable(R.drawable.baseline_at_16, 16f, 0f, Gravity.CENTER)
-      .callback(this)
-      .build();
-    this.reactionsCounter = new Counter.Builder()
-      .drawable(R.drawable.baseline_favorite_14, 16f, 0f, Gravity.CENTER)
-      .callback(this)
-      .build();
+    this.counter = newRowCounter(new Counter.Builder(), true);
+    this.mentionCounter = newRowCounter(new Counter.Builder()
+      .drawable(R.drawable.baseline_at_16, 16f, 0f, Gravity.CENTER), false);
+    this.reactionsCounter = newRowCounter(new Counter.Builder()
+      .drawable(R.drawable.baseline_favorite_14, 16f, 0f, Gravity.CENTER), false);
     this.viewCounter = null;
     this.flags |= FLAG_ARCHIVE;
     setCounter(false);
@@ -915,6 +910,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     boolean hasReactions = hasUnreadReactions();
     boolean hasMentions = hasUnreadMentions();
     int unreadCount = getUnreadCount();
+    counterFailed = unreadCount == Tdlib.CHAT_FAILED;
 
     reactionsCounter.setCount(hasReactions ? Tdlib.CHAT_MARKED_AS_UNREAD : 0, !notificationsEnabled(), allowAnimation && needAnimateChanges());
     mentionCounter.setCount(hasMentions ? Tdlib.CHAT_MARKED_AS_UNREAD : 0, false, allowAnimation && needAnimateChanges());
@@ -927,6 +923,50 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   }
 
   private boolean titleEmphasized = true;
+
+  /** The unread counter shows a message that failed to send ("!"). */
+  private boolean counterFailed;
+
+  private Counter newRowCounter (Counter.Builder builder, boolean canFail) {
+    RowCounterColorSet colorSet = new RowCounterColorSet(canFail);
+    Counter counter = builder.colorSet(colorSet).callback(this).build();
+    colorSet.counter = counter;
+    return counter;
+  }
+
+  /**
+   * Counters of the chat row in M3 roles (every theme). As in TGX (badge vs badgeMuted), a muted chat has a lower
+   * emphasis counter: unmuted — primary / onPrimary, muted — surfaceContainerHighest / onSurfaceVariant (the neutral
+   * grey of TGX), failed to send — error / onError.
+   */
+  private final class RowCounterColorSet implements TextColorSet {
+    private final boolean canFail;
+    private @Nullable Counter counter;
+
+    RowCounterColorSet (boolean canFail) {
+      this.canFail = canFail;
+    }
+
+    private float getMuteFactor () {
+      return counter != null ? counter.getMuteFactor() : 0f;
+    }
+
+    @Override
+    public int defaultTextColor () {
+      if (canFail && counterFailed) {
+        return M3.onError();
+      }
+      return ColorUtils.fromToArgb(M3.onPrimary(), M3.onSurfaceVariant(), getMuteFactor());
+    }
+
+    @Override
+    public int backgroundColor (boolean isPressed) {
+      if (canFail && counterFailed) {
+        return M3.error();
+      }
+      return ColorUtils.fromToArgb(M3.primary(), M3.surfaceContainerHighest(), getMuteFactor());
+    }
+  }
 
   /** Real unread state only: a failed send (CHAT_FAILED) or an outgoing message unread by the peer is not "unread". */
   private boolean needEmphasizedTitle () {
@@ -1334,12 +1374,20 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
 
   private int textIconsPadding;
 
+  /**
+   * M3 list item supporting text: Body Medium (14sp, regular), {@code onSurfaceVariant}, in every row mode (the modes
+   * differ in the row height and the avatar size).
+   */
   private static TextStyleProvider getTextStyleProvider (int chatListMode) {
-    return Paints.robotoStyleProvider(chatListMode == Settings.CHAT_MODE_3LINE || chatListMode == Settings.CHAT_MODE_2LINE_COMPACT ? 15 : 16);
+    return Paints.robotoStyleProvider(14f);
   }
 
+  /**
+   * M3 list item label text: Body Large (16sp), {@code onSurface}; emphasized (medium weight) only for unread chats
+   * (see {@link #needEmphasizedTitle()}).
+   */
   private static TextStyleProvider getTitleStyleProvider (int chatListMode) {
-    return Paints.robotoStyleProvider(chatListMode == Settings.CHAT_MODE_3LINE || chatListMode == Settings.CHAT_MODE_2LINE_COMPACT ? 16 : 17);
+    return Paints.robotoStyleProvider(16f);
   }
 
   public @Nullable IntList getTextIconIds () {

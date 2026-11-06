@@ -86,8 +86,11 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     if (titlePaintFake != null)
       titlePaintFake.setTextSize(Screen.dp(17f));
     if (timePaint != null)
-      timePaint.setTextSize(Screen.dp(12f));
+      timePaint.setTextSize(Screen.dp(TIME_TEXT_SIZE));
   }
+
+  /** M3 list item trailing supporting text: Label Small (11sp, medium), {@code onSurfaceVariant}. */
+  private static final float TIME_TEXT_SIZE = 11f;
 
   private static void initPaints () {
     titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
@@ -105,8 +108,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
     timePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     timePaint.setColor(Theme.textDecentColor());
-    timePaint.setTextSize(Screen.dp(12f));
-    timePaint.setTypeface(Fonts.getRobotoRegular());
+    timePaint.setTextSize(Screen.dp(TIME_TEXT_SIZE));
+    timePaint.setTypeface(Fonts.getRobotoMedium());
     ThemeManager.addThemeListener(timePaint, ColorId.textLight);
   }
 
@@ -300,15 +303,16 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
   public static int getTextTop (int chatListMode) {
     switch (chatListMode) {
+      // Body Medium preview (14sp): the first line keeps the baseline of the former 15-16sp text.
       case Settings.CHAT_MODE_2LINE_COMPACT:
-        return Screen.dp(32.5f);
+        return Screen.dp(33.5f);
       case Settings.CHAT_MODE_3LINE:
-        return Screen.dp(32f);
-      case Settings.CHAT_MODE_3LINE_BIG:
         return Screen.dp(33f);
+      case Settings.CHAT_MODE_3LINE_BIG:
+        return Screen.dp(35f);
       case Settings.CHAT_MODE_2LINE:
       default:
-        return Screen.dp(39.5f);
+        return Screen.dp(41.5f);
     }
   }
 
@@ -356,15 +360,17 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
   }
 
   public static int getTitleTop2 (int chatListMode) {
+    // Body Large title (16sp): the baseline stays on the baseline of the time (getTitleTop).
     switch (chatListMode) {
       case Settings.CHAT_MODE_2LINE_COMPACT:
         return Screen.dp(6f);
       case Settings.CHAT_MODE_3LINE:
-      case Settings.CHAT_MODE_3LINE_BIG:
         return Screen.dp(10f);
+      case Settings.CHAT_MODE_3LINE_BIG:
+        return Screen.dp(11f);
       case Settings.CHAT_MODE_2LINE:
       default:
-        return Screen.dp(12f);
+        return Screen.dp(13f);
     }
   }
 
@@ -713,11 +719,12 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     counterRight -= counter.getScaledWidth(getTimePaddingLeft());
 
     Counter mentionCounter = chat.getMentionCounter();
-    mentionCounter.draw(c, counterRight - counterRadius, counterCenterY, Gravity.RIGHT, 1f, this, ColorId.badgeText);
+    // Icons of the counters take the content color of their M3 color set (TGChat.RowCounterColorSet).
+    mentionCounter.draw(c, counterRight - counterRadius, counterCenterY, Gravity.RIGHT, 1f, this, ColorId.NONE);
     counterRight -= mentionCounter.getScaledWidth(getTimePaddingLeft());
 
     Counter reactionCounter = chat.getReactionsCounter();
-    reactionCounter.draw(c, counterRight - counterRadius, counterCenterY, Gravity.RIGHT, 1f, this, chat.notificationsEnabled() ? ColorId.badgeText : ColorId.badgeMutedText);
+    reactionCounter.draw(c, counterRight - counterRadius, counterCenterY, Gravity.RIGHT, 1f, this, ColorId.NONE);
     counterRight -= reactionCounter.getScaledWidth(getTimePaddingLeft());
 
     TdlibStatusManager.Helper status = chat.statusHelper();

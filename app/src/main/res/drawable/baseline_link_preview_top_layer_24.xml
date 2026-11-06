@@ -1,21 +1,22 @@
+<!-- Telegram for Android 12.3.1 style link preview: 1.67dp text lines, 2.5dp spacing. LinkPreviewToggleView measures this layer (line size, spacing, insets, media width), keep the layout -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
   <path
-      android:pathData="M3,3L3,9C3,10.105 3.895,11 5,11L5,1L4.946,1C3.842,1 3,1.895 3,3Z"
+      android:pathData="M3.835,1H4.67V11H3.835A0.835,0.835 0,0 1,3,10.165V1.835A0.835,0.835 0,0 1,3.835,1Z"
       android:fillColor="#FF000000"/>
   <path
-      android:pathData="M15,1h6v6h-6z"
+      android:pathData="M15,1H21V6.84H15Z"
       android:fillColor="#FF000000"/>
   <path
-      android:pathData="M7,9h14v2h-14z"
+      android:pathData="M7.17,1H12.5V2.67H7.17Z"
       android:fillColor="#FF000000"/>
   <path
-      android:pathData="M7,5h6v2h-6z"
+      android:pathData="M7.17,5.17H12.5V6.84H7.17Z"
       android:fillColor="#FF000000"/>
   <path
-      android:pathData="M7,1h6v2h-6z"
+      android:pathData="M7.17,9.34H21V11H7.17Z"
       android:fillColor="#FF000000"/>
 </vector>

@@ -15,8 +15,6 @@
 package org.thunderdog.challegram.data;
 
 import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.Path;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -43,6 +41,7 @@ import org.thunderdog.challegram.ui.CreateChecklistController;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextWrapper;
+import org.thunderdog.challegram.widget.CheckBoxView;
 import org.thunderdog.challegram.widget.SimplestCheckBox;
 
 import java.util.ArrayList;
@@ -513,8 +512,6 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
 
   // Drawing
 
-  private Path checkPath;
-
   @Override
   protected void drawContent (MessageView view, Canvas c, int startX, int startY, int maxWidth, ComplexReceiver receiver) {
     final int decentColor = getDecentColor();
@@ -582,18 +579,8 @@ public class TGMessageChecklist extends TGMessage implements ClickHelper.Delegat
           SimplestCheckBox.draw(c, cx, cy, checkFactor, null, entry.checkBox, lineColor, lineContentColor, SimplestCheckBox.MODE_NORMAL, 0f);
         }
       } else if (entry.isDone) {
-        if (checkPath == null) {
-          checkPath = new Path();
-        }
-        checkPath.reset();
-        checkPath.moveTo(cx - Screen.dp(3.66f), cy + Screen.dp(.16f));
-        checkPath.lineTo(cx - Screen.dp(1f), cy + Screen.dp(3f));
-        checkPath.lineTo(cx + Screen.dp(3.66f), cy - Screen.dp(3f));
-        Paint paint = Paints.getProgressPaint(lineColor, Screen.dp(1.833f));
-        Paint.Join join = paint.getStrokeJoin();
-        paint.setStrokeJoin(Paint.Join.ROUND);
-        c.drawPath(checkPath, paint);
-        paint.setStrokeJoin(join);
+        // Telegram ic_ab_done check at 18dp (1.5dp stroke).
+        CheckBoxView.drawCheckMark(c, cx, cy, CheckBoxView.MARK_CHECK, .75f, 1f, 0f, lineColor);
       } else {
         c.drawCircle(cx, cy, Screen.dp(2.5f), Paints.fillingPaint(lineColor));
       }

@@ -1,0 +1,509 @@
+# Vibegram-X icon map -> Telegram for Android 12.3.1 (DrKLO/Telegram d7deedfa, GPL-2.0-or-later). Applied by tg_apply.py: high/medium rows.
+our_file	tg_name	confidence	note
+baseline_access_time_24	msg_emoji_recent	high	emoji/reaction/status picker "Recent" tab (TG EmojiTabsStrip/EmojiView recent tab)
+baseline_account_balance_wallet_20	menu_my_ton	low	theme icon-pack preview + drawer Wallet; TG has no wallet glyph, closest balance entry is "My TON" (vector 24dp, scale)
+baseline_account_balance_wallet_24	menu_my_ton	low	drawer Wallet / Stars transactions / website empty; no wallet glyph in TG, "My TON" balance row is closest role
+baseline_account_circle_16	msg_folders_private	medium	chat-type badge "contact"; TG uses msg_folders_private (person in circle) for private/contacts filter avatar; 24dp, scale to 16
+baseline_account_circle_24	left_status_profile	medium	settings "Account" row / contact chat type; TG drawer "My Profile" (person-in-circle); alt msg_openprofile
+baseline_add_24	msg_add	high	generic add (FAB create topic, folder include/exclude chats); FAB role could use floating plus but msg_add is 24dp plus
+baseline_add_a_photo_56	msg_addphoto	medium	avatar placeholder "set photo" when can change info; TG ChatSetPhotoOrVideo row icon; 24dp, scale to 56
+baseline_add_comment_24	menu_topic_add	high	forum topic tabs "create topic" (TG TopicsTabsView new topic); alt msg_topic_create (TopicsFragment menu)
+baseline_add_comment_40	filled_topic_new_24	medium	bot forum thread hint icon; TG BotAskCellDrawable bot-ask logo; vector 24dp, scale to 40
+baseline_add_link_24	menu_link_create2	high	"Create invite link" row; TG GroupCallCreateLink (link+plus); alt menu_link_create (business links add)
+baseline_adjust_24	media_draw	low	paint mode "Doodle"(path) in media editor; TG brush types are lottie/raw, media_draw is the paint tool icon
+baseline_airplane_24	-	low	chat-folder icon "Travel"; TG Android has no folder emoticon icons and no airplane glyph (menu_takeoff = un-wear crown; msg_emoji_travel = car, possible fallback)
+baseline_alternate_email_12	-	low	inline keyboard "switch inline" button corner badge (12dp); TG draws bot_lines (chat_botInlineDrawable) for inline buttons – role match but different glyph; no 12dp @
+baseline_alternate_email_14	mentionchatslist	medium	BaseActivity click-bait username/mention hint; 16dp @ (48px), scale to 14
+baseline_alternate_email_24	msg_mention	high	profile username row / @ icon; TG msg_mention (@); alt filled_username (profile)
+baseline_amazon_24	-	high	brand Amazon Appstore logo, no TG equivalent
+baseline_android_24	device_phone_android	low	debug "Run automatic setup" menu (debug-only); only android glyph in TG is session device icon (42dp, colored, scale)
+baseline_apps_24	menu_devices	high	session details "Application" row; TG SessionBottomSheet Application row uses menu_devices (28dp, scale)
+baseline_archive_16	msg_folders_archive	medium	chat-type badge "archived"; TG folders archive avatar icon; 24dp, scale to 16
+baseline_archive_24	msg_archive	high	archive chat action (context menu/action mode); unarchive pair = msg_unarchive
+baseline_archive_96	large_archive	medium	empty archive hint (iconized empty); TG large_archive 40dp, scale to 96
+baseline_arrow_back_24	ic_ab_back	high	media viewer back button (action bar back)
+baseline_arrow_downward_24	pagedown	high	chat scroll-to-bottom floating button (TG pagedown chevron 17x10dp, different shape)
+baseline_arrow_forward_24	msg_arrow_forward	high	next/continue FAB (password, name, language); TG DialogsActivity write button next = msg_arrow_forward
+baseline_arrow_upward_18	-	low	media viewer receiver-row default icon (18dp); no 18dp up arrow in TG; nearest msg_mini_upload (16dp, tray) – not same meaning
+baseline_arrow_upward_24	msg_archive_hide	medium	used for "Hide archive" in archive menu (TG msg_archive_hide) and paint mode Arrow (TG photo_arrowshape); split role
+baseline_assignment_24	-	low	chat-folder icon "Setup"; no folder icons in TG Android; nearest clipboard glyph msg_log
+baseline_at_16	mentionchatslist	high	unread mention badge in chat list/topic list (TG dialogs_mentionDrawable, 16dp)
+baseline_auto_delete_24	msg_clear_recent	high	"Clear recent emoji" confirm; TG ClearRecentHistory uses msg_clear_recent
+baseline_backspace_24	smiles_tab_clear	high	emoji keyboard backspace button (TG smiles_tab_clear, 28dp, scale)
+baseline_ballot_16	-	low	poll option preview emoji (16dp); TG has no poll/ballot glyph
+baseline_bar_chart_24	msg_stats	high	message "View statistics" context item (TG msg_stats); also abacus emoji preview
+baseline_block_18	msg_block	medium	input placeholder "can't send messages"; no 18dp block, 24dp scale
+baseline_block_24	msg_block	high	block user/bot (TG BlockUser menu msg_block); privacy blocked list = msg2_block2
+baseline_block_96	msg_block	low	empty view (blocked) large; no large block glyph, 24dp scale to 96
+baseline_bluetooth_24	msg_call_bluetooth	high	VoIP audio routing sheet Bluetooth (TG VoIPService route sheet)
+baseline_bolt_16	mini_boost_badge	high	boost emoji preview (16dp bolt)
+baseline_book_24	-	low	chat-folder icon "Book"; no book glyph / folder icons in TG
+baseline_bookmark_16	chats_saved	medium	Saved Messages avatar placeholder (small); TG saved avatar icon 28dp, scale to 16
+baseline_bookmark_24	msg_saved	high	drawer Saved Messages / notification icon
+baseline_brightness_2_24	msg2_night_auto	medium	drawer Night mode toggle; TG theme Auto-Night row (moon+stars)
+baseline_brightness_5_24	msg_brightness_high	high	brightness slider icon (TG BrightnessControlCell); low pair msg_brightness_low
+baseline_brush_24	media_draw	high	media viewer Paint button (TG PhotoViewer paintItem)
+baseline_bubble_chart_24	-	low	paint-mode fallback icon (unknown mode); no TG equivalent (shape tools photo_circle etc. differ in meaning)
+baseline_bug_report_24	-	low	debug "Log settings"/Copy report data; TG has no bug glyph
+baseline_build_24	-	low	debug environment/test tools; TG has no wrench glyph
+baseline_bullhorn_16	msg_folders_channels	medium	chat-type/forward/content-preview channel badge; TG channel span icon (MessageObject ColoredImageSpan); 24dp, scale
+baseline_bullhorn_24	msg_channel	high	channel (new channel, personal channel, folder Channels)
+baseline_bullhorn_56	msg_channel	medium	channel avatar placeholder; 24dp, scale to 56
+baseline_cake_variant_14	menu_birthday	medium	birthday click-bait hint; 24dp scale to 14
+baseline_cake_variant_24	menu_birthday	high	Birthdate row (profile/privacy/account); TG birthday rows use menu_birthday
+baseline_call_16	msg_calls	medium	call row icon/emoji preview; 24dp scale
+baseline_call_24	msg_calls	high	call action (calls list, session calls toggle, privacy calls)
+baseline_call_end_16	msg_endcall	medium	ended-call emoji preview; 24dp scale
+baseline_call_end_24	ic_call_end_white_24dp	high	header call bar hang-up icon
+baseline_call_made_18	ic_call_made_green_18dp	high	call log outgoing (18dp)
+baseline_call_missed_18	ic_call_received_green_18dp	medium	call log missed; TG reuses received arrow tinted red (no separate missed glyph)
+baseline_call_received_18	ic_call_received_green_18dp	high	call log incoming (18dp)
+baseline_camera_alt_16	msg_camera	medium	photo content-preview emoji (16dp); 24dp scale
+baseline_camera_alt_24	msg_camera	high	photo filter icon / camera button
+baseline_camera_alt_96	msg_camera	low	empty photos view large; 24dp scale to 96 (alt instant_camera 34dp)
+baseline_camera_enhance_24	msg_camera	low	camera volume-key option "Shoot"; no camera-enhance glyph
+baseline_camera_front_24	camera_revert2	medium	camera switch (shown when rear active); TG switchCameraButton: front→revert1, rear→revert2
+baseline_camera_rear_24	camera_revert1	medium	camera switch (shown when front active); TG camera_revert1 when isFrontface
+baseline_cancel_24	msg_cancel	high	Cancel item in option sheets (circle X)
+baseline_casino_16	menu_random	medium	dice emoji preview (16dp); 24dp scale; alt mini_roll (16dp dice, vector)
+baseline_casino_24	menu_random	medium	"Send dice as emoji" / dice message actions
+baseline_chat_bubble_16	msg_discussion	medium	direct-messages preview emoji (16dp); 24dp scale
+baseline_chat_bubble_24	msg_discussion	high	profile Chat/Send Message action (TG SendMessage = msg_discussion)
+baseline_check_18	msg_text_check	medium	toggler check / giveaway participating; 24dp scale to 18 (alt sticker_added 19x14dp)
+baseline_check_24	floating_check	medium	done FAB/header done; FAB role → floating_check, header button role → ic_ab_done
+baseline_check_box_outline_blank_24	-	low	language list header "only untranslated" toggle; TG draws checkboxes, no glyph
+baseline_check_circle_16	mini_checklist_done	high	checklist task done preview (TG ChatActionCell checklist done, 16dp vector)
+baseline_check_circle_24	msg_select	medium	confirm (send edited message, confirm dialogs); TG msg_select (check in circle)
+baseline_checklist_16	mini_checklist_add	low	checklist preview (16dp); TG has only add/done/undone checklist minis; closest add
+baseline_checklist_24	todo_icon	low	attach menu "Checklist"; todo_icon (vector 24dp, unreferenced in Java – attach uses lottie)
+baseline_clear_all_24	msg_clear_recent	medium	header "clear" action for recents list
+baseline_close_18	ic_layer_close	medium	top bar dismiss / chip cross (18dp X)
+baseline_close_20	msg_close	medium	small close buttons; 24dp scale to 20
+baseline_close_24	msg_close	high	close/dismiss
+baseline_close_36	ic_close_white	medium	call controls close; 24dp scale to 36
+baseline_cloud_download_16	msg_mini_download	medium	paused-download icon in small media (16dp)
+baseline_cloud_download_24	msg_download	high	download file context item / paused download
+baseline_cloud_pause_24	msg_round_pause_m	low	pause download context item; TG has no pause-download glyph (file-state pause 32dp)
+baseline_code_24	-	low	monospace formatting / view source code / code; TG uses text-only, no code glyph
+baseline_collections_16	msg_gallery	medium	album preview emoji (16dp); 24dp scale
+baseline_contact_phone_24	msg_contact	medium	share my contact/phone; TG contact message icon (person)
+baseline_content_copy_18	menu_copy_s	medium	copy button in setting row; 24dp scale to 18
+baseline_content_copy_24	msg_copy	high	copy (link, text, id)
+baseline_content_cut_24	-	low	text formatting Cut; TG uses system toolbar, no scissors glyph
+baseline_content_paste_18	-	low	paste button in setting row; no paste glyph in TG
+baseline_content_paste_24	-	low	text formatting Paste/Paste URL; no paste glyph in TG
+baseline_create_24	msg_edit	high	edit (pencil); header compose role → fab_compose_small/floating_pencil
+baseline_create_new_folder_24	menu_folder_add	high	"Create new folder" row (folder+plus)
+baseline_crop_16_9_24	-	low	crop proportion 16:9; TG aspect dialog is text-only
+baseline_crop_3_2_24	photo_rectangle	low	paint mode Rectangle (TG Brush shape rectangle); also crop 3:2 (text-only in TG)
+baseline_crop_5_4_24	-	low	crop proportion 3:2/5:4; no TG icon
+baseline_crop_free_24	msg_photo_cropfix	low	crop proportion free; TG aspect-ratio button
+baseline_crop_original_24	-	low	crop proportion original; no TG icon
+baseline_crop_rotate_24	media_crop	high	media viewer crop button (TG PhotoViewer cropItem)
+baseline_crop_square_24	-	low	crop proportion square; no TG icon
+baseline_crown_24	menu_wear	low	chat-folder icon "Crown"; TG outline crown (gift wear); filled pair filled_crown_on
+baseline_crown_circle_24	filled_rating_crown	low	unused in code; crown badge
+baseline_currency_bitcoin_24	menu_cashtag	low	chat-folder icon "Money"; TG cashtag ($)
+baseline_dangerous_24	msg_block2	medium	terminate session; TG TerminateAllSessions uses msg_block2
+baseline_data_usage_24	msg2_data	high	settings Data & Storage (TG msg2_data); storage usage row role → msg_filled_storageusage (colorful)
+baseline_date_range_24	msg_calendar2	high	schedule message / view scheduled (TG schedule menus)
+baseline_delete_18	msg_delete	medium	delete button in setting row; 24dp scale to 18
+baseline_delete_24	msg_delete	high	delete
+baseline_delete_alert_24	msg_delete	medium	delete account; no distinct glyph
+baseline_delete_forever_24	msg_delete	medium	delete forever/confirm delete; TG no separate glyph (filled pair msg_delete_filled)
+baseline_delete_sweep_24	msg_clear	medium	delete all calls / clear hints; TG Clear history broom
+baseline_device_android_24	device_phone_android	high	session Android device (TG SessionCell); 42dp colored, scale; tablet → device_tablet_android
+baseline_device_android_x_24	device_phone_android	low	brand Telegram X glyph; TG shows android device icon for it
+baseline_device_imac_24	device_desktop_osx	high	session macOS desktop
+baseline_device_ipad_24	device_tablet_ios	high	session iPad
+baseline_device_iphone_24	device_phone_ios	high	session iPhone
+baseline_device_linux_24	device_desktop_other	low	brand Linux logo; TG uses generic desktop icon
+baseline_device_macbook_24	device_desktop_osx	high	session MacBook (TG has single macOS icon)
+baseline_device_other_24	device_web_other	medium	unknown session device (TG default); alt msg_emoji_question for "?"
+baseline_device_web_brave_24	device_web_other	low	brand Brave logo; TG falls back to web_other
+baseline_device_web_opera_24	device_web_opera	high	session Opera browser (TG has same brand icon)
+baseline_device_web_vivaldi_24	device_web_other	low	brand Vivaldi logo; TG fallback
+baseline_device_windows_24	device_desktop_win	high	session Windows
+baseline_device_xbox_24	device_desktop_other	low	brand Xbox logo; TG fallback
+baseline_devices_other_24	msg2_devices	medium	session device row / OAuth platform / theme preview; TG Devices icon
+baseline_devices_other_96	msg2_devices	low	sessions empty large; 24dp scale to 96
+baseline_direction_arrow_down_24	arrow_more	high	"show more" list row; TG uses arrow_more for ShowMore/expand UItem buttons
+baseline_directions_24	filled_directions	high	map Get Directions button + location bubble option; same role in TG (LocationActivity/GetDirections)
+baseline_directions_car_24	msg_emoji_travel	high	emoji panel Travel section (car glyph in TG too); no filled/selected pair in TG
+baseline_done_all_24	msg_markread	high	mark (folder/chat) as read; TG Mark-as-read menu item
+baseline_done_all_24_white	msg_markread	high	notification "Read" action; TG notification readAction uses msg_markread
+baseline_drag_handle_24	list_reorder	medium	unused in code; drag/reorder handle (TG list_reorder, 23dp)
+baseline_edit_12	menu_edited_stamp	medium	"edited" marker counter on message + theme list small icon; menu_edited_stamp is 24dp -> scale; plain small pencil alt: group_edit_profile (16dp)
+baseline_edit_24	msg_edit	high	edit / rename / edit rights; TG msg_edit menu icon
+baseline_edit_folders_24	msg_edit	high	"Edit folders" in folder tab menu; TG FilterEdit/FilterEditAll uses msg_edit
+baseline_emoticon_24	msg_emoji_smiles	high	emoji panel Smileys (selected); TG has no filled pair -> same icon for both states
+baseline_emoticon_outline_24	msg_emoji_smiles	high	emoji panel Smileys (inactive) + emoji toggle in checklist input (alt input_smile for input-field toggle)
+baseline_error_18	msg_report	medium	error emoji in content preview; circle-! glyph; 24dp -> scale
+baseline_error_24	msg_report	medium	error tooltips; circle-! glyph (TG uses it for Report); TG chat error badge msg_warning is only a bare "!"
+baseline_exit_to_app_24	leave	medium	profile action "Leave" (TG 12 profile action vec leave 24dp); also session "first login" row; menu alt msg_leave
+baseline_explore_24	-	low	map compass mode toggle; TG has no compass icon
+baseline_extension_24	-	low	Tweak settings (puzzle piece); no equivalent in TG
+baseline_eye_off_24	msg_archive_hide	medium	hide folder / hide personal channel / disabled folder / spoiler formatting; generic eye-off (same glyph as msg_stories_stealth); spoiler role alt msg_spoiler
+baseline_fast_forward_24	msg_speed_fast	low	header player speed indicator; TG shows speed via msg_speed_* glyphs; no fast-forward glyph in TG (ic_action_next is skip-next)
+baseline_favorite_12	mini_like_filled	medium	favourite marker over media thumbnails; 16dp filled heart -> scale down
+baseline_favorite_14	reactionchatslist	medium	shrinked reactions counter on message; TG 16dp filled heart used for reactions in chat list; alt mini_like_filled
+baseline_favorite_16	msg_reactions_filled	medium	reactions tab in message options pager; TG ReactionTabHolderView uses msg_reactions_filled (24dp) -> scale
+baseline_favorite_20	reactionbutton	high	floating unread-reactions button in chat; TG reactionbutton (32dp) -> scale
+baseline_favorite_24	msg_reactions	high	"x reacted" menu / react permission / reactions picker section; filled pair msg_reactions_filled; settings row alt msg_reactions2
+baseline_feedback_white_24	notification	medium	small icon of temporary notification; TG notification small icon
+baseline_ffmpeg_24	-	high	brand: FFmpeg logo, kept
+baseline_file_caption_24	msg_stories_caption	medium	"Add caption" attach haptic menu; TG caption (lines) icon
+baseline_file_download_24	msg_download	high	download (theme / STT model)
+baseline_filter_variant_bot_18	-	high	composite filter+bot badge, kept; no equivalent
+baseline_filter_variant_channel_18	-	high	composite filter+channel badge, kept; no equivalent
+baseline_filter_variant_group_18	-	high	composite filter+group badge, kept; no equivalent
+baseline_filter_variant_remove_24	-	low	"no filter" in chat-list/search type filter; TG has no filter-off glyph (menu_tag_filter is tag-specific)
+baseline_filter_variant_unread_18	-	high	composite filter+unread badge, kept; no equivalent
+baseline_filter_variant_user_18	-	high	composite filter+user badge, kept; no equivalent
+baseline_finance_24	msg_stats	low	chat-folder icon "Trade"; TG has no folder icons; trending chart closest
+baseline_fingerprint_24	filled_access_fingerprint	medium	passcode setup option "fingerprint"; 24dp; big passcode-screen glyph is fingerprint (40dp)
+baseline_flash_auto_24	media_photo_flash_auto2	high	in-app camera flash mode; TG camera 24dp (flash_auto is 36dp attach-camera variant)
+baseline_flash_off_24	media_photo_flash_off2	high	camera flash off / torch off; alt flash_off (36dp)
+baseline_flash_on_24	media_photo_flash_on2	high	camera flash on / torch on; alt flash_on (36dp)
+baseline_flight_24	-	low	unused; no airplane glyph in TG (icon_plane is the launcher logo)
+baseline_folder_24	msg_folders	high	default chat-folder icon; TG FolderDrawable uses msg_folders
+baseline_folder_96	files_folder	low	unused; filled folder 28dp -> scale
+baseline_folder_copy_24	msg2_folder	high	Settings > Chat Folders; TG settings Filters row
+baseline_folder_open_96	-	low	big empty-state illustration; no equivalent (files_folder 28dp would need scale)
+baseline_format_bold_24	-	low	text-format menu Bold; TG format menu has no icons
+baseline_format_clear_24	-	low	text-format Clear/Regular; no equivalent
+baseline_format_color_fill_24	-	low	paint mode Fill; no equivalent in TG paint
+baseline_format_italic_24	-	low	text-format Italic; no equivalent
+baseline_format_list_bulleted_type_24	msg_topics	high	topics (manage topics right, view as list); TG msg_topics
+baseline_format_quote_close_16	mini_quote	high	quote block corner glyph; TG mini_quote (16dp) same role
+baseline_format_quote_close_18	mini_quote	high	reply-quote corner / format bar quote; mini_quote 16dp -> scale
+baseline_format_quote_close_24	menu_quote_specific	low	text-format menu Quote; TG has no format-menu icons; 24dp quote glyph (alt filled_reply_quote)
+baseline_format_text_24	msg_photo_text_regular	low	send text permission / text formatting toggle / text filter; "A" glyph
+baseline_format_underlined_24	-	low	text-format Underline; no equivalent
+baseline_forum_16	msg_msgbubble	medium	channel comments button; TG chat_commentDrawable=msg_msgbubble (24dp) -> scale
+baseline_forum_18	msg_msgbubble	medium	channel comments button; msg_msgbubble -> scale
+baseline_forum_24	msg_viewchats	medium	"Chats"/all chats (nav bar, main category, no-filter); two-bubble glyph; no filled pair; profile Discuss role alt vec message
+baseline_forum_96	msg_viewchats	low	empty chats placeholder / joined users; scale
+baseline_forward_24	msg_forward	high	forward
+baseline_galaxy_store_24	-	high	brand: Galaxy Store logo, kept
+baseline_gavel_24	msg_user_remove	medium	banned members filter; TG ChannelBlacklist row uses msg_user_remove
+baseline_gesture_24	-	low	passcode pattern option; TG has no pattern lock
+baseline_ghost_24	ghost	high	deleted account avatar; TG avatar ghost (32dp) -> scale
+baseline_ghost_56	ghost	high	deleted account avatar large; scale
+baseline_gif_96	gif_empty	medium	GIF empty state; TG gif_empty (48dp, sad GIF) -> scale
+baseline_gift_72	gift	low	gift/giveaway message header; TG vec gift 24dp -> scale (alt filled_gift_premium)
+baseline_gift_outline_24	menu_gift	high	gift row / stars transaction / privacy gifts; TG SendAGift menu_gift
+baseline_github_24	-	high	brand: GitHub logo, kept
+baseline_google_play_24	-	high	brand: Google Play logo, kept
+baseline_gpp_maybe_14	menu_2sv	low	"check 2FA password" problem badge; 24dp vec -> scale
+baseline_gpp_maybe_24	menu_2sv	medium	suggestion "check your 2FA password"; TG password row icon (vec; on-state menu_2sv_on)
+baseline_gps_fixed_12	msg_current_location	medium	location marker in drawing algo; scale
+baseline_gps_fixed_16	msg_current_location	medium	location/dart emoji preview; scale
+baseline_gps_fixed_24	msg_current_location	high	map "my location" button
+baseline_group_16	msg_groups	medium	group chat-type marker / group preview emoji; scale (msg_groups_14 is a holiday variant, not size)
+baseline_group_24	msg_groups	high	new group / group chats
+baseline_group_56	msg_groups	low	group avatar placeholder; scale
+baseline_group_96	msg_groups	low	empty-state; scale
+baseline_group_add_16	msg_groups_create	low	video-chat/group-invite preview emoji; 30dp -> scale
+baseline_group_add_24	join	medium	profile action Join + Follow bottom bar (TG profile action vec join); new-group option alt msg_groups_create
+baseline_help_16	msg_help	medium	non-contact chat type / quiz preview; scale
+baseline_help_24	msg2_help	high	Settings > Telegram FAQ; TG msg2_help
+baseline_help_outline_24	msg_help	high	header help button / help
+baseline_history_24	msg_recent	medium	session "last login" timestamp row; clock glyph (shape alt msg_clear_recent)
+baseline_home_24	msg_home	low	chat-folder icon "Home"; TG msg_home is house-with-plus (add shortcut); no folder icons in TG
+baseline_hot_once_24	-	high	view-once glyph (fire with 1), kept; TG mini_viewonce is a tiny different badge
+baseline_huawei_24	-	high	brand: Huawei AppGallery logo, kept
+baseline_identifier_24	-	low	user/chat ID row; TG shows no ID row/icon
+baseline_image_24	msg_photos	high	photos / media / bot description media
+baseline_image_96	msg_photos	low	empty state; scale
+baseline_image_aspect_ratio_24	msg_photo_cropfix	high	crop aspect-ratio button; TG CropRotationWheel uses msg_photo_cropfix
+baseline_import_export_24	msg_filled_datausage	medium	Network usage row; TG NetworkUsage row (colorful filled style); alt msg2_data
+baseline_incognito_circle_18	-	low	anonymous admin badge; no equivalent (msg_mask is masks/stickers)
+baseline_indeterminate_check_box_24	-	low	language "only untranslated" toggle; no equivalent
+baseline_info_14	msg_info	medium	unsupported-message counter; scale
+baseline_info_16	msg_info	medium	suggested chats info; scale
+baseline_info_18	msg_info	medium	info emoji preview; scale
+baseline_info_24	msg_info	high	info / description rows / tooltips
+baseline_insert_drive_file_16	msg_sendfile	low	file preview emoji; scale (filled alt msg_round_file_s)
+baseline_insert_drive_file_24	msg_sendfile	medium	file (theme file / shared files); outline document
+baseline_insert_drive_file_96	msg_sendfile	low	empty state; scale
+baseline_keyboard_24	input_keyboard	high	emoji/keyboard toggle in input; TG input_keyboard (28dp)
+baseline_keyboard_arrow_down_20	arrow_more	high	expand arrow (quote expand, share header, formatting); TG quoteArrow = arrow_more -> scale
+baseline_keyboard_arrow_down_24	msg_go_down	high	in-chat search next/prev result button; TG searchDownButton
+baseline_keyboard_arrow_left_24	msg_photo_back	medium	media viewer back; TG photo editor back (ic_ab_back alt)
+baseline_keyboard_arrow_up_24	msg_go_up	high	in-chat search up button / collapse; TG searchUpButton
+baseline_label_24	menu_tag_edit	medium	"manage tags" right; TG tag icon
+baseline_language_24	msg_language	high	web sessions / open in browser / language; TG globe msg_language (settings Language row alt msg2_language)
+baseline_language_96	-	low	empty state big globe; no equivalent (scale msg_language if needed)
+baseline_launch_24	msg_instant_link	high	link icon in Instant View page block; TG ArticleViewer msg_instant_link
+baseline_layers_24	msg_map_type	high	map tile/type button; TG mapTypeButton
+baseline_link_16	msg_link2	medium	link preview emoji; scale
+baseline_link_24	msg_link2	high	invite link / public link rows; TG InviteToGroupByLink msg_link2 (Copy link alt msg_link)
+baseline_link_off_24	menu_link_revoke	high	revoke invite link; TG vec menu_link_revoke
+baseline_link_preview_bg_24	-	high	animated layer of LinkPreviewToggleView, kept
+baseline_link_preview_top_layer_24	-	high	animated layer of LinkPreviewToggleView, kept
+baseline_live_help_24	msg2_ask_question	high	Settings > Ask a Question; TG msg2_ask_question
+baseline_local_florist_24	-	low	chat-folder icon "Flower"; no equivalent
+baseline_location_on_18	msg_location	medium	location placeholder / live location helper; scale
+baseline_location_on_20	msg_location	medium	theme icons preview; scale
+baseline_location_on_24	msg_location	high	location / session country
+baseline_location_on_24_white	live_loc	high	live location service notification small icon; TG LocationSharingService live_loc
+baseline_location_on_48	msg_location	low	live location view bitmap / options header; scale (TG livepin is a balloon background)
+baseline_lock_14	msg_mini_lock3	medium	unused; 16dp lock (msg_mini_lock2 12dp)
+baseline_lock_16	msg_mini_lock3	high	secret-chat/premium lock inline; TG mini lock 16dp
+baseline_lock_24	msg_secret	high	new secret chat / privacy / passcode / close topic; TG start_secret_chat (privacy row alt msg2_secret, close topic alt msg_topic_close)
+baseline_lock_48	msg_secret	low	secret chat placeholder big lock; scale
+baseline_lock_base_24	-	high	layer of animated LockHeaderButton, kept
+baseline_lock_top_24	-	low	animated shackle layer for LockHeaderButton; TG has only whole-lock icons (ic_lock_header/msg_mini_lock2), no separate shackle layer
+baseline_logo_telegram_24	-	low	Telegram logo (Settings > source code item); no mono logo in TG res (closest glyph: notification paper plane)
+baseline_logout_24	msg_leave	high	Log Out in account settings; TG ProfileActivity LogOut menu uses msg_leave
+baseline_mail_96	msg2_email	medium	email setup empty-state illustration; TG Login Email row icon; scale 24->96
+baseline_map_24	msg_map	high	location message options (open in maps); TG Map menu item
+baseline_mark_chat_unread_24	msg_markunread	high	Unread filter/folder icon; TG mark-as-unread bubble
+baseline_mic_16	msg_voice_unmuted	medium	voice/live-stream emoji in chat preview; no mini mic in TG; scale 24->16
+baseline_mic_24	msg_voice_unmuted	high	mic (call mute button, voice privacy, voice tab); TG group-call mic menu icon (calls_unmute is TG's large call-screen variant)
+baseline_mic_96	msg_voice_unmuted	medium	empty voice list illustration; scale 24->96
+baseline_more_horiz_24	mini_more_dots	medium	'more options' menu items; TG horizontal dots exist only as 16dp mini; scale 16->24
+baseline_more_vert_24	ic_ab_other	high	header overflow (3 vertical dots); TG action-bar other
+baseline_music_note_16	files_music	medium	audio emoji in chat preview; scale 28->16
+baseline_music_note_24	files_music	medium	music (privacy audio, shared music tab, folder Note); TG attach Music note (28dp); search_music_filled is headphones
+baseline_music_note_48	files_music	medium	player album-art placeholder; scale 28->48
+baseline_music_note_96	files_music	medium	empty music list illustration; scale 28->96
+baseline_notification_important_14	msg_notifications	low	notification-problem badge; TG has no bell-with-! ; plain bell, scale
+baseline_notification_important_24	msg_notifications	low	notification error state in settings; no bell-with-! in TG
+baseline_notifications_24	msg_unmute	medium	used as Unmute/Enable notifications action (topics, bulk unmute); TG unmute=speaker; for bell meaning use msg_notifications/msg2_notifications
+baseline_notifications_active_24	msg_unmute	high	channel bottom-bar Unmute button; TG unmute
+baseline_notifications_off_16	msg_folders_muted	high	'Muted' chat type chip in folder include/exclude; TG folder Muted icon (bell-off)
+baseline_notifications_off_24	msg_mute	high	Mute / Mute forever action; TG chat mute (speaker-off); bell-off alt msg_folders_muted
+baseline_notifications_paused_24	msg_mute_period	high	Mute for X hours options; TG Mute for... (bell zZ); msg_mute_1h for 1h
+baseline_opacity_18	msg_photo_blur	medium	color-picker opacity/calculate button; TG drop glyph (photo blur); scale 24->18
+baseline_open_in_browser_24	msg_openin	high	open link in browser / view language; TG Open in...
+baseline_palette_16	msg_palette	medium	theme emoji in chat preview; scale 24->16
+baseline_palette_24	msg_palette	high	Theme settings / theme color; TG Create theme / Set color
+baseline_party_popper_16	-	low	user-joined preview emoji; no confetti/party icon in TG
+baseline_party_popper_24	-	low	folder icon Party / giveaway won; no party icon in TG (giveaway: mini_giveaway trophy)
+baseline_party_popper_72	-	low	giveaway winners header; TG uses lottie; no party icon (mini_giveaway trophy alt)
+baseline_pause_24	msg_round_pause_m	medium	pause state in file/audio progress; TG file-state pause (32dp); 24dp alt ic_pauseinline
+baseline_pause_36_white	ic_action_pause	high	music notification action; TG MusicPlayerService pause (vector 36dp)
+baseline_pending_24	msg_requests	high	Manage join requests; TG Member/Subscribe requests
+baseline_perm_contact_calendar_24	msg_contacts	high	nav bar / drawer Contacts; TG drawer Contacts; no filled counterpart in TG (selected state needs note)
+baseline_person_12	mini_reply_user	medium	inline keyboard user-button marker; TG mini person 16dp; scale 16->12
+baseline_person_16	mini_reply_user	high	contact emoji in chat preview; TG mini person 16dp
+baseline_person_24	msg_contacts	medium	private chats / new chat / view messages from user; TG person outline (also used for contacts)
+baseline_person_56	msg_contacts	low	user avatar placeholder; TG uses letter avatars (no person placeholder); scale
+baseline_person_add_16	msg_contact_add	medium	accept join request inline button; scale 24->16
+baseline_person_add_24	msg_contact_add	high	Add contact / Add member; TG profile AddMember/AddToContacts (msg_addcontact identical shape)
+baseline_phone_24	msg_calls	high	nav bar / drawer Calls, profile phone/call; TG drawer Calls; no filled pair; profile action button uses vector 'call'
+baseline_phone_24_white	ic_call	high	VoIP service notification small icon; TG VoIPService setSmallIcon
+baseline_phone_36	calls_decline	medium	call accept/decline round buttons; TG decline button (accept is lottie); 32dp
+baseline_phone_in_talk_24	msg_voice_phone	medium	calls privacy / earpiece routing / tgcalls; TG audio-output 'phone' (handset+waves); alt msg2_call_earpiece
+baseline_play_arrow_36_white	ic_action_play	high	play in notification/video/file; TG MusicPlayerService play (vector 36dp); in-message alt msg_round_play_m
+baseline_play_circle_filled_24_white	player	high	audio notification small icon / preview; TG MusicPlayerService small icon (filled play circle)
+baseline_playback_speed_0_5_24	msg_speed_slow	high	playback speed 0.5x; TG '0.5x' speed menu icon
+baseline_playback_speed_0_7_24	-	low	0.7x speed; TG has 0.2/0.5/1/1.2/1.5/1.7/2x only
+baseline_playback_speed_1_0_24	msg_speed_normal	high	playback speed 1x; TG '1x'
+baseline_playback_speed_1_2_24	msg_speed_medium	high	playback speed 1.2x; TG '1.2x'
+baseline_playback_speed_1_5_24	msg_speed_fast	high	playback speed 1.5x; TG '1.5x'
+baseline_playback_speed_2_0_24	msg_speed_superfast	high	playback speed 2x; TG '2x'
+baseline_playback_speed_2_5_24	-	low	2.5x speed; no TG icon (max 2x)
+baseline_playback_speed_x_5	-	low	custom 5dp 'x' glyph appended to speed text; code-specific
+baseline_playlist_add_18	msg_add	low	color picker 'save color'; no add-to-list in TG; plain plus; scale
+baseline_playlist_add_24	mini_checklist_add	medium	checklist Add tasks / add to playlist / save proxy; TG checklist-add (16dp vector); scale 16->24
+baseline_playlist_add_check_24	msg_select	high	Select chat/message; TG Select (check circle)
+baseline_policy_24	msg2_policy	high	Privacy Policy settings row; TG settings Privacy Policy
+baseline_poll_16	mini_stats	medium	poll emoji in chat preview; TG 16dp bar chart vector
+baseline_poll_24	msg_pollstop	medium	Stop poll / retract vote menu, Create poll; TG StopPoll (bars crossed); retract vote = msg_unvote; no plain 24dp poll icon
+baseline_premium_star_16	msg_premium_liststar	high	premium star next to names (emoji-status fallback); TG list premium star
+baseline_premium_star_24	msg_premium_liststar	high	emoji-status fallback in drawer/profile/main title; TG DrawerProfileCell premium star; alt msg_settings_premium
+baseline_premium_star_28	msg_premium_liststar	medium	premium marker on stickers/reactions; scale; locked variant msg_premium_lock2
+baseline_premium_star_96	msg_premium_prolfilestar	medium	'Premium required' login empty-state; TG profile premium star; scale
+baseline_public_24	msg2_language	medium	Roaming data usage; TG globe (TG data usage tabs have no icons)
+baseline_queue_music_24	player_new_order	low	'Play next' in player menu; TG player order arrows (28dp)
+baseline_radio_button_unchecked_16	mini_checklist_undone	high	checklist task emoji in chat preview; TG checklist undone 16dp
+baseline_receipt_16	msg_payment_card	low	invoice emoji in chat preview; TG payment card; scale 24->16
+baseline_recent_24	msg_recent	high	recent languages in translation; TG recent searches clock
+baseline_redeem_16	mini_gift	high	gift emoji in chat preview; TG mini gift 16dp
+baseline_redo_18	-	low	color picker redo; TG has only undo (photo_undo, photo_undo2)
+baseline_remove_circle_24	msg_remove	high	Unlink discussion group/channel; TG DiscussionUnlinkGroup
+baseline_repeat_24	msg_retry	medium	header Retry / Resend message; TG retry arrows; repeat meaning alt player_new_repeatall
+baseline_replay_24	msg_retry	high	Start/restart bot, file retry; TG BotRestart
+baseline_reply_14	msg_reply_small	high	reply counter in message footer; TG replies counter 14dp
+baseline_reply_16	msg_reply_small	medium	cross-chat reply marker in chat list; scale 14->16
+baseline_reply_24	menu_reply	high	message context Reply / header reply; TG context-menu reply vector
+baseline_reply_24_white	menu_reply	high	notification Reply action; TG NotificationsController reply action (PNG only in hdpi/mdpi/xhdpi, no xxhdpi) | ic_reply_icon has no xxhdpi, menu_reply vector used
+baseline_reply_56	chats_replies	high	Replies chat avatar placeholder; TG Replies avatar icon (28dp); scale
+baseline_report_24	msg_report	high	Report chat/message; TG Report
+baseline_restaurant_menu_24	msg_emoji_food	high	emoji panel Food section; TG emoji tabs food
+baseline_rotate_90_degrees_ccw_24	msg_photo_rotate	high	media editor rotate; TG photo rotate
+baseline_router_24	msg_language	high	session IP address row; TG SessionBottomSheet IP uses globe
+baseline_schedule_24	msg_recent	medium	invite link expiry options (clock); TG clock icon
+baseline_school_24	-	low	folder icon 'Study'; TG Android has no folder icons, no school glyph
+baseline_sd_storage_24	files_internal	high	attach files: SD card; TG uses files_internal (SD-card glyph) for removable storage
+baseline_search_24	msg_search	high	Search menu items/header; TG Search
+baseline_search_96	msg_search	medium	search empty-state illustration; scale
+baseline_security_24	msg2_proxy_on	high	Proxy (drawer, phone screen header); TG proxy shield
+baseline_security_96	menu_2sv	medium	2FA additional-password empty state; TG Two-Step Verification shield (vector); scale
+baseline_send_24	msg_send	high	Send scheduled messages now; TG Send
+baseline_settings_24	msg_settings	high	Settings header/menu; TG Settings gear
+baseline_settings_56	msg_settings	medium	GearView decorative gear; scale
+baseline_settings_96	msg_settings	medium	GearView decorative gear; scale
+baseline_share_24	msg_shareout	high	Share (system share sheet); TG ShareFile
+baseline_share_arrow_14	mini_forwarded	medium	forwards counter in message footer; TG mini forwarded arrow 16dp; scale 16->14
+baseline_share_arrow_16	mini_forwarded	high	forwarded marker in chat list / forward emoji; TG mini forwarded
+baseline_share_arrow_24	msg_share	high	Share folder / profile Share; TG link Share (curved arrow); profile action button uses vector action_share
+baseline_signal_cellular_alt_24	msg_filled_datausage	medium	Mobile data usage; TG Network Usage bars (filled/colorful style)
+baseline_sim_card_24	msg_newphone	high	Change phone number; TG ChangePhoneNumber (LogoutActivity)
+baseline_sim_card_96	msg_newphone	medium	change phone empty-state illustration; scale
+baseline_sim_card_alert_14	msg_newphone	low	check-phone-number badge; scale; no alert variant
+baseline_sim_card_alert_24	msg_newphone	medium	'check phone number' reminder; no alert variant in TG
+baseline_skip_next_24_white	ic_action_next	high	music notification next; TG MusicPlayerService next (36dp vector)
+baseline_skip_previous_24_white	ic_action_previous	high	music notification previous; TG MusicPlayerService previous (36dp vector)
+baseline_small_arrow_down_18	arrow_more	medium	sticker section expand chevron; TG show-more chevron; scale
+baseline_small_arrow_down_24	msg_reactions_expand	high	expand reactions; TG reactions expand chevron
+baseline_sports_esports_24	-	low	folder icon 'Game'; no gamepad icon in TG
+baseline_sports_soccer_24	msg_emoji_activities	medium	folder icon 'Sport'; TG emoji Activities tab (soccer ball)
+baseline_star_20	ic_rating_star_filled	high	filled rating star (transcription rating) / theme preview; TG rating filled star (32dp); scale
+baseline_star_24	msg_unfave	medium	shown when item is favorite (Remove from favorites); TG unfave (crossed star); no filled 24dp star (ic_rating_star_filled alt)
+baseline_star_border_24	msg_fave	high	Add to favorites / emoji panel favorites; TG AddToFavorites; empty rating star alt ic_rating_star
+baseline_stars_24	msg_admins	high	Add admin / Edit rights; TG Administrators (star shield); add-admin alt msg_admin_add
+baseline_stop_24	-	low	camera stop-recording / stop button; no stop-square icon in TG
+baseline_stop_24_white	-	low	audio/live-location notification Stop; no stop icon (live location alt filled_stop_location)
+baseline_storage_24	files_storage	high	attach files: internal storage; TG InternalStorage icon
+baseline_strikethrough_s_24	-	low	text formatting strikethrough; TG formatting menu is text-only
+baseline_swap_horiz_24	msg_replace	low	View as tabs / P2P calls privacy; TG swap squares; no direct equivalent
+baseline_sync_24	msg_retry	medium	emoji set update / notifications OK status; TG circular arrows
+baseline_sync_problem_24	-	low	notification sync error state; no sync-error glyph in TG (msg_retry/msg_report nearest)
+baseline_sync_white_24	notification	medium	foreground service small icon; TG notification small icon (paper plane)
+baseline_system_update_24	msg_download	medium	Download update / push service missing; TG Download
+baseline_tab_24	menu_sidebar	medium	topic tabs on top/side toggle; TG topics tab-layout toggle button (vector)
+baseline_tdlib_24	-	low	TDLib logo; code-specific
+baseline_telegram_24	notification	medium	folder icon 'Airplane' (paper plane); TG paper plane glyph (notification small icon)
+baseline_text_search_variant_24	msg_list	low	chat search 'show only found' toggle; TG search list toggle is a text button
+baseline_thumb_up_24	msg_rate_up	medium	folder icon 'Like'; TG thumb up
+baseline_timer_16	msg_stories_timer	medium	timer emoji in chat preview; TG stopwatch; scale 24->16
+baseline_timer_off_16	msg_mini_autodelete	medium	content-preview "timer off" emoji; TG TimerDrawable shows msg_mini_autodelete when TTL==0 (off); mini size fits 16
+baseline_toc_24	msg_list	low	header "select messages in between"; TG has no such action, msg_list (lines) closest glyph
+baseline_translate_14	msg_translate	medium	translated-message counter in bubble; no mini translate in TG, scale
+baseline_translate_24	msg_translate	high	translate menu/settings rows; TG msg_translate same role
+baseline_translate_off_24	msg_translate	medium	"show original"/hide translation; TG reuses msg_translate for HideTranslation (PhotoViewer), no off variant
+baseline_tune_24	msg_photo_settings	medium	forum topics filter FAB; sliders glyph = TG msg_photo_settings (adjust); alt menu_tag_filter for filter role
+baseline_unarchive_24	msg_unarchive	high	chat unarchive menu/header; same role
+baseline_undo_18	photo_undo2	medium	theme color editor undo; TG paint-editor undo (vector), scale; alt chats_undo
+baseline_undo_24	photo_undo2	medium	media-editor undo (photo_undo2 role); also used for "Reset topic icon" where TG msg_reset fits better
+baseline_unsubscribe_24	msg_markunread	high	ICON_MARK_AS_UNREAD; TG DialogsActivity MarkAsUnread uses msg_markunread
+baseline_update_24	msg_download	low	settings "download update" fallback; TG has no update glyph, download arrow closest
+baseline_video_chat_24	msg_voicechat	medium	admin right "Manage video chats"; TG uses msg_voicechat for start voice/video chat
+baseline_video_library_96	msg_videocall	low	empty state for Videos tab; no large TG equivalent, videocam glyph, scale
+baseline_videocam_16	msg_videocall	medium	content-preview video emoji; no mini videocam in TG, scale
+baseline_videocam_24	msg_videocall	high	shared-media Videos / search filter / take video; videocam glyph (alt msg2_videocall settings style)
+baseline_videogame_asset_16	msg_emoji_activities	low	content-preview game emoji; TG has no gamepad, activities (ball) tab glyph, scale
+baseline_view_sidebar_24	menu_sidebar	high	forum topic tabs side/top toggle; TG TopicsTabsView uses menu_sidebar (vector)
+baseline_visibility_14	msg_views	high	message/chat views counter; TG chat_msgInViewsDrawable = msg_views
+baseline_visibility_16	msg_views	high	views counter in message-options pager; msg_views
+baseline_visibility_24	msg_message	high	"Show in chat" menu item; TG AudioPlayerAlert ShowInChat uses msg_message (eye glyph)
+baseline_volume_off_24_white	msg_mute	medium	notification "Mute" action (white); TG has no notification mute action, msg_mute
+baseline_volume_up_24	calls_speaker	medium	call speaker button (also video mute toggle/theme list); TG VoIPFragment speaker = calls_speaker; menu-size alt msg_voice_speaker
+baseline_volume_up_24_white	msg_unmute	medium	notification "Unmute" action (white); msg_unmute
+baseline_vpn_key_24	msg_permissions	low	profile "Encryption key" row; TG has no key row, key glyph msg_permissions
+baseline_warning_14	msg_warning	low	restricted-message counter in bubble; TG chat_msgErrorDrawable msg_warning ("!" only), scale | msg_warning is only the 2dp "!" bar, not a triangle: kept Material
+baseline_warning_18	warning_sign	medium	content-preview warning emoji; TG warning_sign (vector, used as span), scale
+baseline_warning_24	warning_sign	medium	tooltip/settings warning; TG warning_sign (vector) in WebActionBar/LimitPreview
+baseline_watch_later_10	msg_recent	low	scheduled-messages avatar badge; TG has no badge glyph, clock msg_recent, scale down
+baseline_watch_later_24	msg_emoji_recent	high	emoji panel Recent (selected); TG EmojiTabsStrip recent; no filled counterpart in TG
+baseline_webrtc_24	-	high	brand: WebRTC logo, no TG equivalent
+baseline_whatshot_24	stickers_gifs_trending	medium	emoji/media panel Trending (selected); TG trending tab glyph; no filled pair (meaning alt filled_fire)
+baseline_wifi_24	-	high	data usage Wi-Fi row; TG has no Wi-Fi glyph (msg2_data is the generic data icon)
+baseline_work_24	msg_work	medium	folder icon "Work"; TG msg_work (building, work phone) — closest meaning
+baseline_zoom_in_24	msg_zoomin	high	chart zoom / media zoom; TG msg_zoomin (chart header in TG itself uses msg_zoomout_stats)
+baseline_zoom_out_map_24	-	high	paint mode "free movement" (code-specific); TG paint has no such mode
+deproko_baseline_animals_24	msg_emoji_cat	high	emoji panel Animals (selected); TG EmojiTabsStrip cat; no filled pair
+deproko_baseline_animals_filled_blink_24	msg_emoji_cat	low	blink frame of selected Animals; TG has no blink/filled variant
+deproko_baseline_animals_outline_24	msg_emoji_cat	high	emoji panel Animals (inactive)
+deproko_baseline_attach_26	input_attach	high	composer attach button
+deproko_baseline_bots_16	msg_bot	medium	chat-type bot mini icon in list; no mini bot in TG, scale
+deproko_baseline_bots_24	msg_bot	high	bots filter/menu; alt msg_bots / msg_folders_bots (filled) for folder-type role
+deproko_baseline_bots_56	msg_bot	low	bot avatar placeholder; no large TG bot glyph, scale
+deproko_baseline_bots_command_26	input_bot1	high	composer bot commands button; TG AccDescrBotCommands = input_bot1
+deproko_baseline_bots_keyboard_26	input_bot2	high	composer bot keyboard button; TG AccDescrBotKeyboard = input_bot2 (distinct from input_keyboard)
+deproko_baseline_camera_26	msg_camera	medium	composer/attach camera button; TG attach camera tile uses instant_camera (filled)
+deproko_baseline_check_double_24	msg_check_s+msg_halfcheck	high	composed by tg_ticks.py like ChatMessageCell (half check +4.5dp); "Read at" menu uses vg_menu_seen_24 = msg_seen | read ticks / "Read at" option item; TG MessageSeenView uses msg_seen (double check); bubble ticks are msg_check_s+msg_halfcheck
+deproko_baseline_check_single_24	msg_check_s	high	composed by tg_ticks.py in the same box/scale as the double tick | message sent tick; TG chat_msgOutCheckDrawable
+deproko_baseline_clock_24	msg_recent	low	message sending clock; TG draws it in code (MsgClockDrawable), msg_recent closest glyph
+deproko_baseline_close_10	msg_round_cancel_m	medium	file progress cancel (tiny); TG chat_fileStatesDrawable cancel, scale
+deproko_baseline_close_18	msg_round_cancel_m	medium	file progress cancel; scale
+deproko_baseline_close_24	msg_round_cancel_m	high	file progress cancel; TG chat_fileStatesDrawable[4]
+deproko_baseline_flag_filled_24	msg_emoji_flags	high	emoji panel Flags (selected); no filled pair
+deproko_baseline_flag_outline_24	msg_emoji_flags	high	emoji panel Flags (inactive)
+deproko_baseline_gif_24	smiles_tab_gif	high	emoji panel GIF section (inactive); shared-media GIF tab alt msg_gif
+deproko_baseline_gif_filled_16	msg_gif	medium	content-preview GIF emoji; no mini, scale
+deproko_baseline_gif_filled_24	smiles_tab_gif	medium	GIF section selected / search filter GIF; no filled pair (alt msg_gif)
+deproko_baseline_insert_emoticon_26	raw/smile_to_sticker.json frame 0	high	composer button: rendered from Telegram ChatActivityEnterView Lottie (same scale as smile; smiles_tab_* are smaller panel-tab glyphs) | composer emoji button
+deproko_baseline_insert_sticker_24	msg2_sticker	medium	sticker settings row / trending add; TG settings Stickers row msg2_sticker
+deproko_baseline_insert_sticker_26	raw/smile_to_sticker.json last frame	high	composer button: rendered from Telegram ChatActivityEnterView Lottie (same scale as smile; smiles_tab_* are smaller panel-tab glyphs) | emoji panel stickers section tab
+deproko_baseline_instantview_24	msg_instant	high	Instant View button in link preview; TG chat_msgInInstantDrawable
+deproko_baseline_lamp_22	msg_emoji_objects	high	poll explanation hint; TG chat_pollHintDrawable = msg_emoji_objects (lightbulb)
+deproko_baseline_lamp_24	msg_emoji_objects	high	emoji panel Symbols/objects (inactive); TG objects tab lightbulb
+deproko_baseline_lamp_filled_22	msg_emoji_objects	medium	poll explanation active; no filled pair in TG
+deproko_baseline_lamp_filled_24	msg_emoji_objects	medium	emoji panel Symbols selected + folder icon "Light"; no filled pair (alt menu_lightbulb)
+deproko_baseline_link_arrow_20	mini_external_link	high	inline keyboard URL button corner; TG ChatMessageCell bot url button
+deproko_baseline_lock_16	msg_mini_lock3	medium	inline keyboard lock (auth/password button); TG mini lock span
+deproko_baseline_lock_18	list_secret	high	secret chat lock in chat list; TG dialogs_lockDrawable
+deproko_baseline_lock_24	ic_lock_header	medium	secret chat lock in header (also closed topic); TG chat_lockIconDrawable; scale
+deproko_baseline_masks_24	msg_mask	high	media viewer masks button / folder icon "Mask"; TG PhotoViewer masks item
+deproko_baseline_mosaic_group_24	msg_ungroup	medium	attach "group media" toggle; TG uses msg_ungroup for SendWithoutGrouping (no plain group glyph)
+deproko_baseline_msg_video_16	msg_video	medium	content-preview round video; TG msg_video is round-in-square glyph, scale
+deproko_baseline_msg_video_24	msg_video	high	round video tab/filter/settings; TG msg_video (alt input_video composer)
+deproko_baseline_msg_video_96	msg_video	low	empty state round videos; no large, scale
+deproko_baseline_msg_voice_24	input_mic	high	composer voice record button
+deproko_baseline_notifications_off_24	list_mute	medium	muted indicator in header/topic/list; TG chat_muteIconDrawable/dialogs_muteDrawable = list_mute (speaker glyph); menu alt msg_mute
+deproko_baseline_outinline_24	menu_video_pip	high	media viewer picture-in-picture; TG PhotoViewer PipMinimize (alt ic_outinline web player)
+deproko_baseline_pin_14	msg_pin_mini	high	pinned mark in message bubble; TG chat_msgInPinnedDrawable
+deproko_baseline_pin_16	msg_pin_mini	high	content-preview pin emoji
+deproko_baseline_pin_24	msg_pin	high	pin menu item / bulk action
+deproko_baseline_pin_undo_24	msg_unpin	high	unpin menu item
+deproko_baseline_send_24	send_plane_24	high	composer send = TG ChatActivityEnterView send_plane_24 (attach_send is the 54dp share-sheet glyph, came out tiny); share sheet send / checklist create; TG ShareAlert writeButton attach_send; menu alt msg_send
+deproko_baseline_sound_muted_24	video_muted	medium	no-sound badge on video messages; TG chat_msgNoSoundDrawable; record-mute alt video_mute
+deproko_baseline_stickers_24	smiles_tab_stickers	medium	emoji panel switch-to-stickers / stickers menu; menu alt msg_sticker
+deproko_baseline_stickers_filled_24	msg2_sticker	high	settings "Stickers and Emoji" row; TG settings uses msg2_sticker
+deproko_baseline_text_add_24	msg_photo_text2	high	media editor add text; TG PreviewButtons BUTTON_TEXT
+deproko_baseline_verify_24	verified_profile	medium	verified badge in chat header; TG combined badge (alt verified_area+verified_check layers)
+deproko_baseline_verify_chat_24	verified_area	medium	verified badge in chat list; TG dialogs_verifiedDrawable + verified_check overlay
+deproko_baseline_whatshot_16	msg_mini_fireon	high	content-preview secret media fire; TG mini fire span
+deproko_baseline_whatshot_24	filled_fire	medium	secret/hot media progress icon; TG chat_flameIcon; "Hide media" item in TG uses msg_spoiler
+deproko_logo_telegram_18	-	high	brand: Telegram logo in call screen
+deproko_logo_telegram_passcode_56	-	high	brand: Telegram logo on passcode screen
+outline_forum_24	msg_discussion	medium	nav bar Chats (inactive) / view replies; TG msg_discussion (bubble); no filled pair
+outline_notifications_24	input_notify_on	high	composer silent-send toggle; TG CrossOutDrawable(input_notify_on)
+outline_perm_contact_calendar_24	msg_contacts	medium	nav bar Contacts (inactive); TG drawer contacts
+outline_phone_24	msg_calls	medium	nav bar Calls (inactive); TG drawer calls
+outline_toggle_on_24	-	high	debug drawer "Feature Toggles"; TG has no toggle glyph (code-specific)
+outline_whatshot_24	stickers_gifs_trending	medium	emoji/media panel Trending (inactive); TG trending tab glyph
+round_call_24_white	ic_call	high	call notification answer action; TG notification call icon
+round_call_end_24_white	ic_call_end_white_24dp	high	call notification end action; same role
+round_keyboard_arrow_left_24	ic_ab_back	low	hashtag screen back chevron; TG has no left chevron (alt mirrored msg_arrowright)
+round_keyboard_arrow_right_16	settings_arrow	medium	tooltip / message inline chevron; TG small chevron
+round_keyboard_arrow_right_18	ic_chevron_right_black_18dp	high	chart legend chevron; TG LegendSignatureView same role
+round_keyboard_arrow_right_24	msg_arrowright	high	expand/permission group & header arrow; TG menu right arrow
+round_repeat_24	player_new_repeatall	high	music player repeat list
+round_repeat_one_24	player_new_repeatone	high	music player repeat one
+round_shuffle_24	player_new_shuffle	high	music player shuffle
+round_skip_next_36	ic_action_next	medium	music player next; TG main player uses lottie player_prev, notification ic_action_next (vector), scale
+round_skip_previous_36	ic_action_previous	medium	music player previous; same, scale
+round_warning_16	warning_sign	low	content-preview screenshot-taken emoji; TG no screenshot glyph, scale
+templarian_baseline_account_switch_24	menu_transfer	low	transfer ownership confirm; TG gift transfer glyph (vector), no ownership icon
+templarian_baseline_broom_24	msg_clear	high	clear history; TG ClearHistory uses msg_clear (broom)
+templarian_baseline_calculator_18	msg_emoji_other	low	only referenced in author attribution (no UI use); TG symbols glyph is calculator-like
+templarian_baseline_cat_24	msg_emoji_cat	medium	folder icon "Cat"
+templarian_baseline_device_ubuntu_24	device_desktop_other	medium	session Linux/Ubuntu; TG uses device_desktop_other for Linux
+templarian_baseline_flask_24	-	high	"Subscribe to beta"; TG has no beta/flask glyph
+templarian_baseline_folder_plus_24	msg_addfolder	high	add to folder; TG FilterAddTo
+templarian_baseline_folder_remove_24	msg_removefolder	high	remove from folder; TG FilterRemoveFrom
+templarian_baseline_foursquare_24	foursquare	high	venue provider logo; TG LocationPoweredCell
+templarian_baseline_gamepad_variant_16	msg_emoji_activities	low	only referenced in author attribution; activities glyph, scale
+templarian_baseline_import_16	-	high	imported-chat mark in chat list; TG has no imported glyph
+templarian_baseline_source_merge_24	-	high	source code / PR rows (code-specific)
+templarian_device_web_chrome_24	device_web_chrome	high	session browser logo
+templarian_device_web_edge_24	device_web_edge	high	session browser logo
+templarian_device_web_firefox_24	device_web_firefox	high	session browser logo
+templarian_device_web_safari_24	device_web_safari	high	session browser logo
+vg_input_gif_26	raw/smile_to_gif.json last frame	high	new: composer GIF button, rendered from Telegram Lottie (EmojiLayout.getTargetIcon)

@@ -1703,6 +1703,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
   void applyPreview (ViewController<?> current) {
     this.previewOpened = false;
+    hideFloatingButtonIfNone(current);
 
     if (shareHeader) {
       title.setVisibility(View.VISIBLE);
@@ -2194,6 +2195,9 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
         FloatingButton button = navigation.getFloatingButton();
         button.setIcons(0, floatingButtonId);
         button.initHeightFactor(getHeightFactor(), 0f, 1f, false, false);
+      } else if (navigation.getCurrentStackItem() == item) {
+        // The new screen has no floating button: hide the one left by the replaced screen (tablet panes, stack resets).
+        hideFloatingButtonIfNone(item);
       }
     }
     filling.setColor(item.getHeaderColor());
@@ -2531,9 +2535,17 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     int leftFloatingButtonId = right == null ? getFloatingButtonId(left) : left.inCustomMode() ? left.getCustomFloatingButtonId() : getFloatingButtonId(left);
     int rightFloatingButtonId = right == null && left.inCustomMode() ? left.getCustomFloatingButtonId() : getFloatingButtonId(right);
 
-    if (leftFloatingButtonId != 0 && rightFloatingButtonId != 0) {
+    // M3: the FAB stays at the bottom right whatever the header height (FloatingButton#setHeightFactor), so it is
+    // switched by the floating button ids of both screens only. TGX also required an expanded header, because its FAB
+    // hid together with a collapsed header: a screen whose header was collapsed (e.g. a scrolled profile) left its
+    // visible FAB over the next screen.
+    FloatingButton floatingButton = navigation != null ? navigation.getFloatingButton() : null;
+    boolean floatVisible = floatingButton != null && floatingButton.getAlpha() > 0f;
+    if (floatingButton == null) {
+      useFloatSwitch = 0;
+    } else if (leftFloatingButtonId != 0 && rightFloatingButtonId != 0 && floatVisible) {
       useFloatSwitch = 2;
-    } else if ((leftFloatingButtonId != 0 && leftHeaderHeightFactor > 0f) || (rightFloatingButtonId != 0 && rightHeaderHeightFactor > 0f)) {
+    } else if (leftFloatingButtonId != 0 || rightFloatingButtonId != 0) {
       useFloatSwitch = 1;
     } else {
       useFloatSwitch = 0;
@@ -2544,14 +2556,16 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
       int baseItemButtonId = forward ? leftFloatingButtonId : rightFloatingButtonId;
       int previewItemButtonId = forward ? rightFloatingButtonId : leftFloatingButtonId;
 
+      if (!floatVisible) {
+        // The button of the current screen is hidden (e.g. ContactsController#hide): only the incoming one may fade in.
+        baseItemButtonId = 0;
+      }
       baseHasFloat = useFloatSwitch == 1 && baseItemButtonId != 0;
 
-      if (baseHasFloat && previewItemButtonId == 0 && floatSwitch != null && floatSwitch.getScaleX() == 0 && floatSwitch.getScaleY() == 0) { // float button is hidden
-        useFloatSwitch = 0;
-      } else if (!baseHasFloat && previewItemButtonId != 0 && !useHeightSwitch && heightFactor == 0f) {
+      if (baseItemButtonId == 0 && previewItemButtonId == 0) {
         useFloatSwitch = 0;
       } else {
-        floatSwitch = navigation.getFloatingButton();
+        floatSwitch = floatingButton;
         floatSwitch.setIcons(baseItemButtonId, previewItemButtonId);
         floatSwitch.initHeightFactor(getHeightFactor(), previewItem == null ? 0f : getHeightFactor(previewItem.getHeaderHeight()), baseHasFloat ? 1f : 0f, useFloatSwitch != 1, previewItem != null && previewItem.usePopupMode());
       }
@@ -2717,6 +2731,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     removeView(preview);
     removeView(menuPreview);
     ViewController<?> current = stack.getCurrent();
+    hideFloatingButtonIfNone(current);
     if (current != null) {
       if (current.getHeaderBackButton() == BackHeaderButton.TYPE_NONE) {
         backButton.setVisibility(View.GONE);
@@ -2823,6 +2838,21 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
 
   public static int getFloatingButtonId (ViewController<?> c) {
     return c == null ? 0 : c.getFloatingButtonId();
+  }
+
+  /**
+   * The shared floating button belongs to the screen a transition ends on: hide it when that screen has none
+   * (in its edit/custom header mode: its custom button), whatever the transition was — push, back, back gesture,
+   * rebase, header replacement, tablet panes.
+   */
+  private void hideFloatingButtonIfNone (@Nullable ViewController<?> current) {
+    if (navigation == null || current == null) {
+      return;
+    }
+    int floatingButtonId = current.inCustomMode() ? current.getCustomFloatingButtonId() : current.getFloatingButtonId();
+    if (floatingButtonId == 0) {
+      navigation.getFloatingButton().setHeightFactor(0f, 0f, false);
+    }
   }
 
   public static int getHeaderColor (ViewController<?> c, boolean allowTransform) {

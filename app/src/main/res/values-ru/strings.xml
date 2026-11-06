@@ -18,6 +18,11 @@
   <string name="PersonalChannelSelect">Выберите канал</string>
   <string name="PersonalChannelCreate">Создать новый канал</string>
   <string name="PersonalChannelSet">Канал добавлен в профиль</string>
+  <string name="DropToAttach">Вставить</string>
+  <string name="DropSendFile">Отправить файлом</string>
+  <string name="DropSendFiles">Отправить файлами</string>
+  <string name="DropReadError">Не удалось прочитать перетащенные файлы</string>
+  <string name="DropSomeAsFiles">Часть видео нельзя просмотреть — они уйдут файлами</string>
   <string name="PersonalChannelRemoved">Канал убран из профиля</string>
   <string name="DirectMessagesAll">Все</string>
   <string name="QuoteSelection">Цитировать</string>

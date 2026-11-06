@@ -1,10 +1,19 @@
-<!-- drawable/calculator.xml -->
+<!-- Vibegram-X, drawn in Telegram for Android 12.3.1 style -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-  android:height="18dp"
   android:width="18dp"
-  android:viewportWidth="24"
-  android:viewportHeight="24">
+  android:height="18dp"
+  android:viewportWidth="18"
+  android:viewportHeight="18">
   <path
-    android:fillColor="#000"
-    android:pathData="M7,2H17A2,2 0 0,1 19,4V20A2,2 0 0,1 17,22H7A2,2 0 0,1 5,20V4A2,2 0 0,1 7,2M7,4V8H17V4H7M7,10V12H9V10H7M11,10V12H13V10H11M15,10V12H17V10H15M7,14V16H9V14H7M11,14V16H13V14H11M15,14V16H17V14H15M7,18V20H9V18H7M11,18V20H13V18H11M15,18V20H17V18H15Z" />
+    android:pathData="M5.5 2.5 H12.5 A3 3 0 0,1 15.5 5.5 V12.5 A3 3 0 0,1 12.5 15.5 H5.5 A3 3 0 0,1 2.5 12.5 V5.5 A3 3 0 0,1 5.5 2.5 Z"
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.5"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
+  <path
+    android:pathData="M4.833 6.5 L7.833 6.5 M6.333 5 L6.333 8 M10.167 6.5 L13.167 6.5 M5.167 10.667 L7.5 13 M7.5 10.667 L5.167 13 M10.167 10.833 L13.167 10.833 M10.167 13 L13.167 13"
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.5"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
 </vector>

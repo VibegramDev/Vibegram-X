@@ -34,18 +34,42 @@ public class TriangleView {
   public TriangleView (float x, float y) {
     paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     paint.setColor(Theme.headerBackColor());
-    paint.setStrokeWidth(1);
-    paint.setStyle(Paint.Style.FILL_AND_STROKE);
+    paint.setStyle(Paint.Style.FILL);
 
-    width = Screen.dpf(10f);
-    height = Screen.dpf(5f);
+    width = Screen.dpf(10f * SCALE_X);
+    height = Screen.dpf(5f * SCALE_Y);
 
+    // Telegram `ic_arrow_drop_down`: a 9.67 x 4.88dp triangle with rounded corners, built from the rounded outline of
+    // the 10 x 5dp Material Symbols `arrow_drop_down` (960-unit viewport, (280, 400) being the sharp top-left corner)
+    // scaled to Telegram's size.
     path = new Path();
-    path.setFillType(Path.FillType.EVEN_ODD);
-    path.moveTo(x, y);
-    path.lineTo(x + width, y);
-    path.lineTo(x + width * .5f, y + height);
+    path.moveTo(px(x, 459), py(y, 579));
+    path.lineTo(px(x, 314), py(y, 434));
+    path.quadTo(px(x, 311), py(y, 431), px(x, 309.5f), py(y, 427.5f));
+    path.quadTo(px(x, 308), py(y, 424), px(x, 308), py(y, 420));
+    path.quadTo(px(x, 308), py(y, 412), px(x, 313.5f), py(y, 406));
+    path.quadTo(px(x, 319), py(y, 400), px(x, 328), py(y, 400));
+    path.lineTo(px(x, 632), py(y, 400));
+    path.quadTo(px(x, 641), py(y, 400), px(x, 646.5f), py(y, 406));
+    path.quadTo(px(x, 652), py(y, 412), px(x, 652), py(y, 420));
+    path.quadTo(px(x, 652), py(y, 424), px(x, 650.5f), py(y, 427.5f));
+    path.quadTo(px(x, 649), py(y, 431), px(x, 646), py(y, 434));
+    path.lineTo(px(x, 501), py(y, 579));
+    path.quadTo(px(x, 496), py(y, 584), px(x, 491), py(y, 586));
+    path.quadTo(px(x, 486), py(y, 588), px(x, 480), py(y, 588));
+    path.quadTo(px(x, 474), py(y, 588), px(x, 469), py(y, 586));
+    path.quadTo(px(x, 464), py(y, 584), px(x, 459), py(y, 579));
     path.close();
+  }
+
+  private static final float SCALE_X = 9.67f / 10f, SCALE_Y = 4.88f / 5f;
+
+  private static float px (float x, float symbolX) {
+    return x + Screen.dpf((symbolX - 280f) / 40f * SCALE_X);
+  }
+
+  private static float py (float y, float symbolY) {
+    return y + Screen.dpf((symbolY - 400f) / 40f * SCALE_Y);
   }
 
   public float getCenterX () {
