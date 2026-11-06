@@ -426,8 +426,8 @@ deproko_baseline_bots_56	msg_bot	low	bot avatar placeholder; no large TG bot gly
 deproko_baseline_bots_command_26	input_bot1	high	composer bot commands button; TG AccDescrBotCommands = input_bot1
 deproko_baseline_bots_keyboard_26	input_bot2	high	composer bot keyboard button; TG AccDescrBotKeyboard = input_bot2 (distinct from input_keyboard)
 deproko_baseline_camera_26	msg_camera	medium	composer/attach camera button; TG attach camera tile uses instant_camera (filled)
-deproko_baseline_check_double_24	msg_seen	high	read ticks / "Read at" option item; TG MessageSeenView uses msg_seen (double check); bubble ticks are msg_check_s+msg_halfcheck
-deproko_baseline_check_single_24	msg_check_s	high	message sent tick; TG chat_msgOutCheckDrawable
+deproko_baseline_check_double_24	msg_check_s+msg_halfcheck	high	composed by tg_ticks.py like ChatMessageCell (half check +4.5dp); "Read at" menu uses vg_menu_seen_24 = msg_seen | read ticks / "Read at" option item; TG MessageSeenView uses msg_seen (double check); bubble ticks are msg_check_s+msg_halfcheck
+deproko_baseline_check_single_24	msg_check_s	high	composed by tg_ticks.py in the same box/scale as the double tick | message sent tick; TG chat_msgOutCheckDrawable
 deproko_baseline_clock_24	msg_recent	low	message sending clock; TG draws it in code (MsgClockDrawable), msg_recent closest glyph
 deproko_baseline_close_10	msg_round_cancel_m	medium	file progress cancel (tiny); TG chat_fileStatesDrawable cancel, scale
 deproko_baseline_close_18	msg_round_cancel_m	medium	file progress cancel; scale

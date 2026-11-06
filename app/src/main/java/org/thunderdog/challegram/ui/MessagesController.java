@@ -5103,7 +5103,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private static OptionItem readItem (Tdlib tdlib, int readDate) {
     return new OptionItem.Builder()
       .name(Lang.getRelativeDate(readDate, TimeUnit.SECONDS, tdlib.currentTimeMillis(), TimeUnit.MILLISECONDS, false, 0, R.string.ReadDate, false))
-      .icon(R.drawable.deproko_baseline_check_double_24)
+      .icon(R.drawable.vg_menu_seen_24)
       .color(OptionColor.LIGHT, OptionColor.BLUE)
       .build();
   }
