@@ -74,8 +74,11 @@ the list is `scripts/icons/tg-mapping.tsv`, the conversion is `scripts/icons/tg_
 
 95 icon drawables in `app/src/main/res/drawable-{mdpi,hdpi,xhdpi,xxhdpi}/` (white PNG alpha masks) are rendered from
 icons of [Telegram Desktop](https://github.com/telegramdesktop/tdesktop), commit `93624f69`, licensed under
-GPL-3.0 (with the OpenSSL exception), and [Telegram for iOS](https://github.com/TelegramMessenger/Telegram-iOS),
-commit `279f89e4`, licensed under GPL-2.0. They are used where Telegram for Android has no matching icon and replace
+GPL-3.0-or-later (with an OpenSSL linking exception, not needed here), and [Telegram for iOS](https://github.com/TelegramMessenger/Telegram-iOS),
+commit `279f89e4`, licensed under GPL-2.0-or-later (per https://telegram.org/apps; the repository itself has no LICENSE file). They are used where Telegram for Android has no matching icon and replace
 the Material Symbols drawables of the same name. Glyphs are rescaled, centred and their stroke weight adjusted to
 match the Telegram for Android set. The list (source file, commit, licence, scale and stroke change per icon) is
 `scripts/icons/tg-extra.tsv`, the conversion is `scripts/icons/tg_extra.py`.
+
+Licence compatibility (checked 06.11.2026): Vibegram-X / Telegram X are GPL-3.0; Telegram for Android and Telegram for iOS
+are GPL-2.0-or-later and are used under GPL-3.0; Telegram Desktop is GPL-3.0-or-later. All icons are distributed under GPL-3.0.
