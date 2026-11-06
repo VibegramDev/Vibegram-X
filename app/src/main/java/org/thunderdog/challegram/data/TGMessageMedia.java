@@ -457,7 +457,9 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
 
   @Override
   protected int getBubbleContentPadding () {
-    return xBubblePaddingSmall;
+    // Photos and videos fill the bubble up to its edges and take its shape: the bubble colour no longer shows as a
+    // frame around them, so media bubbles look like the other bubbles of the chat.
+    return 0;
   }
 
   @Override

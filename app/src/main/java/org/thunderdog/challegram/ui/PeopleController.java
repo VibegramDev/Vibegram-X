@@ -28,6 +28,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.data.TGFoundChat;
 import org.thunderdog.challegram.data.TGUser;
+import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
@@ -80,6 +81,13 @@ public class PeopleController extends RecyclerViewController<PeopleController.Ar
   @Override
   public int getId () {
     return R.id.controller_people;
+  }
+
+  @Override
+  protected int getBackButton () {
+    // M3 top-level destination opened from the dock: no navigation icon, the dock switches destinations
+    // (m3.material.io/components/app-bars › Leading button: "A back arrow, which returns to the previous screen").
+    return isTopLevelDestination() ? BackHeaderButton.TYPE_NONE : super.getBackButton();
   }
 
   @Override

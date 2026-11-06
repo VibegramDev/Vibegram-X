@@ -1,5 +1,11 @@
-<vector android:height="24dp" android:tint="#000000"
-    android:viewportHeight="24" android:viewportWidth="24"
-    android:width="24dp" xmlns:android="http://schemas.android.com/apk/res/android">
-    <path android:fillColor="@android:color/white" android:pathData="M21,10.12h-6.78l2.74,-2.82c-2.73,-2.7 -7.15,-2.8 -9.88,-0.1c-2.73,2.71 -2.73,7.08 0,9.79s7.15,2.71 9.88,0C18.32,15.65 19,14.08 19,12.1h2c0,1.98 -0.88,4.55 -2.64,6.29c-3.51,3.48 -9.21,3.48 -12.72,0c-3.5,-3.47 -3.53,-9.11 -0.02,-12.58s9.14,-3.47 12.65,0L21,3V10.12zM12.5,8v4.25l3.5,2.08l-0.72,1.21L11,13V8H12.5z"/>
+<!-- Material Symbols Rounded "update", FILL 0, wght 400, GRAD 0, opsz 24 (scripts/icons/convert.py) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="960"
+  android:viewportHeight="960"
+  android:tint="#000000">
+  <path
+    android:fillColor="@android:color/white"
+    android:pathData="M480,840Q405,840 339.5,811.5Q274,783 225.5,734.5Q177,686 148.5,620.5Q120,555 120,480Q120,405 148.5,339.5Q177,274 225.5,225.5Q274,177 339.5,148.5Q405,120 480,120Q562,120 635.5,155Q709,190 760,254L760,200Q760,183 771.5,171.5Q783,160 800,160Q817,160 828.5,171.5Q840,183 840,200L840,360Q840,377 828.5,388.5Q817,400 800,400L640,400Q623,400 611.5,388.5Q600,377 600,360Q600,343 611.5,331.5Q623,320 640,320L710,320Q669,264 609,232Q549,200 480,200Q363,200 281.5,281.5Q200,363 200,480Q200,597 281.5,678.5Q363,760 480,760Q575,760 650,703Q725,646 749,556Q754,540 767,532Q780,524 796,526Q813,528 823,540.5Q833,553 829,568Q800,687 703,763.5Q606,840 480,840ZM520,464L620,564Q631,575 631,592Q631,609 620,620Q609,631 592,631Q575,631 564,620L452,508Q446,502 443,494.5Q440,487 440,479L440,320Q440,303 451.5,291.5Q463,280 480,280Q497,280 508.5,291.5Q520,303 520,320L520,464Z" />
 </vector>

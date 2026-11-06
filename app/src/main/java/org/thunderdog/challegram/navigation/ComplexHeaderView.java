@@ -21,7 +21,6 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.text.style.ClickableSpan;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -75,9 +74,7 @@ import org.thunderdog.challegram.widget.PopupLayout;
 import java.util.ArrayList;
 
 import me.vkryl.android.AnimatorUtils;
-import me.vkryl.android.ScrimUtil;
 import me.vkryl.android.ViewUtils;
-import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.ColorUtils;
@@ -100,7 +97,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   private static final int FLAG_NO_STATUS = 1 << 15;
   private static final int FLAG_IGNORE_MUTE = 1 << 16;
   private static final int FLAG_RED_HIGHLIGHT = 1 << 17;
-  private static final int FLAG_NO_EXPAND = 1 << 18;
   private static final int FLAG_SHOW_SCAM = 1 << 19;
   private static final int FLAG_SHOW_FAKE = 1 << 20;
   private static final int FLAG_ALLOW_TITLE_CLICK = 1 << 21;
@@ -116,15 +112,11 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   private RectF trimmedTitleClickRect = new RectF();
   private RectF emojiStatusClickRect = new RectF();
 
-  private float avatarAllowanceFactor, avatarCollapseFactor;
-  private BoolAnimator avatarCollapseAnimator;
-
   private int flags;
 
   private final ViewController<?> parent;
 
   private Drawable arrowDrawable;
-  private Drawable topShadow, bottomShadow;
 
   public ComplexHeaderView (Context context, @NonNull Tdlib tdlib, @Nullable ViewController<?> parent) {
     super(context, tdlib);
@@ -148,7 +140,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   public void setOnEmojiStatusClickListener (View.OnClickListener clickListener) {
     if (clickListener == null) {
       emojiStatusHelper.setClickListener(v -> {
-        if (!isCollapsed() && BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK)) {
+        if (BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK)) {
           onTitleClick();
         }
       });
@@ -181,71 +173,10 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     return this.subtitle != null;
   }
 
-  public void setNoExpand (boolean noExpand) {
-    if (setFlags(BitwiseUtils.setFlag(flags, FLAG_NO_EXPAND, noExpand))) {
-      if (noExpand) {
-        setAvatarAllowanceFactor(0f);
-      }
-    }
-  }
-
   public void setUseRedHighlight (boolean useRedHighlight) {
     if (setFlags(BitwiseUtils.setFlag(flags, FLAG_RED_HIGHLIGHT, useRedHighlight))) {
       layoutTitle();
       invalidate();
-    }
-  }
-
-  private void updateTopShadow () {
-    if (topShadow != null) {
-      topShadow.setBounds(0, 0, getMeasuredWidth(), currentHeaderOffset + (int) ((float) HeaderView.getSize(false)) + Size.getHeaderPlayerSize());
-    }
-  }
-
-  private int getBottomShadowSize () {
-    return (int) ((float) ((Screen.dp(28f) + Screen.dp(5f) + getTitleHeight() + Screen.dp(8f)) + Screen.dp(14f)) * (1f / .9f));
-    // return (int) ((float) Screen.dp(78f) + getMultiLineAddition());
-  }
-
-  private void updateBottomShadow () {
-    if (bottomShadow != null) {
-      bottomShadow.setBounds(0, 0, getMeasuredWidth(), getBottomShadowSize());
-    }
-  }
-
-  private Drawable getTopShadow () {
-    if (topShadow == null) {
-      topShadow = ScrimUtil.makeCubicGradientScrimDrawable(0x77000000, 2, Gravity.TOP, false);
-      updateTopShadow();
-    }
-    return topShadow;
-  }
-
-  private Drawable getBottomShadow () {
-    if (bottomShadow == null) {
-      bottomShadow = ScrimUtil.makeCubicGradientScrimDrawable(0x66000000, 2, Gravity.BOTTOM, false);
-      updateBottomShadow();
-    }
-    return bottomShadow;
-  }
-
-  private void setCollapseAvatar (boolean collapse, boolean animated) {
-    boolean curCollapse = avatarCollapseAnimator != null && avatarCollapseAnimator.getValue();
-    if (curCollapse != collapse) {
-      if (avatarCollapseAnimator == null) {
-        avatarCollapseAnimator = new BoolAnimator(0, (id, factor, fraction, callee) -> {
-          if (avatarCollapseFactor != factor) {
-            int oldTextMaxWidth = getCheckTextMaxWidth();
-            avatarCollapseFactor = factor;
-            if (avatarExpandListener != null) {
-              avatarExpandListener.onAvatarExpandFactorChanged(this, getAvatarExpandFactor(), true, avatarAllowanceFactor, avatarCollapseFactor);
-            }
-            layoutTextsIfNeeded(oldTextMaxWidth);
-            invalidate();
-          }
-        }, AnimatorUtils.DECELERATE_INTERPOLATOR, 220l, false);
-      }
-      avatarCollapseAnimator.setValue(collapse, animated && avatarAllowanceFactor != 0f);
     }
   }
 
@@ -255,7 +186,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   public void onHeaderOffsetChanged (HeaderView headerView, int newOffset) {
     if (this.currentHeaderOffset != newOffset) {
       this.currentHeaderOffset = newOffset;
-      updateTopShadow();
       layoutReceiver();
       invalidate();
     }
@@ -326,13 +256,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     }
   }
 
-  private boolean wouldCollapse (float scaleFactor) {
-    int headerHeight = calculateHeaderHeight(scaleFactor);
-    return
-      (headerHeight <= currentHeaderOffset + Size.getHeaderPortraitSize() + Size.getHeaderDrawerSize()) ||
-      (headerHeight - Screen.dp(58f) - (int) getMultiLineAddition()) < currentHeaderOffset + HeaderView.getSize(false) * .7f;
-  }
-
   @Override
   public void setScaleFactor (float scaleFactor, float fromFactor, float toScaleFactor, boolean byScroll) {
     if (scaleFactor == 1f) {
@@ -341,58 +264,19 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     if (this.scaleFactor != scaleFactor) {
       int oldTextMaxWidth = getCheckTextMaxWidth();
       this.scaleFactor = scaleFactor;
-      if (!BitwiseUtils.hasFlag(flags, FLAG_NO_EXPAND)) {
-        if (!byScroll) {
-          if (wouldCollapse(fromFactor) == wouldCollapse(toScaleFactor)) {
-            setAvatarAllowanceFactor(1f);
-            setCollapseAvatar(wouldCollapse(scaleFactor), false);
-          } else if (scaleFactor == toScaleFactor || fromFactor == toScaleFactor) {
-            setAvatarAllowanceFactor(1f);
-            setCollapseAvatar(wouldCollapse(scaleFactor), false);
-          } else if (fromFactor < toScaleFactor) {
-            float allowance = (scaleFactor - fromFactor) / (toScaleFactor - fromFactor);
-            setAvatarAllowanceFactor(allowance);
-            setCollapseAvatar(wouldCollapse(toScaleFactor), false);
-          } else {
-            float allowance = (scaleFactor - toScaleFactor) / (fromFactor - toScaleFactor);
-            setAvatarAllowanceFactor(allowance);
-            setCollapseAvatar(wouldCollapse(fromFactor), false);
-          }
-        } else {
-          setCollapseAvatar(wouldCollapse(scaleFactor), true);
-        }
-      }
       layoutTextsIfNeeded(oldTextMaxWidth);
       invalidate();
     }
   }
 
-  public interface AvatarFactorChangeListener {
-    void onAvatarExpandFactorChanged (ComplexHeaderView headerView, float expandFactor, boolean byCollapse, float allowanceFactor, float collapseFactor);
-  }
-
-  private AvatarFactorChangeListener avatarExpandListener;
-
-  public void setAvatarExpandListener (AvatarFactorChangeListener avatarExpandListener) {
-    this.avatarExpandListener = avatarExpandListener;
-  }
-
-  public boolean isCollapsed () {
-    return avatarCollapseAnimator != null && avatarCollapseAnimator.getValue();
-  }
-
-  private void setAvatarAllowanceFactor (float factor) {
-    if (this.avatarAllowanceFactor != factor) {
-      this.avatarAllowanceFactor = factor;
-      if (avatarExpandListener != null) {
-        avatarExpandListener.onAvatarExpandFactorChanged(this, getAvatarExpandFactor(), false, avatarAllowanceFactor, avatarCollapseFactor);
-      }
-      invalidate();
-    }
-  }
-
-  public float getAvatarExpandFactor () {
-    return avatarAllowanceFactor * (1f - avatarCollapseFactor);
+  /**
+   * Profile header as an M3 large flexible app bar on surface (app-bars: "Medium flexible app bar compresses to
+   * transform into small app bars when scrolled"): 0 = small app bar (small avatar, title and status in one row),
+   * 1 = expanded (round {@link #EXPANDED_AVATAR_SIZE}dp avatar centered, the name as a headline and the status centered
+   * under it). The avatar is never stretched to the full width of the header, so no text is drawn over a photo.
+   */
+  private float getExpandFactor () {
+    return MathUtils.clamp(scaleFactor);
   }
 
   private boolean setFlags (int flags) {
@@ -552,14 +436,12 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     return currentHeaderOffset + HeaderView.getSize(false) + (int) ((HeaderView.getBigSize(false) - HeaderView.getSize(false)) * scaleFactor);
   }
 
-  private float calculateRealScaleFactor () {
-    final int startY = Screen.dp(144f) - HeaderView.getSize(false);
-    final int currentHeight = calculateHeaderHeight() - currentHeaderOffset - HeaderView.getSize(false);
-    if (startY < currentHeight) {
-      return 1f;
-    }
-    return (float) currentHeight / (float) startY;
-  }
+  /** Expanded layout (M3SettingsProfileView metrics): avatar, the name (headline small) and the status (body medium). */
+  public static final float EXPANDED_AVATAR_SIZE = 96f;
+  private static final float EXPANDED_AVATAR_TOP = 52f, EXPANDED_NAME_TOP = EXPANDED_AVATAR_TOP + EXPANDED_AVATAR_SIZE + 16f,
+    EXPANDED_NAME_HEIGHT = 32f, EXPANDED_SUBTITLE_HEIGHT = 20f, EXPANDED_TEXT_PADDING = 24f;
+  /** The title is laid out at 18sp, the expanded name is a 24sp headline. */
+  private static final float EXPANDED_TITLE_SCALE = 24f / 18f;
 
   private boolean allowCenterContent;
 
@@ -580,7 +462,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
    * Only in the regular (collapsed, non-expanded) state.
    */
   protected final boolean isCenteredLayout () {
-    return allowCenterContent && !Lang.rtl() && Settings.instance().needCenterTitles() && calculateRealScaleFactor() == 0f && getAvatarExpandFactor() == 0f;
+    return allowCenterContent && !Lang.rtl() && Settings.instance().needCenterTitles() && scaleFactor == 0f;
   }
 
   /** Left of a centered line of the given width, kept clear of the back button and the end buttons. */
@@ -592,28 +474,18 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   }
 
   private void layoutReceiver () {
-    float baseRadius = Screen.dp(getBaseAvatarRadiusDp());
-    float baseCenterX = isCenteredLayout() ? getMeasuredWidth() - Screen.dp(CENTERED_AVATAR_AREA) / 2f : innerLeftMargin + Screen.dp(4f) + baseRadius;
-    float baseCenterY = currentHeaderOffset + HeaderView.getSize(false) / 2;
+    float radius = Screen.dp(getBaseAvatarRadiusDp());
+    float centerX = isCenteredLayout() ? getMeasuredWidth() - Screen.dp(CENTERED_AVATAR_AREA) / 2f : innerLeftMargin + Screen.dp(4f) + radius;
+    float centerY = currentHeaderOffset + HeaderView.getSize(false) / 2f;
 
-    float scaleFactor = calculateRealScaleFactor();
-
-    if (scaleFactor != 0f) {
-      baseCenterX += -Screen.dp(33f) * scaleFactor;
-      baseCenterY += Screen.dp(64f) * scaleFactor;
-      baseRadius += Screen.dp(10f) * scaleFactor;
+    float expandFactor = getExpandFactor();
+    if (expandFactor != 0f) {
+      float expandedRadius = Screen.dp(EXPANDED_AVATAR_SIZE) / 2f;
+      centerX = MathUtils.fromTo(centerX, getMeasuredWidth() / 2f, expandFactor);
+      centerY = MathUtils.fromTo(centerY, currentHeaderOffset + Screen.dp(EXPANDED_AVATAR_TOP) + expandedRadius, expandFactor);
+      radius = MathUtils.fromTo(radius, expandedRadius, expandFactor);
     }
-
-    float expandFactor = getAvatarExpandFactor();
-    int viewCenterX = getMeasuredWidth() / 2;
-    int viewCenterY = currentHeaderOffset + (calculateHeaderHeight() - currentHeaderOffset) / 2;
-    // avatarReceiver.setRadius(Math.round(baseRadius * (1f - expandFactor)));
-    receiver.forceFullScreen(expandFactor != 0f, expandFactor);
-
-    baseRadius += (viewCenterX - baseRadius) * expandFactor;
-    baseCenterX += (viewCenterX - baseCenterX) * expandFactor;
-    baseCenterY += (viewCenterY - baseCenterY) * expandFactor;
-    receiver.setBounds(Math.round(baseCenterX - baseRadius), Math.round(baseCenterY - baseRadius), Math.round(baseCenterX + baseRadius), Math.round(baseCenterY + baseRadius));
+    receiver.setBounds(Math.round(centerX - radius), Math.round(centerY - radius), Math.round(centerX + radius), Math.round(centerY + radius));
   }
 
   // Private utils
@@ -643,8 +515,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   }
 
   private void buildLayout () {
-    updateTopShadow();
-    updateBottomShadow();
     layoutReceiver();
     layoutTexts();
     invalidate();
@@ -686,29 +556,13 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   }
 
   private int getExpandedMaxTextWidth () {
-    return (int) ((float) (getMeasuredWidth() - Screen.dp(11f) * 2) / avatarTextScale) - (BitwiseUtils.hasFlag(flags, FLAG_SHOW_VERIFY) ? Screen.dp(20f) : 0);
+    return Math.max(0, getMeasuredWidth() - Screen.dp(EXPANDED_TEXT_PADDING) * 2);
   }
 
-  /*private int calculateTextMaxWidth (boolean allowScale) {
-    float avatarExpandFactor = getAvatarExpandFactor();
-    int baseMaxTextWidth = getMeasuredWidth() - (innerLeftMargin + innerRightMargin) - Screen.dp(4f) - Screen.dp(getBaseAvatarRadiusDp()) * 2 - Screen.dp(9f);
-    if (scaleFactor != 0f) {
-      baseMaxTextWidth += (Screen.dp(11f) + innerRightMargin) * scaleFactor;
-    }
-    if (avatarExpandFactor != 0f) {
-      baseMaxTextWidth += (getExpandedMaxTextWidth() - baseMaxTextWidth) * avatarExpandFactor;
-    }
-    if (allowScale) {
-      float textScaleFactor = U.fromTo(1f + scaleFactor * .1f, avatarTextScale, avatarExpandFactor);
-      if (textScaleFactor != 1f) {
-        baseMaxTextWidth = (int) Math.ceil((float) baseMaxTextWidth / textScaleFactor);
-      }
-    }
-    return Math.max(0, baseMaxTextWidth);
-  }*/
+  private int getExpandedTitleMaxWidth () {
+    return (int) ((float) getExpandedMaxTextWidth() / EXPANDED_TITLE_SCALE);
+  }
 
-  private static final float DEFAULT_AVATAR_TEXT_SCALE = 1.3f;
-  private float avatarTextScale = DEFAULT_AVATAR_TEXT_SCALE;
   private int additionalTextEndPadding;
 
   private void layoutTitle () {
@@ -728,7 +582,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         additionalTextEndPadding += emojiStatusHelper.getWidth();
       }
 
-      avatarTextScale = DEFAULT_AVATAR_TEXT_SCALE;
       trimmedTitle = new Text.Builder(title, getCurrentScaledTextMaxWidth() - additionalTextEndPadding, Paints.robotoStyleProvider(18), getTitleColorSet())
         .lineWidthProvider((lineIndex, y, defaultMaxWidth, lineHeight) -> defaultMaxWidth - getTextOffsetLeft() - getTextOffsetRight())
         .lineMarginProvider((lineIndex, y, defaultMaxWidth, lineHeight) -> lineIndex == 0 ? getTextOffsetLeft() : 0)
@@ -736,26 +589,17 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         .clipTextArea()
         .allBold()
         .build();
+      // Expanded state: the name gets the whole width of the header (single line, centered)
       trimmedTitleExpanded = null;
       if (trimmedTitle.isEllipsized()) {
-        int maxLineCount = 2;
-        do {
-          trimmedTitleExpanded = new Text.Builder(title, getExpandedMaxTextWidth() - additionalTextEndPadding, Paints.robotoStyleProvider(18), getTitleColorSet())
-            .lineMarginProvider((lineIndex, y, defaultMaxWidth, lineHeight) -> lineIndex == 0 ? getTextOffsetLeft() : 0)
-            .maxLineCount(maxLineCount)
-            .clipTextArea()
-            .allBold()
-            .build();
-          if (!trimmedTitleExpanded.isEllipsized()) {
-            break;
-          }
-          if (maxLineCount == 2) {
-            maxLineCount++;
-          }
-          avatarTextScale -= .05f;
-        } while (true);
+        trimmedTitleExpanded = new Text.Builder(title, getExpandedTitleMaxWidth() - additionalTextEndPadding, Paints.robotoStyleProvider(18), getTitleColorSet())
+          .lineWidthProvider((lineIndex, y, defaultMaxWidth, lineHeight) -> defaultMaxWidth - getTextOffsetLeft() - getTextOffsetRight())
+          .lineMarginProvider((lineIndex, y, defaultMaxWidth, lineHeight) -> lineIndex == 0 ? getTextOffsetLeft() : 0)
+          .singleLine()
+          .clipTextArea()
+          .allBold()
+          .build();
       }
-      updateBottomShadow();
     }
   }
 
@@ -788,11 +632,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
 
       @Override
       public long mediaTextComplexColor () {
-        if (getAvatarExpandFactor() == 1f) {
-          return Theme.newComplexColor(true, ColorId.white);
-        } else {
-          return Theme.newComplexColor(false, getTitleColor());
-        }
+        return Theme.newComplexColor(false, getTitleColor());
       }
     };
   }
@@ -891,20 +731,21 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     return Lang.rtl() ? viewWidth - x - itemWidth : x;
   }
 
-  private float getMultiLineAddition () {
-    return (trimmedTitleExpanded != null && trimmedTitle != null ? (trimmedTitleExpanded.getHeight() - trimmedTitle.getHeight()) * avatarTextScale : 0);
-  }
-
-  private int getTitleHeight () {
-    return (int) ((float) (trimmedTitleExpanded != null ? trimmedTitleExpanded.getHeight() : trimmedTitle != null ? trimmedTitle.getHeight() : 0) * avatarTextScale);
-  }
-
   private int getTitleColor () {
-    return ColorUtils.fromToArgb(this.titleColor, Color.WHITE, getAvatarExpandFactor());
+    return this.titleColor;
   }
 
   private int getSubtitleColor () {
-    return ColorUtils.fromToArgb(this.subtitleColor, ColorUtils.alphaColor(Theme.getSubtitleAlpha(), Color.WHITE), getAvatarExpandFactor());
+    return this.subtitleColor;
+  }
+
+  /** Width of the title line with its marks (lock, emoji status, verified, scam/fake, mute), unscaled. */
+  private float getTitleDrawWidth (@NonNull Text text) {
+    return text.getWidth() + additionalTextEndPadding
+      + ((flags & FLAG_SHOW_LOCK) != 0 ? Screen.dp(16f) : 0)
+      + ((flags & FLAG_SHOW_VERIFY) != 0 ? Screen.dp(24f) : 0)
+      + ((flags & FLAG_SHOW_MUTE) != 0 && (flags & FLAG_IGNORE_MUTE) == 0 ? Screen.dp(24f) : 0)
+      + (emojiStatusHelper.needDrawEmojiStatus() ? Screen.dp(6f) : 0);
   }
 
   @Override
@@ -915,7 +756,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     float textAlpha = 1f - statusVisibility;
     int dy = (int) (Screen.dp(12f) * statusVisibility);
     int viewWidth = getMeasuredWidth();
-    float avatarExpandFactor = getAvatarExpandFactor();
+    final float expandFactor = getExpandFactor();
 
     final int saveCount = Views.save(c);
     try {
@@ -931,58 +772,41 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
 
       final int titleColor = getTitleColor();
       final int subtitleColor = getSubtitleColor();
-      final float scaleFactor = calculateRealScaleFactor();
-      final float textScaleFactor = MathUtils.fromTo(1f + scaleFactor * .1f, avatarTextScale, avatarExpandFactor);
+      final float textScaleFactor = MathUtils.fromTo(1f, EXPANDED_TITLE_SCALE, expandFactor);
 
       layoutReceiver();
       if (receiver.needPlaceholder()) {
         receiver.drawPlaceholderRounded(c, receiver.getDisplayRadius(), Theme.headerPlaceholderColor());
       }
       receiver.draw(c);
-      if (avatarExpandFactor > 0f && receiver.getRequestedPlaceholder() == null) {
-        getTopShadow().setAlpha((int) (255f * .8f * avatarExpandFactor));
-        getTopShadow().draw(c);
-
-        c.save();
-        int headerHeight = calculateHeaderHeight();
-        int shadowTop = headerHeight - getBottomShadowSize();
-        // c.clipRect(0, Math.max(shadowTop, getTopShadow().getBounds().bottom), getMeasuredWidth(), headerHeight);
-        c.translate(0, Math.max(shadowTop, getTopShadow().getBounds().bottom - Screen.dp(28f)));
-        getBottomShadow().setAlpha((int) (255f * .8f * avatarExpandFactor));
-        getBottomShadow().draw(c);
-        c.restore();
-      }
 
       float baseTextLeft = innerLeftMargin + Screen.dp(4f) + Screen.dp(getBaseAvatarRadiusDp()) * 2 + Screen.dp(9f);
       float baseTitleTop = currentHeaderOffset + Screen.dp(7f);
       float baseSubtitleTop = currentHeaderOffset + Screen.dp(30f);
-      if (scaleFactor != 0f) {
-        baseTextLeft += -Screen.dp(11f) * scaleFactor;
-        baseTitleTop += Screen.dp(62f) * scaleFactor;
-        baseSubtitleTop += Screen.dp(68f) * scaleFactor;
-      }
-      if (avatarExpandFactor != 0f) {
-        baseTextLeft += (Screen.dp(11f) - baseTextLeft) * avatarExpandFactor;
-
-
-        // baseTitleTop += ((calculateHeaderHeight() - Screen.dp(28f) - (trimmedTitleExpanded != null ? trimmedTitleExpanded.getHeight() + trimmedTitleExpanded.getLineHeight(false) : trimmedTitle != null ? trimmedTitle.getHeight() + trimmedTitle.getLineHeight(false) : 0) * avatarTextScale) + (trimmedSubtitleExpanded != null ? trimmedSubtitleExpanded.getHeight() : trimmedTitle != null ? trimmedTitle.getHeight() : 0) - baseTitleTop) * avatarExpandFactor;
-        baseTitleTop += ((calculateHeaderHeight() - Screen.dp(28f) - Screen.dp(5f) - getTitleHeight()) - baseTitleTop) * avatarExpandFactor;
-        baseSubtitleTop += ((calculateHeaderHeight() - Screen.dp(28f)) - baseSubtitleTop) * avatarExpandFactor;
-      }
 
       float titleTextLeft = baseTextLeft, subtitleTextLeft = baseTextLeft;
       if (centered) {
         if (trimmedTitle != null) {
-          // additionalTextEndPadding already includes the emoji status and the scam/fake mark.
-          float titleWidth = trimmedTitle.getWidth() + additionalTextEndPadding
-            + (showLock ? Screen.dp(16f) : 0)
-            + (showVerify ? Screen.dp(24f) : 0)
-            + (showMute ? Screen.dp(24f) : 0)
-            + (emojiStatusHelper.needDrawEmojiStatus() ? Screen.dp(6f) : 0);
-          titleTextLeft = getCenteredLeft(titleWidth);
+          titleTextLeft = getCenteredLeft(getTitleDrawWidth(trimmedTitle));
         }
         if (trimmedSubtitle != null) {
           subtitleTextLeft = getCenteredLeft(trimmedSubtitle.getWidth() + getSubtitleLoadingShift());
+        }
+      }
+
+      if (expandFactor != 0f) {
+        // Large app bar: the name and the status are centered under the avatar
+        final float nameTop = currentHeaderOffset + Screen.dp(EXPANDED_NAME_TOP);
+        if (trimmedTitle != null) {
+          Text titleText = trimmedTitleExpanded != null ? trimmedTitleExpanded : trimmedTitle;
+          float expandedTitleWidth = getTitleDrawWidth(titleText) * EXPANDED_TITLE_SCALE;
+          titleTextLeft = MathUtils.fromTo(titleTextLeft, (viewWidth - expandedTitleWidth) / 2f, expandFactor);
+          baseTitleTop = MathUtils.fromTo(baseTitleTop, nameTop + (Screen.dp(EXPANDED_NAME_HEIGHT) - titleText.getHeight() * EXPANDED_TITLE_SCALE) / 2f, expandFactor);
+        }
+        if (trimmedSubtitle != null) {
+          Text subtitleText = trimmedSubtitleExpanded != null ? trimmedSubtitleExpanded : trimmedSubtitle;
+          subtitleTextLeft = MathUtils.fromTo(subtitleTextLeft, (viewWidth - subtitleText.getWidth()) / 2f, expandFactor);
+          baseSubtitleTop = MathUtils.fromTo(baseSubtitleTop, nameTop + Screen.dp(EXPANDED_NAME_HEIGHT) + (Screen.dp(EXPANDED_SUBTITLE_HEIGHT) - subtitleText.getLineHeight()) / 2f, expandFactor);
         }
       }
 
@@ -991,19 +815,16 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         c.translate(titleTextLeft, baseTitleTop);
         c.scale(textScaleFactor, textScaleFactor);
 
-        // c.drawRect(0, 0, calculateTextMaxWidth(true), trimmedTitle.getHeight(), Paints.fillingPaint(0xffff0000));
-
         if (showLock) {
           Drawable drawable = getSparseDrawable(LOCK_ICON, 0);
           Drawables.draw(c, drawable, -Screen.dp(5f), trimmedTitle.getHeight() / 2 - drawable.getMinimumHeight() / 2 + Screen.dp(1f), titleColor == Theme.headerTextColor() ? Paints.getHeaderPorterDuffPaint() : Paints.getPorterDuffPaint(titleColor));
         }
 
-        float iconAlpha = 1f - avatarExpandFactor;
-        if (trimmedTitleExpanded != null && avatarExpandFactor > 0f) {
-          if (avatarExpandFactor < 1f) {
-            trimmedTitle.draw(c, 0, 0, null, 1f - avatarExpandFactor);
+        if (trimmedTitleExpanded != null && expandFactor > 0f) {
+          if (expandFactor < 1f) {
+            trimmedTitle.draw(c, 0, 0, null, 1f - expandFactor);
           }
-          trimmedTitleExpanded.draw(c, 0, 0, null, avatarExpandFactor);
+          trimmedTitleExpanded.draw(c, 0, 0, null, expandFactor);
           trimmedTitleClickRect.set(0, 0, trimmedTitleExpanded.getWidth(), trimmedTitleExpanded.getHeight());
         } else {
           trimmedTitle.draw(c, 0, 0, null, 1f);
@@ -1017,48 +838,44 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         trimmedTitleClickRect.offset(titleTextLeft, baseTitleTop);
         trimmedTitleClickRect.inset(-Screen.dp(8), -Screen.dp(8));
 
-        float baseIconLeft = trimmedTitle.getWidth()
-          + (showLock ? Screen.dp(16f) : 0)
-          + (emojiStatusHelper.needDrawEmojiStatus() ? emojiStatusHelper.getWidth() + Screen.dp(6) : 0);
-        float toIconLeft = trimmedTitleExpanded != null ? trimmedTitleExpanded.getLastLineWidth() : baseIconLeft;
-        float iconLeft = baseIconLeft + (toIconLeft - baseIconLeft) * avatarExpandFactor;
-        float iconTop = trimmedTitleExpanded != null ? (trimmedTitleExpanded.getHeight() - trimmedTitle.getHeight()) * avatarExpandFactor : 0;
+        final float iconsOffset = (showLock ? Screen.dp(16f) : 0) + (emojiStatusHelper.needDrawEmojiStatus() ? emojiStatusHelper.getWidth() + Screen.dp(6) : 0);
+        float baseIconLeft = trimmedTitle.getWidth() + iconsOffset;
+        float toIconLeft = trimmedTitleExpanded != null ? trimmedTitleExpanded.getWidth() + iconsOffset : baseIconLeft;
+        float iconLeft = MathUtils.fromTo(baseIconLeft, toIconLeft, expandFactor);
         float iconsAdded = 0;
 
         if (showVerify) {
           Paint paint = Paints.getPorterDuffPaint(titleColor);
           int alpha = paint.getAlpha();
-          paint.setAlpha((int) ((float) alpha * (VERIFY_ALPHA + (1f - VERIFY_ALPHA) * avatarExpandFactor)));
+          paint.setAlpha((int) ((float) alpha * VERIFY_ALPHA));
           Drawable drawable = getSparseDrawable(R.drawable.deproko_baseline_verify_24, 0);
-          Drawables.draw(c, drawable, iconLeft, iconTop + trimmedTitle.getHeight() / 2f - drawable.getMinimumHeight() / 2f, paint);
+          Drawables.draw(c, drawable, iconLeft, trimmedTitle.getHeight() / 2f - drawable.getMinimumHeight() / 2f, paint);
           paint.setAlpha(alpha);
           iconsAdded += drawable.getMinimumWidth();
         }
 
         if (showFake || showScam) {
           int baseX = (int) (iconLeft + iconsAdded + Screen.dp(10f));
-          int baseY = (int) (iconTop - Screen.dp(1.5f));
-          drawOutlinedText(c, Lang.getString(showFake ? R.string.FakeMark : R.string.ScamMark), baseX, baseY, trimmedTitleExpanded != null ? MathUtils.fromTo(trimmedTitle.getLineHeight(), trimmedTitleExpanded.getLineHeight(), avatarExpandFactor) : trimmedTitle.getLineHeight());
+          int baseY = -Screen.dp(1.5f);
+          drawOutlinedText(c, Lang.getString(showFake ? R.string.FakeMark : R.string.ScamMark), baseX, baseY, trimmedTitle.getLineHeight());
           iconsAdded += additionalTextEndPadding;
         }
 
         if (showMute) {
-          float muteAlpha = (1f - this.muteFadeFactor) * iconAlpha;
+          float muteAlpha = 1f - this.muteFadeFactor;
           Drawable drawable = getSparseDrawable(R.drawable.deproko_baseline_notifications_off_24, 0);
-          Drawables.draw(c, drawable, baseIconLeft + iconsAdded, trimmedTitle.getHeight() / 2f - drawable.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.headerText, muteAlpha * .4f));
-          iconLeft += drawable.getMinimumWidth();
+          Drawables.draw(c, drawable, iconLeft + iconsAdded, trimmedTitle.getHeight() / 2f - drawable.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.headerText, muteAlpha * .4f));
         }
 
         c.restore();
         int statusDrawLeft = (int) (titleTextLeft + (trimmedTitle.getWidth() + Screen.dp(6)) * textScaleFactor) + (showLock ? Screen.dp(16f) : 0);
         int statusDrawTop = (int) baseTitleTop;
-        if (trimmedTitleExpanded != null && avatarExpandFactor > 0f) {
-          if (avatarExpandFactor < 1f) {
-            emojiStatusHelper.draw(c, statusDrawLeft, statusDrawTop, 1f - avatarExpandFactor, textScaleFactor);
+        if (trimmedTitleExpanded != null && expandFactor > 0f) {
+          if (expandFactor < 1f) {
+            emojiStatusHelper.draw(c, statusDrawLeft, statusDrawTop, 1f - expandFactor, textScaleFactor);
           }
-          int statusDrawLeft2 = (int) (baseTextLeft + (trimmedTitleExpanded.getLastLineWidth() + Screen.dp(6)) * textScaleFactor) + (showLock ? Screen.dp(16f) : 0);
-          int statusDrawTop2 = (int) (baseTitleTop + (trimmedTitleExpanded.getNextLineHeight() - trimmedTitleExpanded.getLineHeight(trimmedTitleExpanded.getLineCount() - 1)) * textScaleFactor);
-          emojiStatusHelper.draw(c, statusDrawLeft2, statusDrawTop2, avatarExpandFactor, textScaleFactor);
+          int statusDrawLeft2 = (int) (titleTextLeft + (trimmedTitleExpanded.getWidth() + Screen.dp(6)) * textScaleFactor) + (showLock ? Screen.dp(16f) : 0);
+          emojiStatusHelper.draw(c, statusDrawLeft2, statusDrawTop, expandFactor, textScaleFactor);
         } else {
           emojiStatusHelper.draw(c, statusDrawLeft, statusDrawTop, 1f, textScaleFactor);
         }
@@ -1073,20 +890,20 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       }
 
       if (trimmedSubtitle != null) {
-        final int subtitleLeft = (int) subtitleTextLeft + (avatarExpandFactor < 1f ? getSubtitleLoadingShift() : 0);
-        if (subtitleLoading && subtitleProgress != null && avatarExpandFactor < 1f) {
+        final int subtitleLeft = (int) (subtitleTextLeft + getSubtitleLoadingShift() * (1f - expandFactor));
+        if (subtitleLoading && subtitleProgress != null && expandFactor < 1f) {
           final float cx = subtitleTextLeft + Screen.dp(6.5f);
           final float cy = baseSubtitleTop + dy + trimmedSubtitle.getLineHeight() / 2f;
           subtitleProgress.setBounds((int) cx - Screen.dp(6f), (int) cy - Screen.dp(6f), (int) cx + Screen.dp(6f), (int) cy + Screen.dp(6f));
           subtitleProgress.forceColor(subtitleColor);
-          subtitleProgress.setAlpha(textAlpha * (1f - avatarExpandFactor));
+          subtitleProgress.setAlpha(textAlpha * (1f - expandFactor));
           subtitleProgress.draw(c);
         }
-        if (trimmedSubtitleExpanded != null && avatarExpandFactor > 0f) {
-          if (avatarExpandFactor < 1f) {
-            trimmedSubtitle.draw(c, subtitleLeft, (int) baseSubtitleTop + dy, null, textAlpha * (1f - avatarExpandFactor));
+        if (trimmedSubtitleExpanded != null && expandFactor > 0f) {
+          if (expandFactor < 1f) {
+            trimmedSubtitle.draw(c, subtitleLeft, (int) baseSubtitleTop + dy, null, textAlpha * (1f - expandFactor));
           }
-          trimmedSubtitleExpanded.draw(c, (int) baseTextLeft, (int) baseSubtitleTop + dy, null, textAlpha * avatarExpandFactor);
+          trimmedSubtitleExpanded.draw(c, (int) subtitleTextLeft, (int) baseSubtitleTop + dy, null, textAlpha * expandFactor);
         } else {
           trimmedSubtitle.draw(c, subtitleLeft, (int) baseSubtitleTop + dy, null, textAlpha);
         }
@@ -1117,7 +934,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
             statusTextColor = ColorUtils.fromToArgb(this instanceof ChatHeaderView ? Theme.headerTextColor() : ColorUtils.color(0xff, (subtitleColor & 0x00ffffff)), Theme.chatListActionColor(), darkness);
             knownColorId = ColorId.chatListAction;
           }
-          float statusLeft = centered ? getCenteredLeft(text.getWidth()) : baseTextLeft;
+          float statusLeft = centered ? getCenteredLeft(text.getWidth()) : MathUtils.fromTo(baseTextLeft, (viewWidth - text.getWidth()) / 2f, expandFactor);
           DrawAlgorithms.drawStatus(c, state, statusLeft, top + text.getLineHeight() / 2f, ColorUtils.alphaColor(statusVisibility, statusTextColor), this, statusVisibility == 1f ? knownColorId : 0);
           text.draw(c, (int) statusLeft, (int) top, null, statusVisibility);
         }
@@ -1212,12 +1029,12 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
 
   @Override
   public boolean needLongPress (float x, float y) {
-    return super.needLongPress(x, y) || !isCollapsed() && (emojiStatusClickRect.contains(x, y) || BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK) && trimmedTitleClickRect.contains(x, y));
+    return super.needLongPress(x, y) || emojiStatusClickRect.contains(x, y) || BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK) && trimmedTitleClickRect.contains(x, y);
   }
 
   @Override
   public boolean onLongPressRequestedAt (View view, float x, float y) {
-    if (!isCollapsed() && emojiStatusClickRect.contains(x, y)) {
+    if (emojiStatusClickRect.contains(x, y)) {
       TdApi.Sticker sticker = emojiStatusHelper.getSticker();
       if (sticker == null) {
         return false;
@@ -1257,25 +1074,21 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   @Override
   public boolean needClickAt (View view, float x, float y) {
     return (super.needClickAt(view, x, y) && y < calculateHeaderHeight())
-      || !isCollapsed() && (
-        BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK) && trimmedTitleClickRect.contains(x, y)
-        || emojiStatusClickRect.contains(x, y)
-      )
+      || BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK) && trimmedTitleClickRect.contains(x, y)
+      || emojiStatusClickRect.contains(x, y)
       || checkCaught(x, y, false);
   }
 
   @Override
   public void onClickAt (View view, float x, float y) {
-    if (!isCollapsed()) {
-      if (emojiStatusClickRect.contains(x, y)) {
-        emojiStatusHelper.performClick(view);
-        return;
-      }
+    if (emojiStatusClickRect.contains(x, y)) {
+      emojiStatusHelper.performClick(view);
+      return;
+    }
 
-      if (BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK) && trimmedTitleClickRect.contains(x, y)) {
-        onTitleClick();
-        return;
-      }
+    if (BitwiseUtils.hasFlag(flags, FLAG_ALLOW_TITLE_CLICK) && trimmedTitleClickRect.contains(x, y)) {
+      onTitleClick();
+      return;
     }
 
     if ((flags & FLAG_PHOTO_OPEN_DISABLED) == 0) {

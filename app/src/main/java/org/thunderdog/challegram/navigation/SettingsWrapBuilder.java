@@ -73,8 +73,23 @@ public class SettingsWrapBuilder {
 
   public boolean disableToggles;
 
+  /**
+   * M3 dialog headline. When {@code null}, {@link ViewController#showSettings(SettingsWrapBuilder)} shows the title of the
+   * settings row with the same {@link #id} (the row that opened the dialog).
+   */
+  public @Nullable CharSequence headline;
+
   public SettingsWrapBuilder (int id) {
     this.id = id;
+  }
+
+  public SettingsWrapBuilder setHeadline (@Nullable CharSequence headline) {
+    this.headline = headline;
+    return this;
+  }
+
+  public SettingsWrapBuilder setHeadline (@StringRes int headlineRes) {
+    return setHeadline(Lang.getString(headlineRes));
   }
 
   public boolean disableFooter;

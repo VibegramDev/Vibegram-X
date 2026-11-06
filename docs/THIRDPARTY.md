@@ -31,7 +31,10 @@
 * [Konfetti](https://github.com/DanielMartinus/Konfetti): confetti animation
 * [ZXing](https://github.com/zxing/zxing/): QR scanning on devices where Google Play Services are not available
 
-* [Google's Material Icons](https://material.io/resources/icons): most of application icons
+* [Material Symbols](https://github.com/google/material-design-icons) (Rounded), licensed under
+  [Apache-2.0](https://github.com/google/material-design-icons/blob/master/LICENSE): most of application icons,
+  see [ICONS.md](ICONS.md) and [scripts/icons](/scripts/icons)
+* [Google's Material Icons](https://material.io/resources/icons): icons not yet converted to Material Symbols
 * [Material Design Icons](https://materialdesignicons.com): various icons by [Austin Andrews](https://twitter.com/Templarian), [Yasmina Lembachar](https://twitter.com/belledeboheme), [Haley Halcyon](https://twitter.com/itsspelledhaley), [Michael Richins](https://twitter.com/MrGrigri)
 
 * [Klaxon](https://github.com/cbeust/klaxon): JSON parser used in build scripts

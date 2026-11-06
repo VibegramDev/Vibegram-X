@@ -19,7 +19,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
@@ -98,6 +97,7 @@ import org.thunderdog.challegram.telegram.TdlibContext;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.ColorState;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Keyboard;
 import org.thunderdog.challegram.tool.Paints;
@@ -1232,7 +1232,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
   @Override
   protected int getHeaderIconColorId () {
-    return isTransformed() && isExpanded ? ColorId.icon : headerCell != null && !headerCell.isCollapsed() ? ColorId.white : ColorId.headerIcon;
+    return isTransformed() && isExpanded ? ColorId.icon : ColorId.headerIcon;
   }
 
   /*@Override
@@ -1297,13 +1297,21 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   public void onThemeColorsChanged (boolean areTemp, ColorState state) {
     super.onThemeColorsChanged(areTemp, state);
     if (headerCell != null) {
-      headerCell.setTextColor(ColorUtils.fromToArgb(Theme.headerTextColor(), Theme.textAccentColor(), getTransformFactor()));
+      setHeaderCellTextColors(getTransformFactor());
     }
+  }
+
+  /** Large app bar texts: the name onSurface (header text), the status onSurfaceVariant. */
+  private void setHeaderCellTextColors (float transformFactor) {
+    headerCell.setTextColors(
+      ColorUtils.fromToArgb(Theme.headerTextColor(), Theme.textAccentColor(), transformFactor),
+      ColorUtils.fromToArgb(M3.onSurfaceVariant(), ComplexHeaderView.subtitleColor(Theme.textAccentColor()), transformFactor)
+    );
   }
 
   private void updateButtonsColor () {
     if (headerView != null) {
-      headerView.getBackButton().setColor(ColorUtils.fromToArgb(ColorUtils.fromToArgb(Theme.headerBackColor(), Color.WHITE, headerCell != null ? headerCell.getAvatarExpandFactor() : 0f), Theme.getColor(ColorId.icon), getTransformFactor()));
+      headerView.getBackButton().setColor(ColorUtils.fromToArgb(Theme.headerBackColor(), Theme.getColor(ColorId.icon), getTransformFactor()));
       headerView.updateButtonsTransform(getMenuId(), this, getTransformFactor());
     }
   }
@@ -1314,12 +1322,11 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       float realFactor = distanceFactor(factor);
       updateButtonsColor();
       headerView.getFilling().setShadowAlpha(realFactor == 0f ? 1f : 0f);
-      final int textColor = ColorUtils.fromToArgb(Theme.headerTextColor(), Theme.textAccentColor(), realFactor);
       if (isEditing()) {
-        headerView.updateTextTitleColor(getId(), textColor);
+        headerView.updateTextTitleColor(getId(), ColorUtils.fromToArgb(Theme.headerTextColor(), Theme.textAccentColor(), realFactor));
       } else {
         if (headerCell != null) {
-          headerCell.setTextColor(textColor);
+          setHeaderCellTextColors(realFactor);
           headerCell.setMuteFadeFactor(factor);
         }
       }
@@ -1367,7 +1374,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     for (int i = 0; i < realMenu.getChildCount(); i++) {
       View childView = realMenu.getChildAt(i);
       if (childView instanceof HeaderButton) {
-        ((HeaderButton) childView).setThemeColorId(ColorId.headerIcon, ColorId.white, headerCell != null ? headerCell.getAvatarExpandFactor() : 0f);
+        ((HeaderButton) childView).setThemeColorId(ColorId.headerIcon);
       }
     }
 
@@ -1606,11 +1613,13 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     } else {
       // Header cell
       headerCell = new ComplexHeaderView(context, tdlib, this);
-      headerCell.setAvatarExpandListener((headerView1, expandFactor1, byCollapse, allowanceFactor, collapseFactor) -> updateButtonsColor());
       headerCell.setInnerRightMarginStart(Screen.dp(49f));
       headerCell.setInnerMargins(Screen.dp(56f), calculateMenuWidth());
       headerCell.setAllowEmptyClick();
       headerCell.initWithController(this, false);
+      setHeaderCellTextColors(0f);
+      // The expanded avatar is 96dp: show the full photo there, not only in the photo viewer
+      headerCell.getAvatarReceiver().setDisplayFullSizeOnlyInFullScreen(false);
       headerCell.setPhotoOpenCallback(this);
 
       baseRecyclerView = new ComplexRecyclerView(context, this) {
@@ -1684,7 +1693,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     ViewPagerTopView topView = topCellView.getTopView();
     topView.setUseDarkBackground();
     topView.setOnItemClickListener(this);
-    topView.setPrimaryTabsStyle(true);
     addThemeInvalidateListener(topView);
     topView.setItems(getPagerTitles());
     topCellView.getRecyclerView().setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -2014,6 +2022,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       }
     });
     buildCells();
+    // Info rows (username, bio, phone, notifications…) are segmented cards, like the settings pages
+    baseAdapter.setSegmented();
     baseRecyclerView.setAdapter(baseAdapter);
 
     // Binding data
@@ -5820,7 +5830,61 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   private int lastUsernameWidth, lastUsernameAddHeight;
   private CharSequence lastUsernames;
 
+  // Segmented cards (SettingsAdapter.setSegmented): same metrics as SettingsAdapter.SEGMENT_INSET / SEGMENT_GAP
+  private static final float SEGMENT_INSET = 16f, SEGMENT_GAP = 2f, SEGMENT_SEPARATOR_HEIGHT = 1f;
+
+  /** Rows of the info list that SettingsAdapter shows as segmented cards (subset of SettingsAdapter.segmentKind). */
+  private static boolean isSegmentCard (int viewType) {
+    switch (viewType) {
+      case ListItem.TYPE_SETTING:
+      case ListItem.TYPE_VALUED_SETTING:
+      case ListItem.TYPE_VALUED_SETTING_COMPACT:
+      case ListItem.TYPE_RADIO_SETTING:
+      case ListItem.TYPE_INFO_SETTING:
+      case ListItem.TYPE_INFO_MULTILINE:
+      case ListItem.TYPE_RADIO_OPTION:
+      case ListItem.TYPE_INFO:
+      case ListItem.TYPE_SLIDER:
+      case ListItem.TYPE_CHAT_BETTER:
+        return true;
+    }
+    return false;
+  }
+
+  /** Section headers and descriptions get the side insets of the cards. */
+  private static boolean isSegmentText (int viewType) {
+    return viewType == ListItem.TYPE_HEADER || viewType == ListItem.TYPE_DESCRIPTION;
+  }
+
+  private static boolean isSegmentSeparator (int viewType) {
+    return viewType == ListItem.TYPE_SEPARATOR || viewType == ListItem.TYPE_SEPARATOR_FULL;
+  }
+
+  /** Top margin SettingsAdapter gives the card at position: the 2dp gap to the card above (a hidden separator is part of it). */
+  private int getSegmentTopMargin (int position) {
+    List<ListItem> items = baseAdapter.getItems();
+    int prevType = position > 0 ? items.get(position - 1).getViewType() : ListItem.TYPE_CUSTOM;
+    if (isSegmentCard(prevType)) {
+      return Screen.dp(SEGMENT_GAP);
+    }
+    if (isSegmentSeparator(prevType) && position > 1 && isSegmentCard(items.get(position - 2).getViewType())) {
+      return Math.max(0, Screen.dp(SEGMENT_GAP) - Screen.dp(SEGMENT_SEPARATOR_HEIGHT));
+    }
+    return 0;
+  }
+
   private int calculateHeight (int position, int width, ListItem item) {
+    final int viewType = item.getViewType();
+    if (isSegmentCard(viewType)) {
+      return calculateRowHeight(Math.max(0, width - Screen.dp(SEGMENT_INSET) * 2), item) + getSegmentTopMargin(position);
+    }
+    if (isSegmentText(viewType)) {
+      return calculateRowHeight(Math.max(0, width - Screen.dp(SEGMENT_INSET) * 2), item);
+    }
+    return calculateRowHeight(width, item);
+  }
+
+  private int calculateRowHeight (int width, ListItem item) {
     final int itemId = item.getId();
     if (item.getViewType() == VIEW_TYPE_PERSONAL_CHANNEL) {
       return ChatView.getViewHeight(Settings.instance().getChatListMode());

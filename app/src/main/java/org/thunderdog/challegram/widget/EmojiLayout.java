@@ -15,12 +15,14 @@
 package org.thunderdog.challegram.widget;
 
 import android.content.Context;
+import android.graphics.drawable.Drawable;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
+import androidx.annotation.ColorInt;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
@@ -42,8 +44,7 @@ import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.EmojiMediaType;
 import org.thunderdog.challegram.theme.ColorId;
-import org.thunderdog.challegram.theme.Theme;
-import org.thunderdog.challegram.theme.ThemeId;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
@@ -62,6 +63,7 @@ import org.thunderdog.challegram.widget.rtl.RtlViewPager;
 import java.util.ArrayList;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 
@@ -316,10 +318,14 @@ public class EmojiLayout extends FrameLayoutFix implements ViewPager.OnPageChang
         return true;
       }
     };
+    // The section tabs lie on the panel itself (surfaceContainer, see checkBackground).
     if (useDarkMode) {
-      headerView.setBackgroundColor(Theme.getColor(ColorId.filling, ThemeId.NIGHT_BLACK));
+      headerView.setBackgroundColor(getPanelColor(true));
     } else {
-      ViewSupport.setThemedBackground(headerView, ColorId.filling, themeProvider);
+      ViewUtils.setBackground(headerView, M3.roleDrawable(M3.SURFACE_CONTAINER));
+      if (themeProvider != null) {
+        themeProvider.addThemeInvalidateListener(headerView);
+      }
     }
     headerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, headerSize));
 
@@ -441,11 +447,29 @@ public class EmojiLayout extends FrameLayoutFix implements ViewPager.OnPageChang
     }
   }
 
+  /**
+   * Panel color: surfaceContainer, the same as the composer above it (MessagesController), so the composer and the
+   * emoji / sticker / GIF panel read as one surface.
+   */
+  public static @ColorInt int getPanelColor (boolean useDarkMode) {
+    return M3.get(M3.SURFACE_CONTAINER, EmojiSection.forcedTheme(useDarkMode));
+  }
+
+  private @Nullable Drawable panelBackground;
+
   private void checkBackground () {
     if (useDarkMode) {
-      setBackgroundColor(Theme.getColor(ColorId.chatKeyboard, ThemeId.NIGHT_BLACK));
-    } else {
-      ViewSupport.setThemedBackground(this, isOptimizedForDisplayMessageOptionsWindow ? ColorId.filling : ColorId.chatKeyboard, themeProvider);
+      setBackgroundColor(getPanelColor(true));
+    } else if (isOptimizedForDisplayMessageOptionsWindow) {
+      ViewSupport.setThemedBackground(this, ColorId.filling, themeProvider);
+    } else if (panelBackground == null || getBackground() != panelBackground) {
+      if (panelBackground == null) {
+        panelBackground = M3.roleDrawable(M3.SURFACE_CONTAINER);
+        if (themeProvider != null) {
+          themeProvider.addThemeInvalidateListener(this);
+        }
+      }
+      ViewUtils.setBackground(this, panelBackground);
     }
   }
 

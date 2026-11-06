@@ -36,8 +36,8 @@ import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TGStickerSetInfo;
 import org.thunderdog.challegram.navigation.ViewController;
-import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.widget.EmojiLayout;
 import org.thunderdog.challegram.widget.emoji.EmojiHeaderCollapsibleSectionView;
 import org.thunderdog.challegram.widget.emoji.EmojiLayoutRecyclerController;
 import org.thunderdog.challegram.widget.emoji.section.EmojiSection;
@@ -114,7 +114,7 @@ public class EmojiHeaderView extends FrameLayout implements FactorAnimator.Targe
     emojiHeaderViewNonPremium.init(emojiLayout, themeProvider, allowMedia);
     addView(emojiHeaderViewNonPremium, FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-    updatePaints(Theme.fillingColor());
+    updatePaints(EmojiLayout.getPanelColor(emojiLayout.isUseDarkMode()));
     setSelectedObjectByPosition(1, false);
   }
 
@@ -265,7 +265,7 @@ public class EmojiHeaderView extends FrameLayout implements FactorAnimator.Targe
   @Override
   protected boolean drawChild (Canvas canvas, View child, long drawingTime) {
     if (child == goToMediaPageSection) {
-      updatePaints(Theme.fillingColor());
+      updatePaints(EmojiLayout.getPanelColor(emojiLayout.isUseDarkMode()));
       canvas.save();
       canvas.translate(getMeasuredWidth() - Screen.dp(96), 0);
       canvas.drawRect(0, 0, Screen.dp(96), getMeasuredHeight(), shadowPaint);

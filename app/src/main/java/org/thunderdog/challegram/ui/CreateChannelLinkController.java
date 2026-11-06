@@ -164,7 +164,6 @@ public class CreateChannelLinkController extends ViewController<CreateChannelLin
     // HeaderView
 
     headerView = new ComplexHeaderView(context, tdlib, this);
-    headerView.setNoExpand(true);
     headerView.initWithController(this, true);
     headerView.setInnerMargins(Screen.dp(56f), 0);
     headerView.setText(chat.title, Lang.plural(R.string.xMembers, 1));

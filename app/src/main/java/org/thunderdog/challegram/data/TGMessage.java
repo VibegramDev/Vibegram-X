@@ -1418,7 +1418,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     if ((flags & FLAG_EXTRA_PADDING) == 0) {
       return 0;
     }
-    int padding = Screen.dp(7f) + (messagesController().needExtraBigPadding() ? Screen.dp(48f) : 0);
+    int padding = Screen.dp(7f);
     if (needContinueThreadButton()) {
       padding += TGInlineKeyboard.getButtonHeight() + TGInlineKeyboard.getButtonSpacing();
     }
@@ -2135,7 +2135,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     }
 
     if (hasBubble) {
-      if (needBubbleCornerFix()) {
+      // Content that fills the bubble (no padding) is clipped to the bubble shape itself: the fixes would be drawn
+      // outside the bubble, as a frame of the bubble colour around its corners.
+      if (needBubbleCornerFix() && getBubbleContentPadding() > 0) {
         int padding = getBubbleContentPadding();
         drawCornerFixes(c, this, 1f,
           bubblePathRect.left + padding, bubblePathRect.top + padding, bubblePathRect.right - padding, bubblePathRect.bottom - padding,
@@ -4017,8 +4019,10 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
             bubblePathRect.set(leftContentEdge, topContentEdge, rightContentEdge, bottomContentEdge);
             DrawAlgorithms.buildPath(bubblePath, bubblePathRect, topLeftRadius = (mergeTop && !alignContentRight ? mr : dr), topRightRadius = (mergeTop && alignContentRight ? mr : dr), bottomRightRadius = (mergeBottom && alignContentRight ? mr : dr), bottomLeftRadius = (mergeBottom && !alignContentRight ? mr : dr));
             bubbleClipPathRect.set(leftContentEdge + bubblePaddingLeft, topContentEdge + bubblePaddingTop - getBubbleSpecialPaddingTop(), rightContentEdge - bubblePaddingRight, bottomContentEdge - bubblePaddingBottom);
-            dr /= 1.5;
-            mr /= 1.5;
+            if (bubblePaddingLeft != 0 || bubblePaddingRight != 0) {
+              dr /= 1.5;
+              mr /= 1.5;
+            } // else: content without side padding (photos, videos) takes the exact shape of the bubble
             DrawAlgorithms.buildPath(bubbleClipPath, bubbleClipPathRect, mergeTop && !alignContentRight ? mr : dr, mergeTop && alignContentRight ? mr : dr, mergeBottom && alignContentRight ? mr : dr, mergeBottom && !alignContentRight ? mr : dr);
           }
         }

@@ -280,20 +280,40 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (dockScrim == null) {
       return;
     }
-    // Dock style: the list washes out towards the bottom of the screen behind the floating bar and the folder chips
-    // (the same fade as the former dock: 70% surface at the top of the bar, 92% at the bottom of the screen).
+    // Dock style: an opaque surface behind the folder chips and the floating bar (chat rows never show through between
+    // the chips, also in landscape where the chips are in the middle of the short screen), the list fades into it.
     boolean visible = navigationBar != null && isDockStyle();
     dockScrim.setVisibility(visible ? View.VISIBLE : View.GONE);
     if (visible) {
-      int barTop = extraBottomInsetWithoutIme + MainNavigationBar.getBarTotalHeight();
-      // From a little above the folder chips (the same distance without folders) to the bottom of the screen.
-      int height = extraBottomInsetWithoutIme + getDockChipsBottom() + getHeaderHeight() + Screen.dp(16f);
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) dockScrim.getLayoutParams();
-      if (params == null || params.height != height || params.gravity != Gravity.BOTTOM) {
-        dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.BOTTOM));
+      if (params == null || params.height != ViewGroup.LayoutParams.MATCH_PARENT) {
+        // Full height: the opaque top follows the chips and the bar when the player or the hidden chips move them.
+        dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       }
-      dockScrim.setDockTopOffset(barTop);
+      updateDockScrimOffset();
     }
+  }
+
+  /**
+   * Dock style: top of the opaque backdrop. The fade starts where the bottom scroll space of the chat list starts
+   * ({@link #getChatListNavigationInset()}: 8dp above the chips row), so it never dims the last chat, and the surface is
+   * opaque from 8dp below the top of the chips row (4dp above the chips) down to the bottom of the screen. While the
+   * chips are hidden on scroll (or there are no folders) the same applies to the floating bar.
+   */
+  private void updateDockScrimOffset () {
+    if (dockScrim == null || dockScrim.getVisibility() != View.VISIBLE) {
+      return;
+    }
+    int fade = M3DockScrimView.getFadeHeight();
+    float y = bottomBarOffsetByPlayer + bottomBarOffsetBySnackBar;
+    // Bar: the list ends 8dp above it (see getChatListNavigationInset), the bar moves only up (invalidateBottomBarOffset).
+    float barOffset = extraBottomInsetWithoutIme + MainNavigationBar.getBarTotalHeight() + Screen.dp(8f) - fade - Math.min(y, 0);
+    float offset = barOffset;
+    if (bottomBar != null && displayTabsAtBottom()) {
+      float chipsOffset = extraBottomInsetWithoutIme + getDockChipsBottom() + getHeaderHeight() + Screen.dp(8f) - fade - y;
+      offset = barOffset + (chipsOffset - barOffset) * isBottomBarVisible.getFloatValue();
+    }
+    dockScrim.setOpaqueTopOffset(offset);
   }
 
   /** Dock style: distance from the bottom (above the system inset) to the bottom of the folder chips row. */
@@ -3392,6 +3412,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void invalidateBottomBarOffset () {
+    updateDockScrimOffset();
     if (bottomBar != null && isDockStyle()) {
       // Dock style: the folder chips fade and sink a little when hidden on scroll, the dock stays.
       float visible = isBottomBarVisible.getFloatValue();
@@ -3984,7 +4005,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   /**
    * M3 badge of the folder rail, tabs and chips (every theme): error / onError; muted chats — neutral
-   * secondaryContainer / onSecondaryContainer, as the muted counters of chat rows (badges: label ≥ 3:1).
+   * surfaceContainerHighest / onSurfaceVariant, as the muted counters of chat rows (TGChat).
    */
   public static class UnreadCounterColorSet implements TextColorSet {
     private @Nullable Counter counter;
@@ -4000,13 +4021,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     @ColorInt
     @Override
     public int defaultTextColor () {
-      return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSecondaryContainer(), counter.getMuteFactor()) : M3.onError();
+      return counter != null ? ColorUtils.fromToArgb(M3.onError(), M3.onSurfaceVariant(), counter.getMuteFactor()) : M3.onError();
     }
 
     @ColorInt
     @Override
     public int backgroundColor (boolean isPressed) {
-      return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.secondaryContainer(), counter.getMuteFactor()) : M3.error();
+      return counter != null ? ColorUtils.fromToArgb(M3.error(), M3.surfaceContainerHighest(), counter.getMuteFactor()) : M3.error();
     }
 
     @ColorInt

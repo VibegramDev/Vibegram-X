@@ -20,6 +20,7 @@ import android.content.res.Configuration;
 import android.database.Cursor;
 import android.provider.ContactsContract;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -30,6 +31,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.annotation.UiThread;
 import androidx.collection.SparseArrayCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -58,6 +60,7 @@ import org.thunderdog.challegram.telegram.DateChangeListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Keyboard;
 import org.thunderdog.challegram.tool.Screen;
@@ -268,7 +271,63 @@ public class ContactsController extends TelegramViewController<ContactsControlle
     if (mode == MODE_PICK && delegate != null && delegate.allowGlobalSearch()) {
       return delegate.getUserPickTitle();
     }
+    int titleRes = getScreenTitleRes();
+    if (titleRes != 0) {
+      return Lang.getString(titleRes);
+    }
     return super.getName();
+  }
+
+  /** Title of the compose and member picker screens, shown in the app bar instead of a bare search field. */
+  private @StringRes int getScreenTitleRes () {
+    switch (mode) {
+      case MODE_NEW_CHAT:
+        return R.string.NewChat;
+      case MODE_NEW_SECRET_CHAT:
+        return R.string.NewSecretChat;
+      case MODE_CALL:
+        return R.string.Call;
+      case MODE_NEW_GROUP:
+        return R.string.NewGroup;
+      case MODE_CHANNEL_MEMBERS:
+        return R.string.AddMember;
+      case MODE_MULTI_PICK:
+        return multiDelegate != null ? multiDelegate.provideMultiUserPickerHint() : 0;
+    }
+    return 0;
+  }
+
+  /** Small app bar with the screen title, search is an action that opens the search mode of the app bar. */
+  private boolean hasSearchAction () {
+    return mode == MODE_NEW_CHAT || mode == MODE_NEW_SECRET_CHAT || mode == MODE_CALL;
+  }
+
+  /** Bubble modes: the screen title takes the first row of the app bar, the picked chats and the search field go below it. */
+  private int getTitleRowHeight () {
+    return hasBubbles() ? Size.getHeaderPortraitSize() : 0;
+  }
+
+  /** Content shift below the default app bar height: the title row and the picked chats. */
+  private int getContentOffset () {
+    return headerOffset + getTitleRowHeight();
+  }
+
+  private @Nullable TextView bubbleTitleView;
+  private int bubbleTitleTopOffset;
+
+  private void layoutBubbleTitle () {
+    if (bubbleTitleView == null) {
+      return;
+    }
+    FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) bubbleTitleView.getLayoutParams();
+    int gravity = Gravity.TOP | (Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT);
+    boolean changed = params.gravity != gravity;
+    params.gravity = gravity;
+    // Same keylines as the plain app bar title: after the back button, 18dp from the trailing edge.
+    int startMargin = Screen.dp(68f), endMargin = Screen.dp(18f);
+    if (Views.setMargins(params, Lang.rtl() ? endMargin : startMargin, Screen.dp(15f) + bubbleTitleTopOffset, Lang.rtl() ? startMargin : endMargin, 0) || changed) {
+      Views.updateLayoutParams(bubbleTitleView);
+    }
   }
 
   private boolean canAddContacts () {
@@ -314,16 +373,54 @@ public class ContactsController extends TelegramViewController<ContactsControlle
       addMemberHeaderView.setTitle(titleRes);
       addMemberHeaderView.setSubtitle(chatTitle);
     } else if (hasBubbles()) {
-      headerCell = new BubbleHeaderView(context, tdlib);
-      headerCell.setHint(bindLocaleChanger(mode == MODE_MULTI_PICK ? multiDelegate.provideMultiUserPickerHint() : R.string.SendMessageTo, headerCell.getInput(), true, false));
+      // M3 app bar: the screen title on the first row, the picked chats and the search field below it.
+      final int titleRowHeight = getTitleRowHeight();
+      headerCell = new BubbleHeaderView(context, tdlib) {
+        @Override
+        public void onHeaderOffsetChanged (HeaderView headerView, int newOffset) {
+          super.onHeaderOffsetChanged(headerView, newOffset + titleRowHeight);
+          bubbleTitleTopOffset = newOffset;
+          layoutBubbleTitle();
+        }
+
+        @Override
+        public void setScaleFactor (float scaleFactor, float fromFactor, float toScaleFactor, boolean byScroll) {
+          // The header height includes the title row: the picked chats slide with the part of the header below it.
+          super.setScaleFactor(scaleFactor - (float) titleRowHeight / (float) Size.getMaximumHeaderSizeDifference(), fromFactor, toScaleFactor, byScroll);
+        }
+
+        @Override
+        public void checkRtl () {
+          super.checkRtl();
+          if (bubbleTitleView != null) {
+            bubbleTitleView.setGravity(Lang.gravity());
+          }
+          layoutBubbleTitle();
+        }
+      };
+      bubbleTitleView = new NoScrollTextView(context);
+      bubbleTitleView.setTypeface(Fonts.getRobotoMedium());
+      bubbleTitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 19f);
+      bubbleTitleView.setSingleLine();
+      bubbleTitleView.setEllipsize(TextUtils.TruncateAt.END);
+      bubbleTitleView.setGravity(Lang.gravity());
+      bubbleTitleView.setTextColor(Theme.getColor(getHeaderTextColorId()));
+      addThemeTextColorListener(bubbleTitleView, getHeaderTextColorId());
+      Views.setMediumText(bubbleTitleView, Lang.getString(bindLocaleChanger(getScreenTitleRes(), bubbleTitleView, false, true)));
+      bubbleTitleView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | (Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT)));
+      layoutBubbleTitle();
+      headerCell.addView(bubbleTitleView);
+      // M3 search: "Search bars should always include the word Search".
+      headerCell.setHint(bindLocaleChanger(R.string.Search, headerCell.getInput(), true, false));
       headerCell.setCallback(this);
       if (pickedBubbles != null && !pickedBubbles.isEmpty()) {
         headerCell.forceBubbles(pickedBubbles);
         headerOffset = headerCell.getCurrentWrapHeight();
-        recyclerView.setTranslationY(headerOffset);
-        ((FrameLayoutFix.LayoutParams) recyclerView.getLayoutParams()).bottomMargin = headerOffset;
       }
-    } else if (mode != MODE_PICK || (delegate != null && !delegate.allowGlobalSearch())) {
+      int contentOffset = getContentOffset();
+      recyclerView.setTranslationY(contentOffset);
+      ((FrameLayoutFix.LayoutParams) recyclerView.getLayoutParams()).bottomMargin = contentOffset;
+    } else if (!hasSearchAction() && (mode != MODE_PICK || (delegate != null && !delegate.allowGlobalSearch()))) {
       FrameLayoutFix.LayoutParams params;
 
       params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Size.getHeaderPortraitSize());
@@ -345,9 +442,10 @@ public class ContactsController extends TelegramViewController<ContactsControlle
 
     if (needChatSearch()) {
       RecyclerView recyclerView = generateChatSearchView(contentView);
-      if (pickedBubbles != null && !pickedBubbles.isEmpty()) {
-        recyclerView.setTranslationY(headerOffset);
-        ((FrameLayoutFix.LayoutParams) recyclerView.getLayoutParams()).bottomMargin = headerOffset;
+      if (hasBubbles()) {
+        int contentOffset = getContentOffset();
+        recyclerView.setTranslationY(contentOffset);
+        ((FrameLayoutFix.LayoutParams) recyclerView.getLayoutParams()).bottomMargin = contentOffset;
       }
     }
 
@@ -477,7 +575,12 @@ public class ContactsController extends TelegramViewController<ContactsControlle
 
   @Override
   protected int getMenuId () {
-    return mode == MODE_ADD_MEMBER ? R.id.menu_search : canAddContacts() ? R.id.menu_contacts : mode == MODE_PICK && delegate != null && delegate.allowGlobalSearch() ? R.id.menu_search : 0;
+    return mode == MODE_ADD_MEMBER || mode == MODE_NEW_SECRET_CHAT ? R.id.menu_search : canAddContacts() ? R.id.menu_contacts : mode == MODE_PICK && delegate != null && delegate.allowGlobalSearch() ? R.id.menu_search : 0;
+  }
+
+  @Override
+  protected int getSearchMenuId () {
+    return hasSearchAction() ? R.id.menu_clear : super.getSearchMenuId();
   }
 
   @Override
@@ -486,6 +589,27 @@ public class ContactsController extends TelegramViewController<ContactsControlle
       header.addSearchButton(menu, this, getHeaderIconColorId());
     } else if (id == R.id.menu_contacts) {
       header.addButton(menu, R.id.menu_btn_addContact, R.drawable.baseline_person_add_24, getHeaderIconColorId(), this, Screen.dp(49f));
+      if (hasSearchAction()) {
+        header.addSearchButton(menu, this, getHeaderIconColorId());
+      }
+    } else if (id == R.id.menu_clear) {
+      header.addClearButton(menu, this);
+    }
+  }
+
+  @Override
+  protected void onSearchInputChanged (String query) {
+    super.onSearchInputChanged(query);
+    if (hasSearchAction()) {
+      searchForItems(query);
+    }
+  }
+
+  @Override
+  protected void onLeaveSearchMode () {
+    super.onLeaveSearchMode();
+    if (hasSearchAction()) {
+      searchForItems("");
     }
   }
 
@@ -751,7 +875,7 @@ public class ContactsController extends TelegramViewController<ContactsControlle
 
   @Override
   protected int getHeaderHeight () {
-    return Size.getHeaderPortraitSize() + headerOffset;
+    return Size.getHeaderPortraitSize() + getContentOffset();
   }
 
   @Override
@@ -763,10 +887,11 @@ public class ContactsController extends TelegramViewController<ContactsControlle
   public void setHeaderOffset (int offset) {
     if (headerOffset != offset) {
       this.headerOffset = offset;
-      recyclerView.setTranslationY(offset);
+      int contentOffset = getContentOffset();
+      recyclerView.setTranslationY(contentOffset);
       RecyclerView recyclerView = getChatSearchView();
       if (recyclerView != null) {
-        recyclerView.setTranslationY(offset);
+        recyclerView.setTranslationY(contentOffset);
       }
       int height = getHeaderHeight();
       if (navigationController != null) {
@@ -787,11 +912,12 @@ public class ContactsController extends TelegramViewController<ContactsControlle
 
   @Override
   public void prepareHeaderOffset (int offset) {
-    ((FrameLayoutFix.LayoutParams) recyclerView.getLayoutParams()).bottomMargin = offset;
+    int contentOffset = offset + getTitleRowHeight();
+    ((FrameLayoutFix.LayoutParams) recyclerView.getLayoutParams()).bottomMargin = contentOffset;
     recyclerView.requestLayout();
     RecyclerView recyclerView = getChatSearchView();
     if (recyclerView != null) {
-      Views.setBottomMargin(recyclerView, offset);
+      Views.setBottomMargin(recyclerView, contentOffset);
     }
   }
 
