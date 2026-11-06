@@ -1042,6 +1042,11 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
     return stt.setFile(video.video, video.duration, SttManager.MAX_VIDEO_SECONDS, R.string.vg_SttVideoTooLong, false);
   }
 
+  @Override
+  public @Nullable String getTranscriptionText () {
+    return stt != null && stt.isEnabled() ? stt.getCopyText() : null;
+  }
+
   private boolean hasSttBlock () {
     return stt != null && stt.hasText();
   }

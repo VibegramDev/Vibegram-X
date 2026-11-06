@@ -241,6 +241,22 @@ public class TGMessageFile extends TGMessage {
     }
   }
   private final List<CaptionedFile> filesList = new ArrayList<>();
+
+  @Override
+  public @Nullable String getTranscriptionText () {
+    StringBuilder b = null;
+    for (CaptionedFile file : filesList) {
+      String text = file.component != null ? file.component.getTranscriptionText() : null;
+      if (text != null) {
+        if (b == null) {
+          b = new StringBuilder(text);
+        } else {
+          b.append("\n\n").append(text);
+        }
+      }
+    }
+    return b != null ? b.toString() : null;
+  }
   private final ListAnimator<CaptionedFile> files = new ListAnimator<>(animator -> {
     if (rebuildContentDimensions()) {
       requestLayout();

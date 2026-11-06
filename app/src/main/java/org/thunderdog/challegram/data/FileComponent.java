@@ -381,6 +381,11 @@ public class FileComponent extends BaseComponent implements FileProgressComponen
 
   private @Nullable SttBlock stt;
 
+  /** Vibegram X: the finished transcription shown under this voice message, or null. */
+  public @Nullable String getTranscriptionText () {
+    return stt != null && stt.isEnabled() ? stt.getCopyText() : null;
+  }
+
   private boolean hasStt () {
     return stt != null && stt.isEnabled();
   }

@@ -34,4 +34,5 @@
   <string name="vg_SttProgress">Transcribing… %1$d%%</string>
   <string name="vg_SttPreparing">Preparing…</string>
   <string name="vg_SttVideoTooLong">Only videos up to 5 minutes can be transcribed</string>
+  <string name="vg_SttCopy">Copy transcription</string>
 </resources>

@@ -179,6 +179,16 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     return t != null && t.expanded;
   }
 
+  /** The finished transcription shown under the message, for copying; null while running, failed, empty or hidden. */
+  public @Nullable String getCopyText () {
+    SttManager.Transcription t = transcription;
+    if (t == null || !t.expanded || t.state != SttManager.STATE_DONE || StringUtils.isEmpty(t.text)) {
+      return null;
+    }
+    String text = t.text.trim();
+    return text.isEmpty() ? null : text;
+  }
+
   /** The text (or the run) is shown under the message. */
   public boolean isOpen () {
     return isExpanded() && getState() != SttManager.STATE_NONE;

@@ -6527,6 +6527,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
         }
         startTextSelection(selectedMessage);
         return true;
+      } else if (id == R.id.btn_messageCopyTranscription) {
+        String text = selectedMessage.getTranscriptionText();
+        if (text != null) {
+          UI.copyText(text, R.string.CopiedText);
+        }
+        return true;
       } else if (id == R.id.btn_copyTranslation || id == R.id.btn_messageCopy) {
         if (!selectedMessage.canBeSaved()) {
           context().tooltipManager().builder(itemView).show(tdlib, R.string.ChannelNoCopy).hideDelayed();

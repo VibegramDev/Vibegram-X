@@ -756,6 +756,7 @@
   <item type="id" name="btn_navigationStyle" />
   <item type="id" name="btn_centerTitles" />
   <item type="id" name="btn_messageSelectText" />
+  <item type="id" name="btn_messageCopyTranscription" />
   <item type="id" name="btn_quoteSelection" />
   <item type="id" name="btn_navigationStyleDock" />
   <item type="id" name="btn_navigationStyleBar" />

@@ -10010,6 +10010,11 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     return mTranslationsManager.getCurrentTranslatedLanguage() != null || translatedCounterForceShow;
   }
 
+  /** Vibegram X: the finished local transcription shown under a voice / round / video message, or null. */
+  public @Nullable String getTranscriptionText () {
+    return null;
+  }
+
   public final boolean canCopyText () {
     if (this instanceof TGMessageMedia) {
       long messageId = ((TGMessageMedia) this).getCaptionMessageId();

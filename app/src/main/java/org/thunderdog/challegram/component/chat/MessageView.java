@@ -977,6 +977,14 @@ public class MessageView extends SparseDrawableView implements Destroyable, Draw
       }
     }
 
+    // Vibegram X: copy the local transcription of a voice / round / video message
+    if (!isMore && msg.canBeSaved() && msg.getTranscriptionText() != null) {
+      boolean hasCaptionCopy = msg.canCopyText();
+      ids.append(R.id.btn_messageCopyTranscription);
+      strings.append(hasCaptionCopy ? R.string.vg_SttCopy : R.string.Copy);
+      icons.append(R.drawable.baseline_content_copy_24);
+    }
+
     if (!isMore && msg.isTranslated()) {
       ids.append(R.id.btn_chatTranslateOff);
       strings.append(R.string.TranslateOff);
