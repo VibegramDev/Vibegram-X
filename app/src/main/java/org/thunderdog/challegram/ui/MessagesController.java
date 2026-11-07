@@ -304,6 +304,7 @@ import me.vkryl.core.lambda.RunnableBool;
 import me.vkryl.core.lambda.RunnableData;
 import tgx.td.ChatId;
 import org.thunderdog.challegram.stars.PaidMessages;
+import org.thunderdog.challegram.webapp.WebApp;
 import tgx.td.MessageId;
 import tgx.td.Td;
 import tgx.td.TdConstants;
@@ -2420,6 +2421,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
       // FIXME: rely on some state, not on icon id
       if (lastCmdResource == R.drawable.deproko_baseline_bots_command_26) {
         onCommandClick();
+      } else if (lastCmdResource == R.drawable.deproko_baseline_bots_24) {
+        if (botMenuButton != null && chat != null) {
+          hideAllKeyboards();
+          WebApp.openMenuButton(this, tdlib.chatUserId(chat.id), botMenuButton);
+        }
       } else if (lastCmdResource == R.drawable.deproko_baseline_bots_keyboard_26 ||
         lastCmdResource == R.drawable.baseline_direction_arrow_down_24 ||
         lastCmdResource == R.drawable.baseline_keyboard_24) {
@@ -3291,8 +3297,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     boolean isMultiChat = tdlib.isMultiChat(chat.id);
 
+    botMenuButton = null;
     if (isMultiChat || tdlib.isBotChat(chat)/* || (TGUtils.isChannel(chat) && TGUtils.hasWritePermission(chat))*/) {
-      updateCommandButton(R.drawable.deproko_baseline_bots_command_26);
+      updateCommandButton(getIdleCommandIcon());
       updateCommandButton(false);
       botHelper = new BotHelper(this, chat);
     } else {
@@ -8341,6 +8348,23 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  private @Nullable TdApi.BotMenuButton botMenuButton;
+
+  /** The menu button of a bot with a mini app takes the place of the commands button. */
+  public void setBotMenuButton (@Nullable TdApi.BotMenuButton button) {
+    boolean isIdle = lastCmdResource == getIdleCommandIcon();
+    botMenuButton = button;
+    if (isIdle) {
+      updateCommandButton(getIdleCommandIcon());
+    }
+  }
+
+  private int getIdleCommandIcon () {
+    return botMenuButton != null ?
+      R.drawable.deproko_baseline_bots_24 :
+      R.drawable.deproko_baseline_bots_command_26;
+  }
+
   private void onCommandClick () {
     inputView.setInput("/", true, true);
     Keyboard.show(inputView);
@@ -8405,7 +8429,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
       setCommandsShown(false);
       if (destroy) {
-        updateCommandButton(R.drawable.deproko_baseline_bots_command_26);
+        updateCommandButton(getIdleCommandIcon());
       } else {
         updateCommandButton(R.drawable.deproko_baseline_bots_keyboard_26);
         if (byUserEvent) {
@@ -8413,7 +8437,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         }
       }
     } else if (destroy) {
-      updateCommandButton(R.drawable.deproko_baseline_bots_command_26);
+      updateCommandButton(getIdleCommandIcon());
     }
   }
 
@@ -8688,6 +8712,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
     pickDateOrProceed(Td.newSendOptions(), (sendOptions, disableMarkdown) ->
       sendText(command, false, true, false, sendOptions)
     );
+  }
+
+  @Override
+  public void onOpenWebApp (String buttonText, String url) {
+    if (chat != null) {
+      WebApp.openKeyboardButton(this, chat.id, tdlib.chatUserId(chat.id), buttonText, url);
+    }
   }
 
   @Override
@@ -9034,7 +9065,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   public void onDestroyCommandKeyboard () {
     clearScheduledKeyboard();
     closeCommandsKeyboardImpl(true, false);
-    updateCommandButton(R.drawable.deproko_baseline_bots_command_26);
+    updateCommandButton(getIdleCommandIcon());
     if (commandsMessageId != 0) {
       botHelper.onDestroyKeyboard(commandsMessageId);
     }

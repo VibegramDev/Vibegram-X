@@ -837,9 +837,12 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     if (floatingButton != null) {
       // The section's FAB stands above the bar, as on the chat list (16dp between them).
       boolean aboveBar = !isTabletSplit() && target.isTopLevelDestination();
-      floatingButton.setExtraBottomOffset(aboveBar ? getPersistentBarFabOffset() : 0);
+      persistentBarFabOffset = aboveBar ? getPersistentBarFabOffset() : 0;
+      floatingButton.setExtraBottomOffset(persistentBarFabOffset + extraBottomInset);
     }
   }
+
+  private int persistentBarFabOffset;
 
   /** Extra bottom margin of a section's FAB above the bottom navigation (16dp between them, as on the chat list). */
   public int getPersistentBarFabOffset () {
@@ -2256,9 +2259,29 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   private int bottomInset, bottomInsetWithoutIme;
+  private int systemBottomInset, systemBottomInsetWithoutIme, extraBottomInset;
 
   public int getBottomInsetWithoutIme () {
     return bottomInsetWithoutIme;
+  }
+
+  /**
+   * Space at the bottom taken by UI shown under all screens (the strip of minimized mini apps).
+   * Screens end above it; the keyboard covers it.
+   */
+  public void setExtraBottomInset (int extraBottomInset) {
+    if (this.extraBottomInset != extraBottomInset) {
+      this.extraBottomInset = extraBottomInset;
+      applySystemBottomInset();
+      if (floatingButton != null) {
+        floatingButton.setExtraBottomOffset(persistentBarFabOffset + extraBottomInset);
+      }
+    }
+  }
+
+  private void applySystemBottomInset () {
+    int insetWithoutIme = systemBottomInsetWithoutIme + extraBottomInset;
+    setBottomInset(Math.max(systemBottomInset, insetWithoutIme), insetWithoutIme);
   }
 
   public void applyBottomInset (ViewController<?> controller) {
@@ -2311,6 +2334,8 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
 
   public void dispatchSystemInsets (View child, ViewGroup.MarginLayoutParams layoutParams, Rect legacyInsets, Rect systemInsets, Rect systemInsetWithoutIme) {
     Views.setMargins(layoutParams, legacyInsets.left, legacyInsets.top, legacyInsets.right, 0);
-    setBottomInset(systemInsets.bottom, systemInsetWithoutIme.bottom);
+    systemBottomInset = systemInsets.bottom;
+    systemBottomInsetWithoutIme = systemInsetWithoutIme.bottom;
+    applySystemBottomInset();
   }
 }

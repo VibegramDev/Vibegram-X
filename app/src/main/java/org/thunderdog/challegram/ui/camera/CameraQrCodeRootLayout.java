@@ -22,6 +22,7 @@ import android.graphics.RectF;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
@@ -85,6 +86,7 @@ class CameraQrCodeRootLayout extends CameraRootLayout implements FactorAnimator.
   private boolean qrMode, qrModeClosing, qrModeInvertedOrientation, qrModePortrait;
   private boolean qrDebugRegions;
   private int qrSubtitle;
+  private @Nullable String qrSubtitleText;
 
   public CameraQrCodeRootLayout (@NonNull Context context) {
     super(context);
@@ -102,7 +104,12 @@ class CameraQrCodeRootLayout extends CameraRootLayout implements FactorAnimator.
   private void updateTexts (int width) {
     TextColorSet forceWhite = () -> Color.WHITE;
     qrTextTitle = new Text.Builder(Lang.getString(R.string.ScanQRFullTitle), width, Paints.robotoStyleProvider(31), forceWhite).allBold().addFlags(Text.FLAG_ALIGN_CENTER).singleLine().build();
-    qrTextSubtitle = new Text.Builder(Lang.getString(qrSubtitle == 0 ? R.string.ScanQRFullSubtitle : qrSubtitle), width, Paints.robotoStyleProvider(16), forceWhite).addFlags(Text.FLAG_ALIGN_CENTER).maxLineCount(2).build();
+    String subtitle = qrSubtitleText != null ? qrSubtitleText :
+      Lang.getString(qrSubtitle == 0 ? R.string.ScanQRFullSubtitle : qrSubtitle);
+    qrTextSubtitle = new Text.Builder(subtitle, width, Paints.robotoStyleProvider(16), forceWhite)
+      .addFlags(Text.FLAG_ALIGN_CENTER)
+      .maxLineCount(2)
+      .build();
   }
 
   @Override
@@ -167,8 +174,9 @@ class CameraQrCodeRootLayout extends CameraRootLayout implements FactorAnimator.
   }
 
   @Override
-  public void setQrModeSubtitle (int subtitleRes) {
+  public void setQrModeSubtitle (int subtitleRes, @Nullable String subtitleText) {
     this.qrSubtitle = subtitleRes;
+    this.qrSubtitleText = subtitleText;
     if (qrTextTitle != null) {
       updateTexts(qrTextTitle.getMaxWidth());
     }

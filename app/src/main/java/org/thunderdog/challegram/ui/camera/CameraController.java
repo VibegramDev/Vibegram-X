@@ -113,8 +113,23 @@ public class CameraController extends ViewController<Void> implements CameraDele
     void onCameraSwitched (boolean isForward, boolean toFrontFace);
   }
 
+  private @Nullable String getQrSubtitleText () {
+    return qrCodeListener != null ? qrCodeListener.getQrSubtitle() : null;
+  }
+
   public interface QrCodeListener {
     void onQrCodeScanned (String qrCode);
+
+    /** Mini apps scan any code, other scanners only Telegram links. */
+    default boolean acceptsAnyQrCode () {
+      return false;
+    }
+
+    default @Nullable String getQrSubtitle () {
+      return null;
+    }
+
+    default void onQrScannerClosed () { }
   }
 
   public static final int MODE_MAIN = 0;
@@ -136,7 +151,7 @@ public class CameraController extends ViewController<Void> implements CameraDele
     this.qrSubtitleRes = subtitleRes;
     this.qrModeDebug = qrModeDebug;
     if (this.cameraMode == MODE_QR && rootLayout != null) {
-      rootLayout.setQrModeSubtitle(subtitleRes);
+      rootLayout.setQrModeSubtitle(subtitleRes, getQrSubtitleText());
       rootLayout.setQrMode(true, qrModeDebug);
     }
   }
@@ -760,7 +775,7 @@ public class CameraController extends ViewController<Void> implements CameraDele
       flashButton.setVisibility(View.GONE);
       blurView.setVisibility(View.GONE);
       rootLayout.setQrMode(true, qrModeDebug);
-      rootLayout.setQrModeSubtitle(qrSubtitleRes);
+      rootLayout.setQrModeSubtitle(qrSubtitleRes, getQrSubtitleText());
     } else {
       switchCameraButton.setVisibility(View.VISIBLE);
       flashButton.setVisibility(View.VISIBLE);
@@ -866,6 +881,9 @@ public class CameraController extends ViewController<Void> implements CameraDele
     }
 
     isPrepared = false;
+    if (cameraMode == MODE_QR && qrCodeListener != null) {
+      qrCodeListener.onQrScannerClosed();
+    }
 
     setWillProbablyFocus(false);
 
@@ -1591,7 +1609,9 @@ public class CameraController extends ViewController<Void> implements CameraDele
 
   @Override
   public void onQrCodeFound (String qrCodeData, @Nullable RectF boundingBox, int height, int width, int rotation, boolean isLegacyZxing) {
-    if (qrCodeListener != null && !qrCodeData.isEmpty() && (qrCodeData.startsWith("tg://") || qrCodeData.startsWith(context.currentTdlib().tMeUrl())) && !qrCodeConfirmed) {
+    boolean isAccepted = qrCodeListener != null && (qrCodeListener.acceptsAnyQrCode() ||
+      qrCodeData.startsWith("tg://") || qrCodeData.startsWith(context.currentTdlib().tMeUrl()));
+    if (isAccepted && !qrCodeData.isEmpty() && !qrCodeConfirmed) {
       savedQrCodeData = qrCodeData;
       rootLayout.setQrCorner(boundingBox, height, width, rotation, isLegacyZxing);
     }

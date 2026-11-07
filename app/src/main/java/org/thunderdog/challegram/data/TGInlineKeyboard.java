@@ -58,6 +58,7 @@ import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.webapp.WebApp;
 import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.util.text.TextEntityMessage;
@@ -1359,8 +1360,12 @@ public class TGInlineKeyboard {
           );
           break;
         }
+        case TdApi.InlineKeyboardButtonTypeWebApp.CONSTRUCTOR: {
+          String url = ((TdApi.InlineKeyboardButtonTypeWebApp) type).url;
+          WebApp.openInlineButton(context.context.controller(), parent.getMessage(), url);
+          break;
+        }
         case TdApi.InlineKeyboardButtonTypeCopyText.CONSTRUCTOR:
-        case TdApi.InlineKeyboardButtonTypeWebApp.CONSTRUCTOR:
           // TODO
           break;
 

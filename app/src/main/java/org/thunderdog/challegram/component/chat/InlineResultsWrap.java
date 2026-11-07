@@ -64,6 +64,7 @@ import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.ui.SimpleMediaViewController;
 import org.thunderdog.challegram.util.CancellableResultHandler;
 import org.thunderdog.challegram.v.NewFlowLayoutManager;
+import org.thunderdog.challegram.webapp.WebApp;
 import org.thunderdog.challegram.widget.BaseView;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 import org.thunderdog.challegram.widget.ShadowView;
@@ -932,6 +933,13 @@ public class InlineResultsWrap extends FrameLayoutFix implements View.OnClickLis
     }
 
     final ViewController<?> c = UI.getCurrentStackItem(getContext());
+    String webAppUrl = button.webAppUrl();
+    if (webAppUrl != null) {
+      if (c != null) {
+        WebApp.openInlineSwitch(c, c.getChatId(), button.getUserId(), webAppUrl);
+      }
+      return;
+    }
     long sourceChatId = 0;
     if (c instanceof MessagesController) {
       if (((MessagesController) c).comparePrivateUserId(button.getUserId())) {

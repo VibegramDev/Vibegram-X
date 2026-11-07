@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: bot mini apps (org.thunderdog.challegram.webapp).
+     Keys are vg_<official Telegram Android key>; texts follow the official Telegram Android app
+     (not in the TGX cloud language pack). Plural keys live in values/strings.xml (+ vg_LangLocalPlurals).
+     Bold: where every bold part of the official text is an argument, the ** markers are dropped and the caller
+     bolds the arguments itself with Lang.getStringBold(...). Strings that keep **literal bold** markers must go
+     through Lang.getMarkdownString(context, ...) (Strings.buildMarkdown parses **; args are markdown-escaped):
+     vg_BotWebViewStartPermission2, vg_BotWebAppDisclaimerSubtitle, vg_BotWebAppDisclaimerCheck, vg_BotEmojiStatusPermissionRequest, vg_BotWebViewRequestGeolocationPermissionWithHint, vg_BotWebViewRequestMicrophonePermissionWithHint, vg_BotWebViewRequestCameraPermissionWithHint, vg_BotWebViewRequestCameraMicPermissionWithHint, vg_ChromeCrashMessage. -->
+<resources>
+  <!-- Sheet, header and options menu -->
+  <string name="vg_BotWebViewOpenBot">Open bot</string>
+  <string name="vg_BotWebViewSettings">Settings</string>
+  <string name="vg_BotWebViewReloadPage">Reload page</string>
+  <string name="vg_AddShortcut">Add to Home screen</string>
+  <string name="vg_BotWebViewToS">Terms of Use</string>
+  <string name="vg_BotWebViewReportBot">Report</string>
+  <string name="vg_BotWebViewDeleteBot">Delete bot</string>
+  <string name="vg_BotShare">Share</string>
+  <string name="vg_BotPrivacyPolicy">Privacy Policy</string>
+  <string name="vg_BotDownloads">Downloads</string>
+  <string name="vg_BotRemoveFromMenuTitle">Remove bot</string>
+  <string name="vg_BotRemoveFromMenu">This will remove %1$s shortcuts from all menus.</string>
+  <string name="vg_BotRemoveInlineFromMenu">Remove %1$s from suggestions?</string>
+  <string name="vg_BotWebViewChangesMayNotBeSaved">Changes that you made may not be saved.</string>
+  <string name="vg_BotWebViewCloseAnyway">Close anyway</string>
+  <string name="vg_BotWebViewNotAvailablePlaceholder">WebView not available. Please update it to use WebView bots.</string>
+  <string name="vg_WebErrorTitle">Oops...</string>
+  <string name="vg_WebErrorInfoBot">Failed to load %1$s.</string>
+  <string name="vg_WebErrorInfo">Failed to load page.</string>
+  <string name="vg_WebErrorInfoDomain">Failed to load %1$s.</string>
+  <string name="vg_Refresh">Refresh</string>
+  <string name="vg_BotFullscreenClose">Close</string>
+  <string name="vg_BotFullscreenBack">Back</string>
+  <string name="vg_Close">Close</string>
+  <string name="vg_Back">Back</string>
+  <string name="vg_Start">Start</string>
+  <string name="vg_Enable">Enable</string>
+  <string name="vg_UndoNoCaps">Undo</string>
+  <string name="vg_BotCloseAllTabs">Close All Tabs</string>
+  <string name="vg_AccDescrTabs">Web tabs %1$s</string>
+  <string name="vg_WebEmpty">Webpage</string>
+  <string name="vg_WebsiteSays">%1$s says</string>
+
+  <!-- Launch, disclaimer, attachment menu, entry points -->
+  <string name="vg_BotWebViewStartPermission2">By launching this mini app, you agree to the **Terms of Service for Mini Apps**.</string>
+  <string name="vg_MoreAboutThisBot">More about this bot</string>
+  <string name="vg_OpenUrlOption2">Allow %1$s to send me messages</string>
+  <string name="vg_TermsOfUse">Terms of Use</string>
+  <string name="vg_BotWebAppDisclaimerSubtitle">You are about to use a mini app operated by an independent party **not affiliated with Telegram**. You must agree to the Terms of Use of mini apps to continue.</string>
+  <string name="vg_BotWebAppDisclaimerCheck">I agree to the **Terms of Use**</string>
+  <string name="vg_BotRequestAttachPermission">%1$s requests to be added as an option to your attachments menu so you can access it from any chat.</string>
+  <string name="vg_BotAddToMenu">Add to Menu</string>
+  <string name="vg_BotAlreadyAddedToAttachMenu">This bot is already in your attachment menu.</string>
+  <string name="vg_BotCantOpenAttachMenuSameBot">This bot can\'t be opened in the chat with itself.</string>
+  <string name="vg_BotCantOpenAttachMenuBot">This bot can\'t be opened in chats with bots.</string>
+  <string name="vg_BotCantOpenAttachMenuUser">This bot can\'t be opened in chats with users.</string>
+  <string name="vg_BotCantOpenAttachMenuGroup">This bot can\'t be opened in groups.</string>
+  <string name="vg_BotCantOpenAttachMenuChannel">This bot can\'t be opened in channels.</string>
+  <string name="vg_BotAttachMenuShortcatAddedAttachAndSide">%1$s shortcut added in attachment menu and side menu.</string>
+  <string name="vg_BotAttachMenuShortcatAddedSide">%1$s shortcut added in side menu.</string>
+  <string name="vg_BotAttachMenuShortcatAddedAttach">%1$s shortcut added in attachment menu.</string>
+  <string name="vg_BotsMenuTitle">Menu</string>
+  <string name="vg_AccDescrBotMenu">Bot menu</string>
+  <string name="vg_BotOpen">Open</string>
+  <string name="vg_ProfileBotOpenApp">Open App</string>
+
+  <!-- Bridge: write access, phone, biometry -->
+  <string name="vg_BotWebViewRequestWriteTitle">Allow messaging</string>
+  <string name="vg_BotWebViewRequestWriteMessage">Allow this bot to send you messages?</string>
+  <string name="vg_BotWebViewRequestAllow">Allow</string>
+  <string name="vg_BotWebViewRequestDontAllow">Don\'t Allow</string>
+  <string name="vg_ShareYouPhoneNumberTitle">Share your phone number?</string>
+  <string name="vg_AreYouSureShareMyContactInfoWebapp">%1$s will know your phone number. This can be useful for integration with other services.</string>
+  <string name="vg_AreYouSureShareMyContactInfoBot">The bot will know your phone number. This can be useful for integration with other services.</string>
+  <string name="vg_AreYouSureShareMyContactInfoBotUnblock">This will also unblock the bot.</string>
+  <string name="vg_BotAllowBiometryTitle">Allow biometry</string>
+  <string name="vg_BotAllowBiometryMessage">Do you want to allow %1$s to use biometry?</string>
+  <string name="vg_PrivacyBiometryBots">Bots with biometry</string>
+  <string name="vg_PrivacyBiometryBotsInfo">Web-apps can request permission for fingerprint check.</string>
+
+  <!-- Bridge: downloads, location -->
+  <string name="vg_BotDownloadFileTitle">Download Document</string>
+  <string name="vg_BotDownloadFileText">%1$s suggests you download the following file:</string>
+  <string name="vg_BotDownloadFileDownload">Download</string>
+  <string name="vg_AccActionDownload">Download</string>
+  <string name="vg_WebDownloading">Downloading...</string>
+  <string name="vg_WebDownloadingFile">Downloading %1$s...</string>
+  <string name="vg_BotLocationPermissionRequest">%1$s requests access to your location. You will be able to revoke this access in the profile page of %2$s.</string>
+  <string name="vg_BotLocationPermissionSettings">Settings</string>
+  <string name="vg_BotLocationPermissionAllow">Allow</string>
+  <string name="vg_BotLocationPermissionDecline">Decline</string>
+  <string name="vg_BotLocationPermissionRequestGranted">%1$s can now have access to your location</string>
+  <string name="vg_BotLocationPermissionRequestDeniedApp">%1$s can\'t have access to your location since you restricted Telegram from accessing it.</string>
+  <string name="vg_BotLocationPermissionRequestDeniedAppSettings">Change in Settings &gt;</string>
+  <string name="vg_GpsDisabledAlertText">Please enable your GPS to access location-based features.</string>
+
+  <!-- Bridge: emoji status -->
+  <string name="vg_BotEmojiStatusSetRequest">Do you want to set this emoji status suggested by %1$s?</string>
+  <string name="vg_BotEmojiStatusSetRequestFor">Do you want to set this emoji status suggested by %1$s for %2$s?</string>
+  <string name="vg_BotEmojiStatusConfirm">Confirm</string>
+  <string name="vg_BotEmojiStatusUpdated">Your emoji status is updated.</string>
+  <string name="vg_BotEmojiStatusPermissionRequest">**%1$s** requests access to set your **emoji status**. You will be able to revoke this access in the profile page of **%2$s**.</string>
+  <string name="vg_BotEmojiStatusPermissionAllow">Allow</string>
+  <string name="vg_BotEmojiStatusPermissionDecline">Decline</string>
+  <string name="vg_BotEmojiStatusPermissionRequestGranted">%1$s can now set your emoji status anytime.</string>
+
+  <!-- Bridge: prepared message, storage restore -->
+  <string name="vg_BotShareMessage">Share Message</string>
+  <string name="vg_BotShareMessagePreview">Message preview</string>
+  <string name="vg_BotShareMessageShare">Share with...</string>
+  <string name="vg_BotShareMessageInfo">%1$s mini app suggests you to send this message to a chat you select.</string>
+  <string name="vg_BotSharedToOne">Sent message to %1$s</string>
+  <string name="vg_BotRestoreStorageTitle">Import Data</string>
+  <string name="vg_BotRestoreStorageText">%1$s is requesting permission to import data from a previous Telegram account used on device.</string>
+  <string name="vg_BotRestoreStorageHeader">Account to import data from</string>
+  <string name="vg_BotRestoreStorageCreatedAt">created on %1$s</string>
+  <string name="vg_BotRestoreStorageButton">Import</string>
+
+  <!-- Bridge: WebView permissions, renderer crash, misc -->
+  <string name="vg_BotWebViewRequestGeolocationPermission">Allow %1$s to access to your location?\n\nThe developer of %1$s will be able to access your location when this web app is open.</string>
+  <string name="vg_BotWebViewRequestGeolocationPermissionWithHint">Allow **%1$s** to access to your location?\n\nThe developer of **%1$s** will be able to access your location when this web app is open.\n\nGo to Settings &gt; Permissions and turn **Location** on to share location data.</string>
+  <string name="vg_BotWebViewRequestMicrophonePermission">Allow %1$s to access to your microphone?\n\nThe developer of %1$s will be able to access your microphone when this web app is open.</string>
+  <string name="vg_BotWebViewRequestMicrophonePermissionWithHint">Allow **%1$s** to access to your microphone?\n\nThe developer of **%1$s** will be able to access your microphone when this web app is open.\n\nEnable microphone access in Settings &gt; Permissions &gt; Microphone.</string>
+  <string name="vg_BotWebViewRequestCameraPermission">Allow %1$s to access to your camera?\n\nThe developer of %1$s will be able to access your camera when this web app is open.</string>
+  <string name="vg_BotWebViewRequestCameraPermissionWithHint">Allow **%1$s** to access to your camera?\n\nThe developer of **%1$s** will be able to access your camera when this web app is open.\n\nEnable camera access in Settings &gt; Permissions &gt; Camera.</string>
+  <string name="vg_BotWebViewRequestCameraMicPermission">Allow %1$s to access to your camera and microphone?\n\nThe developer of %1$s will be able to access your camera and microphone when this web app is open.</string>
+  <string name="vg_BotWebViewRequestCameraMicPermissionWithHint">Allow **%1$s** to access to your camera and microphone?\n\nThe developer of **%1$s** will be able to access your camera and microphone when this web app is open.\n\nEnable camera access in Settings &gt; Permissions &gt; Camera.</string>
+  <string name="vg_ChromeCrashTitle">Aw, Snap!</string>
+  <string name="vg_ChromeCrashMessage">Something went wrong while displaying this webpage.\n\nIf it occurs frequently, consider updating **Android WebView**.</string>
+  <string name="vg_OpenInTelegramBrowser">Open in Telegram</string>
+  <string name="vg_UnknownError">Unknown error</string>
+  <string name="vg_CreateManagedBotCreatedTitle">%1$s created!</string>
+  <string name="vg_CreateManagedBotCreatedText">%1$s will manage this bot for you.</string>
+
+  <!-- Vibegram X only -->
+  <string name="vg_WebAppNotSupportedStory">Sharing to stories is not supported yet.</string>
+
+  <!-- Links (not translatable) -->
+  <string name="vg_BotWebViewToSLink" translatable="false">https://telegram.org/tos/mini-apps</string>
+  <string name="vg_BotWebViewStartPermissionLink" translatable="false">https://telegram.org/tos/mini-apps</string>
+  <string name="vg_WebAppDisclaimerUrl" translatable="false">https://telegram.org/tos/mini-apps</string>
+  <string name="vg_BotDefaultPrivacyPolicy" translatable="false">https://telegram.org/privacy-tpa</string>
+  <string name="vg_BotWebViewStart">Start</string>
+  <string name="vg_BotWebAppDisclaimerRequired">Accept the Terms of Use to continue.</string>
+  <string name="vg_BotCantSharePreparedMessage">This mini app can\'t send messages to this chat.</string>
+  <string name="vg_WebAppPremiumRequired">This feature requires Telegram Premium.</string>
+</resources>
