@@ -435,8 +435,9 @@ public class BotHelper implements Runnable, InlineSearchContext.CommandListProvi
       }
       TdApi.BotMenuButton menuButton = type == TYPE_PRIVATE ? this.menuButton : null;
       context.setBotMenuButton(menuButton);
-      boolean hasButton = hasCommands() || menuButton != null;
-      context.updateCommandButton((botsCount > 0 || type == TYPE_PRIVATE) && hasButton);
+      // With a menu button, commands are typed with "/", like in the official app.
+      boolean needCommandsButton = hasCommands() && menuButton == null;
+      context.updateCommandButton((botsCount > 0 || type == TYPE_PRIVATE) && needCommandsButton);
     }
   }
 

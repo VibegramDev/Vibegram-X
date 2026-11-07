@@ -94,6 +94,7 @@ import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.component.chat.AttachLinearLayout;
 import org.thunderdog.challegram.component.chat.AudioFile;
 import org.thunderdog.challegram.component.chat.BotForumThreadHint;
+import org.thunderdog.challegram.component.chat.BotMenuButtonView;
 import org.thunderdog.challegram.component.chat.ChatBottomBarView;
 import org.thunderdog.challegram.component.chat.ChatDropTarget;
 import org.thunderdog.challegram.component.chat.ChatHeaderView;
@@ -2417,15 +2418,15 @@ public class MessagesController extends ViewController<MessagesController.Argume
       manager.scrollToNextMention();
     } else if (viewId == R.id.btn_reaction) {
       manager.scrollToNextUnreadReaction();
+    } else if (viewId == R.id.msg_botMenuButton) {
+      if (botMenuButton != null && chat != null) {
+        hideAllKeyboards();
+        WebApp.openMenuButton(this, tdlib.chatUserId(chat.id), botMenuButton);
+      }
     } else if (viewId == R.id.msg_command) {
       // FIXME: rely on some state, not on icon id
       if (lastCmdResource == R.drawable.deproko_baseline_bots_command_26) {
         onCommandClick();
-      } else if (lastCmdResource == R.drawable.deproko_baseline_bots_24) {
-        if (botMenuButton != null && chat != null) {
-          hideAllKeyboards();
-          WebApp.openMenuButton(this, tdlib.chatUserId(chat.id), botMenuButton);
-        }
       } else if (lastCmdResource == R.drawable.deproko_baseline_bots_keyboard_26 ||
         lastCmdResource == R.drawable.baseline_direction_arrow_down_24 ||
         lastCmdResource == R.drawable.baseline_keyboard_24) {
@@ -3298,6 +3299,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     boolean isMultiChat = tdlib.isMultiChat(chat.id);
 
     botMenuButton = null;
+    updateBotMenuButtonView();
     if (isMultiChat || tdlib.isBotChat(chat)/* || (TGUtils.isChannel(chat) && TGUtils.hasWritePermission(chat))*/) {
       updateCommandButton(getIdleCommandIcon());
       updateCommandButton(false);
@@ -3825,6 +3827,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         replyBarView.setVisibility(View.VISIBLE);
       }
       emojiButton.setVisibility(View.VISIBLE);
+      updateBotMenuButtonView();
       if (notEmpty) {
         attachButtons.setVisibility(View.INVISIBLE);
         sendButton.setVisibility(View.VISIBLE);
@@ -3845,6 +3848,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       bottomShadowView.setVisibility(View.GONE);
       emojiButton.setVisibility(View.GONE);
+      updateBotMenuButtonView();
       attachButtons.setVisibility(View.GONE);
       sendButton.setVisibility(View.GONE);
       messageSenderButton.setVisibility(View.GONE);
@@ -8326,6 +8330,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   public void updateCommandButton (boolean isVisible) {
+    // The toggle of a reply keyboard stays, also for bots whose commands button is not shown.
+    isVisible = isVisible ||
+      (lastCmdResource != 0 && lastCmdResource != R.drawable.deproko_baseline_bots_command_26);
     boolean ok = setCameraVisible(!isVisible || !ChatId.isUserChat(getChatId()));
     if (commandButton.setVisible(isVisible) || ok) {
       attachButtons.updatePivot();
@@ -8334,6 +8341,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private void updateCommandButton (int resource) {
     if (resource == 0) {
+      lastCmdResource = 0;
       if (commandButton.setVisible(false)) {
         attachButtons.updatePivot();
       }
@@ -8350,19 +8358,99 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   private @Nullable TdApi.BotMenuButton botMenuButton;
 
-  /** The menu button of a bot with a mini app takes the place of the commands button. */
+  private @Nullable BotMenuButtonView botMenuButtonView;
+
+  /**
+   * The menu button of a bot with a mini app, at the start of the composer like in the official
+   * app. The commands button is not shown then: commands are typed with "/", as there.
+   */
   public void setBotMenuButton (@Nullable TdApi.BotMenuButton button) {
     boolean isIdle = lastCmdResource == getIdleCommandIcon();
     botMenuButton = button;
     if (isIdle) {
       updateCommandButton(getIdleCommandIcon());
     }
+    updateBotMenuButtonView();
   }
 
   private int getIdleCommandIcon () {
-    return botMenuButton != null ?
-      R.drawable.deproko_baseline_bots_24 :
-      R.drawable.deproko_baseline_bots_command_26;
+    return botMenuButton != null ? 0 : R.drawable.deproko_baseline_bots_command_26;
+  }
+
+  private void updateBotMenuButtonView () {
+    boolean isVisible = botMenuButton != null && previewMode == PREVIEW_MODE_NONE &&
+      emojiButton != null && emojiButton.getVisibility() == View.VISIBLE;
+    if (isVisible && botMenuButtonView == null) {
+      botMenuButtonView = new BotMenuButtonView(context(), this::onBotMenuButtonWidthChanged);
+      botMenuButtonView.setId(R.id.msg_botMenuButton);
+      botMenuButtonView.setOnClickListener(this);
+      RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(49f));
+      params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+      params.addRule(Lang.rtl() ?
+        RelativeLayout.ALIGN_PARENT_RIGHT :
+        RelativeLayout.ALIGN_PARENT_LEFT);
+      botMenuButtonView.setLayoutParams(params);
+      setComposerButtonMargin(botMenuButtonView, getBotMenuButtonMargin(), Lang.rtl());
+      botMenuButtonView.setTranslationY(emojiButton.getTranslationY());
+      contentView.addView(botMenuButtonView, contentView.indexOfChild(emojiButton) + 1);
+    }
+    if (botMenuButtonView == null) {
+      return;
+    }
+    botMenuButtonView.setVisibility(isVisible ? View.VISIBLE : View.GONE);
+    if (isVisible) {
+      botMenuButtonView.setText(botMenuButton.text);
+      botMenuButtonView.setExpanded(isBotMenuButtonExpanded(getKeyboardState()), false);
+    }
+    onBotMenuButtonWidthChanged(botMenuButtonView);
+    updateBotMenuButtonPadding();
+  }
+
+  private int getBotMenuButtonMargin () {
+    return (composerFloating ? MainNavigationBar.getBarMargin() : 0) + Screen.dp(8f);
+  }
+
+  /** Like in the official app: the text is shown while the field is empty and nothing is open. */
+  private boolean isBotMenuButtonExpanded (boolean isKeyboardVisible) {
+    return inputView != null && inputView.getText().length() == 0 && !isKeyboardVisible &&
+      !emojiShown && !commandsShown;
+  }
+
+  private void checkBotMenuButtonExpanded (boolean isKeyboardVisible) {
+    if (botMenuButtonView == null || botMenuButtonView.getVisibility() != View.VISIBLE) {
+      return;
+    }
+    boolean isExpanded = isBotMenuButtonExpanded(isKeyboardVisible);
+    if (botMenuButtonView.isExpanded() != isExpanded) {
+      botMenuButtonView.setExpanded(isExpanded, isFocused());
+      updateBotMenuButtonPadding();
+    }
+  }
+
+  /** The emoji button follows the pill on every frame of its animation. */
+  private void onBotMenuButtonWidthChanged (BotMenuButtonView view) {
+    float offset = view.getVisibility() == View.VISIBLE ? view.getVisibleWidth() : 0;
+    emojiButton.setTranslationX(Lang.rtl() ? -offset : offset);
+  }
+
+  /** The text starts after the pill; set once per state, not on the frames of the animation. */
+  private void updateBotMenuButtonPadding () {
+    if (inputView == null) {
+      return;
+    }
+    boolean isVisible = botMenuButtonView != null &&
+      botMenuButtonView.getVisibility() == View.VISIBLE;
+    int startPadding = Screen.dp(55f) + (isVisible ? botMenuButtonView.getTargetWidth() : 0);
+    if (Lang.rtl()) {
+      if (inputView.getPaddingRight() != startPadding) {
+        inputView.setPadding(inputView.getPaddingLeft(), inputView.getPaddingTop(), startPadding,
+          inputView.getPaddingBottom());
+      }
+    } else if (inputView.getPaddingLeft() != startPadding) {
+      inputView.setPadding(startPadding, inputView.getPaddingTop(), inputView.getPaddingRight(),
+        inputView.getPaddingBottom());
+    }
   }
 
   private void onCommandClick () {
@@ -8399,6 +8487,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void setCommandsShown (boolean commandsShown) {
     if (this.commandsShown != commandsShown) {
       this.commandsShown = commandsShown;
+      checkBotMenuButtonExpanded(getKeyboardState());
       updateBottomWrapOffset();
     }
   }
@@ -8623,6 +8712,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     messagesView.post(this::updateMessagesViewInset);
 
     setComposerButtonMargin(emojiButton, margin, Lang.rtl());
+    setComposerButtonMargin(botMenuButtonView, getBotMenuButtonMargin(), Lang.rtl());
     setComposerButtonMargin(attachButtons, margin, !Lang.rtl());
     setComposerButtonMargin(sendButton, margin, !Lang.rtl());
     setComposerButtonMargin(inlineAttachButton, margin + Screen.dp(55f), !Lang.rtl());
@@ -8677,6 +8767,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     invalidateComposerScrim();
     sendButton.setTranslationY(y);
     emojiButton.setTranslationY(y);
+    if (botMenuButtonView != null) {
+      botMenuButtonView.setTranslationY(y);
+    }
     attachButtons.setTranslationY(y);
     if (inlineAttachButton != null) {
       inlineAttachButton.setTranslationY(y);
@@ -9878,6 +9971,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public boolean onKeyboardStateChanged (boolean visible) {
+    checkBotMenuButtonExpanded(visible);
     if (isEventLog()) {
       bottomWrap.setVisibility(visible ? View.INVISIBLE : View.VISIBLE);
       bottomSpace.setVisibility(visible ? View.INVISIBLE : View.VISIBLE);
@@ -10069,6 +10163,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (emojiShown) {
         hideSoftwareKeyboard();
       }
+      checkBotMenuButtonExpanded(getKeyboardState());
       updateEmojiStatus();
       setTextFormattingLayoutVisible(textInputHasSelection);
       updateBottomWrapOffset();
@@ -10186,6 +10281,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       emojiLayout.onTextChanged(charSequence);
     }
     updateSendButton(charSequence, true);
+    checkBotMenuButtonExpanded(getKeyboardState());
     if (byUserAction) {
       setTyping(charSequence.length() > 0);
       inputView.setTextChangedSinceChatOpened(true);
@@ -10821,11 +10917,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void displayEmojiButton () {
     emojiButton.setVisibility(View.VISIBLE);
     emojiButton.setOnClickListener(this);
+    updateBotMenuButtonView();
   }
 
   private void hideEmojiButton () {
     emojiButton.setVisibility(View.INVISIBLE);
     emojiButton.setOnClickListener(null);
+    updateBotMenuButtonView();
   }
 
   public SendButton getSendButton () {
