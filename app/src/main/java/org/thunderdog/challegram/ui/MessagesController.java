@@ -5383,7 +5383,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
    * the reactions picker expanded.
    */
   private void showMessageOptionsMenu (Options sheetOptions, MessageContext messageContext, OptionDelegate delegate, float[] touchPoint, @Nullable AtomicReference<RunnableData<TdApi.MessageReadDate>> readDateUpdate) {
-    if (isMessageOptionsVisible) {
+    // «More» (no metadata) opens from the menu while it is still closing: as the plain options of TGX, it isn't blocked by it
+    if (isMessageOptionsVisible && !messageContext.disableMetadata) {
       return;
     }
     final TGMessage message = messageContext.message;
