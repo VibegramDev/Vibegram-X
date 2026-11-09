@@ -214,7 +214,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       IntList icons = new IntList(2);
       StringList strings = new StringList(2);
 
-      // View as tabs option (switch to ForumTopicTabsController)
+      // View as tabs option
       ids.append(R.id.btn_viewAsTabs);
       icons.append(R.drawable.baseline_swap_horiz_24);
       strings.append(R.string.ViewAsTabs);
@@ -723,10 +723,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     if (id == R.id.btn_viewAsTabs) {
       // Save preference for tabs view
       tdlib.settings().setForumViewPreference(chatId, TdlibSettingsManager.FORUM_VIEW_TABS);
-      // Switch to tabs view (ForumTopicTabsController)
-      ForumTopicTabsController tabsController = new ForumTopicTabsController(context, tdlib);
-      tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
-      // Navigate and remove this controller from stack
+      MessagesController tabsController = ForumTopicTabs.newController(this, chat, null, 0, null);
       tabsController.addOneShotFocusListener(() -> {
         tabsController.destroyStackItemAt(tabsController.stackSize() - 2);
       });

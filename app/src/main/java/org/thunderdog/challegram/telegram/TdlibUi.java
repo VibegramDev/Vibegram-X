@@ -102,9 +102,7 @@ import org.thunderdog.challegram.ui.EditNameController;
 import org.thunderdog.challegram.ui.EditProxyController;
 import org.thunderdog.challegram.ui.EditRightsController;
 import org.thunderdog.challegram.ui.EditUsernameController;
-import org.thunderdog.challegram.ui.DirectMessagesTabsController;
 import org.thunderdog.challegram.ui.DirectMessagesTopicsController;
-import org.thunderdog.challegram.ui.ForumTopicTabsController;
 import org.thunderdog.challegram.ui.ForumTopicsController;
 import org.thunderdog.challegram.ui.InstantViewController;
 import org.thunderdog.challegram.ui.ListItem;
@@ -690,9 +688,6 @@ public class TdlibUi extends Handler {
         .setAllowResize(false));
     }
   }
-
-  /** Channel direct messages with more known conversations open as a list by default, not as tabs. */
-  private static final int DIRECT_MESSAGES_TABS_MAX_COUNT = 10;
 
   public static final int DURATION_MODE_FULL = 0;
   public static final int DURATION_MODE_SHORT = 1;
@@ -2162,73 +2157,63 @@ public class TdlibUi extends Handler {
       return;
     }
 
-    // Check if this is a forum chat that should be viewed as topics
-    // Chats with bots that have topics open as forums with tabs, as in the official app
+    // Forums viewed as topics and chats with bots that have topics, as in the official app: tabs above or beside
+    // the chat (a regular chat screen, so that everything below applies), or the list of topics, as chosen on this device.
+    // The layout set by the admins is ignored. Anything to do in the chat itself opens it with the tabs.
     final boolean isBotForum = tdlib.isBotForum(chat.id);
-    if ((isBotForum || tdlib.isForum(chat.id)) && messageThread == null && messageTopicId == null) {
-      // Show topics view if viewAsTopics is true (default for forums)
-      // Users can use "View as chat" option to switch to unified view (sets viewAsTopics to false)
-      if (chat.viewAsTopics || isBotForum) {
-        ViewController<?> forumController;
-        // Tabs or the topic list, as chosen on this device: the layout set by the admins is ignored
-        if (tdlib.settings().isForumViewTabs(chat.id, isBotForum)) {
-          ForumTopicTabsController tabsController = new ForumTopicTabsController(context.context(), context.tdlib());
-          tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
-          forumController = tabsController;
-        } else {
-          ForumTopicsController listController = new ForumTopicsController(context.context(), context.tdlib());
-          listController.setArguments(new ForumTopicsController.Arguments(chat));
-          forumController = listController;
-        }
-
+    final boolean openForumTabs;
+    if ((isBotForum || (tdlib.isForum(chat.id) && chat.viewAsTopics)) && messageThread == null && messageTopicId == null && !onlyScheduled) {
+      boolean needChat = shareItem != null || forceDraft != null || voiceChatInvitation != null ||
+        (params != null && params.highlightMessageId != null) || (options & CHAT_OPTION_NO_OPEN) != 0;
+      if (!needChat && !tdlib.settings().isForumViewTabs(chat.id, isBotForum)) {
+        ForumTopicsController listController = new ForumTopicsController(context.context(), context.tdlib());
+        listController.setArguments(new ForumTopicsController.Arguments(chat));
         NavigationController nav = context.context().navigation();
         if (nav.isEmpty()) {
-          nav.initController(forumController);
+          nav.initController(listController);
           MainController c = new MainController(context.context(), context.tdlib());
           c.getValue();
           nav.getStack().insert(c, 0);
         } else {
-          nav.navigateTo(forumController);
+          nav.navigateTo(listController);
         }
         if (params != null) {
           params.onDone();
         }
         return;
       }
-      // Not viewAsTopics: fall through to open as unified chat
+      openForumTabs = true;
+    } else {
+      openForumTabs = false;
     }
 
-    // Channel direct messages administered by the user: one conversation per sender, as tabs or as a list
-    // (as forum topics; the choice is kept per chat). A message to highlight opens the whole chat.
-    if (messageThread == null && messageTopicId == null && (params == null || params.highlightMessageId == null) &&
-      !onlyScheduled && (options & CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT) == 0 && tdlib.isAdministeredDirectMessagesChat(chat.id)) {
-      ViewController<?> topicsController;
-      // Without a choice made, tabs; but a chat with many known conversations opens as a list: dozens of tabs can't be navigated
-      final int viewPreference = tdlib.settings().getForumViewPreference(chat.id);
-      final boolean preferList = viewPreference == TdlibSettingsManager.FORUM_VIEW_TOPICS ||
-        (viewPreference == 0 && tdlib.directMessagesChatTopics(chat.id).size() > DIRECT_MESSAGES_TABS_MAX_COUNT);
-      if (preferList) {
-        DirectMessagesTopicsController c = new DirectMessagesTopicsController(context.context(), context.tdlib());
-        c.setArguments(new DirectMessagesTopicsController.Arguments(chat));
-        topicsController = c;
-      } else {
-        DirectMessagesTabsController c = new DirectMessagesTabsController(context.context(), context.tdlib());
-        c.setArguments(new DirectMessagesTabsController.Arguments(chat));
-        topicsController = c;
+    // Channel direct messages administered by the user: one conversation per sender, as tabs above the chat
+    // or as a list (as forum topics; the choice is kept per chat). Anything to do in the chat itself opens it with the tabs.
+    final boolean openDirectMessagesTabs;
+    if (!openForumTabs && messageThread == null && messageTopicId == null && !onlyScheduled &&
+      (options & CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT) == 0 && tdlib.isAdministeredDirectMessagesChat(chat.id)) {
+      boolean needChat = shareItem != null || forceDraft != null || voiceChatInvitation != null ||
+        (params != null && params.highlightMessageId != null) || (options & CHAT_OPTION_NO_OPEN) != 0;
+      if (!needChat && tdlib.settings().getForumViewPreference(chat.id) == TdlibSettingsManager.FORUM_VIEW_TOPICS) {
+        DirectMessagesTopicsController topicsController = new DirectMessagesTopicsController(context.context(), context.tdlib());
+        topicsController.setArguments(new DirectMessagesTopicsController.Arguments(chat));
+        NavigationController nav = context.context().navigation();
+        if (nav.isEmpty()) {
+          nav.initController(topicsController);
+          MainController c = new MainController(context.context(), context.tdlib());
+          c.getValue();
+          nav.getStack().insert(c, 0);
+        } else {
+          nav.navigateTo(topicsController);
+        }
+        if (params != null) {
+          params.onDone();
+        }
+        return;
       }
-      NavigationController nav = context.context().navigation();
-      if (nav.isEmpty()) {
-        nav.initController(topicsController);
-        MainController c = new MainController(context.context(), context.tdlib());
-        c.getValue();
-        nav.getStack().insert(c, 0);
-      } else {
-        nav.navigateTo(topicsController);
-      }
-      if (params != null) {
-        params.onDone();
-      }
-      return;
+      openDirectMessagesTabs = true;
+    } else {
+      openDirectMessagesTabs = false;
     }
 
     if ((options & CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT) != 0) {
@@ -2309,7 +2294,7 @@ public class TdlibUi extends Handler {
 
     ViewController<?> current = context.context().navigation().getCurrentStackItem();
 
-    if (!(context.context() instanceof MainActivity) || context instanceof MessagesController || isSelfChat || current == ((MainActivity) context.context()).getMessagesController(tdlib, false)) {
+    if (!(context.context() instanceof MainActivity) || context instanceof MessagesController || isSelfChat || openForumTabs || openDirectMessagesTabs || current == ((MainActivity) context.context()).getMessagesController(tdlib, false)) {
       controller = new MessagesController(context.context(), context.tdlib());
     } else {
       MessagesController m = ((MainActivity) context.context()).getMessagesController(tdlib, true);
@@ -2362,6 +2347,9 @@ public class TdlibUi extends Handler {
       arguments = new MessagesController.Arguments(chatList, chat, messageThread, messageTopicId, highlightMessageId, highlightMode, filter);
     } else {
       arguments = new MessagesController.Arguments(tdlib, chatList, chat, messageThread, messageTopicId, filter);
+    }
+    if (openForumTabs || openDirectMessagesTabs) {
+      arguments.topicTabs(null);
     }
     controller.setArguments(arguments
       .setScheduled(onlyScheduled)

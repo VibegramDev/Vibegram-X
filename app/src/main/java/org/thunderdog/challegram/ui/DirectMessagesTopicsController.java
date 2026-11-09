@@ -50,7 +50,7 @@ import tgx.td.Td;
 /**
  * Channel direct messages chat administered by the user, as a list (as forum topics): the whole chat first, then one
  * row per sender, drawn as regular chat list rows (ChatView) with the sender's avatar and name, the last message,
- * the date and the unread count. See {@link DirectMessagesTabsController} for the tabs view.
+ * the date and the unread count. See {@link DirectMessagesTabs} for the tabs view.
  */
 public class DirectMessagesTopicsController extends RecyclerViewController<DirectMessagesTopicsController.Arguments> implements ChatListener, View.OnClickListener, Menu, MoreDelegate {
   public static class Arguments {
@@ -373,8 +373,7 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
   public void onMoreItemPressed (int id) {
     if (id == R.id.btn_viewAsTabs) {
       tdlib.settings().setForumViewPreference(chatId, TdlibSettingsManager.FORUM_VIEW_TABS);
-      DirectMessagesTabsController c = new DirectMessagesTabsController(context, tdlib);
-      c.setArguments(new DirectMessagesTabsController.Arguments(chat));
+      MessagesController c = DirectMessagesTabs.newController(this, chat, 0);
       c.addOneShotFocusListener(() -> c.destroyStackItemAt(c.stackSize() - 2));
       navigateTo(c);
     }
