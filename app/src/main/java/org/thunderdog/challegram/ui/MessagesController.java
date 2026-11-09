@@ -11270,9 +11270,15 @@ public class MessagesController extends ViewController<MessagesController.Argume
         if (created) {
           executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
         } else {
+          if (topicTabs instanceof ForumTopicTabs) {
+            ((ForumTopicTabs) topicTabs).expectCreatedTopic(false);
+          }
           onDeclined.run();
         }
       });
+      if (needTopic && topicTabs instanceof ForumTopicTabs) {
+        ((ForumTopicTabs) topicTabs).expectCreatedTopic(true);
+      }
       if (!needTopic) {
         executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
       }

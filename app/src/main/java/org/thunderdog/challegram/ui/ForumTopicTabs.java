@@ -45,7 +45,6 @@ import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.unsorted.Settings;
-import org.thunderdog.challegram.util.OptionDelegate;
 import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.Text;
@@ -395,6 +394,13 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     return ChatTopicTabs.replace(owner, c);
   }
 
+  private boolean expectsCreatedTopic;
+
+  /** A message sent to «All» of a chat with a bot is starting a new topic, which opens once created. */
+  public void expectCreatedTopic (boolean expect) {
+    this.expectsCreatedTopic = expect;
+  }
+
   /** Opens the tab of the topic, once the topic is loaded if it isn't yet. */
   public void selectTopic (int forumTopicId) {
     pendingSelectTopicId = forumTopicId;
@@ -564,8 +570,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       return;
     }
     int forumTopicId = ((TdApi.MessageTopicForum) message.topicId).forumTopicId;
-    boolean isCreatedByUser = message.isOutgoing && message.sendingState == null &&
-      message.content.getConstructor() == TdApi.MessageForumTopicCreated.CONSTRUCTOR;
+    boolean isCreated = message.isOutgoing && message.content.getConstructor() == TdApi.MessageForumTopicCreated.CONSTRUCTOR;
     owner.runOnUiThreadOptional(() -> {
       if (!isActive()) {
         return;
@@ -580,8 +585,9 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
         }
         return;
       }
-      if (isCreatedByUser && owner.isFocused()) {
-        // As in the official app, the topic the user has just created here opens
+      if (isCreated && expectsCreatedTopic) {
+        // As in the official app, the topic started by a message sent here opens; not the ones created on other devices
+        expectsCreatedTopic = false;
         pendingSelectTopicId = forumTopicId;
       }
       tdlib.send(new TdApi.GetForumTopic(chatId, forumTopicId), (topic, error) -> owner.runOnUiThreadOptional(() -> {
@@ -763,7 +769,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
         }
       }));
     } else if (topic != null && id == R.id.btn_notifications) {
-      showTopicMuteOptions(topic);
+      tdlib.ui().showForumTopicMuteOptions(owner, topic, null);
     } else if (topic != null && (id == R.id.btn_closeTopic || id == R.id.btn_reopenTopic)) {
       tdlib.send(new TdApi.ToggleForumTopicIsClosed(chatId, topic.info.forumTopicId, id == R.id.btn_closeTopic), tdlib.typedOkHandler());
     } else if (topic != null && (id == R.id.btn_pinTopic || id == R.id.btn_unpinTopic)) {
@@ -810,76 +816,6 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       tdlib.send(new TdApi.EditForumTopic(chatId, topic.info.forumTopicId, name, false, 0), tdlib.typedOkHandler());
       return true;
     }, true);
-  }
-
-  private void showTopicMuteOptions (TdApi.ForumTopic topic) {
-    boolean isMuted = tdlib.forumTopicNeedsMuteIcon(chatId, topic);
-    IntList ids = new IntList(5);
-    IntList icons = new IntList(5);
-    StringList strings = new StringList(5);
-    if (isMuted) {
-      ids.append(R.id.btn_menu_enable);
-      icons.append(R.drawable.baseline_notifications_24);
-      strings.append(R.string.EnableNotifications);
-    } else {
-      ids.append(R.id.btn_menu_1hour);
-      icons.append(R.drawable.baseline_notifications_paused_24);
-      strings.append(Lang.plural(R.string.MuteForXHours, 1));
-
-      ids.append(R.id.btn_menu_8hours);
-      icons.append(R.drawable.baseline_notifications_paused_24);
-      strings.append(Lang.plural(R.string.MuteForXHours, 8));
-
-      ids.append(R.id.btn_menu_2days);
-      icons.append(R.drawable.baseline_notifications_paused_24);
-      strings.append(Lang.plural(R.string.MuteForXDays, 2));
-
-      ids.append(R.id.btn_menu_disable);
-      icons.append(R.drawable.baseline_notifications_off_24);
-      strings.append(R.string.MuteForever);
-    }
-    owner.showOptions(topic.info.name, ids.get(), strings.get(), null, icons.get(), (OptionDelegate) (itemView, itemId) -> {
-      int muteFor;
-      if (itemId == R.id.btn_menu_1hour) {
-        muteFor = 60 * 60;
-      } else if (itemId == R.id.btn_menu_8hours) {
-        muteFor = 8 * 60 * 60;
-      } else if (itemId == R.id.btn_menu_2days) {
-        muteFor = 2 * 24 * 60 * 60;
-      } else if (itemId == R.id.btn_menu_disable) {
-        muteFor = Integer.MAX_VALUE;
-      } else {
-        muteFor = 0;
-      }
-      setTopicMuteFor(topic, muteFor);
-      return true;
-    });
-  }
-
-  /** Changes only the mute of the topic: the rest of its notification settings stay. */
-  private void setTopicMuteFor (TdApi.ForumTopic topic, int muteFor) {
-    TdApi.ChatNotificationSettings current = topic.notificationSettings;
-    TdApi.ChatNotificationSettings settings;
-    if (current != null) {
-      settings = new TdApi.ChatNotificationSettings(
-        current.useDefaultMuteFor, current.muteFor,
-        current.useDefaultSound, current.soundId,
-        current.useDefaultShowPreview, current.showPreview,
-        current.useDefaultMuteStories, current.muteStories,
-        current.useDefaultStorySound, current.storySoundId,
-        current.useDefaultShowStoryPoster, current.showStoryPoster,
-        current.useDefaultDisablePinnedMessageNotifications, current.disablePinnedMessageNotifications,
-        current.useDefaultDisableMentionNotifications, current.disableMentionNotifications
-      );
-    } else {
-      settings = new TdApi.ChatNotificationSettings();
-      settings.useDefaultSound = settings.useDefaultShowPreview = settings.useDefaultMuteStories = settings.useDefaultStorySound =
-        settings.useDefaultShowStoryPoster = settings.useDefaultDisablePinnedMessageNotifications = settings.useDefaultDisableMentionNotifications = true;
-    }
-    // Unmuted in a muted chat: the topic keeps its own setting instead of following the chat
-    settings.useDefaultMuteFor = muteFor == 0 && !tdlib.chatNeedsMuteIcon(chatId);
-    settings.muteFor = muteFor;
-    tdlib.send(new TdApi.SetForumTopicNotificationSettings(chatId, topic.info.forumTopicId, settings), tdlib.typedOkHandler());
   }
 
   private void showCreateTopicDialog () {

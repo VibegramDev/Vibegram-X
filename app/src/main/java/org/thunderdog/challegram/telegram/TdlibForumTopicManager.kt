@@ -162,7 +162,8 @@ class TdlibForumTopicManager(
     setMuteEndTime(key, update.notificationSettings)
     val isUpdated = replaceExisting(key) { prevValue, _ ->
       if (prevValue != null) {
-        val isRead = prevValue.lastMessage != null && update.lastReadInboxMessageId >= prevValue.lastMessage.id
+        val prevLastMessage = prevValue.lastMessage
+        val isRead = prevLastMessage != null && update.lastReadInboxMessageId >= prevLastMessage.id
         ForumTopic(
           prevValue.info,
           prevValue.lastMessage,
@@ -228,7 +229,7 @@ class TdlibForumTopicManager(
       return
     }
     replaceExisting(Key(message.chatId, topicId.forumTopicId)) { prevValue, _ ->
-      if (prevValue != null && (prevValue.lastMessage == null || prevValue.lastMessage.id < message.id)) {
+      if (prevValue != null && (prevValue.lastMessage?.let { it.id < message.id } ?: true)) {
         val isUnread = !message.isOutgoing && message.id > prevValue.lastReadInboxMessageId
         ForumTopic(
           prevValue.info,
