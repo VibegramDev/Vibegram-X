@@ -23,6 +23,7 @@ import android.text.TextPaint;
 import android.view.Gravity;
 import android.view.ViewGroup;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -337,6 +338,44 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
       default:
         return getTextOffset() + Screen.dp(16f);
     }
+  }
+
+  private static final android.graphics.Rect timeDigitBounds = new android.graphics.Rect();
+  private static float timeDigitTextSize;
+
+  /** Height of the time digits above the baseline (the time is drawn on {@link #getTitleTop}). */
+  private static int getTimeDigitHeight () {
+    Paint paint = getTimePaint();
+    if (timeDigitTextSize != paint.getTextSize()) {
+      paint.getTextBounds("0123456789", 0, 10, timeDigitBounds);
+      timeDigitTextSize = paint.getTextSize();
+    }
+    return -timeDigitBounds.top;
+  }
+
+  /**
+   * Sent / read ticks of an outgoing last message, by the glyph rather than the padded 24dp box: the same scale for
+   * both states (the double tick as tall as the time digits), the bottom on the time baseline and the right end
+   * of either tick the same 4dp before the time.
+   */
+  private void drawTicks (Canvas c, boolean unread, int viewWidth, boolean rtl) {
+    @DrawableRes int res = unread ? R.drawable.deproko_baseline_check_single_24 : R.drawable.deproko_baseline_check_double_24;
+    Drawable d = unread ? Icons.getSingleTick(ColorId.ticks) : Icons.getDoubleTick(ColorId.ticks);
+    if (d == null) {
+      return;
+    }
+    RectF glyph = Icons.getTickGlyphBounds(res);
+    RectF pair = Icons.getTickGlyphBounds(R.drawable.deproko_baseline_check_double_24);
+    float box = getTimeDigitHeight() / (pair.bottom - pair.top);
+    float left = chat.getTimeLeft() - Screen.dp(4f) - glyph.right * box;
+    float top = getTitleTop(getChatListMode()) - pair.bottom * box;
+    if (rtl) {
+      left = viewWidth - left - box;
+    }
+    int l = Math.round(left), t = Math.round(top), size = Math.round(box);
+    d.setBounds(l, t, l + size, t + size);
+    Drawables.prepare(d, unread ? Paints.getTicksPaint() : Paints.getTicksReadPaint());
+    d.draw(c);
   }
 
   private static int getClockTop (int chatListMode) {
@@ -721,16 +760,12 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
       if (chat.isOutgoing() && !chat.isSelfChat()) {
         if (chat.showViews()) {
           y -= Screen.dp(.5f);
-        } else if (chat.isUnread()) {
-          x += Screen.dp(4f);
         }
         if (chat.showViews()) {
           chat.getViewCounter().draw(c, x + Screen.dp(3f), y + Screen.dp(14f) / 2f, Gravity.RIGHT, 1f, this, ColorId.ticksRead);
           x -= chat.getViewCounter().getScaledWidth(Screen.dp(3));
         } else {
-          int iconX = x - Screen.dp(Icons.TICKS_SHIFT_X) - Screen.dp(14f);
-          boolean unread = chat.isUnread();
-          Drawables.drawRtl(c, unread ? Icons.getSingleTick(ColorId.ticks) : Icons.getDoubleTick(ColorId.ticks), iconX, y - Screen.dp(Icons.TICKS_SHIFT_Y), unread ? Paints.getTicksPaint() : Paints.getTicksReadPaint(), viewWidth, rtl);
+          drawTicks(c, chat.isUnread(), viewWidth, rtl);
           x -= Screen.dp(24 - 8 + 3);
         }
       }
