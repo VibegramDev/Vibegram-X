@@ -43,6 +43,7 @@ import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeDeprecated;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.ui.ForumTopicView;
 import org.thunderdog.challegram.util.text.Letters;
 
 import me.vkryl.core.StringUtils;
@@ -154,14 +155,8 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
   }
 
   private static String topicLetter (TdApi.ForumTopicInfo info) {
-    if (info.isGeneral) {
-      return "#";
-    }
-    if (StringUtils.isEmpty(info.name)) {
-      return "?";
-    }
-    // The whole first code point: substring(0, 1) splits surrogate pairs
-    return info.name.substring(0, Character.charCount(info.name.codePointAt(0))).toUpperCase();
+    String letter = ForumTopicView.getTopicLetter(info);
+    return letter != null ? letter : "?";
   }
 
   @Override

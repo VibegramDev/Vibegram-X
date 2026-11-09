@@ -138,6 +138,7 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
   private boolean needRebuildAllRows;
   /** Users for whom CreatePrivateChat was already sent. */
   private final java.util.Set<Long> requestedPrivateChatUserIds = new java.util.HashSet<>();
+  private final java.util.Set<Long> requestedSenderChatIds = new java.util.HashSet<>();
 
   @Override
   protected void onCreateView (Context context, CustomRecyclerView recyclerView) {
@@ -164,6 +165,9 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
   public void destroy () {
     super.destroy();
     tdlib.listeners().unsubscribeFromChatUpdates(chatId, this);
+    for (Row row : rows) {
+      row.chat.performDestroy();
+    }
   }
 
   /** The sender's own chat gives the row its avatar, name and status; the topic gives the messages and counters. */
@@ -183,8 +187,18 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
         }
         return senderChat;
       }
-      case TdApi.MessageSenderChat.CONSTRUCTOR:
-        return tdlib.chat(((TdApi.MessageSenderChat) sender).chatId);
+      case TdApi.MessageSenderChat.CONSTRUCTOR: {
+        long senderChatId = ((TdApi.MessageSenderChat) sender).chatId;
+        TdApi.Chat senderChat = tdlib.chat(senderChatId);
+        if (senderChat == null && requestedSenderChatIds.add(senderChatId)) {
+          tdlib.send(new TdApi.GetChat(senderChatId), (result, error) -> {
+            if (result != null) {
+              onDirectMessagesChatTopicUpdated(chatId, null);
+            }
+          });
+        }
+        return senderChat;
+      }
     }
     return null;
   }
@@ -242,6 +256,13 @@ public class DirectMessagesTopicsController extends RecyclerViewController<Direc
     topicRows.clear();
     for (int i = 0; i < newTopicRows.size(); i++) {
       topicRows.put(newTopicRows.keyAt(i), newTopicRows.valueAt(i));
+    }
+    java.util.Set<Row> keptRows = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    keptRows.addAll(newRows);
+    for (Row row : oldRows) {
+      if (!keptRows.contains(row)) {
+        row.chat.performDestroy();
+      }
     }
     rows.clear();
     rows.addAll(newRows);

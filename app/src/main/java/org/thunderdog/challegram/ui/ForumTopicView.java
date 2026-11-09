@@ -59,9 +59,10 @@ import org.thunderdog.challegram.util.text.TextMedia;
 import org.thunderdog.challegram.widget.BaseView;
 
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.Destroyable;
 import tgx.td.Td;
 
-public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watcher, TdlibStatusManager.HelperTarget, Text.TextMediaListener {
+public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watcher, TdlibStatusManager.HelperTarget, Text.TextMediaListener, Destroyable {
   private static TextPaint senderPaint;
   private static TextPaint timePaint;
   private static Paint iconPaint;
@@ -72,6 +73,7 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
   private TdApi.ForumTopic topic;
 
   private String titleText;
+  private String topicLetter;
   private Text displayTitle;
   private String senderText;
   private Text displaySender;
@@ -164,6 +166,11 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
     }
   }
 
+  @Override
+  public void performDestroy () {
+    destroy();
+  }
+
   public void destroy () {
     iconReceiver.performDestroy();
     textMediaReceiver.performDestroy();
@@ -220,6 +227,7 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
 
     // Build title (no emoji prefixes - icons are drawn separately)
     this.titleText = topic.info.name;
+    this.topicLetter = getTopicLetter(topic.info);
 
     // Check if we should show draft (draft exists with text content)
     // TODO: preview fallbacks for draftMessageContentRichMessage/VideoNote/VoiceNote (currently fall through to last message preview)
@@ -666,14 +674,11 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
 
       // Draw mute icon right after title text
       if (isMuted && displayTitle.getWidth() > 0) {
-        int muteIconX = textLeft + displayTitle.getWidth() + Screen.dp(4f);
-        int muteIconY = titleY - Screen.dp(1f);
-        Drawable muteIcon = Drawables.get(getResources(), R.drawable.deproko_baseline_notifications_off_24);
+        Drawable muteIcon = Icons.getChatMuteDrawable(ColorId.chatListMute);
         if (muteIcon != null) {
-          int muteIconSize = Screen.dp(14f);
-          muteIcon.setBounds(muteIconX, muteIconY, muteIconX + muteIconSize, muteIconY + muteIconSize);
-          muteIcon.setColorFilter(Theme.getColor(ColorId.iconLight), android.graphics.PorterDuff.Mode.SRC_IN);
-          muteIcon.draw(canvas);
+          int muteIconX = textLeft + displayTitle.getWidth() + Screen.dp(2f);
+          int muteIconY = titleY + displayTitle.getHeight() / 2 - muteIcon.getMinimumHeight() / 2;
+          Drawables.draw(canvas, muteIcon, muteIconX, muteIconY, Paints.getChatsMutePaint());
         }
       }
     }
@@ -685,16 +690,12 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
     // Draw lock icon if topic is closed and has no unread messages
     boolean showLockIcon = topic.info.isClosed && (unreadCounter == null || topic.unreadCount == 0);
     if (showLockIcon) {
-      int lockIconSize = Screen.dp(18f);
-      int lockIconX = textRight - lockIconSize;
-      int lockIconY = (int) counterCenterY - lockIconSize / 2;
-      Drawable lockIcon = Drawables.get(getResources(), R.drawable.deproko_baseline_lock_24);
+      Drawable lockIcon = getSparseDrawable(R.drawable.deproko_baseline_lock_24, ColorId.iconLight);
       if (lockIcon != null) {
-        lockIcon.setBounds(lockIconX, lockIconY, lockIconX + lockIconSize, lockIconY + lockIconSize);
-        lockIcon.setColorFilter(Theme.getColor(ColorId.iconLight), android.graphics.PorterDuff.Mode.SRC_IN);
-        lockIcon.draw(canvas);
+        int lockIconSize = lockIcon.getMinimumWidth();
+        Drawables.draw(canvas, lockIcon, textRight - lockIconSize, counterCenterY - lockIcon.getMinimumHeight() / 2f, Paints.getIconLightPorterDuffPaint());
+        previewRight -= lockIconSize + Screen.dp(4f);
       }
-      previewRight -= (int) (lockIconSize + Screen.dp(4f));
     }
 
     // Draw unread counter (rightmost)
@@ -736,8 +737,7 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
         // Draw typing animation icon
         int iconWidth = DrawAlgorithms.drawStatus(canvas, typingState, textLeft, textCenterY, Theme.getColor(ColorId.textLight), this, ColorId.textLight);
         // Draw typing text
-        String ellipsizedTyping = TextUtils.ellipsize(typingText, senderPaint, previewRight - textLeft - iconWidth, TextUtils.TruncateAt.END).toString();
-        canvas.drawText(ellipsizedTyping, textLeft + iconWidth, senderY, senderPaint);
+        canvas.drawText(ellipsizeTyping(typingText, previewRight - textLeft - iconWidth), textLeft + iconWidth, senderY, senderPaint);
       }
     } else {
       // Row 2: Draw sender name with emoji support
@@ -757,6 +757,18 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
 
     // Draw separator line at bottom
     canvas.drawLine(textLeft, height - 1, width, height - 1, Paints.strokeSeparatorPaint(ColorId.separator));
+  }
+
+  private String typingSource, typingEllipsized;
+  private int typingAvailWidth;
+
+  private String ellipsizeTyping (String text, int availWidth) {
+    if (!text.equals(typingSource) || typingAvailWidth != availWidth) {
+      typingSource = text;
+      typingAvailWidth = availWidth;
+      typingEllipsized = TextUtils.ellipsize(text, senderPaint, Math.max(0, availWidth), TextUtils.TruncateAt.END).toString();
+    }
+    return typingEllipsized;
   }
 
   private void drawCustomEmojiIcon (Canvas canvas, int left, int top, int right, int bottom) {
@@ -799,13 +811,11 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
   private void drawLetterIcon (Canvas canvas, int centerX, int centerY) {
     // For General topic (id = 1), show hash symbol "#" instead of letter
     // This matches Telegram for Android (TGA) behavior
-    String displayChar = getTopicLetter(topic.info);
-    if (displayChar == null) {
+    if (topicLetter == null) {
       return;
     }
-
     float textY = centerY - (letterFontMetrics.ascent + letterFontMetrics.descent) / 2;
-    canvas.drawText(displayChar, centerX, textY, letterPaint);
+    canvas.drawText(topicLetter, centerX, textY, letterPaint);
   }
 
   /** Letter of the icon of a topic without a custom emoji, or null for an empty name. */
@@ -832,19 +842,20 @@ public class ForumTopicView extends BaseView implements TdlibEmojiManager.Watche
     }
 
     // Fallback: treat as color index for backwards compatibility
-    int[] colors = {
-      0xFF6FB9F0, // Blue
-      0xFFFFD67E, // Yellow
-      0xFFCB86DB, // Purple
-      0xFF8EEE98, // Green
-      0xFFFF93B2, // Pink
-      0xFFFB6F5F  // Red
-    };
-    if (colorValue >= 0 && colorValue < colors.length) {
-      return colors[colorValue];
+    if (colorValue >= 0 && colorValue < TOPIC_COLORS.length) {
+      return TOPIC_COLORS[colorValue];
     }
-    return colors[0];
+    return TOPIC_COLORS[0];
   }
+
+  private static final int[] TOPIC_COLORS = {
+    0xFF6FB9F0, // Blue
+    0xFFFFD67E, // Yellow
+    0xFFCB86DB, // Purple
+    0xFF8EEE98, // Green
+    0xFFFF93B2, // Pink
+    0xFFFB6F5F  // Red
+  };
 
   // Text.TextMediaListener implementation
   @Override
