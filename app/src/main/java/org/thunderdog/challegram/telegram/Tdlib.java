@@ -3452,15 +3452,52 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     new HashMap<>();
 
   /**
+   * Sends message functions in order. Functions that need a new topic of a bot
+   * ({@link #sendInNewBotForumTopic}) are sent into it once it is created; when it can't be created,
+   * they aren't sent and {@code handler} receives an aborted request error.
+   */
+  public void sendMessages (List<? extends TdApi.Function<?>> functions, Client.ResultHandler handler) {
+    LinkedHashMap<Long, List<TdApi.Function<?>>> chats = new LinkedHashMap<>();
+    for (TdApi.Function<?> function : functions) {
+      long chatId = org.thunderdog.challegram.stars.PaidMessages.chatIdOf(function);
+      List<TdApi.Function<?>> chatFunctions = chats.get(chatId);
+      if (chatFunctions == null) {
+        chatFunctions = new ArrayList<>();
+        chats.put(chatId, chatFunctions);
+      }
+      chatFunctions.add(function);
+    }
+    for (List<TdApi.Function<?>> chatFunctions : chats.values()) {
+      boolean needTopic = sendInNewBotForumTopic(chatFunctions, created -> {
+        if (created) {
+          sendAll(chatFunctions, handler);
+        } else {
+          handler.onResult(new TdApi.Error(500, "Request aborted"));
+        }
+      });
+      if (!needTopic) {
+        sendAll(chatFunctions, handler);
+      }
+    }
+  }
+
+  private void sendAll (List<? extends TdApi.Function<?>> functions, Client.ResultHandler handler) {
+    for (TdApi.Function<?> function : functions) {
+      client().send(function, handler);
+    }
+  }
+
+  /**
    * In a chat with a bot whose users create topics, messages sent outside of topics start a new
    * topic, as in the official app: the topic is created first, named after the message, and the
    * functions are moved into it. Returns false, without calling {@code after}, when the functions
-   * don't need a topic. Otherwise {@code after} runs on the UI thread once they are in the new
-   * topic, or with the functions as they are when the topic can't be created.
+   * don't need a topic. Otherwise {@code after} runs on the UI thread with true once they are in the
+   * new topic, or with false when the topic can't be created: the reason is shown, and the
+   * functions must not be sent, so that they don't end up in the hidden General topic.
    */
   public boolean sendInNewBotForumTopic (
     List<? extends TdApi.Function<?>> functions,
-    Runnable after
+    RunnableBool after
   ) {
     long chatId = 0;
     for (TdApi.Function<?> function : functions) {
@@ -3482,7 +3519,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
             setTopicId(function, topicId);
           }
         }
-        after.run();
+        after.runWithBool(topicId != null);
       };
       List<RunnableData<TdApi.MessageTopic>> pending = pendingBotForumTopics.get(finalChatId);
       if (pending != null) {
@@ -3490,16 +3527,22 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         pending.add(send);
         return;
       }
+      if (connectionState == ConnectionState.WAITING_FOR_NETWORK) {
+        // The topic is created on the server: without the network the message would wait unseen
+        UI.showToast(R.string.network_WaitingForNetwork, Toast.LENGTH_SHORT);
+        send.runWithData(null);
+        return;
+      }
       pending = new ArrayList<>();
       pending.add(send);
       pendingBotForumTopics.put(finalChatId, pending);
       client().send(new TdApi.CreateForumTopic(finalChatId, name, true, null), result -> {
-        TdApi.MessageTopic topicId;
+        final TdApi.MessageTopic topicId;
         if (result.getConstructor() == TdApi.ForumTopicInfo.CONSTRUCTOR) {
           topicId = new TdApi.MessageTopicForum(((TdApi.ForumTopicInfo) result).forumTopicId);
         } else {
-          Log.e("Unable to create a bot topic: %s", TD.toErrorString(result));
           topicId = null;
+          UI.showError(result);
         }
         runOnUiThread(() -> {
           List<RunnableData<TdApi.MessageTopic>> sends = pendingBotForumTopics.remove(finalChatId);
@@ -3552,7 +3595,11 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     }
   }
 
-  /** The beginning of the text or the caption, as the official app names such topics. */
+  /**
+   * The beginning of the text or the caption, as the official app names such topics; forwarded
+   * messages, inline results and media without a caption are named «Media», as there. The bot
+   * renames the topic, as its name is implicit.
+   */
   private static String newBotForumTopicName (TdApi.Function<?> function) {
     TdApi.InputMessageContent content = null;
     if (function.getConstructor() == TdApi.SendMessage.CONSTRUCTOR) {
@@ -3562,18 +3609,11 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       content = album.inputMessageContents.length > 0 ? album.inputMessageContents[0] : null;
     }
     TdApi.FormattedText text = Td.textOrCaption(content);
-    String name = text != null ? text.text.trim() : null;
+    String name = text != null ? Strings.replaceNewLines(text.text).trim() : null;
     if (StringUtils.isEmpty(name)) {
       return Lang.getString(R.string.TabMedia);
     }
-    if (name.length() <= BOT_FORUM_TOPIC_NAME_LENGTH) {
-      return name;
-    }
-    int end = BOT_FORUM_TOPIC_NAME_LENGTH;
-    if (Character.isHighSurrogate(name.charAt(end - 1))) {
-      end--;
-    }
-    return name.substring(0, end) + "...";
+    return Strings.limit(name, BOT_FORUM_TOPIC_NAME_LENGTH);
   }
 
   private static class ForumUnreadTopics {
@@ -5559,6 +5599,10 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.SendInlineQueryResultMessage(chatId, topicId, replyTo, options, queryId, resultId, false), messageHandler());
   }
 
+  /**
+   * The function has no topic: in a chat with a bot with topics the message is sent outside of
+   * them and is seen in the whole chat only.
+   */
   public void sendBotStartMessage (long botUserId, long chatId, String parameter) {
     client().send(new TdApi.SendBotStartMessage(botUserId, chatId, parameter), messageHandler());
   }

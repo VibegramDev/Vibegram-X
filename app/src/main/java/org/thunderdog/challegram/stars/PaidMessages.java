@@ -220,10 +220,6 @@ public final class PaidMessages {
       UI.post(() -> confirm(context, tdlib, functions, after));
       return;
     }
-    // Bots don't charge for messages
-    if (tdlib.sendInNewBotForumTopic(functions, () -> after.runWithBool(true))) {
-      return;
-    }
     LinkedHashMap<Long, ChatPayment> chats = new LinkedHashMap<>();
     for (TdApi.Function<?> function : functions) {
       long chatId = chatIdOf(function);
@@ -360,26 +356,23 @@ public final class PaidMessages {
    * declines, the handler receives the error of an aborted request, which isn't shown to the user.
    */
   public static void sendWithConfirmation (@NonNull Tdlib tdlib, @NonNull TdApi.Function<?> function, @NonNull org.drinkless.tdlib.Client.ResultHandler handler) {
-    if (tdlib.sendInNewBotForumTopic(Collections.singletonList(function),
-      () -> tdlib.client().send(function, handler))) {
-      return;
-    }
+    List<TdApi.Function<?>> functions = Collections.singletonList(function);
     long chatId = chatIdOf(function);
     TdApi.MessageSendOptions options = optionsOf(function);
     if (chatId == 0 || (options != null && options.paidMessageStarCount > 0) || !mayBePaid(tdlib, chatId)) {
-      tdlib.client().send(function, handler);
+      tdlib.sendMessages(functions, handler);
       return;
     }
     UI.post(() -> {
       org.thunderdog.challegram.BaseActivity activity = UI.getUiContext();
       ViewController<?> context = activity != null && UI.isResumed() ? activity.navigation().getCurrentStackItem() : null;
       if (context == null || context.isDestroyed() || context.tdlib() != tdlib) {
-        tdlib.client().send(function, handler);
+        tdlib.sendMessages(functions, handler);
         return;
       }
-      confirm(context, tdlib, java.util.Collections.singletonList(function), confirmed -> {
+      confirm(context, tdlib, functions, confirmed -> {
         if (confirmed) {
-          tdlib.client().send(function, handler);
+          tdlib.sendMessages(functions, handler);
         } else {
           handler.onResult(new TdApi.Error(500, "Request aborted"));
         }
@@ -396,9 +389,7 @@ public final class PaidMessages {
   public static void send (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull List<? extends TdApi.Function<?>> functions) {
     confirm(context, tdlib, functions, confirmed -> {
       if (confirmed) {
-        for (TdApi.Function<?> function : functions) {
-          tdlib.client().send(function, tdlib.messageHandler());
-        }
+        tdlib.sendMessages(functions, tdlib.messageHandler());
       }
     });
   }

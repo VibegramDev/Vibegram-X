@@ -212,12 +212,11 @@ public class TGInlineKeyboard {
     }
   }
 
-  private boolean isCustom, disableCustomPadding;
-  /** Buttons that the app adds to a message itself: clicks go here instead of the bot. */
-  private @Nullable ClickListener localClickListener;
+  private boolean isCustom, disableCustomPadding, customBubbleStyle;
 
-  public void setLocalClickListener (@Nullable ClickListener listener) {
-    this.localClickListener = listener;
+  /** The custom button looks like a button of a bot under a bubble. */
+  public void setCustomBubbleStyle (boolean customBubbleStyle) {
+    this.customBubbleStyle = customBubbleStyle;
   }
 
   public void setCustom (int iconRes, String text, int maxWidth, boolean disableCustomPadding, ClickListener listener) {
@@ -580,8 +579,7 @@ public class TGInlineKeyboard {
       if (iconText != null) {
         return iconText.getWidth() + Screen.dp(ICON_GAP_DP);
       }
-      // Same room as the constructor of custom buttons leaves, the icon is placed from it
-      return customIconRes != 0 ? Screen.dp(24f) / 2 + Screen.dp(CUSTOM_ICON_PADDING) : 0;
+      return 0;
     }
 
     private void performDestroy () {
@@ -708,18 +706,6 @@ public class TGInlineKeyboard {
       }
     }
 
-    /** Icon next to the text of a bot button, which the app adds to it. */
-    public void setCustomIcon (@DrawableRes int iconRes) {
-      if (this.customIconRes == iconRes) {
-        return;
-      }
-      int width = wrapper.getMaxWidth() + getIconSpace();
-      this.customIconRes = iconRes;
-      TextPaint textPaint = Paints.getBoldPaint14(needFakeBold);
-      int textMaxWidth = Math.max(0, width - getIconSpace());
-      this.wrapper = new EmojiString(wrapper.getText(), textMaxWidth, textPaint);
-    }
-
     public void setCustomIconReverse (boolean customIconReverse) {
       this.customIconReverse = customIconReverse;
     }
@@ -731,7 +717,7 @@ public class TGInlineKeyboard {
     private int row = -1, column = -1;
 
     private boolean useWhiteMode () {
-      return context.context.useBubbles() && !isCustom;
+      return context.context.useBubbles() && (!isCustom || context.customBubbleStyle);
     }
 
     private static final float CUSTOM_ICON_PADDING = 2f;
@@ -739,7 +725,7 @@ public class TGInlineKeyboard {
     public void draw (MessageView view, Canvas c, int cx, int cy, int buttonWidth, int buttonHeight, int strokePadding, RectF rounder, int row, int column) {
       final int right = cx + buttonWidth;
       final int bottom = cy + buttonHeight;
-      final int radius = Screen.dp(context.context.useBubbles() && isCustom ? Theme.getBubbleMergeRadius() : 6f);
+      final int radius = Screen.dp(context.context.useBubbles() && isCustom && !context.customBubbleStyle ? Theme.getBubbleMergeRadius() : 6f);
 
       rounder.left = cx + strokePadding; rounder.right = right - strokePadding;
       rounder.top = cy + strokePadding; rounder.bottom = bottom - strokePadding;
@@ -1309,11 +1295,6 @@ public class TGInlineKeyboard {
 
     private void performAction (View view, boolean needVerify) {
       if (isActive()) {
-        return;
-      }
-
-      if (!isCustom && context.localClickListener != null) {
-        context.localClickListener.onClick(view, context, this);
         return;
       }
 
