@@ -3687,11 +3687,12 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
 
   // Replies that bots type in real time
 
-  /** Id of the pending message: bigger than ids of real messages, so it stays at the bottom. */
+  /** Id of the pending message; no real message has it. */
   public static final long PENDING_MESSAGE_ID = Long.MAX_VALUE >> 1;
 
   private @Nullable TGMessage pendingMessage;
   private long pendingMessageDraftId;
+  private int pendingMessageForumTopicId;
   private boolean pendingMessageKeepOnStop;
   private final Runnable pendingMessageTimeout = this::removePendingMessage;
 
@@ -3709,7 +3710,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
   public void onPendingMessageStopped (long chatId, int forumTopicId, long draftId) {
     tdlib.ui().post(() -> {
       if (loader.getChatId() == chatId && pendingMessage != null &&
-        pendingMessageDraftId == draftId) {
+        pendingMessageForumTopicId == forumTopicId && pendingMessageDraftId == draftId) {
         stopPendingMessage(false);
       }
     });
@@ -3731,7 +3732,8 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     UI.post(pendingMessageTimeout,
       TimeUnit.SECONDS.toMillis(tdlib.options().pendingTextMessagePeriod));
     int index = pendingMessage != null ? adapter.indexOfMessageContainer(PENDING_MESSAGE_ID) : -1;
-    if (index != -1 && pendingMessageDraftId == update.draftId) {
+    if (index != -1 && pendingMessageForumTopicId == update.forumTopicId &&
+      pendingMessageDraftId == update.draftId) {
       pendingMessageKeepOnStop = update.keepOnStop;
       replaceMessageContent(adapter.getMessage(index), index, update.chatId, PENDING_MESSAGE_ID,
         update.content);
@@ -3757,6 +3759,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     parsedMessage.prepareLayout();
     pendingMessage = parsedMessage;
     pendingMessageDraftId = update.draftId;
+    pendingMessageForumTopicId = update.forumTopicId;
     pendingMessageKeepOnStop = update.keepOnStop;
     controller.setPendingMessageCanStop(update.canStop);
     updateNewMessage(parsedMessage);
@@ -3787,6 +3790,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     }
     pendingMessage = null;
     pendingMessageDraftId = 0;
+    pendingMessageForumTopicId = 0;
     controller.setPendingMessageCanStop(false);
     int index = adapter.indexOfMessageContainer(PENDING_MESSAGE_ID);
     if (index != -1) {
