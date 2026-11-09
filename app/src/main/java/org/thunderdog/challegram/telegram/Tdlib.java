@@ -5615,6 +5615,10 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     org.thunderdog.challegram.stars.PaidMessages.sendWithConfirmation(this, new TdApi.SendInlineQueryResultMessage(chatId, topicId, replyTo, options, queryId, resultId, false), messageHandler());
   }
 
+  /**
+   * The function has no topic: in a chat with a bot with topics the message is sent outside of
+   * them and is seen in the whole chat only.
+   */
   public void sendBotStartMessage (long botUserId, long chatId, String parameter) {
     client().send(new TdApi.SendBotStartMessage(botUserId, chatId, parameter), messageHandler());
   }
