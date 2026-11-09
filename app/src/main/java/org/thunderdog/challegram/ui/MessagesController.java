@@ -2502,8 +2502,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
         }
       };
 
-      if (!PaidMessages.mayBePaid(tdlib, chatId)) {
-        // Not while the payment for the messages may still be asked.
+      if (!PaidMessages.mayBePaid(tdlib, chatId) && !isBotForumWholeChat()) {
+        // Not while the payment for the messages may still be asked, or a new topic of the bot is being created.
         UI.post(clearInputRunnable, MathUtils.clamp(50 * selectedItems.size(), 200, 500));
       }
 
@@ -11208,10 +11208,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
   /** Chats that charge Stars for messages: the payment is confirmed before anything is sent ({@link PaidMessages}). */
   private void executeSendMessageFunctions (List<TdApi.Function<?>> functions, List<TdApi.Message> sentMessages, final boolean isSchedule, RunnableBool onDone, Runnable onDeclined) {
     PaidMessages.confirm(this, tdlib, functions, confirmed -> {
-      if (confirmed) {
-        executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
-      } else {
+      if (!confirmed) {
         onDeclined.run();
+        return;
+      }
+      boolean needTopic = tdlib.sendInNewBotForumTopic(functions, created -> {
+        if (created) {
+          executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
+        } else {
+          onDeclined.run();
+        }
+      });
+      if (!needTopic) {
+        executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
       }
     });
   }
