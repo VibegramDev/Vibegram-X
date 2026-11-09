@@ -1226,6 +1226,9 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     }
 
     this.width = width;
+    if (hasTopicSeparator && topicSeparatorText != null) {
+      buildTopicSeparator();
+    }
 
     if (useBubbles()) {
       pRealContentX = computeBubbleLeft();
@@ -4662,10 +4665,8 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       topicSeparatorLetterWidth = topicSeparatorLetter != null ?
         U.measureText(topicSeparatorLetter, Paints.getBoldPaint13(false)) : 0;
     }
-    int maxWidth = Math.max(
-      Screen.dp(40f),
-      Screen.currentWidth() - Screen.dp(TOPIC_SEPARATOR_OTHER_WIDTH)
-    );
+    int listWidth = width != 0 ? width : Screen.currentWidth();
+    int maxWidth = Math.max(Screen.dp(40f), listWidth - Screen.dp(TOPIC_SEPARATOR_OTHER_WIDTH));
     TextColorSet colorSet = this::getTopicSeparatorTextColor;
     Text text = new Text.Builder(label, maxWidth, Paints.robotoStyleProvider(14f), colorSet)
       .entities(entities, (t, specificMedia) -> invalidateTopicSeparatorMedia(t, specificMedia))
