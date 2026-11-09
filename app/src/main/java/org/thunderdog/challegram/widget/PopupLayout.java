@@ -951,6 +951,14 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
     backgroundView.setVisibility(hide ? View.INVISIBLE : View.VISIBLE);
   }
 
+  /** Diagnostics for {@link org.thunderdog.challegram.util.StuckWatch}. */
+  public String stuckName () {
+    return (boundView != null ? boundView.getClass().getSimpleName() : "-") + "/" + (boundController != null ? boundController.getClass().getSimpleName() : "-");
+  }
+
+  public String stuckState () {
+    return stuckName() + " shown=" + hasCompletelyShown + " showing=" + isBoundWindowShowing() + " rootInsets=" + needRootInsets + " hidden=" + isHidden + " dismissed=" + isDismissed + " tempHidden=" + isTemporarilyHidden + " anim=" + animationType + " revealLaunched=" + revealAnimationLaunched + " hideLaunched=" + hideAnimationLaunched + " factor=" + factor + " visibility=" + getVisibility() + " size=" + getWidth() + "x" + getHeight() + " attached=" + isAttachedToWindow();
+  }
   public boolean hadCompletelyShown () {
     return hasCompletelyShown;
   }

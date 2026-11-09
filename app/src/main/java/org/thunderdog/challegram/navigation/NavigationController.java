@@ -50,6 +50,7 @@ import org.thunderdog.challegram.ui.MainController;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.unsorted.Size;
+import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.widget.ShadowView;
 
 import java.lang.annotation.Retention;
@@ -183,6 +184,10 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return isAnimating;
   }
 
+  /** Diagnostics for {@link org.thunderdog.challegram.util.StuckWatch}. */
+  public String stuckState () {
+    return "mode=" + translationMode + ", forward=" + translatingForward + ", m3Horizontal=" + m3Horizontal + ", m3Gesture=" + m3Gesture + ", m3FadeThrough=" + m3FadeThrough + ", factor=" + translationFactor + ", stack=" + getStackSize();
+  }
   public boolean isAnimatingWithEffect () {
     return isAnimating && translationMode != TRANSLATION_NONE;
   }
@@ -1061,6 +1066,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     }
     if (!isAnimating && getStackSize() > 0 && controller != null && !isCurrentControllerAnimating()) {
       isAnimating = true;
+      StuckWatch.event("navigateTo " + controller.getClass().getSimpleName());
       UI.getContext(context).notifyBackPressAvailabilityChanged();
       clearStackLock();
       processor.navigateTo(controller);
@@ -1627,6 +1633,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   void setIsAnimating (boolean animating) {
     if (isAnimating != animating) {
       isAnimating = animating;
+      StuckWatch.event("navigation animating=" + animating);
       ((BaseActivity) context).notifyBackPressAvailabilityChanged();
       ((BaseActivity) context).setIsKeyboardBlocked(animating);
       UI.getContext(context).setOrientationLockFlagEnabled(BaseActivity.ORIENTATION_FLAG_NAVIGATING, animating);
