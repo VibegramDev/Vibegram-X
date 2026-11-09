@@ -311,8 +311,30 @@ public class RecordAudioVideoController implements
     });
   }
 
+  /**
+   * Dictation only (owner): a chat message does not end with a period, so one final «.» the model put after
+   * the last sentence is dropped. «...», «?», «!» stay; voice/round/video transcription is not affected.
+   */
+  private static String withoutFinalPeriod (String text) {
+    if (text == null) {
+      return null;
+    }
+    int end = text.length();
+    while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+      end--;
+    }
+    if (end > 0 && text.charAt(end - 1) == '.' && !(end > 1 && text.charAt(end - 2) == '.')) {
+      end--;
+      while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+        end--;
+      }
+    }
+    return text.substring(0, end);
+  }
+
   private static void recognizeDictation (float[] samples, MessagesController target, long chatId, TdApi.MessageTopic topicId) {
-    boolean started = SttManager.instance().transcribeSamples(samples, text -> {
+    boolean started = SttManager.instance().transcribeSamples(samples, recognized -> {
+      String text = withoutFinalPeriod(recognized);
       boolean sameChat = !target.isDestroyed() && target.compareChat(chatId, topicId);
       if (sameChat) {
         target.setDictationInProgress(false);
