@@ -106,7 +106,6 @@ import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.ui.ForumTopicView;
 import org.thunderdog.challegram.ui.FeatureToggles;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.ui.TranslationControllerV2;
@@ -4661,7 +4660,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       topicSeparatorLetter = null;
     } else {
       label = info.name;
-      topicSeparatorLetter = ForumTopicView.getTopicLetter(info);
+      topicSeparatorLetter = TopicIcon.letter(info);
       topicSeparatorLetterWidth = topicSeparatorLetter != null ?
         U.measureText(topicSeparatorLetter, Paints.getBoldPaint13(false)) : 0;
     }
@@ -4747,7 +4746,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       float iconRadius = Screen.dp(TOPIC_SEPARATOR_ICON_SIZE) / 2f;
       float iconCenterX = left + Screen.dp(TOPIC_SEPARATOR_ICON_LEFT) + iconRadius;
       TdApi.ForumTopicInfo info = topicInfo();
-      int iconColor = ForumTopicView.getTopicColor(info.icon != null ? info.icon.color : 0);
+      int iconColor = TopicIcon.color(info.icon);
       c.drawCircle(iconCenterX, centerY, iconRadius, Paints.fillingPaint(iconColor));
       TextPaint letterPaint = Paints.getBoldPaint13(false, Color.WHITE);
       c.drawText(topicSeparatorLetter, iconCenterX - topicSeparatorLetterWidth / 2f,

@@ -28,6 +28,7 @@ import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.data.TopicIcon;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.navigation.ViewPagerHeaderViewCompact;
@@ -292,7 +293,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     for (TdApi.ForumTopic topic : topics) {
       TdApi.ForumTopicInfo info = topic.info;
       long customEmojiId = info.icon != null ? info.icon.customEmojiId : 0;
-      int color = ForumTopicView.getTopicColor(info.icon != null ? info.icon.color : 0);
+      int color = TopicIcon.color(info.icon);
       boolean isMuted = tdlib.forumTopicNeedsMuteIcon(chatId, topic);
       String contentKey = info.name + '|' + customEmojiId + '|' + color + '|' + topic.unreadCount + '|' + isMuted;
       TopicSideTabsView.Tab cachedTab = sideTabsCache.get(info.forumTopicId);
@@ -328,7 +329,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
           .noClickable()
           .build();
       } else {
-        letter = ForumTopicView.getTopicLetter(info);
+        letter = TopicIcon.letter(info);
         letterWidth = letter != null ? U.measureText(letter, letterPaint) : 0;
       }
       Counter counter = null;
@@ -392,13 +393,6 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
 
   private boolean replaceOwner (ViewController<?> c) {
     return ChatTopicTabs.replace(owner, c);
-  }
-
-  private boolean expectsCreatedTopic;
-
-  /** A message sent to «All» of a chat with a bot is starting a new topic, which opens once created. */
-  public void expectCreatedTopic (boolean expect) {
-    this.expectsCreatedTopic = expect;
   }
 
   /** Opens the tab of the topic, once the topic is loaded if it isn't yet. */
@@ -570,7 +564,6 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       return;
     }
     int forumTopicId = ((TdApi.MessageTopicForum) message.topicId).forumTopicId;
-    boolean isCreated = message.isOutgoing && message.content.getConstructor() == TdApi.MessageForumTopicCreated.CONSTRUCTOR;
     owner.runOnUiThreadOptional(() -> {
       if (!isActive()) {
         return;
@@ -584,11 +577,6 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
           scheduleTabsUpdate();
         }
         return;
-      }
-      if (isCreated && expectsCreatedTopic) {
-        // As in the official app, the topic started by a message sent here opens; not the ones created on other devices
-        expectsCreatedTopic = false;
-        pendingSelectTopicId = forumTopicId;
       }
       tdlib.send(new TdApi.GetForumTopic(chatId, forumTopicId), (topic, error) -> owner.runOnUiThreadOptional(() -> {
         if (topic == null || !isActive() || indexOfTopic(forumTopicId) != -1 || !isShownTopic(topic)) {

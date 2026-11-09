@@ -32,6 +32,8 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.component.attach.CustomItemAnimator;
 import org.thunderdog.challegram.component.chat.ChatHeaderView;
 import org.thunderdog.challegram.component.chat.MessagesManager;
+import org.thunderdog.challegram.component.dialogs.ChatView;
+import org.thunderdog.challegram.data.TGChat;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
@@ -658,6 +660,14 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     if (pendingSearch != null) {
       removeCallbacks(pendingSearch);
       pendingSearch = null;
+    }
+    if (recyclerView != null) {
+      for (int i = 0; i < recyclerView.getChildCount(); i++) {
+        View child = recyclerView.getChildAt(i);
+        if (child instanceof ChatView) {
+          ForumTopicViewHolder.unbind((ChatView) child);
+        }
+      }
     }
     Views.destroyRecyclerView(recyclerView);
     if (isSubscribedToUpdates) {
@@ -1302,7 +1312,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       long topicId = topic.info.forumTopicId;
       boolean isSelected = currentSelections.contains(topicId);
       // Use TopicIconModifier to draw the actual topic icon (colored circle or custom emoji)
-      TopicIconModifier iconModifier = new TopicIconModifier(tdlib, topic.info.icon);
+      TopicIconModifier iconModifier = new TopicIconModifier(tdlib, topic.info);
       // Icon is drawn on the left by the modifier, add padding for icon space
       String displayName = "        " + topic.info.name;
       items.add(new ListItem(
@@ -1948,10 +1958,10 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     @NonNull
     @Override
     public ForumTopicViewHolder onCreateViewHolder (@NonNull ViewGroup parent, int viewType) {
-      ForumTopicView view = new ForumTopicView(parent.getContext());
-      view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(78f)));
+      ChatView view = new ChatView(parent.getContext(), controller.tdlib);
       view.setOnClickListener(controller);
       view.setOnLongClickListener(controller);
+      controller.addThemeInvalidateListener(view);
       return new ForumTopicViewHolder(view);
     }
 
@@ -1959,32 +1969,26 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     public void onBindViewHolder (@NonNull ForumTopicViewHolder holder, int position) {
       if (isMessageSearchMode) {
         TopicMessageSearchResult result = messageSearchResults.get(position);
-        holder.bindMessageSearchResult(controller.tdlib, result);
+        holder.bind(controller, result.topic, result.foundMessage, result.highlightQuery, result);
       } else {
         TdApi.ForumTopic topic = topics.get(position);
-        holder.bind(controller.tdlib, topic, highlightQuery);
+        holder.bind(controller, topic, null, highlightQuery, topic);
       }
     }
 
     @Override
     public void onViewAttachedToWindow (@NonNull ForumTopicViewHolder holder) {
-      if (holder.itemView instanceof ForumTopicView) {
-        ((ForumTopicView) holder.itemView).attach();
-      }
+      ((ChatView) holder.itemView).attach();
     }
 
     @Override
     public void onViewDetachedFromWindow (@NonNull ForumTopicViewHolder holder) {
-      if (holder.itemView instanceof ForumTopicView) {
-        ((ForumTopicView) holder.itemView).detach();
-      }
+      ((ChatView) holder.itemView).detach();
     }
 
     @Override
     public void onViewRecycled (@NonNull ForumTopicViewHolder holder) {
-      if (holder.itemView instanceof ForumTopicView) {
-        ((ForumTopicView) holder.itemView).destroy();
-      }
+      ForumTopicViewHolder.unbind((ChatView) holder.itemView);
     }
 
     @Override
@@ -1993,22 +1997,33 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     }
   }
 
+  /** A topic row is the stock chat row ({@link TGChat#newForumTopic}), rebuilt on each bind: topic changes rebind it. */
   private static class ForumTopicViewHolder extends RecyclerView.ViewHolder {
     ForumTopicViewHolder (@NonNull View itemView) {
       super(itemView);
     }
 
-    void bind (Tdlib tdlib, TdApi.ForumTopic topic, @Nullable String highlightQuery) {
-      if (itemView instanceof ForumTopicView) {
-        ((ForumTopicView) itemView).setTopic(tdlib, topic, highlightQuery);
-        itemView.setTag(topic);
+    void bind (ForumTopicsController controller, TdApi.ForumTopic topic, @Nullable TdApi.Message foundMessage, @Nullable String highlightQuery, Object tag) {
+      ChatView view = (ChatView) itemView;
+      TdApi.Chat chat = controller.tdlib.chat(controller.chatId);
+      if (chat == null) {
+        chat = controller.chat;
+      }
+      TGChat oldRow = view.getChat();
+      view.setTag(tag);
+      view.setChat(chat != null ? TGChat.newForumTopic(controller, chat, topic, foundMessage, highlightQuery) : null);
+      // The row stands for a topic: no preview of the whole chat on hold
+      view.setPreviewChatId(null, 0, null);
+      if (oldRow != null) {
+        oldRow.performDestroy();
       }
     }
 
-    void bindMessageSearchResult (Tdlib tdlib, TopicMessageSearchResult result) {
-      if (itemView instanceof ForumTopicView) {
-        ((ForumTopicView) itemView).setMessageSearchResult(tdlib, result.topic, result.foundMessage, result.highlightQuery);
-        itemView.setTag(result);
+    static void unbind (ChatView view) {
+      TGChat row = view.getChat();
+      if (row != null) {
+        view.setChat(null);
+        row.performDestroy();
       }
     }
   }

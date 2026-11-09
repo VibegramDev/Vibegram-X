@@ -3468,8 +3468,8 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       chatFunctions.add(function);
     }
     for (List<TdApi.Function<?>> chatFunctions : chats.values()) {
-      boolean needTopic = sendInNewBotForumTopic(chatFunctions, created -> {
-        if (created) {
+      boolean needTopic = sendInNewBotForumTopic(chatFunctions, topicId -> {
+        if (topicId != null) {
           sendAll(chatFunctions, handler);
         } else {
           handler.onResult(new TdApi.Error(500, "Request aborted"));
@@ -3491,13 +3491,13 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
    * In a chat with a bot whose users create topics, messages sent outside of topics start a new
    * topic, as in the official app: the topic is created first, named after the message, and the
    * functions are moved into it. Returns false, without calling {@code after}, when the functions
-   * don't need a topic. Otherwise {@code after} runs on the UI thread with true once they are in the
-   * new topic, or with false when the topic can't be created: the reason is shown, and the
-   * functions must not be sent, so that they don't end up in the hidden General topic.
+   * don't need a topic. Otherwise {@code after} runs on the UI thread with the new topic once they are
+   * in it, or with null when the topic can't be created: the reason is shown, and the functions must
+   * not be sent, so that they don't end up in the hidden General topic.
    */
   public boolean sendInNewBotForumTopic (
     List<? extends TdApi.Function<?>> functions,
-    RunnableBool after
+    RunnableData<TdApi.MessageTopic> after
   ) {
     long chatId = 0;
     for (TdApi.Function<?> function : functions) {
@@ -3519,7 +3519,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
             setTopicId(function, topicId);
           }
         }
-        after.runWithBool(topicId != null);
+        after.runWithData(topicId);
       };
       List<RunnableData<TdApi.MessageTopic>> pending = pendingBotForumTopics.get(finalChatId);
       if (pending != null) {

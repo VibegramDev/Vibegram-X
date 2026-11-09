@@ -11267,19 +11267,17 @@ public class MessagesController extends ViewController<MessagesController.Argume
         onDeclined.run();
         return;
       }
-      boolean needTopic = tdlib.sendInNewBotForumTopic(functions, created -> {
-        if (created) {
-          executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
-        } else {
-          if (topicTabs instanceof ForumTopicTabs) {
-            ((ForumTopicTabs) topicTabs).expectCreatedTopic(false);
-          }
+      boolean needTopic = tdlib.sendInNewBotForumTopic(functions, topicId -> {
+        if (topicId == null) {
           onDeclined.run();
+          return;
+        }
+        executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
+        if (topicTabs instanceof ForumTopicTabs && topicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR) {
+          // As in the official app, the topic started by a message sent here opens; not the ones created on other devices
+          ((ForumTopicTabs) topicTabs).selectTopic(((TdApi.MessageTopicForum) topicId).forumTopicId);
         }
       });
-      if (needTopic && topicTabs instanceof ForumTopicTabs) {
-        ((ForumTopicTabs) topicTabs).expectCreatedTopic(true);
-      }
       if (!needTopic) {
         executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
       }

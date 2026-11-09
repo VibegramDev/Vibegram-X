@@ -33,6 +33,7 @@ import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.AvatarPlaceholder;
 import org.thunderdog.challegram.data.TGChat;
+import org.thunderdog.challegram.data.TopicIcon;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.loader.Receiver;
@@ -188,6 +189,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
   private final ComplexReceiver emojiStatusReceiver;
   private final ComplexReceiver textMediaReceiver;
   private final ComplexReceiver reactionsReceiver;
+  /** Custom emoji of the topic in rows of forum topics ({@link TGChat#getTopicIcon}). */
+  private final ComplexReceiver topicIconReceiver;
 
   private final BoolAnimator isSelected = new BoolAnimator(this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
   /** The row whose menu is open: M3 pressed state layer (onSurface 10%) until the menu closes. */
@@ -214,6 +217,8 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     avatarReceiver.setBounds(getAvatarLeft(chatListMode), getAvatarTop(chatListMode), getAvatarLeft(chatListMode) + getAvatarSize(chatListMode), getAvatarTop(chatListMode) + getAvatarSize(chatListMode));
     textMediaReceiver = new ComplexReceiver(this)
       .setUpdateListener(refreshRateLimiter);
+    topicIconReceiver = new ComplexReceiver(this)
+      .setUpdateListener(refreshRateLimiter);
     setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
   }
 
@@ -232,6 +237,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     textMediaReceiver.setAnimationDisabled(disabled);
     emojiStatusReceiver.setAnimationDisabled(disabled);
     reactionsReceiver.setAnimationDisabled(disabled);
+    topicIconReceiver.setAnimationDisabled(disabled);
   }
 
   public static int getViewHeight (int chatListMode) {
@@ -387,6 +393,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     textMediaReceiver.attach();
     emojiStatusReceiver.attach();
     reactionsReceiver.attach();
+    topicIconReceiver.attach();
   }
 
   public void detach () {
@@ -394,6 +401,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     textMediaReceiver.detach();
     emojiStatusReceiver.detach();
     reactionsReceiver.detach();
+    topicIconReceiver.detach();
   }
 
   public void setChat (TGChat chat) {
@@ -482,10 +490,25 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     }
   }
 
+  /** Topic rows: the letter on the topic color as the avatar, and the custom emoji over it once loaded. */
+  private boolean requestTopicIcon () {
+    TopicIcon topicIcon = chat != null ? chat.getTopicIcon() : null;
+    if (topicIcon == null) {
+      topicIconReceiver.clear();
+      return false;
+    }
+    avatarReceiver.requestPlaceholder(tdlib, topicIcon.placeholder(), AvatarReceiver.Options.NONE);
+    topicIcon.requestFiles(topicIconReceiver);
+    return true;
+  }
+
   private void requestContent () {
     requestTextContent();
     requestEmojiStatus();
     requestReactionFiles();
+    if (requestTopicIcon()) {
+      return;
+    }
     if (chat != null) {
       AvatarPlaceholder.Metadata avatarPlaceholder = chat.getAvatarPlaceholder();
       if (avatarPlaceholder != null) {
@@ -504,6 +527,10 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
   }
 
   public void invalidateAvatarReceiver () {
+    if (requestTopicIcon()) {
+      invalidate();
+      return;
+    }
     if (chat != null) {
       avatarReceiver.requestChat(tdlib, chat.getChatId(), AvatarReceiver.Options.SHOW_ONLINE);
     } else {
@@ -590,7 +617,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
   // Highlights the chat that is currently opened in the right pane of the tablet layout.
   private boolean isOpenedInTabletLayout () {
     long chatId = getChatId();
-    if (chatId == 0) {
+    if (chatId == 0 || chat.getForumTopic() != null) {
       return false;
     }
     BaseActivity context = UI.getContext(getContext());
@@ -617,6 +644,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
       requestTextContent();
       requestEmojiStatus();
       requestReactionFiles();
+      requestTopicIcon();
       return true;
     }
     return false;
@@ -727,6 +755,11 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     reactionCounter.draw(c, counterRight - counterRadius, counterCenterY, Gravity.RIGHT, 1f, this, ColorId.NONE);
     counterRight -= reactionCounter.getScaledWidth(getTimePaddingLeft());
 
+    if (chat.showTopicClosed()) {
+      Drawable lock = getSparseDrawable(R.drawable.baseline_lock_16, ColorId.NONE);
+      Drawables.drawRtl(c, lock, counterRight - lock.getMinimumWidth(), counterCenterY - lock.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.iconLight), viewWidth, rtl);
+    }
+
     TdlibStatusManager.Helper status = chat.statusHelper();
     TdlibStatusManager.ChatState state = status != null ? status.drawingState() : null;
     float statusVisibility = state != null ? state.visibility() : 0f;
@@ -796,10 +829,15 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
 
     avatarReceiver.forceAllowOnline(!isSelected.getValue(), 1f - isSelected.getFloatValue());
     layoutReceiver();
-    if (avatarReceiver.needPlaceholder()) {
-      avatarReceiver.drawPlaceholder(c);
+    TopicIcon topicIcon = chat.getTopicIcon();
+    if (topicIcon != null && !topicIcon.needPlaceholder()) {
+      topicIcon.draw(c, topicIconReceiver, avatarReceiver.getLeft(), avatarReceiver.getTop(), avatarReceiver.getRight(), avatarReceiver.getBottom());
+    } else {
+      if (avatarReceiver.needPlaceholder()) {
+        avatarReceiver.drawPlaceholder(c);
+      }
+      avatarReceiver.draw(c);
     }
-    avatarReceiver.draw(c);
 
     DrawAlgorithms.drawIcon(c, avatarReceiver, 315f, chat.getScheduleAnimator().getFloatValue(), Theme.fillingColor(), getSparseDrawable(R.drawable.baseline_watch_later_10, ColorId.badgeMuted), PorterDuffPaint.get(ColorId.badgeMuted, chat.getScheduleAnimator().getFloatValue()));
     DrawAlgorithms.drawSimplestCheckBox(c, avatarReceiver, isSelected.getFloatValue());

@@ -22,6 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.data.TopicIcon;
 import org.thunderdog.challegram.data.AvatarPlaceholder;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.data.ThreadInfo;
@@ -43,25 +44,21 @@ import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeDeprecated;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
-import org.thunderdog.challegram.ui.ForumTopicView;
 import org.thunderdog.challegram.util.text.Letters;
 
 import me.vkryl.core.StringUtils;
 import tgx.td.ChatId;
 
-public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManager.Watcher {
+public class ChatHeaderView extends ComplexHeaderView {
   public interface Callback {
     void onChatHeaderClick ();
   }
 
   private Callback callback;
 
-  // Topic icon support
-  private long topicCustomEmojiId;
-  private TdlibEmojiManager.Entry topicCustomEmoji;
-  private ComplexReceiver topicIconReceiver;
-  private ImageFile topicImageFile;
-  private GifFile topicGifFile;
+  /** Icon of the forum topic in place of the chat avatar: the letter as the avatar placeholder, the custom emoji over it. */
+  private @Nullable TopicIcon topicIcon;
+  private final ComplexReceiver topicIconReceiver;
 
   public ChatHeaderView (Context context, Tdlib tdlib, @Nullable ViewController<?> parent) {
     super(context, tdlib, parent);
@@ -94,91 +91,18 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
   }
 
   @Override
-  public void onCustomEmojiLoaded (TdlibEmojiManager context, TdlibEmojiManager.Entry entry) {
-    if (entry.customEmojiId == topicCustomEmojiId) {
-      topicCustomEmoji = entry;
-      loadTopicEmojiFiles();
-      invalidate();
-    }
-  }
-
-  private void loadTopicEmojiFiles () {
-    if (topicCustomEmoji == null || topicCustomEmoji.isNotFound()) {
-      topicImageFile = null;
-      topicGifFile = null;
-      topicIconReceiver.clear();
-      return;
-    }
-
-    TdApi.Sticker sticker = topicCustomEmoji.value;
-    if (sticker == null) {
-      topicImageFile = null;
-      topicGifFile = null;
-      topicIconReceiver.clear();
-      return;
-    }
-
-    int size = Screen.dp(40f); // Avatar size
-    // Check sticker format to determine file type
-    // WebP stickers use ImageFile, TGS and WEBM use GifFile
-    switch (sticker.format.getConstructor()) {
-      case TdApi.StickerFormatWebp.CONSTRUCTOR: {
-        topicImageFile = new ImageFile(tdlib, sticker.sticker);
-        topicImageFile.setSize(size);
-        topicImageFile.setScaleType(ImageFile.CENTER_CROP);
-        topicGifFile = null;
-        topicIconReceiver.getImageReceiver(0).requestFile(topicImageFile);
-        break;
-      }
-      case TdApi.StickerFormatTgs.CONSTRUCTOR:
-      case TdApi.StickerFormatWebm.CONSTRUCTOR: {
-        if (Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI) && sticker.thumbnail != null) {
-          // Animated emoji are disabled: show the static preview instead of playing the icon
-          topicImageFile = TD.toImageFile(tdlib, sticker.thumbnail);
-          if (topicImageFile != null) {
-            topicImageFile.setSize(size);
-            topicImageFile.setScaleType(ImageFile.CENTER_CROP);
-            topicImageFile.setNoBlur();
-            topicGifFile = null;
-            topicIconReceiver.getImageReceiver(0).requestFile(topicImageFile);
-            break;
-          }
-        }
-        topicGifFile = new GifFile(tdlib, sticker);
-        topicGifFile.setOptimizationMode(GifFile.OptimizationMode.EMOJI);
-        topicGifFile.setRequestedSize(size);
-        topicImageFile = null;
-        topicIconReceiver.getGifReceiver(0).requestFile(topicGifFile);
-        break;
-      }
-    }
-  }
-
-  private static String topicLetter (TdApi.ForumTopicInfo info) {
-    String letter = ForumTopicView.getTopicLetter(info);
-    return letter != null ? letter : "?";
-  }
-
-  @Override
   public void performDestroy () {
     super.performDestroy();
     clearTopicEmoji();
-    if (topicIconReceiver != null) {
-      topicIconReceiver.performDestroy();
-    }
+    topicIconReceiver.performDestroy();
   }
 
   private void clearTopicEmoji () {
-    if (topicCustomEmojiId != 0 && topicCustomEmoji == null && tdlib != null) {
-      tdlib.emoji().forgetWatcher(topicCustomEmojiId, this);
+    if (topicIcon != null) {
+      topicIcon.performDestroy();
+      topicIcon = null;
     }
-    topicCustomEmojiId = 0;
-    topicCustomEmoji = null;
-    topicImageFile = null;
-    topicGifFile = null;
-    if (topicIconReceiver != null) {
-      topicIconReceiver.clear();
-    }
+    topicIconReceiver.clear();
   }
 
   private CharSequence forcedSubtitle;
@@ -240,23 +164,15 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
 
     // For forum topics, show topic icon instead of chat avatar
     if (forumTopic != null) {
-      TdApi.ForumTopicIcon icon = forumTopic.info.icon;
-      int topicColor = icon != null ? icon.color : 0x6FB9F0;
-      // Ensure color has alpha
-      if (topicColor < 0x01000000) {
-        topicColor = 0xFF000000 | topicColor;
-      }
-
-      if (icon != null && icon.customEmojiId != 0) {
-        topicCustomEmojiId = icon.customEmojiId;
-        topicCustomEmoji = tdlib.emoji().findOrPostponeRequest(topicCustomEmojiId, this);
-        if (topicCustomEmoji != null) {
-          loadTopicEmojiFiles();
+      TopicIcon icon = new TopicIcon(tdlib, forumTopic.info, Screen.dp(40f), () -> {
+        if (topicIcon != null) {
+          topicIcon.requestFiles(topicIconReceiver);
         }
-      }
-      // Colored letter: the icon without a custom emoji, or a placeholder while the emoji loads
-      AvatarPlaceholder.Metadata metadata = new AvatarPlaceholder.Metadata(new TdlibAccentColor(topicColor), new Letters(topicLetter(forumTopic.info)));
-      getAvatarReceiver().requestPlaceholder(tdlib, metadata, AvatarReceiver.Options.FULL_SIZE);
+        invalidate();
+      });
+      topicIcon = icon;
+      icon.requestFiles(topicIconReceiver);
+      getAvatarReceiver().requestPlaceholder(tdlib, icon.placeholder(), AvatarReceiver.Options.FULL_SIZE);
     } else {
       getAvatarReceiver().requestChat(tdlib, chat.id, AvatarReceiver.Options.FULL_SIZE);
     }
@@ -387,33 +303,12 @@ public class ChatHeaderView extends ComplexHeaderView implements TdlibEmojiManag
   protected void onDraw (@NonNull Canvas c) {
     super.onDraw(c);
 
-    // Draw topic custom emoji icon on top of avatar if loaded
-    if (topicCustomEmojiId != 0 && topicCustomEmoji != null && !topicCustomEmoji.isNotFound()) {
-      drawTopicIcon(c);
-    }
-  }
-
-  private void drawTopicIcon (@NonNull Canvas c) {
-    {
+    // The custom emoji of the topic over the letter placeholder, once loaded
+    if (topicIcon != null && !topicIcon.needPlaceholder()) {
       AvatarReceiver avatarReceiver = getAvatarReceiver();
-      int left = avatarReceiver.getLeft();
-      int top = avatarReceiver.getTop();
-      int right = avatarReceiver.getRight();
-      int bottom = avatarReceiver.getBottom();
-      float centerX = (left + right) / 2f;
-      float centerY = (top + bottom) / 2f;
-      float radius = (right - left) / 2f;
-
-      // Cover the placeholder with header background before drawing emoji
-      c.drawCircle(centerX, centerY, radius, Paints.fillingPaint(Theme.headerColor()));
-
-      if (topicImageFile != null) {
-        topicIconReceiver.getImageReceiver(0).setBounds(left, top, right, bottom);
-        topicIconReceiver.getImageReceiver(0).draw(c);
-      } else if (topicGifFile != null) {
-        topicIconReceiver.getGifReceiver(0).setBounds(left, top, right, bottom);
-        topicIconReceiver.getGifReceiver(0).draw(c);
-      }
+      int left = avatarReceiver.getLeft(), top = avatarReceiver.getTop(), right = avatarReceiver.getRight(), bottom = avatarReceiver.getBottom();
+      c.drawCircle((left + right) / 2f, (top + bottom) / 2f, (right - left) / 2f, Paints.fillingPaint(Theme.headerColor()));
+      topicIcon.draw(c, topicIconReceiver, left, top, right, bottom);
     }
   }
 }
