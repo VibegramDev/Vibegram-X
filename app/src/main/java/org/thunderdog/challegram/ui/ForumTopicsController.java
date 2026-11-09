@@ -303,36 +303,53 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     updateFilterFabVisibility();
   }
 
-  private void searchTopics (String query) {
-    if (StringUtils.isEmpty(query)) {
-      // Empty query - restore all topics
-      if (allTopics != null) {
-        topics.clear();
-        topics.addAll(allTopics);
-        adapter.setTopics(topics, null);
-        updateEmptyView();
-      }
-      return;
-    }
+  private int topicSearchRequestId;
 
-    // allTopics always holds the loaded topics, the search only filters them
+  private void searchTopics (String query) {
+    final int requestId = ++topicSearchRequestId;
     if (allTopics == null) {
       return;
     }
-
-    // Client-side filtering by topic name (case-insensitive)
-    String lowerQuery = query.toLowerCase();
-    List<TdApi.ForumTopic> filteredTopics = new ArrayList<>();
-    for (TdApi.ForumTopic topic : allTopics) {
-      if (topic.info.name.toLowerCase().contains(lowerQuery)) {
-        filteredTopics.add(topic);
-      }
+    if (StringUtils.isEmpty(query)) {
+      topics.clear();
+      topics.addAll(allTopics);
+      adapter.setTopics(topics, null);
+      updateEmptyView();
+      return;
     }
 
+    String lowerQuery = query.toLowerCase();
     topics.clear();
-    topics.addAll(filteredTopics);
+    for (TdApi.ForumTopic topic : allTopics) {
+      if (topic.info.name.toLowerCase().contains(lowerQuery)) {
+        topics.add(topic);
+      }
+    }
     adapter.setTopics(topics, query);
     updateEmptyView();
+
+    if (!canLoadMore) {
+      return;
+    }
+    tdlib.client().send(new TdApi.GetForumTopics(chatId, query, 0, 0, 0, TOPICS_PAGE_SIZE), result -> {
+      final TdApi.ForumTopics found = result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR ? (TdApi.ForumTopics) result : null;
+      runOnUiThreadOptional(() -> {
+        if (found == null || requestId != topicSearchRequestId || adapter.isMessageSearchMode || !query.equals(adapter.highlightQuery)) {
+          return;
+        }
+        int startIndex = topics.size();
+        for (TdApi.ForumTopic topic : found.topics) {
+          if (isShownTopic(topic) && indexOfTopic(topics, topic.info.forumTopicId) == -1) {
+            int index = indexOfTopic(allTopics, topic.info.forumTopicId);
+            topics.add(index != -1 ? allTopics.get(index) : topic);
+          }
+        }
+        if (topics.size() > startIndex) {
+          adapter.notifyItemRangeInserted(startIndex, topics.size() - startIndex);
+          updateEmptyView();
+        }
+      });
+    });
   }
 
   private void cancelMessageSearch () {
@@ -1337,7 +1354,6 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     showSettings(b);
   }
 
-  // Map topic color to a Unicode circle emoji for display in filter dialog
   private void applyTopicFilter (java.util.Set<Long> topicIds) {
     applyTopicFilter(topicIds, false);
   }
