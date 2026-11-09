@@ -132,6 +132,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
           }
           userScrollActionsCount++;
           wasScrollByUser = true;
+          draggedSinceHighlight = true;
         }
         boolean isScrolling = newState != RecyclerView.SCROLL_STATE_IDLE;
         if (MessagesManager.this.isScrolling != isScrolling) {
@@ -447,8 +448,16 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
       }
     }
     lastScrollToBottomVisible = isVisible;
+    if (!isVisible && hasMessages && draggedSinceHighlight && hasReturnMessage() && !loader.canLoadBottom()) {
+      // The user scrolled down to the newest message by hand after following a reply or a link: the way back is no
+      // longer needed, so the button hides at the bottom (otherwise it stayed there pointing to the origin message).
+      revokeReturnMessages();
+    }
     checkScrollToBottomButton();
   }
+
+  /** The user dragged the list after the last jump to a message (reply, link, return). */
+  private boolean draggedSinceHighlight;
 
   public void checkScrollToBottomButton () {
     controller.setScrollToBottomVisible(getActiveMessageCount() > 0 && (lastScrollToBottomVisible || loader.canLoadBottom() || hasReturnMessage()), isReturnAbove());
@@ -3234,6 +3243,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
   }
 
   public void highlightMessage (MessageId messageId, int highlightMode, long[] returnToMessageIds, boolean allowSmooth) {
+    draggedSinceHighlight = false;
     if (isEventLog()) {
       return;
     }

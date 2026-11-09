@@ -229,6 +229,14 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     return tabletLayout != null && tabletLayout.isSplit();
   }
 
+  /** Left edge of the right (detail) pane on screen in the tablet split, -1 otherwise. */
+  public int getTabletDetailScreenLeft () {
+    if (!isTabletSplit() || tabletLayout.getWindowToken() == null) {
+      return -1;
+    }
+    return Views.getLocationOnScreen(tabletLayout)[0] + tabletLayout.getMeasuredWidth() - tabletLayout.getDetailWidth();
+  }
+
   public int getContentWidth () {
     return isTabletSplit() ? tabletLayout.getDetailWidth() : rootView.getMeasuredWidth();
   }
