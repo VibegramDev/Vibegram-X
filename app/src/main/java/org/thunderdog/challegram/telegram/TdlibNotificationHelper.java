@@ -184,7 +184,7 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       if (notification.type.getConstructor() == TdApi.NotificationTypeNewMessage.CONSTRUCTOR) {
         TdApi.Message message = ((TdApi.NotificationTypeNewMessage) notification.type).message;
         if (message.topicId != null && message.topicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR) {
-          isMuted = tdlib.isForumTopicNotificationMuted(message.chatId, ((TdApi.MessageTopicForum) message.topicId).forumTopicId, isMention, notificationGroupId, notification.id);
+          isMuted = tdlib.isForumTopicNotificationMuted(message.chatId, ((TdApi.MessageTopicForum) message.topicId).forumTopicId, isMention || message.containsUnreadMention, notificationGroupId, notification.id);
         }
       }
       if (isMuted) {
