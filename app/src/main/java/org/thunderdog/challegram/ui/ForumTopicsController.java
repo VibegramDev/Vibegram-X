@@ -1029,7 +1029,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     }
 
     // Notifications (always available for members)
-    boolean isMuted = topic.notificationSettings != null && topic.notificationSettings.muteFor > 0;
+    boolean isMuted = tdlib.forumTopicNeedsMuteIcon(chatId, topic);
     ids.append(R.id.btn_notifications);
     icons.append(isMuted ? R.drawable.baseline_notifications_off_24 : R.drawable.baseline_notifications_24);
     colors.append(OptionColor.NORMAL);
@@ -1069,7 +1069,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       } else if (id == R.id.btn_reopenTopic) {
         toggleTopicClosed(topic, false);
       } else if (id == R.id.btn_notifications) {
-        showTopicMuteOptions(topic);
+        tdlib.ui().showForumTopicMuteOptions(this, topic, null);
       } else if (id == R.id.btn_editTopic) {
         editTopic(topic);
       } else if (id == R.id.btn_editTopicIcon) {
@@ -1377,93 +1377,6 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
     adapter.setMessageSearchResults(messageSearchResults, currentSearchQuery);
     updateEmptyViewForMessageSearch();
-  }
-
-  private void showTopicMuteOptions (TdApi.ForumTopic topic) {
-    boolean isMuted = topic.notificationSettings != null && topic.notificationSettings.muteFor > 0;
-
-    IntList ids = new IntList(5);
-    IntList icons = new IntList(5);
-    ArrayList<String> strings = new ArrayList<>();
-
-    if (isMuted) {
-      // Currently muted - show unmute option
-      ids.append(R.id.btn_menu_enable);
-      icons.append(R.drawable.baseline_notifications_24);
-      strings.add(Lang.getString(R.string.EnableNotifications));
-    } else {
-      // Currently unmuted - show mute options
-      ids.append(R.id.btn_menu_1hour);
-      icons.append(R.drawable.baseline_notifications_paused_24);
-      strings.add(Lang.plural(R.string.MuteForXHours, 1));
-
-      ids.append(R.id.btn_menu_8hours);
-      icons.append(R.drawable.baseline_notifications_paused_24);
-      strings.add(Lang.plural(R.string.MuteForXHours, 8));
-
-      ids.append(R.id.btn_menu_2days);
-      icons.append(R.drawable.baseline_notifications_paused_24);
-      strings.add(Lang.plural(R.string.MuteForXDays, 2));
-
-      ids.append(R.id.btn_menu_disable);
-      icons.append(R.drawable.baseline_notifications_off_24);
-      strings.add(Lang.getString(R.string.MuteForever));
-    }
-
-    showOptions(topic.info.name, ids.get(), strings.toArray(new String[0]), null, icons.get(), (itemView, id) -> {
-      int muteFor = 0;
-      if (id == R.id.btn_menu_enable) {
-        muteFor = 0; // Unmute
-      } else if (id == R.id.btn_menu_1hour) {
-        muteFor = (int) java.util.concurrent.TimeUnit.HOURS.toSeconds(1);
-      } else if (id == R.id.btn_menu_8hours) {
-        muteFor = (int) java.util.concurrent.TimeUnit.HOURS.toSeconds(8);
-      } else if (id == R.id.btn_menu_2days) {
-        muteFor = (int) java.util.concurrent.TimeUnit.DAYS.toSeconds(2);
-      } else if (id == R.id.btn_menu_disable) {
-        muteFor = Integer.MAX_VALUE; // Mute forever
-      }
-      setForumTopicMuteFor(topic, muteFor);
-      return true;
-    });
-  }
-
-  private void setForumTopicMuteFor (TdApi.ForumTopic topic, int muteFor) {
-    TdApi.ChatNotificationSettings settings = new TdApi.ChatNotificationSettings();
-    settings.useDefaultMuteFor = (muteFor == 0);
-    settings.muteFor = muteFor;
-    settings.useDefaultSound = true;
-    settings.useDefaultShowPreview = true;
-    settings.useDefaultMuteStories = true;
-    settings.useDefaultStorySound = true;
-    settings.useDefaultDisablePinnedMessageNotifications = true;
-    settings.useDefaultDisableMentionNotifications = true;
-
-    tdlib.client().send(new TdApi.SetForumTopicNotificationSettings(
-      topic.info.chatId,
-      topic.info.forumTopicId,
-      settings
-    ), result -> {
-      UI.post(() -> {
-        if (result.getConstructor() == TdApi.Ok.CONSTRUCTOR) {
-          // Update local state and refresh UI
-          if (topic.notificationSettings == null) {
-            topic.notificationSettings = new TdApi.ChatNotificationSettings();
-          }
-          topic.notificationSettings.muteFor = muteFor;
-          topic.notificationSettings.useDefaultMuteFor = (muteFor == 0);
-          // Refresh the topic in the list
-          for (int i = 0; i < topics.size(); i++) {
-            if (topics.get(i).info.forumTopicId == topic.info.forumTopicId) {
-              adapter.notifyItemChanged(i);
-              break;
-            }
-          }
-        } else if (result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
-          UI.showError(result);
-        }
-      });
-    });
   }
 
   private void showCreateTopicDialog () {

@@ -1142,6 +1142,67 @@ public class TdlibUi extends Handler {
     });
   }
 
+  public void showForumTopicMuteOptions (final ViewController<?> context, final TdApi.ForumTopic topic, @Nullable Runnable after) {
+    final long chatId = topic.info.chatId;
+    final int forumTopicId = topic.info.forumTopicId;
+    final int chatMuteFor = tdlib.chatMuteFor(chatId);
+    final boolean useDefaultMuteFor = topic.notificationSettings == null || topic.notificationSettings.useDefaultMuteFor;
+    final int muteFor = tdlib.forumTopicMuteFor(chatId, topic);
+
+    final int capacity = 6;
+    StringList strings = new StringList(capacity);
+    IntList icons = new IntList(capacity);
+    IntList ids = new IntList(capacity);
+    if (useDefaultMuteFor) {
+      if (chatMuteFor == 0) {
+        fillMuteOptions(ids, icons, strings, null, false, true, true, false, false, null, false);
+      } else {
+        fillMuteOptions(ids, icons, strings, null, true, false, false, false, false, null, false);
+      }
+    } else if (muteFor > 0) {
+      fillMuteOptions(ids, icons, strings, null, true, false, chatMuteFor == 0, false, false, null, false);
+    } else if (chatMuteFor == 0) {
+      fillMuteOptions(ids, icons, strings, null, true, true, true, false, true, null, false);
+    } else {
+      strings.append(Lang.getString(R.string.NotificationsTopicDefault, Lang.lowercase(getValueForSettings(chatMuteFor))));
+      icons.append(R.drawable.baseline_notifications_off_24);
+      ids.append(R.id.btn_menu_resetToDefault);
+      fillMuteOptions(ids, icons, strings, null, false, !TD.isMutedForever(chatMuteFor), true, false, false, null, false);
+    }
+    context.showOptions(topic.info.name, ids.get(), strings.get(), null, icons.get(), (itemView, id) -> {
+      TdApi.ChatNotificationSettings settings = copyOf(topic.notificationSettings);
+      if (id == R.id.btn_menu_resetToDefault) {
+        settings.useDefaultMuteFor = true;
+      } else {
+        int newMuteFor = getMuteDurationForId(id);
+        if (newMuteFor == -1) {
+          return true;
+        }
+        settings.muteFor = newMuteFor;
+        settings.useDefaultMuteFor = newMuteFor == 0 && chatMuteFor == 0;
+      }
+      tdlib.send(new TdApi.SetForumTopicNotificationSettings(chatId, forumTopicId, settings), tdlib.typedOkHandler());
+      U.run(after);
+      return true;
+    });
+  }
+
+  private static TdApi.ChatNotificationSettings copyOf (@Nullable TdApi.ChatNotificationSettings settings) {
+    if (settings == null) {
+      return new TdApi.ChatNotificationSettings(true, 0, true, 0, true, false, true, false, true, 0, true, false, true, false, true, false);
+    }
+    return new TdApi.ChatNotificationSettings(
+      settings.useDefaultMuteFor, settings.muteFor,
+      settings.useDefaultSound, settings.soundId,
+      settings.useDefaultShowPreview, settings.showPreview,
+      settings.useDefaultMuteStories, settings.muteStories,
+      settings.useDefaultStorySound, settings.storySoundId,
+      settings.useDefaultShowStoryPoster, settings.showStoryPoster,
+      settings.useDefaultDisablePinnedMessageNotifications, settings.disablePinnedMessageNotifications,
+      settings.useDefaultDisableMentionNotifications, settings.disableMentionNotifications
+    );
+  }
+
   public int getIconForSetting (@Nullable TdApi.Chat chat) {
     final int muteFor = tdlib.chatMuteFor(chat);
     return muteFor >= MUTE_MAX ? R.drawable.baseline_notifications_off_24 : muteFor > 0 ? R.drawable.baseline_notifications_paused_24 : R.drawable.baseline_notifications_24;
