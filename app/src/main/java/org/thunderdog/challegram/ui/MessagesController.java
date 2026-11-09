@@ -751,7 +751,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private static final int COMPOSER_INSET_PENDING = -2;
 
   private @Nullable BotForumThreadHint botForumThreadHint;
-  /** Chat for which the fields below were checked: they are asked on every frame. */
+  /** Chat for which the fields below were checked, 0 after the bot changes. */
   private long botForumCheckedChatId;
   private boolean isBotForumChat, canManageBotForumTopics;
 
@@ -806,9 +806,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
     navigateTo(controller);
   }
 
-  /** «New Thread» card of the whole chat with a bot whose users create topics, or null. */
+  /**
+   * «New Thread» card of the whole chat with a bot whose users create topics, or null. It is shown
+   * under the newest message of the chat only.
+   */
   public @Nullable BotForumThreadHint getBotForumThreadHint () {
-    if (!isBotForumWholeChat() || !canManageBotForumTopics) {
+    if (!isBotForumWholeChat() || !canManageBotForumTopics || !manager.isNewestMessageLoaded()) {
       return null;
     }
     if (botForumThreadHint == null) {
@@ -817,7 +820,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return botForumThreadHint;
   }
 
-  private void updateMessagesViewInset () {
+  public void updateMessagesViewInset () {
     if (messagesView == null || messagesInsetFrozen) {
       return;
     }
@@ -12615,6 +12618,18 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void onUserUpdated (TdApi.User user) {
+    if (chat != null && user != null && TD.getUserId(chat) == user.id &&
+      user.type.getConstructor() == TdApi.UserTypeBot.CONSTRUCTOR) {
+      TdApi.UserTypeBot bot = (TdApi.UserTypeBot) user.type;
+      runOnUiThreadOptional(() -> {
+        if (chat != null && botForumCheckedChatId == chat.id && (isBotForumChat != bot.hasTopics ||
+          canManageBotForumTopics != (bot.hasTopics && bot.allowsUsersToCreateTopics))) {
+          botForumCheckedChatId = 0;
+          updateMessagesViewInset();
+          manager.rebuildLayouts();
+        }
+      });
+    }
     if (chat != null && user != null && headerCell != null && TD.getUserId(chat) == user.id) {
       runOnUiThreadOptional(() -> {
         headerCell.setEmojiStatus(user);

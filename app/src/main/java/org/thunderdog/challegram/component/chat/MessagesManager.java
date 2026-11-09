@@ -482,6 +482,27 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
 
   public void onCanLoadMoreBottomChanged () {
     checkScrollToBottomButton();
+    checkNewestMessageLoaded();
+  }
+
+  private boolean newestMessageLoaded = true;
+
+  /** The newest message of the chat is loaded, so the bottom of the list is the bottom of the chat. */
+  public boolean isNewestMessageLoaded () {
+    return newestMessageLoaded;
+  }
+
+  private void checkNewestMessageLoaded () {
+    boolean loaded = !loader.canLoadBottom();
+    boolean changed = newestMessageLoaded != loaded;
+    newestMessageLoaded = loaded;
+    TGMessage bottomMessage = adapter.getBottomMessage();
+    if (bottomMessage != null && bottomMessage.checkContinueThreadButton()) {
+      adapter.notifyItemChanged(0);
+    }
+    if (changed) {
+      controller.updateMessagesViewInset();
+    }
   }
 
   public void release () {
@@ -1266,6 +1287,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
         break;
       }
     }
+    checkNewestMessageLoaded();
   }
 
   // Bot info

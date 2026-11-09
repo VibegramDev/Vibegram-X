@@ -1427,11 +1427,12 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
 
   /**
    * As in the official app, the newest message of the whole chat with a bot with topics offers to
-   * continue its topic. The newest message is the one with the extra bottom padding.
+   * continue its topic. The newest message is the one with the extra bottom padding, while the
+   * newest message of the chat is loaded.
    */
   private boolean needContinueThreadButton () {
     return (flags & FLAG_EXTRA_PADDING) != 0 && forumTopicKey != null &&
-      messagesController().isBotForumWholeChat();
+      manager.isNewestMessageLoaded() && messagesController().isBotForumWholeChat();
   }
 
   private void buildContinueThreadButton () {
@@ -1441,33 +1442,42 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
     if (continueThreadKeyboard == null) {
       continueThreadKeyboard = new TGInlineKeyboard(this, false);
       continueThreadKeyboard.setViewProvider(currentViews);
-      continueThreadKeyboard.setLocalClickListener((view, keyboard, button) ->
-        messagesController().openBotForumTopic(forumTopicKey.forumTopicId)
-      );
+      continueThreadKeyboard.setCustomBubbleStyle(true);
     }
-    TdApi.InlineKeyboardButton button = new TdApi.InlineKeyboardButton(
-      Lang.getString(R.string.vg_BotForumContinueThread),
-      0,
-      new TdApi.ButtonStyleDefault(),
-      new TdApi.InlineKeyboardButtonTypeCallback(new byte[0])
-    );
-    TdApi.ReplyMarkupInlineKeyboard markup = new TdApi.ReplyMarkupInlineKeyboard(
-      new TdApi.InlineKeyboardButton[][] {{button}}, false
-    );
+    String text = Lang.getString(R.string.vg_BotForumContinueThread);
+    int width, maxWidth;
     if (useBubbles() && useBubble()) {
-      int width = getActualRightContentEdge() - getActualLeftContentEdge();
-      int maxWidth = pRealContentMaxWidth + getBubblePaddingLeft() + getBubblePaddingRight();
-      continueThreadKeyboard.set(msg.id, markup, width, maxWidth);
+      width = getActualRightContentEdge() - getActualLeftContentEdge();
+      maxWidth = pRealContentMaxWidth + getBubblePaddingLeft() + getBubblePaddingRight();
     } else {
-      continueThreadKeyboard.set(msg.id, markup, getContentWidth(), pRealContentMaxWidth);
+      width = getContentWidth();
+      maxWidth = pRealContentMaxWidth;
     }
-    continueThreadKeyboard.firstButton().setCustomIcon(R.drawable.round_keyboard_arrow_right_18);
+    // Room for the text, the arrow and the paddings of the button
+    int textWidth = (int) U.measureText(text, Paints.getBoldPaint14(Text.needFakeBold(text)));
+    width = Math.min(maxWidth, Math.max(width, textWidth + Screen.dp(48f)));
+    continueThreadKeyboard.setCustom(R.drawable.round_keyboard_arrow_right_18, text, width, false,
+      (view, keyboard, button) -> messagesController().openBotForumTopic(forumTopicKey.forumTopicId)
+    );
     continueThreadKeyboard.firstButton().setCustomIconReverse(true);
   }
 
   private boolean hasContinueThreadButton () {
-    return continueThreadKeyboard != null && !continueThreadKeyboard.isEmpty() &&
-      needContinueThreadButton();
+    return continueThreadKeyboard != null && needContinueThreadButton();
+  }
+
+  /**
+   * Adds or removes «Continue last thread» when the newest message of the chat gets loaded or
+   * unloaded. Returns true when the height changed.
+   */
+  public boolean checkContinueThreadButton () {
+    if ((flags & FLAG_LAYOUT_BUILT) == 0 || (flags & FLAG_EXTRA_PADDING) == 0 || forumTopicKey == null) {
+      return false;
+    }
+    buildContinueThreadButton();
+    int oldHeight = height;
+    height = computeHeight();
+    return oldHeight != height;
   }
 
   private int measureContinueThreadButtonLeft () {
