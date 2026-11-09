@@ -37,3 +37,4 @@ outline_toggle_on_24	drawn (no TG toggle glyph)	debug Feature Toggles; pill 21.3
 round_warning_16	warning_sign (TG vector) at 16dp	screenshot-taken content preview
 templarian_baseline_calculator_18	msg_emoji_other (calculator) at 18dp	author attribution only
 templarian_baseline_source_merge_24	drawn (git merge, msg_info circle vocabulary)	source code / PR rows
+baseline_edit_12	drawn (filled pencil at 45deg, msg_edit vocabulary)	"edited" mark on messages: pencil instead of menu_edited_stamp (owner 09.11)

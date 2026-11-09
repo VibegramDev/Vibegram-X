@@ -133,7 +133,7 @@ baseline_directions_car_24	msg_emoji_travel	high	emoji panel Travel section (car
 baseline_done_all_24	msg_markread	high	mark (folder/chat) as read; TG Mark-as-read menu item
 baseline_done_all_24_white	msg_markread	high	notification "Read" action; TG notification readAction uses msg_markread
 baseline_drag_handle_24	list_reorder	medium	unused in code; drag/reorder handle (TG list_reorder, 23dp)
-baseline_edit_12	menu_edited_stamp	medium	"edited" marker counter on message + theme list small icon; menu_edited_stamp is 24dp -> scale; plain small pencil alt: group_edit_profile (16dp)
+baseline_edit_12	-	drawn	"edited" marker counter on message + theme list small icon; menu_edited_stamp is 24dp -> scale; plain small pencil alt: group_edit_profile (16dp)
 baseline_edit_24	msg_edit	high	edit / rename / edit rights; TG msg_edit menu icon
 baseline_edit_folders_24	msg_edit	high	"Edit folders" in folder tab menu; TG FilterEdit/FilterEditAll uses msg_edit
 baseline_emoticon_24	msg_emoji_smiles	high	emoji panel Smileys (selected); TG has no filled pair -> same icon for both states
