@@ -1162,7 +1162,7 @@ public class TdlibUi extends Handler {
     } else if (muteFor > 0) {
       fillMuteOptions(ids, icons, strings, null, true, false, chatMuteFor == 0, false, false, null, false);
     } else if (chatMuteFor == 0) {
-      fillMuteOptions(ids, icons, strings, null, true, true, true, false, true, null, false);
+      fillMuteOptions(ids, icons, strings, null, false, true, true, false, false, null, false);
     } else {
       strings.append(Lang.getString(R.string.NotificationsTopicDefault, Lang.lowercase(getValueForSettings(chatMuteFor))));
       icons.append(R.drawable.baseline_notifications_off_24);

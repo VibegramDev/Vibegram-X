@@ -3655,11 +3655,12 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       if (forumTopics != null) {
         topics.putTopics(chatId, forumTopics.topics);
       }
-      final int count;
       final long nextChatId;
       synchronized (dataLock) {
         ForumUnreadTopics unreadTopics = forumUnreadTopics.get(chatId);
-        if (unreadTopics != null && forumTopics != null) {
+        if (forumTopics == null) {
+          forumUnreadTopics.remove(chatId);
+        } else if (unreadTopics != null) {
           unreadTopics.isLoaded = true;
           unreadTopics.topics.clear();
           for (TdApi.ForumTopic topic : forumTopics.topics) {
@@ -3672,10 +3673,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         nextChatId = next != null ? next : 0;
         isFetchingForumUnreadTopics = nextChatId != 0;
       }
-      count = forumUnreadTopicCount(chatId);
-      if (count != -1) {
-        listeners.updateForumUnreadTopicCount(chatId, count);
-      }
+      notifyForumUnreadTopicCount(chatId);
       if (nextChatId != 0) {
         fetchForumUnreadTopics(nextChatId);
       }
@@ -3753,7 +3751,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     notifyForumUnreadTopicCount(message.chatId);
   }
 
-  private void updateForumUnreadTopics (TdApi.UpdateForumTopic update, boolean muteChanged) {
+  private void updateForumUnreadTopics (TdApi.UpdateForumTopic update, boolean readChanged, boolean needNotify) {
     final boolean needRefresh;
     synchronized (dataLock) {
       ForumUnreadTopics unreadTopics = forumUnreadTopics.get(update.chatId);
@@ -3761,17 +3759,17 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       if (lastUnreadMessageId == null) {
         needRefresh = false;
       } else if (update.lastReadInboxMessageId < lastUnreadMessageId) {
-        needRefresh = true;
+        needRefresh = readChanged;
       } else {
         unreadTopics.topics.remove(update.forumTopicId);
         needRefresh = false;
-        muteChanged = true;
+        needNotify = true;
       }
     }
     if (needRefresh) {
       refreshForumUnreadTopic(update.chatId, update.forumTopicId);
     }
-    if (muteChanged) {
+    if (needNotify) {
       notifyForumUnreadTopicCount(update.chatId);
     }
   }
@@ -8912,10 +8910,12 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
 
   @TdlibThread
   private void updateForumTopic (TdApi.UpdateForumTopic update) {
+    TdlibForumTopicManager.Entry prevEntry = topics.find(new TdlibForumTopicManager.Key(update.chatId, update.forumTopicId));
+    boolean readChanged = prevEntry == null || prevEntry.value == null || prevEntry.value.lastReadInboxMessageId != update.lastReadInboxMessageId;
     boolean wasMuted = topics.hasOwnMute(update.chatId, update.forumTopicId);
     topics.updateForumTopic(update);
     boolean isMuted = topics.hasOwnMute(update.chatId, update.forumTopicId);
-    updateForumUnreadTopics(update, wasMuted != isMuted);
+    updateForumUnreadTopics(update, readChanged, wasMuted != isMuted);
     listeners.updateForumTopic(update);
   }
 
