@@ -341,7 +341,52 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
     }
   }
 
+  /**
+   * How many times a system window that the window manager refused is offered again (one try per {@link
+   * #SYSTEM_WINDOW_RETRY_DELAY_MS}). A refused window used to stay in the activity's window list as "showing" while
+   * nothing was on screen: every chat tap was then ignored as "navigation busy" until the app was restarted. Seen
+   * on a Samsung when an app shared a file into Vibegram while it was in the background (account picker).
+   */
+  private static final int SYSTEM_WINDOW_MAX_ATTEMPTS = 20;
+  private static final long SYSTEM_WINDOW_RETRY_DELAY_MS = 100;
+
+  private int systemWindowAttempts;
+
   private void showSystemWindow (View anchorView) {
+    systemWindowAttempts = 0;
+    showSystemWindowImpl(anchorView);
+  }
+
+  private void retryOrDropSystemWindow (View anchorView) {
+    PopupWindow failedWindow = window;
+    window = null;
+    if (failedWindow != null) {
+      try {
+        failedWindow.dismiss();
+      } catch (Throwable ignored) { }
+    }
+    ViewParent parent = getParent();
+    if (parent instanceof ViewGroup) {
+      // The refused PopupWindow keeps this view inside its decor; a new PopupWindow cannot take it otherwise.
+      ((ViewGroup) parent).removeView(this);
+    }
+    if (isHidden || isDismissed) {
+      return;
+    }
+    if (++systemWindowAttempts < SYSTEM_WINDOW_MAX_ATTEMPTS) {
+      UI.post(() -> {
+        if (!isHidden && !isDismissed && !isTemporarilyHidden) {
+          showSystemWindowImpl(anchorView);
+        }
+      }, SYSTEM_WINDOW_RETRY_DELAY_MS);
+    } else {
+      // Give up instead of blocking the whole app behind an invisible window.
+      hideWindow(false);
+    }
+  }
+
+
+  private void showSystemWindowImpl (View anchorView) {
     final BaseActivity context = UI.getContext(getContext());
     window = new PopupWindow(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     if (softInputMode != 0) {
@@ -358,6 +403,11 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
       }
       int state = context.getActivityState();
       if (state == UI.State.RESUMED) {
+        if (anchorView.getWindowToken() == null) {
+          // The activity window is not attached yet (the activity was just brought back): wait for it.
+          retryOrDropSystemWindow(anchorView);
+          return;
+        }
         try {
           window.showAtLocation(windowAnchorView = anchorView, Gravity.NO_GRAVITY, 0, 0);
           window.setBackgroundDrawable(new RootDrawable(UI.getContext(getContext())));
@@ -378,6 +428,8 @@ public class PopupLayout extends RootFrameLayout implements FactorAnimator.Targe
           return;
         } catch (Throwable t) {
           Log.e("Cannot show window", t);
+          android.util.Log.w("PopupLayout", "Cannot show window, attempt " + (systemWindowAttempts + 1), t);
+          retryOrDropSystemWindow(anchorView);
         }
         return;
       }
