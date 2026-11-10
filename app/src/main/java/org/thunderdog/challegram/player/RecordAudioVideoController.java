@@ -74,6 +74,7 @@ import org.thunderdog.challegram.ui.camera.CameraController;
 import org.thunderdog.challegram.ui.camera.legacy.CameraManagerLegacy;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.HapticMenuHelper;
+import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.widget.CircleFrameLayout;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.SendButton;
@@ -310,8 +311,30 @@ public class RecordAudioVideoController implements
     });
   }
 
+  /**
+   * Dictation only (owner): a chat message does not end with a period, so one final «.» the model put after
+   * the last sentence is dropped. «...», «?», «!» stay; voice/round/video transcription is not affected.
+   */
+  private static String withoutFinalPeriod (String text) {
+    if (text == null) {
+      return null;
+    }
+    int end = text.length();
+    while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+      end--;
+    }
+    if (end > 0 && text.charAt(end - 1) == '.' && !(end > 1 && text.charAt(end - 2) == '.')) {
+      end--;
+      while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+        end--;
+      }
+    }
+    return text.substring(0, end);
+  }
+
   private static void recognizeDictation (float[] samples, MessagesController target, long chatId, TdApi.MessageTopic topicId) {
-    boolean started = SttManager.instance().transcribeSamples(samples, text -> {
+    boolean started = SttManager.instance().transcribeSamples(samples, recognized -> {
+      String text = withoutFinalPeriod(recognized);
       boolean sameChat = !target.isDestroyed() && target.compareChat(chatId, topicId);
       if (sameChat) {
         target.setDictationInProgress(false);
@@ -1230,6 +1253,11 @@ public class RecordAudioVideoController implements
 
   // State
 
+  /** Diagnostics for {@link StuckWatch}. */
+  public String stuckState () {
+    return "open=" + isOpen() + ", mode=" + recordMode + ", recordFactor=" + recordFactor + ", editFactor=" + editFactor + ", recordAnimator=" + recordAnimator.getValue() + "/" + recordAnimator.getFloatValue() + ", editAnimator=" + editAnimator.getValue() + "/" + editAnimator.getFloatValue() + ", currentRecording=" + currentRecording + ", raise=" + inRaiseMode;
+  }
+
   public boolean isOpen () {
     return recordMode != RECORD_MODE_NONE || Math.max(recordFactor, editFactor) > 0f;
   }
@@ -1367,6 +1395,7 @@ public class RecordAudioVideoController implements
   }
 
   private void setRecordModeImpl (int mode) {
+    StuckWatch.event("recorder mode " + this.recordMode + " -> " + mode);
     this.recordMode = mode;
     context.notifyBackPressAvailabilityChanged();
   }

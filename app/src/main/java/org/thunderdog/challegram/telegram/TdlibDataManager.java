@@ -240,6 +240,15 @@ public abstract class TdlibDataManager<Key, Value extends TdApi.Object, Result e
     processEntry(contextId, newEntry(key, null, error));
   }
 
+  protected final void putValue (@NonNull Key key, @NonNull Value value) {
+    int contextId;
+    synchronized (dataLock) {
+      contextId = this.contextId;
+      postponedKeys.remove(key);
+    }
+    processEntry(contextId, newEntry(key, value, null));
+  }
+
   @TdlibThread
   private void processEntry (int contextId, Result entry) {
     List<Watcher<Key, Value, Result>> watcherList;

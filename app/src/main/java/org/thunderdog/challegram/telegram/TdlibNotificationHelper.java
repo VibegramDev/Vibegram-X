@@ -147,7 +147,7 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
     boolean needRebuild = false;
     for (TdApi.NotificationGroup rawGroup : update.groups) {
       if (accept(rawGroup.type)) {
-        rawGroup.notifications = filterMutedForumTopicNotifications(rawGroup.chatId, rawGroup.id, rawGroup.notifications);
+        rawGroup.notifications = filterMutedForumTopicNotifications(rawGroup.type, rawGroup.id, rawGroup.notifications);
         TdlibNotificationGroup group = new TdlibNotificationGroup(tdlib, rawGroup);
         if (!group.isEmpty()) {
           groups.put(rawGroup.id, group);
@@ -172,12 +172,11 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
   private boolean haveRebuilt;
 
   /** Drops notifications about messages in forum topics muted by their own notification settings. */
-  private TdApi.Notification[] filterMutedForumTopicNotifications (long chatId, int notificationGroupId, @Nullable TdApi.Notification[] notifications) {
-    // Not gated on Tdlib.isForum: the supergroup may be missing from the cache when woken up by a push,
-    // the topic of the message is enough.
-    if (notifications == null || notifications.length == 0 || !ChatId.isSupergroup(chatId)) {
+  private TdApi.Notification[] filterMutedForumTopicNotifications (TdApi.NotificationGroupType groupType, int notificationGroupId, @Nullable TdApi.Notification[] notifications) {
+    if (notifications == null || notifications.length == 0) {
       return notifications;
     }
+    final boolean isMention = groupType.getConstructor() == TdApi.NotificationGroupTypeMentions.CONSTRUCTOR;
     List<TdApi.Notification> result = null;
     for (int i = 0; i < notifications.length; i++) {
       TdApi.Notification notification = notifications[i];
@@ -185,11 +184,11 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       if (notification.type.getConstructor() == TdApi.NotificationTypeNewMessage.CONSTRUCTOR) {
         TdApi.Message message = ((TdApi.NotificationTypeNewMessage) notification.type).message;
         if (message.topicId != null && message.topicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR) {
-          isMuted = tdlib.isForumTopicNotificationMuted(message.chatId, ((TdApi.MessageTopicForum) message.topicId).forumTopicId, notificationGroupId, notification.id);
+          isMuted = tdlib.isForumTopicNotificationMuted(message.chatId, ((TdApi.MessageTopicForum) message.topicId).forumTopicId, isMention || message.containsUnreadMention, notificationGroupId, notification.id);
         }
       }
       if (isMuted) {
-        TDLib.Tag.notifications("Filtering notification %d from muted forum topic, chatId=%d", notification.id, chatId);
+        TDLib.Tag.notifications("Filtering notification %d from muted forum topic, chatId=%d", notification.id, ((TdApi.NotificationTypeNewMessage) notification.type).message.chatId);
         if (result == null) {
           result = new ArrayList<>(notifications.length);
           for (int j = 0; j < i; j++) {
@@ -208,7 +207,7 @@ public class TdlibNotificationHelper implements Iterable<TdlibNotificationGroup>
       return;
     boolean isSilent = update.notificationSoundId == 0;
     if (update.addedNotifications != null && update.addedNotifications.length > 0) {
-      update.addedNotifications = filterMutedForumTopicNotifications(update.chatId, update.notificationGroupId, update.addedNotifications);
+      update.addedNotifications = filterMutedForumTopicNotifications(update.type, update.notificationGroupId, update.addedNotifications);
       if (update.addedNotifications.length == 0) {
         isSilent = true;
       }

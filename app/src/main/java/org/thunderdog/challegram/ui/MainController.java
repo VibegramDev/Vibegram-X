@@ -144,6 +144,7 @@ import org.thunderdog.challegram.widget.M3MainTitleView;
 import org.thunderdog.challegram.widget.M3SearchBarView;
 import org.thunderdog.challegram.widget.M3Tooltip;
 import org.thunderdog.challegram.widget.M3BottomScrimView;
+import org.thunderdog.challegram.widget.ClearButton;
 import org.thunderdog.challegram.widget.M3DockScrimView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.M3AccountItemView;
@@ -988,6 +989,24 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   protected void applySearchTransformFactor (float factor, boolean isOpening) {
     super.applySearchTransformFactor(factor, isOpening);
     updateSearchBackButtonOffset();
+    updateNavigationBarSearchVisibility();
+  }
+
+  /**
+   * Search of the chat list covers the whole screen (M3 search view): the dock / navigation bar and its shadow
+   * fade out with the search transform, so that they don't cover any search results. Not over another section:
+   * there the bar belongs to that section.
+   */
+  private void updateNavigationBarSearchVisibility () {
+    if (navigationBar == null) {
+      return;
+    }
+    float hidden = navigationInOverlay ? 0f : MathUtils.clamp(getSearchTransformFactor());
+    navigationBar.setAlpha(1f - hidden);
+    navigationBar.setVisibility(hidden == 1f ? View.INVISIBLE : View.VISIBLE);
+    if (navigationScrim != null) {
+      navigationScrim.setAlpha(1f - hidden);
+    }
   }
 
   /**
@@ -1487,6 +1506,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
     updateDockScrim();
     updateHeaderSearchButton();
+    updateNavigationBarSearchVisibility();
     if (modeChanged && headerView != null && isFocused() && !inTransformMode() && navigationController != null && !navigationController.isAnimating()) {
       // The app bar title switches between the app name (phone) and the search bar (tablet).
       headerView.setTitle(this);
@@ -2642,7 +2662,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       header.addButton(menu, R.id.menu_btn_compose, R.drawable.baseline_create_24, 49f, this, getHeaderIconColorId())
         .setContentDescription(Lang.getString(R.string.NewChat));
     } else if (id == R.id.menu_clear) {
-      header.addClearButton(menu, getSearchHeaderIconColorId(), getSearchBackButtonResource());
+      ClearButton clearButton = header.addClearButton(menu, getSearchHeaderIconColorId(), getSearchBackButtonResource());
+      // The 49dp button sits at the edge of the app bar, the focused search bar ends 12dp before it: move the cross
+      // to the trailing icon place of the M3 search bar (24dp icon 4dp inside the end), mirroring the back button.
+      clearButton.setContentOffsetX(-(Screen.dp(M3SearchBarView.FOCUSED_MARGIN) + Screen.dp(28f) - clearButton.getLayoutParams().width / 2f));
     } else {
       super.fillMenuItems(id, header, menu);
     }

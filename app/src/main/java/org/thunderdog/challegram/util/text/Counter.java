@@ -82,6 +82,7 @@ public class Counter implements FactorAnimator.Target, CounterAnimator.Callback<
     private int mutedTextColorId = ColorId.badgeMutedText;
     private int failedTextColorId = ColorId.badgeFailedText;
     private int outlineColorId;
+    private int mutedBackgroundColorId = ColorId.badgeMuted;
     private boolean visibleIfZero;
     private CustomTextPartBuilder customTextPartBuilder;
 
@@ -153,6 +154,12 @@ public class Counter implements FactorAnimator.Target, CounterAnimator.Callback<
       return this;
     }
 
+    /** Background of a muted counter (default {@code badgeMuted}), e.g. when it sits on a surface of that same colour. */
+    public Builder mutedBackgroundColor (@ColorId int colorId) {
+      this.mutedBackgroundColorId = colorId;
+      return this;
+    }
+
     public Builder outlineColor (@ColorId int colorId) {
       this.outlineColorId = colorId;
       return this;
@@ -172,7 +179,7 @@ public class Counter implements FactorAnimator.Target, CounterAnimator.Callback<
       return new Counter(textSize, callback, flags,
         textColorId, mutedTextColorId, failedTextColorId, outlineColorId,
         drawableRes, drawableWidthDp, drawableMarginDp, drawableGravity,
-        colorSet, extendedDrawable, visibleIfZero, backgroundPadding, customTextPartBuilder
+        colorSet, extendedDrawable, visibleIfZero, backgroundPadding, customTextPartBuilder, mutedBackgroundColorId
       );
     }
   }
@@ -200,7 +207,7 @@ public class Counter implements FactorAnimator.Target, CounterAnimator.Callback<
   private final @Dimension(unit = Dimension.DP) float backgroundPadding;
 
   @ColorId
-  private final int textColorId, mutedTextColorId, failedTextColorId, outlineColorId;
+  private final int textColorId, mutedTextColorId, failedTextColorId, outlineColorId, mutedBackgroundColorId;
   
   private final TextColorSet colorSet;
 
@@ -208,7 +215,8 @@ public class Counter implements FactorAnimator.Target, CounterAnimator.Callback<
                    @ColorId int textColorId, @ColorId int mutedTextColorId, @ColorId int failedTextColorId, @ColorId int outlineColorId,
                    @DrawableRes int drawableRes, float drawableWidthDp, float drawableMarginDp, int drawableGravity,
                    @Nullable TextColorSet colorSet, Drawable counterDrawable, boolean visibleIfZero, @Dimension(unit = Dimension.DP) float backgroundPadding,
-                   @Nullable CustomTextPartBuilder customTextPartBuilder) {
+                   @Nullable CustomTextPartBuilder customTextPartBuilder, @ColorId int mutedBackgroundColorId) {
+    this.mutedBackgroundColorId = mutedBackgroundColorId;
     this.textSize = textSize;
     this.callback = callback;
     this.flags = flags;
@@ -427,7 +435,7 @@ public class Counter implements FactorAnimator.Target, CounterAnimator.Callback<
 
   @Override
   public int backgroundColor (boolean isPressed) {
-    return colorSet != null ? colorSet.backgroundColor(isPressed) : getColor(getMuteFactor(), ColorId.badge, ColorId.badgeMuted, ColorId.badgeFailed);
+    return colorSet != null ? colorSet.backgroundColor(isPressed) : getColor(getMuteFactor(), ColorId.badge, mutedBackgroundColorId, ColorId.badgeFailed);
   }
 
   @Override
