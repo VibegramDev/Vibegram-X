@@ -753,7 +753,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private static final int COMPOSER_INSET_PENDING = -2;
 
   private @Nullable BotForumThreadHint botForumThreadHint;
-  /** Chat for which the fields below were checked: they are asked on every frame. */
+  /** Chat for which the fields below were checked, 0 after the bot changes. */
   private long botForumCheckedChatId;
   private boolean isBotForumChat, canManageBotForumTopics;
 
@@ -790,15 +790,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (isBotForumWholeChat()) {
       return true;
     }
-    return chat != null && messageThread == null && messageTopicId == null &&
-      getParentOrSelf() instanceof ForumTopicTabsController;
+    return chat != null && messageThread == null && messageTopicId == null && topicTabs instanceof ForumTopicTabs;
   }
 
   /** «Continue last thread»: the topic opens in the tabs, or on its own screen. */
   public void openBotForumTopic (int forumTopicId) {
-    ViewController<?> parent = getParentOrSelf();
-    if (parent instanceof ForumTopicTabsController) {
-      ((ForumTopicTabsController) parent).selectTopic(forumTopicId);
+    if (topicTabs instanceof ForumTopicTabs) {
+      ((ForumTopicTabs) topicTabs).selectTopic(forumTopicId);
       return;
     }
     MessagesController controller = new MessagesController(context, tdlib);
@@ -808,9 +806,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
     navigateTo(controller);
   }
 
-  /** «New Thread» card of the whole chat with a bot whose users create topics, or null. */
+  /**
+   * «New Thread» card of the whole chat with a bot whose users create topics, or null. It is shown
+   * under the newest message of the chat only.
+   */
   public @Nullable BotForumThreadHint getBotForumThreadHint () {
-    if (!isBotForumWholeChat() || !canManageBotForumTopics) {
+    if (!isBotForumWholeChat() || !canManageBotForumTopics || !manager.isNewestMessageLoaded()) {
       return null;
     }
     if (botForumThreadHint == null) {
@@ -819,7 +820,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return botForumThreadHint;
   }
 
-  private void updateMessagesViewInset () {
+  public void updateMessagesViewInset () {
     if (messagesView == null || messagesInsetFrozen) {
       return;
     }
@@ -1846,6 +1847,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     }
 
+    if (topicTabs != null && topicTabs.isSideTabs()) {
+      return topicTabs.wrapContent(contentView);
+    }
     return contentView;
   }
 
@@ -2506,8 +2510,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
         }
       };
 
-      if (!PaidMessages.mayBePaid(tdlib, chatId)) {
-        // Not while the payment for the messages may still be asked.
+      if (!PaidMessages.mayBePaid(tdlib, chatId) && !isBotForumWholeChat()) {
+        // Not while the payment for the messages may still be asked, or a new topic of the bot is being created.
         UI.post(clearInputRunnable, MathUtils.clamp(50 * selectedItems.size(), 200, 500));
       }
 
@@ -2541,9 +2545,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void openTopicsInstead (boolean asTabs) {
     ViewController<?> forumController;
     if (asTabs) {
-      ForumTopicTabsController tabsController = new ForumTopicTabsController(context, tdlib);
-      tabsController.setArguments(new ForumTopicTabsController.Arguments(chat));
-      forumController = tabsController;
+      forumController = ForumTopicTabs.newController(this, chat, null, 0, null);
     } else {
       ForumTopicsController listController = new ForumTopicsController(context, tdlib);
       listController.setArguments(new ForumTopicsController.Arguments(chat));
@@ -2557,6 +2559,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void onMoreItemPressed (int id) {
+    if (topicTabs != null && topicTabs.onMoreItemPressed(id)) {
+      return;
+    }
     if (tdlib.ui().processLeaveButton(this, null, getChatId(), id, null)) {
       return;
     }
@@ -2787,6 +2792,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     public final @Nullable ThreadInfo messageThread;
     public final @Nullable TdApi.MessageTopic messageTopicId;
     public @Nullable TdApi.ForumTopic forumTopic;
+    public boolean topicTabs;
+    public @Nullable ChatTopicTabs previousTopicTabs;
 
     public Referrer referrer;
     public TdApi.InternalLinkTypeVideoChat videoChatOrLiveStreamInvitation;
@@ -2904,6 +2911,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
       return this;
     }
 
+    /** The chat with its topics as tabs, see {@link ChatTopicTabs}. */
+    public Arguments topicTabs (@Nullable ChatTopicTabs previous) {
+      this.topicTabs = true;
+      this.previousTopicTabs = previous;
+      return this;
+    }
+
     public Arguments setForumTopic (TdApi.ForumTopic forumTopic) {
       this.forumTopic = forumTopic;
       return this;
@@ -2965,6 +2979,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private ThreadInfo messageThread;
   private TdApi.MessageTopic messageTopicId;
   private TdApi.ForumTopic forumTopic;
+  /** Topics as tabs above or beside the chat. */
+  private @Nullable ChatTopicTabs topicTabs;
+  /** Opened in place of another tab: fades in instead of sliding. */
+  private boolean openedAsTab;
+
+  public void setOpenedAsTab () {
+    this.openedAsTab = true;
+  }
+
+  @Override
+  protected boolean forceFadeMode () {
+    return openedAsTab || super.forceFadeMode();
+  }
   /** Last known Supergroup.isForum of the chat, to react only to forum mode being enabled. */
   private boolean knownSupergroupIsForum;
   private boolean areScheduled;
@@ -3000,6 +3027,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
     this.messageThread = args.messageThread;
     this.messageTopicId = args.messageTopicId;
     this.forumTopic = args.forumTopic;
+    if (topicTabs != null) {
+      topicTabs.destroy();
+      topicTabs = null;
+    }
+    if (args.topicTabs && args.chat != null && args.messageThread == null) {
+      if (tdlib.isAdministeredDirectMessagesChat(args.chat.id)) {
+        long topicId = args.messageTopicId != null && args.messageTopicId.getConstructor() == TdApi.MessageTopicDirectMessages.CONSTRUCTOR ? ((TdApi.MessageTopicDirectMessages) args.messageTopicId).directMessagesChatTopicId : 0;
+        topicTabs = new DirectMessagesTabs(this, args.chat, topicId);
+      } else {
+        int forumTopicId = args.messageTopicId != null && args.messageTopicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR ? ((TdApi.MessageTopicForum) args.messageTopicId).forumTopicId : 0;
+        topicTabs = new ForumTopicTabs(this, args.chat, forumTopicId, args.previousTopicTabs);
+      }
+    }
     this.knownSupergroupIsForum = args.chat != null && tdlib.isForum(args.chat.id);
     this.openedFromChatList = args.chatList;
     this.linkedChatId = 0;
@@ -3999,6 +4039,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
       case PREVIEW_MODE_WALLPAPER:
         return R.id.menu_gallery;
     }
+    if (topicTabs != null) {
+      return R.id.menu_more;
+    }
     if (getChatId() != 0) {
       if (isSelfChat()) {
         // Centered titles: the avatar takes the end button, Search is in the "more" menu.
@@ -4033,6 +4076,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public View getCustomHeaderCell () {
+    if (topicTabs != null && !topicTabs.isSideTabs() && !inPreviewMode()) {
+      return topicTabs.getHeaderView();
+    }
     return inWallpaperPreviewMode() ? headerDoubleCell : needTabs() ? pagerHeaderView : getChatId() != 0 ? headerCell : null;
   }
 
@@ -4068,6 +4114,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_more) {
+      if (topicTabs != null) {
+        topicTabs.fillMenuItems(header, menu, getHeaderIconColorId());
+        return;
+      }
       HeaderButton moreButton = header.addMoreButton(menu, this);
       if (previewMode == PREVIEW_MODE_NONE && getChatId() != 0) {
         checkAvatarAsMoreButton(moreButton);
@@ -4158,6 +4208,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void onMenuItemPressed (int id, View view) {
+    if (topicTabs != null && topicTabs.onMenuItemPressed(id)) {
+      return;
+    }
     if (id == R.id.menu_btn_more) {
       if (inPreviewMode) {
         if (previewMode == PREVIEW_MODE_FONT_SIZE) {
@@ -4512,6 +4565,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   @Override
   public void onFocus () {
     super.onFocus();
+    openedAsTab = false;
     if (promptDraftPrefillOnFocus) {
       promptDraftPrefillOnFocus = false;
       fillDraft(this.fillDraft, true);
@@ -4779,6 +4833,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void destroy () {
+    if (topicTabs != null) {
+      topicTabs.destroy();
+    }
     resetSelectableControl();
 
     discardAttachedFiles(false);
@@ -5337,7 +5394,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
    * the reactions picker expanded.
    */
   private void showMessageOptionsMenu (Options sheetOptions, MessageContext messageContext, OptionDelegate delegate, float[] touchPoint, @Nullable AtomicReference<RunnableData<TdApi.MessageReadDate>> readDateUpdate) {
-    if (isMessageOptionsVisible) {
+    // «More» (no metadata) opens from the menu while it is still closing: as the plain options of TGX, it isn't blocked by it
+    if (isMessageOptionsVisible && !messageContext.disableMetadata) {
       return;
     }
     final TGMessage message = messageContext.message;
@@ -11334,10 +11392,23 @@ public class MessagesController extends ViewController<MessagesController.Argume
   /** Chats that charge Stars for messages: the payment is confirmed before anything is sent ({@link PaidMessages}). */
   private void executeSendMessageFunctions (List<TdApi.Function<?>> functions, List<TdApi.Message> sentMessages, final boolean isSchedule, RunnableBool onDone, Runnable onDeclined) {
     PaidMessages.confirm(this, tdlib, functions, confirmed -> {
-      if (confirmed) {
-        executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
-      } else {
+      if (!confirmed) {
         onDeclined.run();
+        return;
+      }
+      boolean needTopic = tdlib.sendInNewBotForumTopic(functions, topicId -> {
+        if (topicId == null) {
+          onDeclined.run();
+          return;
+        }
+        executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
+        if (topicTabs instanceof ForumTopicTabs && topicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR) {
+          // As in the official app, the topic started by a message sent here opens; not the ones created on other devices
+          ((ForumTopicTabs) topicTabs).selectTopic(((TdApi.MessageTopicForum) topicId).forumTopicId);
+        }
+      });
+      if (!needTopic) {
+        executeSendMessageFunctionsImpl(functions, sentMessages, isSchedule, onDone);
       }
     });
   }
@@ -12744,6 +12815,18 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void onUserUpdated (TdApi.User user) {
+    if (chat != null && user != null && TD.getUserId(chat) == user.id &&
+      user.type.getConstructor() == TdApi.UserTypeBot.CONSTRUCTOR) {
+      TdApi.UserTypeBot bot = (TdApi.UserTypeBot) user.type;
+      runOnUiThreadOptional(() -> {
+        if (chat != null && botForumCheckedChatId == chat.id && (isBotForumChat != bot.hasTopics ||
+          canManageBotForumTopics != (bot.hasTopics && bot.allowsUsersToCreateTopics))) {
+          botForumCheckedChatId = 0;
+          updateMessagesViewInset();
+          manager.rebuildLayouts();
+        }
+      });
+    }
     if (chat != null && user != null && headerCell != null && TD.getUserId(chat) == user.id) {
       runOnUiThreadOptional(() -> {
         headerCell.setEmojiStatus(user);

@@ -62,6 +62,16 @@ public class ClearButton extends HeaderButton {
     setLayoutParams(new LinearLayout.LayoutParams(totalWidth, ViewGroup.LayoutParams.MATCH_PARENT));
   }
 
+  /** Horizontal shift of the drawn cross and progress (mirrored in RTL), e.g. to sit inside a contained search bar. */
+  private float contentOffsetX;
+
+  public void setContentOffsetX (float offsetX) {
+    if (this.contentOffsetX != offsetX) {
+      this.contentOffsetX = offsetX;
+      invalidate();
+    }
+  }
+
   private int colorId;
 
   public void setColorId (@ColorId int color) {
@@ -184,34 +194,46 @@ public class ClearButton extends HeaderButton {
       paint.setColor(Theme.getColor(colorId));
     }
     if (totalHeight > 0) {
-      if (inProgress) {
-        progress.forceColor(paint.getColor());
-        progress.draw(c);
-        return;
+      boolean shifted = contentOffsetX != 0f;
+      if (shifted) {
+        c.save();
+        c.translate(Lang.rtl() ? -contentOffsetX : contentOffsetX, 0);
       }
+      drawContent(c);
+      if (shifted) {
+        c.restore();
+      }
+    }
+  }
 
-      if (factor > 0f) {
-        switch (ANIMATION_MODE) {
-          case ANIMATION_MODE_SCALE: {
-            paint.setAlpha((int) (255f * Math.min(1f, factor)));
-            int d = (int) ((float) lineHeight * .5f * factor);
-            c.drawLine(cx - d, cy - d, cx + d, cy + d, paint);
-            c.drawLine(cx + d, cy - d, cx - d, cy + d, paint);
-            break;
-          }
-          case ANIMATION_MODE_CROSS: {
-            DrawAlgorithms.drawAnimatedCross(c, cx, cy, factor, 0xffffffff, lineHeight);
-            break;
-          }
-          case ANIMATION_MODE_ROTATE: {
-            c.save();
-            c.rotate((Lang.rtl() ? -90 : 90f) * (1f - factor), cx, cy);
-            int d = (int) ((float) lineHeight * .5f * factor);
-            c.drawLine(cx - d, cy - d, cx + d, cy + d, paint);
-            c.drawLine(cx + d, cy - d, cx - d, cy + d, paint);
-            c.restore();
-            break;
-          }
+  private void drawContent (Canvas c) {
+    if (inProgress) {
+      progress.forceColor(paint.getColor());
+      progress.draw(c);
+      return;
+    }
+
+    if (factor > 0f) {
+      switch (ANIMATION_MODE) {
+        case ANIMATION_MODE_SCALE: {
+          paint.setAlpha((int) (255f * Math.min(1f, factor)));
+          int d = (int) ((float) lineHeight * .5f * factor);
+          c.drawLine(cx - d, cy - d, cx + d, cy + d, paint);
+          c.drawLine(cx + d, cy - d, cx - d, cy + d, paint);
+          break;
+        }
+        case ANIMATION_MODE_CROSS: {
+          DrawAlgorithms.drawAnimatedCross(c, cx, cy, factor, 0xffffffff, lineHeight);
+          break;
+        }
+        case ANIMATION_MODE_ROTATE: {
+          c.save();
+          c.rotate((Lang.rtl() ? -90 : 90f) * (1f - factor), cx, cy);
+          int d = (int) ((float) lineHeight * .5f * factor);
+          c.drawLine(cx - d, cy - d, cx + d, cy + d, paint);
+          c.drawLine(cx + d, cy - d, cx - d, cy + d, paint);
+          c.restore();
+          break;
         }
       }
     }

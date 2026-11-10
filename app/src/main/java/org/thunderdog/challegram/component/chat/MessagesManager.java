@@ -132,6 +132,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
           }
           userScrollActionsCount++;
           wasScrollByUser = true;
+          draggedSinceHighlight = true;
         }
         boolean isScrolling = newState != RecyclerView.SCROLL_STATE_IDLE;
         if (MessagesManager.this.isScrolling != isScrolling) {
@@ -447,8 +448,16 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
       }
     }
     lastScrollToBottomVisible = isVisible;
+    if (!isVisible && hasMessages && draggedSinceHighlight && hasReturnMessage() && !loader.canLoadBottom()) {
+      // The user scrolled down to the newest message by hand after following a reply or a link: the way back is no
+      // longer needed, so the button hides at the bottom (otherwise it stayed there pointing to the origin message).
+      revokeReturnMessages();
+    }
     checkScrollToBottomButton();
   }
+
+  /** The user dragged the list after the last jump to a message (reply, link, return). */
+  private boolean draggedSinceHighlight;
 
   public void checkScrollToBottomButton () {
     controller.setScrollToBottomVisible(getActiveMessageCount() > 0 && (lastScrollToBottomVisible || loader.canLoadBottom() || hasReturnMessage()), isReturnAbove());
@@ -482,6 +491,27 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
 
   public void onCanLoadMoreBottomChanged () {
     checkScrollToBottomButton();
+    checkNewestMessageLoaded();
+  }
+
+  private boolean newestMessageLoaded = true;
+
+  /** The newest message of the chat is loaded, so the bottom of the list is the bottom of the chat. */
+  public boolean isNewestMessageLoaded () {
+    return newestMessageLoaded;
+  }
+
+  private void checkNewestMessageLoaded () {
+    boolean loaded = !loader.canLoadBottom();
+    boolean changed = newestMessageLoaded != loaded;
+    newestMessageLoaded = loaded;
+    TGMessage bottomMessage = adapter.getBottomMessage();
+    if (bottomMessage != null && bottomMessage.checkContinueThreadButton()) {
+      adapter.notifyItemChanged(0);
+    }
+    if (changed) {
+      controller.updateMessagesViewInset();
+    }
   }
 
   public void release () {
@@ -1266,6 +1296,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
         break;
       }
     }
+    checkNewestMessageLoaded();
   }
 
   // Bot info
@@ -3208,6 +3239,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
   }
 
   public void highlightMessage (MessageId messageId, int highlightMode, long[] returnToMessageIds, boolean allowSmooth) {
+    draggedSinceHighlight = false;
     if (isEventLog()) {
       return;
     }
@@ -3683,11 +3715,12 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
 
   // Replies that bots type in real time
 
-  /** Id of the pending message: bigger than ids of real messages, so it stays at the bottom. */
+  /** Id of the pending message; no real message has it. */
   public static final long PENDING_MESSAGE_ID = Long.MAX_VALUE >> 1;
 
   private @Nullable TGMessage pendingMessage;
   private long pendingMessageDraftId;
+  private int pendingMessageForumTopicId;
   private boolean pendingMessageKeepOnStop;
   private final Runnable pendingMessageTimeout = this::removePendingMessage;
 
@@ -3705,7 +3738,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
   public void onPendingMessageStopped (long chatId, int forumTopicId, long draftId) {
     tdlib.ui().post(() -> {
       if (loader.getChatId() == chatId && pendingMessage != null &&
-        pendingMessageDraftId == draftId) {
+        pendingMessageForumTopicId == forumTopicId && pendingMessageDraftId == draftId) {
         stopPendingMessage(false);
       }
     });
@@ -3727,7 +3760,8 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     UI.post(pendingMessageTimeout,
       TimeUnit.SECONDS.toMillis(tdlib.options().pendingTextMessagePeriod));
     int index = pendingMessage != null ? adapter.indexOfMessageContainer(PENDING_MESSAGE_ID) : -1;
-    if (index != -1 && pendingMessageDraftId == update.draftId) {
+    if (index != -1 && pendingMessageForumTopicId == update.forumTopicId &&
+      pendingMessageDraftId == update.draftId) {
       pendingMessageKeepOnStop = update.keepOnStop;
       replaceMessageContent(adapter.getMessage(index), index, update.chatId, PENDING_MESSAGE_ID,
         update.content);
@@ -3753,6 +3787,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     parsedMessage.prepareLayout();
     pendingMessage = parsedMessage;
     pendingMessageDraftId = update.draftId;
+    pendingMessageForumTopicId = update.forumTopicId;
     pendingMessageKeepOnStop = update.keepOnStop;
     controller.setPendingMessageCanStop(update.canStop);
     updateNewMessage(parsedMessage);
@@ -3783,6 +3818,7 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
     }
     pendingMessage = null;
     pendingMessageDraftId = 0;
+    pendingMessageForumTopicId = 0;
     controller.setPendingMessageCanStop(false);
     int index = adapter.indexOfMessageContainer(PENDING_MESSAGE_ID);
     if (index != -1) {

@@ -17,7 +17,9 @@
 package org.thunderdog.challegram.component.chat;
 
 import android.graphics.Canvas;
+import android.graphics.DashPathEffect;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 
@@ -58,7 +60,7 @@ public final class BotForumThreadHint implements TextColorSet {
   private static final float MAX_WIDTH_FACTOR = .95f;
   /** The description breaks into about two even lines instead of one long line. */
   private static final float TEXT_WIDTH_FACTOR = .6f;
-  private static final int ICON_CIRCLE_COLOR = 0x1F000000;
+  private static final float ICON_CIRCLE_ALPHA = .12f;
   private static final float ARROW_ALPHA = .6f;
 
   private final MessagesManager manager;
@@ -133,22 +135,39 @@ public final class BotForumThreadHint implements TextColorSet {
     return Screen.dp(SEPARATOR_HEIGHT);
   }
 
+  private static Paint separatorPaint;
+  private static final Path separatorPath = new Path();
+
+  private static Paint separatorPaint (int color) {
+    int dashHeight = Screen.dp(SEPARATOR_DASH_HEIGHT);
+    if (separatorPaint == null || separatorPaint.getStrokeWidth() != dashHeight) {
+      // Round caps make the dashes as long as in the official app
+      int dash = Screen.dp(SEPARATOR_DASH_WIDTH) - dashHeight;
+      Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+      paint.setStyle(Paint.Style.STROKE);
+      paint.setStrokeCap(Paint.Cap.ROUND);
+      paint.setStrokeWidth(dashHeight);
+      paint.setPathEffect(new DashPathEffect(new float[] {dash, Screen.dp(SEPARATOR_DASH_STEP) - dash}, 0));
+      separatorPaint = paint;
+    }
+    separatorPaint.setColor(color);
+    return separatorPaint;
+  }
+
   /** Dashed line of a topic separator, from the center to both sides, as in the official app. */
   public static void drawSeparatorDashes (Canvas c, int width, int top, int color) {
-    RectF rect = Paints.getRectF();
-    float centerX = width / 2f;
-    float dashTop = top + Screen.dp(SEPARATOR_DASH_TOP);
-    float dashBottom = dashTop + Screen.dp(SEPARATOR_DASH_HEIGHT);
-    float dashWidth = Screen.dp(SEPARATOR_DASH_WIDTH);
-    float dashStep = Screen.dp(SEPARATOR_DASH_STEP);
-    float dashRadius = dashBottom - dashTop;
-    Paint paint = Paints.fillingPaint(color);
-    for (float x = centerX + Screen.dp(SEPARATOR_CENTER_GAP) / 2f; x < width; x += dashStep) {
-      rect.set(x, dashTop, x + dashWidth, dashBottom);
-      c.drawRoundRect(rect, dashRadius, dashRadius, paint);
-      rect.set(width - x - dashWidth, dashTop, width - x, dashBottom);
-      c.drawRoundRect(rect, dashRadius, dashRadius, paint);
+    Paint paint = separatorPaint(color);
+    float y = top + Screen.dp(SEPARATOR_DASH_TOP) + paint.getStrokeWidth() / 2f;
+    float start = width / 2f + Screen.dp(SEPARATOR_CENTER_GAP) / 2f + paint.getStrokeWidth() / 2f;
+    if (start >= width) {
+      return;
     }
+    separatorPath.rewind();
+    separatorPath.moveTo(start, y);
+    separatorPath.lineTo(width, y);
+    separatorPath.moveTo(width - start, y);
+    separatorPath.lineTo(0, y);
+    c.drawPath(separatorPath, paint);
   }
 
   /** Draws the card with its top at {@code top}, centered in the list. */
@@ -170,7 +189,8 @@ public final class BotForumThreadHint implements TextColorSet {
 
     int y = cardTop + Screen.dp(PADDING_TOP);
     int circleRadius = Screen.dp(ICON_CIRCLE_RADIUS);
-    c.drawCircle(centerX, y + circleRadius, circleRadius, Paints.fillingPaint(ICON_CIRCLE_COLOR));
+    int circleColor = ColorUtils.alphaColor(ICON_CIRCLE_ALPHA, contentColor);
+    c.drawCircle(centerX, y + circleRadius, circleRadius, Paints.fillingPaint(circleColor));
     Drawables.draw(c, icon,
       centerX - icon.getMinimumWidth() / 2f,
       y + circleRadius - icon.getMinimumHeight() / 2f,

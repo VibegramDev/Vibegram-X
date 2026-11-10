@@ -178,7 +178,6 @@
   <item type="id" name="controller_contacts" />
   <item type="id" name="controller_chats" />
   <item type="id" name="controller_forumTopics" />
-  <item type="id" name="controller_forumTopicTabs" />
   <item type="id" name="controller_main" />
   <item type="id" name="controller_call_list" />
   <item type="id" name="controller_call" />
@@ -405,7 +404,6 @@
   <item type="id" name="btn_personalChannelHide" />
   <item type="id" name="btn_personalChannelCreate" />
   <item type="id" name="controller_personalChannel" />
-  <item type="id" name="controller_directMessagesTabs" />
   <item type="id" name="controller_directMessagesTopics" />
   <item type="id" name="btn_peer_id_copy" />
   <item type="id" name="btn_contactsRegistered" />

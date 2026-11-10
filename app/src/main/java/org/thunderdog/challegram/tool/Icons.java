@@ -137,6 +137,44 @@ public class Icons {
     return Screen.dp(18f);
   }
 
+  private static android.util.SparseArray<android.graphics.RectF> tickGlyphBounds;
+
+  /**
+   * Bounds of the visible glyph inside a tick drawable, as fractions of its box (scanned once from the bitmap alpha):
+   * tg_ticks.py composes both ticks into the same 24dp box, so these fractions let callers size and align
+   * the glyphs themselves rather than the padded box.
+   */
+  public static android.graphics.RectF getTickGlyphBounds (@DrawableRes int res) {
+    if (tickGlyphBounds == null) {
+      tickGlyphBounds = new android.util.SparseArray<>();
+    }
+    android.graphics.RectF bounds = tickGlyphBounds.get(res);
+    if (bounds == null) {
+      bounds = new android.graphics.RectF(0f, 0f, 1f, 1f);
+      Drawable d = Drawables.get(res);
+      if (d instanceof android.graphics.drawable.BitmapDrawable) {
+        android.graphics.Bitmap b = ((android.graphics.drawable.BitmapDrawable) d).getBitmap();
+        int w = b.getWidth(), h = b.getHeight();
+        int left = w, top = h, right = -1, bottom = -1;
+        for (int y = 0; y < h; y++) {
+          for (int x = 0; x < w; x++) {
+            if ((b.getPixel(x, y) >>> 24) > 0x40) {
+              if (x < left) left = x;
+              if (x > right) right = x;
+              if (y < top) top = y;
+              if (y > bottom) bottom = y;
+            }
+          }
+        }
+        if (right >= left && bottom >= top) {
+          bounds.set((float) left / w, (float) top / h, (float) (right + 1) / w, (float) (bottom + 1) / h);
+        }
+      }
+      tickGlyphBounds.put(res, bounds);
+    }
+    return bounds;
+  }
+
   public static Drawable getDoubleTick (@ColorId int colorId) {
     return getSparseDrawable(R.drawable.deproko_baseline_check_double_24, colorId);
   }

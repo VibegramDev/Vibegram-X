@@ -2533,6 +2533,7 @@
   <string name="ViewAsChat">View as chat</string>
   <string name="ShowChatPreview">Preview</string>
   <string name="ViewAsTopics">View as topics</string>
+  <string name="NotificationsTopicDefault">As in chat (%1$s)</string>
   <string name="ViewAsTabs">View as tabs</string>
   <string name="FilterByTopic">Filter by topic</string>
   <string name="NoMessagesFound">No messages found</string>

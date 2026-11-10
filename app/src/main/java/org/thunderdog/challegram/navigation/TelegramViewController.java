@@ -55,6 +55,7 @@ import org.thunderdog.challegram.v.CustomRecyclerView;
 import org.thunderdog.challegram.widget.BaseView;
 import org.thunderdog.challegram.widget.BetterChatView;
 import org.thunderdog.challegram.widget.ForceTouchView;
+import org.thunderdog.challegram.widget.ScalableTextView;
 import org.thunderdog.challegram.widget.ListInfoView;
 import org.thunderdog.challegram.widget.VerticalChatView;
 
@@ -443,6 +444,21 @@ public abstract class TelegramViewController<T> extends ViewController<T> {
       }
 
       @Override
+      protected void setButtonText (ListItem item, ScalableTextView view, boolean isUpdate) {
+        if (item.getId() == R.id.search_section_local) {
+          // «Recent» header: the action that clears recent chats, as text
+          String text = Lang.getString(R.string.Clear);
+          if (isUpdate) {
+            view.replaceText(text);
+          } else {
+            Views.setMediumText(view, text);
+          }
+        } else {
+          super.setButtonText(item, view, isUpdate);
+        }
+      }
+
+      @Override
       protected void setInfo (ListItem item, int position, ListInfoView infoView) {
         if (chatSearchManager.isEndReached()) {
           infoView.showInfo(Lang.pluralBold(R.string.xMessages, chatSearchManager.getFoundMessagesCount()));
@@ -620,8 +636,8 @@ public abstract class TelegramViewController<T> extends ViewController<T> {
 
         ListItem headerItem = chatSearchAdapter.getItems().get(startIndex);
         final boolean canClear = chatSearchManager.areLocalChatsRecent();
-        if (canClear != (headerItem.getViewType() == ListItem.TYPE_HEADER_WITH_ACTION)) {
-          headerItem.setViewType(canClear ? ListItem.TYPE_HEADER_WITH_ACTION : ListItem.TYPE_HEADER);
+        if (canClear != (headerItem.getViewType() == ListItem.TYPE_HEADER_WITH_TEXT_BUTTON)) {
+          headerItem.setViewType(canClear ? ListItem.TYPE_HEADER_WITH_TEXT_BUTTON : ListItem.TYPE_HEADER);
           headerItem.setString(canClear ? R.string.Recent : R.string.ChatsAndContacts);
           chatSearchAdapter.notifyItemChanged(startIndex);
         }
@@ -958,7 +974,7 @@ public abstract class TelegramViewController<T> extends ViewController<T> {
       if (items.isEmpty()) {
         items.add(index++, new ListItem(ListItem.TYPE_EMPTY_OFFSET_SMALL));
       }
-      items.add(index++, new ListItem(canClear ? ListItem.TYPE_HEADER_WITH_ACTION : ListItem.TYPE_HEADER, headerId, R.drawable.baseline_clear_all_24, headerRes));
+      items.add(index++, new ListItem(canClear ? ListItem.TYPE_HEADER_WITH_TEXT_BUTTON : ListItem.TYPE_HEADER, headerId, 0, headerRes));
       items.add(index++, new ListItem(ListItem.TYPE_SHADOW_TOP));
       boolean isFirst = true;
       for (TGFoundChat chat : chats) {

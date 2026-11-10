@@ -19,6 +19,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 
+import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.util.text.Counter;
@@ -32,7 +33,12 @@ public class CounterBadgeView extends View {
 
   // Count
 
-  private final Counter counter = new Counter.Builder().callback(new Counter.Callback() {
+  // The buttons under these counters are secondaryContainer, the same colour as badgeMuted: a muted counter
+  // (muted chat, reactions) is drawn inverted, onSecondaryContainer with secondaryContainer text, so it stays visible.
+  private final Counter counter = new Counter.Builder()
+    .textColor(ColorId.badgeText, ColorId.circleButtonChat, ColorId.badgeFailedText)
+    .mutedBackgroundColor(ColorId.circleButtonChatIcon)
+    .callback(new Counter.Callback() {
     @Override
     public void onCounterAppearanceChanged (Counter counter, boolean sizeChanged) {
       if (sizeChanged) {

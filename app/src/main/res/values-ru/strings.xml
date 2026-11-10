@@ -75,6 +75,7 @@
   <string name="ViewAsChat">Показать как чат</string>
   <string name="ShowChatPreview">Предпросмотр</string>
   <string name="ViewAsTopics">Показать темы списком</string>
+  <string name="NotificationsTopicDefault">Как в чате (%1$s)</string>
   <string name="ViewAsTabs">Показать темы вкладками</string>
   <string name="FilterByTopic">Фильтр по теме</string>
   <string name="NoMessagesFound">Сообщения не найдены</string>

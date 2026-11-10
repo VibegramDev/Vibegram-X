@@ -3640,14 +3640,8 @@ public class ShareController extends TelegramViewController<ShareController.Args
     if (mayBePaid) {
       ViewController<?> payContext = context().navigation().getCurrentStackItem();
       org.thunderdog.challegram.stars.PaidMessages.send(payContext != null ? payContext : this, tdlib, functions);
-    } else if (functions.size() == 1) {
-      tdlib.client().send(functions.get(0), tdlib.messageHandler());
     } else {
-      tdlib.runOnTdlibThread(() -> {
-        for (TdApi.Function<?> function : functions) {
-          tdlib.client().send(function, tdlib.messageHandler());
-        }
-      });
+      tdlib.sendMessages(functions, tdlib.messageHandler());
     }
 
     onSent();

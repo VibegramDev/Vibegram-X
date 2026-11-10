@@ -840,6 +840,7 @@ public class InlineResultsWrap extends FrameLayoutFix implements View.OnClickLis
   }
 
   public void updatePosition (boolean needTranslate) {
+    updatePaneMargin();
     if (offsetProvider != null) {
       setBottomMargin(offsetProvider.provideOffset(this));
     } else {
@@ -881,11 +882,31 @@ public class InlineResultsWrap extends FrameLayoutFix implements View.OnClickLis
     return false;
   }
 
+  private int legacyLeftInset, paneLeftMargin;
+
+  /**
+   * Tablet split: the results (bot commands, inline bots, mentions, stickers) belong to the chat in the right pane, so
+   * they start at its left edge instead of covering the chat list.
+   */
+  private void updatePaneMargin () {
+    NavigationController navigation = UI.getContext(getContext()).navigation();
+    int detailLeft = navigation != null && rootView != null ? navigation.getTabletDetailScreenLeft() : -1;
+    int paneLeft = detailLeft != -1 ? Math.max(0, detailLeft - Views.getLocationOnScreen(rootView)[0]) : 0;
+    if (this.paneLeftMargin != paneLeft) {
+      this.paneLeftMargin = paneLeft;
+      ViewGroup.LayoutParams params = getLayoutParams();
+      if (params instanceof MarginLayoutParams && Views.setMargins((MarginLayoutParams) params, Math.max(legacyLeftInset, paneLeft), ((MarginLayoutParams) params).topMargin, ((MarginLayoutParams) params).rightMargin, ((MarginLayoutParams) params).bottomMargin)) {
+        setLayoutParams(params);
+      }
+    }
+  }
+
   @Override
   public void onApplyMarginInsets (View child, LayoutParams params, Rect legacyInsets, Rect insets, Rect insetsWithoutIme) {
     boolean changed;
+    legacyLeftInset = legacyInsets.left;
     changed = Views.setMargins(params,
-      legacyInsets.left,
+      Math.max(legacyInsets.left, paneLeftMargin),
       legacyInsets.top,
       legacyInsets.right,
       insets.bottom + lastBottomMargin
@@ -902,6 +923,7 @@ public class InlineResultsWrap extends FrameLayoutFix implements View.OnClickLis
   protected void onAttachedToWindow () {
     super.onAttachedToWindow();
     rootView = Views.findAncestor(this, RootFrameLayout.class, true);
+    updatePaneMargin();
   }
 
   @Override

@@ -103,16 +103,30 @@ public class ReactionsOverlayView extends ViewGroup {
     }
   }
 
+  /**
+   * Upper bound for one effect on screen. Effects without a position animation leave only when their lottie loops; if
+   * that never happens (playback frozen by a media viewer, file not loaded, actor dropped), the last frame stayed
+   * over the chat for good and scrolled with the messages.
+   */
+  private static final long MAX_EFFECT_DURATION_MS = 5000;
+
   public void addOverlay (ReactionInfo info) {
     info.setRemoveListener(() -> this.removeOverlay(info));
     activePopups.add(info);
     info.attach();
+    postDelayed(() -> {
+      if (activePopups.contains(info)) {
+        info.finishNow();
+      }
+    }, MAX_EFFECT_DURATION_MS);
     invalidate();
   }
 
 
   public void removeOverlay (ReactionInfo info) {
-    activePopups.remove(info);
+    if (!activePopups.remove(info)) {
+      return;
+    }
     info.detach();
     info.performDestroy();
     invalidate();
@@ -281,16 +295,26 @@ public class ReactionsOverlayView extends ViewGroup {
       return this;
     }
 
-    private ReactionInfo setRemoveListener (Runnable listener) {
-      if (animation != null && positionAnimator == null) {
-        animation.addLoopListener(() -> {
-          if (endAnimationListener != null) {
-            endAnimationListener.onAnimationFinish();
-          }
-          removeRunnable.run();
-        });
+    private boolean finished;
+
+    private void finishNow () {
+      if (finished) {
+        return;
       }
+      finished = true;
+      if (endAnimationListener != null) {
+        endAnimationListener.onAnimationFinish();
+      }
+      if (removeRunnable != null) {
+        removeRunnable.run();
+      }
+    }
+
+    private ReactionInfo setRemoveListener (Runnable listener) {
       this.removeRunnable = listener;
+      if (animation != null && positionAnimator == null) {
+        animation.addLoopListener(this::finishNow);
+      }
       return this;
     }
 

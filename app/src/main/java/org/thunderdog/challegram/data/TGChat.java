@@ -50,6 +50,7 @@ import org.thunderdog.challegram.util.EmojiStatusHelper;
 import org.thunderdog.challegram.util.ReactionsCounterDrawable;
 import org.thunderdog.challegram.util.ReactionsListAnimator;
 import org.thunderdog.challegram.util.text.Counter;
+import org.thunderdog.challegram.util.text.Highlight;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.util.text.TextColorSetOverride;
@@ -133,6 +134,12 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   private String title;
   private Text trimmedTitle;
 
+  /** Row of a forum topic ({@link #newForumTopic}): its icon instead of the avatar, its name instead of the title. */
+  private final @Nullable TdApi.ForumTopic forumTopic;
+  private final @Nullable TopicIcon topicIcon;
+  /** Search query highlighted in the title and the text. */
+  private final @Nullable String highlightQuery;
+
   private @Nullable EmojiStatusHelper.EmojiStatusDrawable emojiStatusDrawable;
 
   private String time;
@@ -170,6 +177,30 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   private Set<String> awaitingReactions;
 
   public TGChat (ViewController<?> context, TdApi.ChatList chatList, TdApi.Chat chat, boolean makeMeasures) {
+    this(context, chatList, chat, null, null, makeMeasures);
+  }
+
+  /**
+   * Row of a forum topic: the chat row with the topic's icon and name, its last message (or the found one),
+   * draft and counters. Rows are rebuilt on topic changes: they get no chat updates.
+   */
+  public static TGChat newForumTopic (ViewController<?> context, TdApi.Chat chat, TdApi.ForumTopic topic, @Nullable TdApi.Message foundMessage, @Nullable String highlightQuery) {
+    TdApi.Chat displayChat = Td.copyOf(chat);
+    displayChat.lastMessage = foundMessage != null ? foundMessage : topic.lastMessage;
+    displayChat.draftMessage = foundMessage != null ? null : topic.draftMessage;
+    displayChat.unreadCount = foundMessage != null ? 0 : topic.unreadCount;
+    displayChat.unreadMentionCount = foundMessage != null ? 0 : topic.unreadMentionCount;
+    displayChat.unreadReactionCount = foundMessage != null ? 0 : topic.unreadReactionCount;
+    displayChat.isMarkedAsUnread = false;
+    displayChat.lastReadInboxMessageId = topic.lastReadInboxMessageId;
+    displayChat.lastReadOutboxMessageId = topic.lastReadOutboxMessageId;
+    displayChat.hasScheduledMessages = false;
+    displayChat.positions = new TdApi.ChatPosition[0];
+    displayChat.actionBar = null;
+    return new TGChat(context, ChatPosition.CHAT_LIST_MAIN, displayChat, topic, highlightQuery, true);
+  }
+
+  private TGChat (ViewController<?> context, TdApi.ChatList chatList, TdApi.Chat chat, @Nullable TdApi.ForumTopic forumTopic, @Nullable String highlightQuery, boolean makeMeasures) {
     this.context = context;
     this.statusHelper = new TdlibStatusManager.Helper(context.context(), context.tdlib(), this, context);
     this.tdlib = context.tdlib();
@@ -177,6 +208,9 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     this.chat = Td.copyOf(chat);
     this.archive = null;
     this.listMode = Settings.instance().getChatListMode();
+    this.forumTopic = forumTopic;
+    this.highlightQuery = StringUtils.isEmpty(highlightQuery) ? null : highlightQuery;
+    this.topicIcon = forumTopic != null ? new TopicIcon(tdlib, forumTopic.info, ChatView.getAvatarSize(listMode), () -> currentViews.invalidateContent(this)) : null;
     this.dataType = chat.type.getConstructor();
     switch (dataType) {
       case TdApi.ChatTypeBasicGroup.CONSTRUCTOR: {
@@ -232,6 +266,9 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   public TGChat (ViewController<?> context, TdlibChatList list, boolean makeMeasures) {
     this.context = context;
     this.statusHelper = null;
+    this.forumTopic = null;
+    this.highlightQuery = null;
+    this.topicIcon = null;
     this.tdlib = context.tdlib();
     this.chat = null;
     this.chatList = null;
@@ -879,7 +916,23 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   }
 
   public boolean showMute () {
+    if (forumTopic != null) {
+      return tdlib.forumTopicNeedsMuteIcon(chat.id, forumTopic);
+    }
     return tdlib.chatNeedsMuteIcon(chat);
+  }
+
+  public @Nullable TdApi.ForumTopic getForumTopic () {
+    return forumTopic;
+  }
+
+  public @Nullable TopicIcon getTopicIcon () {
+    return topicIcon;
+  }
+
+  /** A closed topic without unread messages shows a lock in place of the counter. */
+  public boolean showTopicClosed () {
+    return forumTopic != null && forumTopic.info.isClosed && chat.unreadCount == 0;
   }
 
   public boolean showVerify () {
@@ -903,7 +956,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   }
 
   private void setCounter (boolean allowAnimation) {
-    if (chat != null) {
+    if (chat != null && forumTopic == null) {
       // Forums show the number of unread topics: loaded once, then kept up to date by Tdlib
       tdlib.loadForumUnreadTopicCount(chat.id);
     }
@@ -992,6 +1045,8 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       return getTotalUnreadCount();
     } else if (getSource() != null) {
       return 0;
+    } else if (forumTopic != null) {
+      return Math.max(0, chat.unreadCount);
     } else {
       return tdlib.chatListUnreadCount(chat);
     }
@@ -1037,6 +1092,8 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     if (isArchive()) {
       TdlibCounter counter = tdlib.getCounter(ChatPosition.CHAT_LIST_ARCHIVE);
       return counter.chatUnmutedCount > 0;
+    } else if (forumTopic != null) {
+      return !tdlib.forumTopicNeedsMuteIcon(chat.id, forumTopic);
     } else {
       return tdlib.chatNotificationsEnabled(chat);
     }
@@ -1060,13 +1117,13 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     if (showMute()) {
       avail = avail - ChatView.getMuteOffset() - Icons.getChatMuteDrawableWidth();
     }
-    boolean showVerify = tdlib.chatVerified(chat);
+    boolean showVerify = forumTopic == null && tdlib.chatVerified(chat);
     this.flags = BitwiseUtils.setFlag(flags, FLAG_SHOW_VERIFY, showVerify);
     if (showVerify) {
       avail = avail - Screen.dp(20f);
     }
-    this.flags = BitwiseUtils.setFlag(flags, FLAG_SHOW_SCAM, tdlib.chatScam(chat));
-    this.flags = BitwiseUtils.setFlag(flags, FLAG_SHOW_FAKE, tdlib.chatFake(chat));
+    this.flags = BitwiseUtils.setFlag(flags, FLAG_SHOW_SCAM, forumTopic == null && tdlib.chatScam(chat));
+    this.flags = BitwiseUtils.setFlag(flags, FLAG_SHOW_FAKE, forumTopic == null && tdlib.chatFake(chat));
     boolean showChatMark = showFake() || showScam();
     if (showChatMark) {
       chatMark = new Text.Builder(Lang.getString(showFake() ? R.string.FakeMark : R.string.ScamMark), avail, Paints.robotoStyleProvider(12f), TextColorSets.Regular.NEGATIVE)
@@ -1085,7 +1142,9 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       avail = avail - Screen.dp(14f);
     }
 
-    if (!tdlib.isSelfChat(chat)) {
+    if (forumTopic != null) {
+      emojiStatusDrawable = null;
+    } else if (!tdlib.isSelfChat(chat)) {
       emojiStatusDrawable = EmojiStatusHelper.makeDrawable(null, tdlib, chat != null ? tdlib.chatUser(chat) : null, new TextColorSetOverride(TextColorSets.Regular.NORMAL) {
         @Override
         public long mediaTextComplexColor () {
@@ -1110,6 +1169,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
         // M3: emphasized (bold) title only for unread chats on Material You themes; legacy themes keep bold titles.
         trimmedTitle = new Text.Builder(title, avail, getTitleStyleProvider(listMode), isSecretChat() ? TextColorSets.Regular.SECURE : TextColorSets.Regular.NORMAL)
           .singleLine()
+          .highlight(highlightQuery != null ? Highlight.valueOf(title, highlightQuery) : null)
           .allBold(emphasized)
           .clipTextArea()
           .build();
@@ -1175,7 +1235,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   }
 
   public void setTitle () {
-    setTitleImpl(isArchive() ? Lang.getString(R.string.ArchiveTitleList) : tdlib.chatTitle(chat));
+    setTitleImpl(isArchive() ? Lang.getString(R.string.ArchiveTitleList) : forumTopic != null ? forumTopic.info.name : tdlib.chatTitle(chat));
     layoutTitle(true);
   }
 
@@ -1314,7 +1374,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       counter.getScaledWidth(ChatView.getTimePaddingLeft()) +
       mentionCounter.getScaledWidth(ChatView.getTimePaddingLeft()) +
       reactionsCounter.getScaledWidth(ChatView.getTimePaddingLeft())
-    );
+    ) + (showTopicClosed() ? Screen.dp(16f) + ChatView.getTimePaddingLeft() : 0);
   }
 
   public Counter getCounter () {
@@ -1346,6 +1406,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
 
     if (avail > 0 && !StringUtils.isEmpty(text)) {
       trimmedText = new Text.Builder(text, avail, getTextStyleProvider(listMode), TextColorSets.Regular.LIGHT)
+        .highlight(highlightQuery != null ? Highlight.valueOf(text, highlightQuery) : null)
         .maxLineCount(isSingleLine() ? 1 : 2)
         .textFlags(Text.FLAG_ELLIPSIZE_NEWLINE)
         .ignoreContinuousNewLines()
@@ -1727,7 +1788,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       flags = BitwiseUtils.setFlag(flags, FLAG_ATTACHED, isAttached);
       if (statusHelper != null) {
         if (isAttached) {
-          statusHelper.attachToChat(chat.id, null);
+          statusHelper.attachToChat(chat.id, forumTopic != null ? new TdApi.MessageTopicForum(forumTopic.info.forumTopicId) : null);
         } else {
           statusHelper.detachFromAnyChat();
         }
@@ -1789,6 +1850,9 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     currentViews.detachFromAllViews();
     setViewAttached(false);
     isDestroyed = true;
+    if (topicIcon != null) {
+      topicIcon.performDestroy();
+    }
     if (awaitingReactions != null) {
       for (String reactionKey : awaitingReactions) {
         tdlib.listeners().removeReactionLoadListener(reactionKey, this);

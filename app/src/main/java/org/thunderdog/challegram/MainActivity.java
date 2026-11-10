@@ -95,6 +95,7 @@ import org.thunderdog.challegram.ui.SettingsThemeController;
 import org.thunderdog.challegram.ui.WaitForPremiumController;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.Crash;
+import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.webapp.WebApp;
 import org.thunderdog.challegram.widget.GearView;
 import org.thunderdog.challegram.widget.NoScrollTextView;
@@ -752,6 +753,7 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
     // No transition lasts this long (1.5 s): a flag got stuck. Showing the share sheet anyway is better than nothing.
     final boolean force = ++pendingIntentAttempts >= PENDING_INTENT_MAX_ATTEMPTS;
+    StuckWatch.event("intent postponed: " + actionRaw + ", attempt=" + pendingIntentAttempts);
     handler.postDelayed(() -> {
       if (pendingIntent == intent && !isFinishing()) {
         forceIntent = force;
