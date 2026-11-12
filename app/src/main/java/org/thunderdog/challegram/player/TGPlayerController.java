@@ -1775,6 +1775,11 @@ public class TGPlayerController implements GlobalMessageListener, ProximityManag
   public static final int AUDIO_FOCUS_TRANSIENT = 1;
   /** Music: other players stop, as before. */
   public static final int AUDIO_FOCUS_PERMANENT = 2;
+  /**
+   * Recording a voice message or a round video: exclusive transient focus. Besides pausing other players,
+   * the system does not play any notification sound while somebody holds it (other apps included).
+   */
+  public static final int AUDIO_FOCUS_EXCLUSIVE = 3;
 
   private static final long AUDIO_FOCUS_FADE_MS = 350;
   private static final long AUDIO_FOCUS_RELEASE_DELAY_MS = 700;
@@ -1833,7 +1838,9 @@ public class TGPlayerController implements GlobalMessageListener, ProximityManag
     }
     audioFocusGain = needGain;
     UI.removePendingRunnable(audioFocusPauseOthers);
-    if (needGain == AUDIO_FOCUS_PERMANENT) {
+    if (needGain == AUDIO_FOCUS_EXCLUSIVE) {
+      requestAudioFocusImpl(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE);
+    } else if (needGain == AUDIO_FOCUS_PERMANENT) {
       requestAudioFocusImpl(android.media.AudioManager.AUDIOFOCUS_GAIN);
     } else {
       // Duck first (the system lowers the other app smoothly), then ask it to pause.
@@ -1852,7 +1859,7 @@ public class TGPlayerController implements GlobalMessageListener, ProximityManag
       android.media.AudioFocusRequest request = new android.media.AudioFocusRequest.Builder(gain)
         .setAudioAttributes(new android.media.AudioAttributes.Builder()
           .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-          .setContentType(gain == android.media.AudioManager.AUDIOFOCUS_GAIN ? android.media.AudioAttributes.CONTENT_TYPE_MUSIC : android.media.AudioAttributes.CONTENT_TYPE_MOVIE)
+          .setContentType(gain == android.media.AudioManager.AUDIOFOCUS_GAIN ? android.media.AudioAttributes.CONTENT_TYPE_MUSIC : gain == android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE ? android.media.AudioAttributes.CONTENT_TYPE_SPEECH : android.media.AudioAttributes.CONTENT_TYPE_MOVIE)
           .build())
         .setOnAudioFocusChangeListener(audioFocusListener)
         .build();

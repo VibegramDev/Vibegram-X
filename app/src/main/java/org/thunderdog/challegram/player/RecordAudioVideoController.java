@@ -1303,6 +1303,8 @@ public class RecordAudioVideoController implements
     return isRecordingAny;
   }
 
+  private final Object recordAudioFocusOwner = new Object();
+
   private void notifyRecordStateChanged (boolean isRecording) {
     isRecordingAny = isRecording;
     context.navigation().getStack().setIsLocked(isRecording);
@@ -1311,6 +1313,8 @@ public class RecordAudioVideoController implements
       UI.forceVibrate(voiceVideoButtonView, true, true);
       tdlib.context().player().pauseWithReason(TGPlayerController.PAUSE_REASON_RECORD_AUDIO_VIDEO);
     }
+    // Voice and round videos only (not dictation): no notification sounds from any app get into the recording.
+    tdlib.context().player().setAudioFocusOwner(recordAudioFocusOwner, isRecording && !dictating ? TGPlayerController.AUDIO_FOCUS_EXCLUSIVE : TGPlayerController.AUDIO_FOCUS_NONE);
 
     final int size = recordListeners.size();
     for (int i = size - 1; i >= 0; i--) {
