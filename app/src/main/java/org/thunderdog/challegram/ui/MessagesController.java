@@ -2176,6 +2176,77 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return messagesView;
   }
 
+  /**
+   * Height of the part of the list the expanded round video may take: below the pinned/top bars and the player bar
+   * (it shows up as soon as the round plays), above the composer. -1 while the list is not laid out.
+   */
+  public int getExpandedRoundMaxHeight () {
+    if (messagesView == null || messagesView.getMeasuredHeight() == 0 || messagesView.getWindowToken() == null) {
+      return -1;
+    }
+    int bottom = getFloatingComposerTop(messagesView);
+    if (bottom < 0) {
+      bottom = messagesView.getMeasuredHeight() - messagesView.getPaddingBottom();
+    }
+    return bottom - getTopOffset() - HeaderView.getPlayerSize();
+  }
+
+  /**
+   * Adds the visible floating buttons (scroll to bottom, mentions, reactions, "Discuss") to {@code path} in the coordinates of
+   * {@code view}. The round video player is a window overlay above the chat: it must not cover these buttons.
+   */
+  public boolean addFloatingButtonsShape (View view, android.graphics.Path path) {
+    if (getValue().getWindowToken() == null || view.getWindowToken() == null) {
+      return false;
+    }
+    // Views.getLocationInWindow returns one shared array: copy the values.
+    int[] location = Views.getLocationInWindow(view);
+    final int viewLeft = location[0], viewTop = location[1];
+    boolean added = false;
+    RectF rect = new RectF();
+    for (View button : getFloatingButtons()) {
+      if (button == null || button.getWidth() == 0) {
+        continue;
+      }
+      final int padding = Screen.dp(FLOATING_BUTTON_PADDING);
+      rect.set(padding, padding, button.getWidth() - padding, button.getHeight() - padding);
+      added |= addShapeInWindow(button, rect, Screen.dp(FLOATING_BUTTON_CORNER), viewLeft, viewTop, path);
+    }
+    // "Discuss" / "Join" button of channels and discussions
+    if (bottomBar != null && bottomBar.getButtonRect(rect)) {
+      added |= addShapeInWindow(bottomBar, rect, bottomBar.getButtonRadius(), viewLeft, viewTop, path);
+    }
+    return added;
+  }
+
+  /** Maps {@code rect} from {@code v} to the window and adds it to {@code path}, unless {@code v} is not visible. */
+  private static boolean addShapeInWindow (View v, RectF rect, float radius, int offsetX, int offsetY, android.graphics.Path path) {
+    float alpha = 1f, scale = 1f;
+    while (true) {
+      if (v.getVisibility() != View.VISIBLE) {
+        return false;
+      }
+      alpha *= v.getAlpha();
+      if (!v.getMatrix().isIdentity()) {
+        v.getMatrix().mapRect(rect);
+        scale *= v.getScaleX();
+      }
+      rect.offset(v.getLeft(), v.getTop());
+      android.view.ViewParent parent = v.getParent();
+      if (!(parent instanceof View)) {
+        break;
+      }
+      v = (View) parent;
+      rect.offset(-v.getScrollX(), -v.getScrollY());
+    }
+    if (alpha <= 0f || rect.isEmpty()) {
+      return false;
+    }
+    rect.offset(-offsetX, -offsetY);
+    path.addRoundRect(rect, radius * scale, radius * scale, android.graphics.Path.Direction.CW);
+    return true;
+  }
+
   /** Floating buttons over the messages (scroll to bottom, mentions, reactions) that stay tappable in a preview. */
   public View[] getFloatingButtons () {
     return new View[] {scrollToBottomButton, mentionButton, reactionsButton};
@@ -7822,6 +7893,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (isInForceTouchMode()) {
       return;
     }
+    // The playing round video stays under the floating buttons while they move or fade
+    UI.post(() -> context().getRoundVideoController().onMessagesScroll());
     float offsetY = -getButtonsOffset();
     if (scrollToBottomButtonWrap != null) {
       scrollToBottomButtonWrap.setTranslationY(offsetY);
