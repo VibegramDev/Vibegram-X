@@ -111,6 +111,7 @@ public class RoundVideoRecorder {
   private final int mSurfaceWidth, mSurfaceHeight;
   private int mPreviewWidth, mPreviewHeight;
   private int mOrientation;
+  private int mContentRotation;
 
   private Delegate mDelegate;
   private String workingKey;
@@ -131,12 +132,18 @@ public class RoundVideoRecorder {
     this.mSurfaceHeight = surfaceHeight;
   }
 
-  public void setPreviewSizes (int width, int height, int orientation) {
+  /**
+   * @param orientation rotation of the frame already done by the SurfaceTexture transform
+   * @param contentRotation rotation added on top of it to keep the picture upright on screen
+   */
+  public void setPreviewSizes (int width, int height, int orientation, int contentRotation) {
     if (!checkBackgroundThread()) {
-      backgroundHandler.sendMessage(Message.obtain(backgroundHandler, BG_ACTION_SET_SIZES, width, height, orientation));
+      backgroundHandler.sendMessage(Message.obtain(backgroundHandler, BG_ACTION_SET_SIZES, width, height, new int[] {orientation, contentRotation}));
       return;
     }
+    this.mContentRotation = contentRotation;
     if (mPreviewWidth != 0 || mPreviewHeight != 0) {
+      updateRotation();
       return;
     }
     this.mPreviewWidth = width;
@@ -144,6 +151,17 @@ public class RoundVideoRecorder {
     this.mOrientation = orientation;
 
     updateSizes();
+  }
+
+  public void setContentRotation (int contentRotation) {
+    if (!checkBackgroundThread()) {
+      backgroundHandler.sendMessage(Message.obtain(backgroundHandler, BG_ACTION_SET_ROTATION, contentRotation, 0));
+      return;
+    }
+    if (mContentRotation != contentRotation) {
+      mContentRotation = contentRotation;
+      updateRotation();
+    }
   }
 
   public void openCamera () {
@@ -256,6 +274,7 @@ public class RoundVideoRecorder {
   private static final int BG_ACTION_CLOSE = 3;
   private static final int BG_ACTION_RENDER = 4;
   private static final int BG_ACTION_SET_SIZES = 5;
+  private static final int BG_ACTION_SET_ROTATION = 6;
 
   private void handleBackgroundMessage (Message msg) { // Background thread (GL)
     switch (msg.what) {
@@ -275,7 +294,10 @@ public class RoundVideoRecorder {
         doRender((Integer) msg.obj);
         break;
       case BG_ACTION_SET_SIZES:
-        setPreviewSizes(msg.arg1, msg.arg2, (Integer) msg.obj);
+        setPreviewSizes(msg.arg1, msg.arg2, ((int[]) msg.obj)[0], ((int[]) msg.obj)[1]);
+        break;
+      case BG_ACTION_SET_ROTATION:
+        setContentRotation(msg.arg1);
         break;
     }
   }
@@ -550,10 +572,14 @@ public class RoundVideoRecorder {
     }
     rotationAngle = mOrientation;
     surfaceTexture = mSurfaceTexture;
+    updateRotation();
+  }
 
+  /** The frame is square, so turning the quad keeps it in place and only turns the picture. */
+  private void updateRotation () {
     android.opengl.Matrix.setIdentityM(mMVPMatrix, 0);
-    if (rotationAngle != 0) {
-      android.opengl.Matrix.rotateM(mMVPMatrix, 0, rotationAngle, 0, 0, 1);
+    if (mContentRotation != 0) {
+      android.opengl.Matrix.rotateM(mMVPMatrix, 0, mContentRotation, 0, 0, 1);
     }
   }
 
@@ -731,8 +757,6 @@ public class RoundVideoRecorder {
     GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
     GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
     GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
-
-    android.opengl.Matrix.setIdentityM(mMVPMatrix, 0);
 
     cameraSurface = new SurfaceTexture(cameraTexture[0]);
     cameraSurface.setOnFrameAvailableListener(surfaceTexture -> requestRender());

@@ -758,6 +758,9 @@ public abstract class CameraApi {
       if (this.mDisplayOrientation != degrees) {
         this.mDisplayOrientation = degrees;
         onDisplayOrientationChanged();
+        if (roundRecorder != null) {
+          roundRecorder.setContentRotation(getRoundContentRotation());
+        }
       }
     }
   }
@@ -1058,6 +1061,20 @@ public abstract class CameraApi {
 
   @WorkerThread
   protected abstract int calculateDisplayOrientation ();
+
+  /**
+   * Rotation already applied to the camera frame by the SurfaceTexture transform of the round recorder.
+   * Camera1 rotates its output by {@code setDisplayOrientation()}, so it is the whole display orientation.
+   */
+  protected int getRoundFrameOrientation () {
+    return calculateDisplayOrientation();
+  }
+
+  /** Rotation the round recorder adds on top of the SurfaceTexture transform to keep the picture upright on screen. */
+  protected int getRoundContentRotation () {
+    return 0;
+  }
+
   @WorkerThread
   protected abstract int getCameraOutputWidth ();
   @WorkerThread
@@ -1140,10 +1157,10 @@ public abstract class CameraApi {
             if (manager.useRoundRender()) {
               if (roundRecorder == null) {
                 roundRecorder = new RoundVideoRecorder(this, surface, mSurfaceWidth, mSurfaceHeight);
-                roundRecorder.setPreviewSizes(getCameraOutputWidth(), getCameraOutputHeight(), calculateDisplayOrientation());
+                roundRecorder.setPreviewSizes(getCameraOutputWidth(), getCameraOutputHeight(), getRoundFrameOrientation(), getRoundContentRotation());
                 roundRecorder.openCamera();
               } else {
-                roundRecorder.setPreviewSizes(getCameraOutputWidth(), getCameraOutputHeight(), calculateDisplayOrientation());
+                roundRecorder.setPreviewSizes(getCameraOutputWidth(), getCameraOutputHeight(), getRoundFrameOrientation(), getRoundContentRotation());
                 roundRecorder.switchToNewCamera();
               }
             } else {
