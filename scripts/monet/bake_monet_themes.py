@@ -140,6 +140,52 @@ def split_arguments(args):
   return result
 
 
+def luminance(rgb):
+  def lin(c):
+    c /= 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+  return 0.2126 * lin((rgb >> 16) & 0xFF) + 0.7152 * lin((rgb >> 8) & 0xFF) + 0.0722 * lin(rgb & 0xFF)
+
+
+def contrast_ratio(a, b):
+  la, lb = luminance(a), luminance(b)
+  return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def ensure_contrast(color, background, ratio):
+  """ThemeMonet.ensureContrast: the nearest tone of the color's hue that is `ratio`:1 apart from the background."""
+  if contrast_ratio(color, background) >= ratio:
+    return color
+  l, a, b = to_lab(color)
+  background_l = to_lab(background)[0]
+  best, best_distance, fallback, fallback_contrast = None, None, color, 0
+  for direction in (-1, 1):
+    limit = 0 if direction < 0 else 100
+    extreme = from_lab(limit, a, b)
+    extreme_contrast = contrast_ratio(extreme, background)
+    if extreme_contrast < ratio:
+      if extreme_contrast > fallback_contrast:
+        fallback, fallback_contrast = extreme, extreme_contrast
+      continue
+    near, far = (min(l, background_l) if direction < 0 else max(l, background_l)), limit
+    for _ in range(16):
+      mid = (near + far) / 2
+      if contrast_ratio(from_lab(mid, a, b), background) >= ratio:
+        far = mid
+      else:
+        near = mid
+    if best_distance is None or abs(far - l) < best_distance:
+      best, best_distance = from_lab(far, a, b), abs(far - l)
+  return best if best is not None else fallback
+
+
+def expand(value, variables, depth=0):
+  if "$" not in value:
+    return value
+  assert depth <= 8, value
+  return re.sub(r"\$[A-Za-z][A-Za-z0-9_]*", lambda m: expand(variables[m.group()], variables, depth + 1), value)
+
+
 def resolve(value, colors, palettes):
   value = value.strip()
   at = value.rfind("@")
@@ -150,6 +196,11 @@ def resolve(value, colors, palettes):
     a_value, b_value, p = split_arguments(value[4:-1])
     a, b, p = resolve(a_value, colors, palettes), resolve(b_value, colors, palettes), int(p) / 100
     return tuple(round(a[i] + (b[i] - a[i]) * p) for i in range(4))
+  if value.startswith("contrast(") and value.endswith(")"):
+    c_value, bg_value, ratio = split_arguments(value[9:-1])
+    c, bg = resolve(c_value, colors, palettes), resolve(bg_value, colors, palettes)
+    rgb = ensure_contrast((c[0] << 16) | (c[1] << 8) | c[2], (bg[0] << 16) | (bg[1] << 8) | bg[2], float(ratio))
+    return ((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, c[3])
   if value.startswith("#"):
     return parse_literal(value[1:])
   if value in colors:
@@ -168,8 +219,11 @@ def main():
     colors = load(name)
     roles_colors = scheme(palettes, roles, dark, black)
     lines = ["!", f"id: {theme_id}", f'name: "{theme_name}"', "time: 1790000000", "@", properties, "#"]
+    variables = {key: value for key, value in colors.items() if key.startswith("$")}
     for key, value in colors.items():
-      r, g, b, a = resolve(value, roles_colors, palettes)
+      if key.startswith("$"):
+        continue
+      r, g, b, a = resolve(expand(value, variables), roles_colors, palettes)
       hex_value = f"#{r:02X}{g:02X}{b:02X}" + (f"{a:02X}" if a != 255 else "")
       lines.append(f"{key}: {hex_value}")
     path = THEMES / f"{theme_name}.tgx-theme"
