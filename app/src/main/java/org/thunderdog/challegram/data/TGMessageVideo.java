@@ -435,7 +435,8 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   @Override
   protected void buildContent (int maxWidth) {
     videoSmallSize = Math.min(Screen.dp(200f), maxWidth);
-    videoFullSize = getVideoSize();
+    // Tablet split: the chat pane is narrower than the screen's smallest side, so the expanded round must fit the pane
+    videoFullSize = Math.max(videoSmallSize, Math.min(getVideoSize(), width - Screen.dp(32f)));
     videoSize = computeVideoSize();
     if (compact) {
       buildCompact(maxWidth);

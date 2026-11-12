@@ -8410,6 +8410,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
   }
 
+  /** Recording a round video: the system keyboard and the emoji panel close (the bot keyboard stays). */
+  public void hideKeyboardsForRecording () {
+    hideSoftwareKeyboard();
+    closeEmojiKeyboard(true);
+  }
+
   public void hideAllKeyboards () {
     hideSoftwareKeyboard();
     closeCommandsKeyboard(false);

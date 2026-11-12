@@ -1528,6 +1528,10 @@ public class RecordAudioVideoController implements
       }
       prepareVideoRecording();
       attachZoomBar();
+      if (targetController != null) {
+        // The round preview needs the room the keyboard takes
+        targetController.hideKeyboardsForRecording();
+      }
     }
 
     if (sendHelper != null)
