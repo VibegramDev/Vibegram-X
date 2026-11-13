@@ -435,6 +435,21 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
   }
 
   @Override
+  public void onArchiveChatListNameChanged (Tdlib tdlib) {
+    runOnUiThreadOptional(() -> {
+      int startIndex = indexOfFirstChatFolder();
+      if (startIndex == RecyclerView.NO_POSITION) {
+        return;
+      }
+      int index = adapter.indexOfView(this::isArchiveChatFolder, startIndex, false);
+      if (index != RecyclerView.NO_POSITION) {
+        setArchiveName(adapter.getItem(index));
+        adapter.notifyItemChanged(index);
+      }
+    });
+  }
+
+  @Override
   public void onClick (View v) {
     if (v.getId() == R.id.btn_createNewFolder) {
       if (tdlib.canCreateChatFolder()) {
@@ -444,7 +459,11 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
       }
     } else if (v.getId() == R.id.chatFolder) {
       ListItem item = (ListItem) v.getTag();
-      if (isMainChatFolder(item) || isArchiveChatFolder(item)) {
+      if (isArchiveChatFolder(item)) {
+        navigateTo(EditChatFolderController.editArchiveName(context, tdlib));
+        return;
+      }
+      if (isMainChatFolder(item)) {
         showTooltip(v, Lang.getString(R.string.HoldAndDragToReorder), View::getDrawingRect);
         return;
       }
@@ -787,11 +806,20 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
 
   private ListItem archiveChatFolderItem () {
     ListItem item = new ListItem(ListItem.TYPE_CUSTOM - TYPE_CHAT_FOLDER, R.id.chatFolder);
-    item.setString(R.string.CategoryArchive);
+    setArchiveName(item);
     item.setLongId(ARCHIVE_CHAT_FOLDER_ID);
     item.setIconRes(R.drawable.baseline_archive_24);
     item.setStringValue(Lang.getString(R.string.LocalFolder));
     return item;
+  }
+
+  private void setArchiveName (ListItem item) {
+    TdApi.ChatFolderName name = tdlib.settings().archiveChatListName();
+    if (name != null) {
+      item.setString(TD.toCharSequence(name));
+    } else {
+      item.setString(R.string.CategoryArchive);
+    }
   }
 
   private ListItem chatFolderItem (TdApi.ChatFolderInfo chatFolderInfo) {

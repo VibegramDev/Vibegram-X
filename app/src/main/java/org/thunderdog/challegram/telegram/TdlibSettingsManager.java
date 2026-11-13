@@ -44,6 +44,7 @@ import java.util.concurrent.TimeUnit;
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntSet;
+import me.vkryl.core.collection.LongList;
 import me.vkryl.core.collection.LongSparseLongArray;
 import me.vkryl.core.reference.ReferenceList;
 import me.vkryl.core.util.Blob;
@@ -167,6 +168,9 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
     editor.remove(key(MAIN_CHAT_LIST_ENABLED, accountId));
     editor.remove(key(ARCHIVE_CHAT_LIST_ENABLED, accountId));
     editor.remove(key(ARCHIVE_CHAT_LIST_POSITION, accountId));
+    editor.remove(key(ARCHIVE_CHAT_LIST_NAME, accountId));
+    editor.remove(key(ARCHIVE_CHAT_LIST_NAME_EMOJI, accountId));
+    editor.remove(key(ARCHIVE_CHAT_LIST_NAME_ANIMATE, accountId));
     editor.remove(key(DISABLED_CHAT_FILTER_IDS, accountId));
     if (!Config.CHAT_FOLDERS_APPEARANCE_IS_GLOBAL) {
       editor.remove(key(CHAT_FOLDER_BADGE, accountId));
@@ -206,6 +210,8 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
     _mainChatListEnabled = null;
     _archiveChatListEnabled = null;
     _archiveChatListPosition = null;
+    _archiveChatListName = null;
+    archiveChatListNameLoaded = false;
     _disabledChatFolderIds = null;
     _chatFolderBadgeFlags = null;
     _chatFolderStyle = null;
@@ -1141,6 +1147,9 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
   private static final String MAIN_CHAT_LIST_ENABLED = "main_chat_list_enabled";
   private static final String ARCHIVE_CHAT_LIST_ENABLED = "archive_chat_list_enabled";
   private static final String ARCHIVE_CHAT_LIST_POSITION = "archive_chat_list_position";
+  private static final String ARCHIVE_CHAT_LIST_NAME = "archive_chat_list_name";
+  private static final String ARCHIVE_CHAT_LIST_NAME_EMOJI = "archive_chat_list_name_emoji";
+  private static final String ARCHIVE_CHAT_LIST_NAME_ANIMATE = "archive_chat_list_name_animate";
   private static final String DISABLED_CHAT_FILTER_IDS = "disabled_chat_filter_ids";
   // may be global
   private @Nullable Integer _chatFolderBadgeFlags;
@@ -1298,6 +1307,68 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
     }
   }
 
+  private @Nullable TdApi.ChatFolderName _archiveChatListName;
+  private boolean archiveChatListNameLoaded;
+
+  /**
+   * Name of the archive shown as a folder, set on this device only (custom emoji kept as
+   * offset, length, id triples). {@code null}: the default name.
+   */
+  public @Nullable TdApi.ChatFolderName archiveChatListName () {
+    if (!archiveChatListNameLoaded) {
+      archiveChatListNameLoaded = true;
+      LevelDB pmc = Settings.instance().pmc();
+      int accountId = tdlib.accountId();
+      String text = pmc.getString(key(ARCHIVE_CHAT_LIST_NAME, accountId), null);
+      if (!StringUtils.isEmpty(text)) {
+        long[] emoji = pmc.getLongArray(key(ARCHIVE_CHAT_LIST_NAME_EMOJI, accountId));
+        int count = emoji != null ? emoji.length / 3 : 0;
+        TdApi.TextEntity[] entities = new TdApi.TextEntity[count];
+        for (int i = 0; i < count; i++) {
+          entities[i] = new TdApi.TextEntity((int) emoji[i * 3], (int) emoji[i * 3 + 1],
+            new TdApi.TextEntityTypeCustomEmoji(emoji[i * 3 + 2]));
+        }
+        boolean animate = pmc.getBoolean(key(ARCHIVE_CHAT_LIST_NAME_ANIMATE, accountId), true);
+        _archiveChatListName =
+          new TdApi.ChatFolderName(new TdApi.FormattedText(text, entities), animate);
+      }
+    }
+    return _archiveChatListName;
+  }
+
+  public void setArchiveChatListName (@Nullable TdApi.ChatFolderName name) {
+    int accountId = tdlib.accountId();
+    LevelDB editor = Settings.instance().edit();
+    if (name == null || Td.isEmpty(name.text)) {
+      name = null;
+      editor.remove(key(ARCHIVE_CHAT_LIST_NAME, accountId));
+      editor.remove(key(ARCHIVE_CHAT_LIST_NAME_EMOJI, accountId));
+      editor.remove(key(ARCHIVE_CHAT_LIST_NAME_ANIMATE, accountId));
+    } else {
+      LongList emoji = new LongList(0);
+      if (name.text.entities != null) {
+        for (TdApi.TextEntity entity : name.text.entities) {
+          if (entity.type.getConstructor() == TdApi.TextEntityTypeCustomEmoji.CONSTRUCTOR) {
+            emoji.append(entity.offset);
+            emoji.append(entity.length);
+            emoji.append(((TdApi.TextEntityTypeCustomEmoji) entity.type).customEmojiId);
+          }
+        }
+      }
+      editor.putString(key(ARCHIVE_CHAT_LIST_NAME, accountId), name.text.text);
+      editor.putLongArray(key(ARCHIVE_CHAT_LIST_NAME_EMOJI, accountId), emoji.get());
+      editor.putBoolean(key(ARCHIVE_CHAT_LIST_NAME_ANIMATE, accountId), name.animateCustomEmoji);
+    }
+    editor.apply();
+    _archiveChatListName = name;
+    archiveChatListNameLoaded = true;
+    if (chatListPositionListeners != null) {
+      for (ChatListPositionListener listener : chatListPositionListeners) {
+        listener.onArchiveChatListNameChanged(tdlib);
+      }
+    }
+  }
+
   private IntSet disabledChatFolderIds () {
     if (_disabledChatFolderIds == null) {
       int[] disabledChatFolderIds = Settings.instance().getIntArray(key(DISABLED_CHAT_FILTER_IDS, tdlib.accountId()));
@@ -1309,6 +1380,7 @@ public class TdlibSettingsManager implements CleanupStartupDelegate {
   public interface ChatListPositionListener {
     default void onChatListStateChanged (Tdlib tdlib, TdApi.ChatList chatList, boolean isEnabled) { }
     default void onArchiveChatListPositionChanged (Tdlib tdlib, int archiveChatListPosition) { }
+    default void onArchiveChatListNameChanged (Tdlib tdlib) { }
     default void onBadgeFlagsChanged (Tdlib tdlib, int newFlags) { }
     default void onChatFolderStyleChanged (Tdlib tdlib, @ChatFolderStyle int newStyle) { }
     default void onChatFolderOptionsChanged (Tdlib tdlib, @ChatFolderOptions int newOptions) { }

@@ -2,8 +2,11 @@
 <!-- Vibegram X: chat folder and navigation settings. -->
 <resources>
   <item type="id" name="btn_vgFolderSlideOffFilters" />
+  <item type="id" name="btn_vgRenameArchive" />
   <item type="id" name="btn_vgDockContacts" />
 
   <string name="vg_FolderSlideOffFilters">Swipe from a folder to filter chats</string>
+  <string name="vg_RenameArchive">Rename</string>
+  <string name="vg_ArchiveNameInfo">The name is only visible on this device. Leave it empty to use the default name.</string>
   <string name="vg_DockContacts">Contacts in navigation</string>
 </resources>

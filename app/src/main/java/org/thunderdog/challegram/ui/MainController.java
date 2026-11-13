@@ -1122,12 +1122,18 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       TdApi.ChatList chatList = pagerChatLists.get(position);
       HapticMenuHelper.MenuItem item = new HapticMenuHelper.MenuItem(R.id.btn_folder,
         getFolderLabel(chatList), getFolderIcon(chatList));
+      TdApi.ChatFolderName name;
       if (TD.isChatListFolder(chatList)) {
         int chatFolderId = ((TdApi.ChatListFolder) chatList).chatFolderId;
         TdApi.ChatFolderInfo info = tdlib.chatFolderInfo(chatFolderId);
-        if (info != null && TD.hasCustomEmoji(info.name.text)) {
-          item.setFormattedTitle(tdlib, info.name.text, info.name.animateCustomEmoji);
-        }
+        name = info != null ? info.name : null;
+      } else if (TD.isChatListArchive(chatList)) {
+        name = tdlib.settings().archiveChatListName();
+      } else {
+        name = null;
+      }
+      if (name != null && TD.hasCustomEmoji(name.text)) {
+        item.setFormattedTitle(tdlib, name.text, name.animateCustomEmoji);
       }
       int folderPosition = position;
       items.add(item.setSelected(position == currentPosition)
@@ -1493,14 +1499,14 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (folderRail != null) {
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
+    boolean showContacts = Settings.instance().getNewSetting(Settings.SETTING_FLAG_DOCK_CONTACTS);
+    navigationBar.setItemVisible(MainNavigationBar.ITEM_CONTACTS, showContacts);
     navigationBar.setCompactBar(!isTablet && isDockStyle());
     // Short window with folder chips: the bar at the end, the chips in line with it.
     navigationBar.setCompactBarAtEnd(isDockChipsInline());
     // Over a section this screen is detached (its insets are 0): the system inset comes from the navigation controller.
     int barInset = navigationInOverlay && overlayNavigation != null ? overlayNavigation.getBottomInsetWithoutIme() : extraBottomInsetWithoutIme;
     navigationBar.setLayoutMode(isBar, isNavBarStyle(), barInset);
-    boolean showContacts = Settings.instance().getNewSetting(Settings.SETTING_FLAG_DOCK_CONTACTS);
-    navigationBar.setItemVisible(MainNavigationBar.ITEM_CONTACTS, showContacts);
     if (navigationScrim != null) {
       // Covers the bar, its margins and the fade above it.
       int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + barInset;
@@ -1883,13 +1889,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     tdlib.context().global().removeCountersListener(this);
     Settings.instance().removeChatFolderSettingsListener(this);
     Settings.instance().removeNavigationStyleListener(navigationStyleListener);
+    Settings.instance().removeNewSettingsListener(dockSettingsListener);
     tdlib.listeners().unsubscribeFromChatFoldersUpdates(this);
     if (chatListUnreadCountListener != null) {
       tdlib.listeners().removeTotalChatCounterListener(chatListUnreadCountListener);
       chatListUnreadCountListener = null;
     }
     if (navigationCounterListener != null) {
-    Settings.instance().removeNewSettingsListener(dockSettingsListener);
       tdlib.listeners().removeTotalChatCounterListener(navigationCounterListener);
       navigationCounterListener = null;
     }
@@ -3187,7 +3193,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       title = Lang.getString(R.string.CategoryMain);
       chatFolderInfo = null;
     } else if (isArchive) {
-      title = Lang.getString(R.string.CategoryArchive);
+      title = getArchiveName();
       chatFolderInfo = null;
     } else if (isFolder) {
       chatFolderInfo = tdlib.chatFolderInfo(chatFolderId);
@@ -3214,6 +3220,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         options.item(new OptionItem(R.id.btn_shareFolder, Lang.getString(R.string.ShareFolder), OptionColor.NORMAL, R.drawable.baseline_share_arrow_24));
       }
     }
+    if (isArchive) {
+      String rename = Lang.getString(R.string.vg_RenameArchive);
+      options.item(new OptionItem(R.id.btn_vgRenameArchive, rename, OptionColor.NORMAL,
+        R.drawable.baseline_edit_24));
+    }
     if (isMain) {
       if (!Config.RESTRICT_HIDING_MAIN_LIST) {
         options.item(new OptionItem(R.id.btn_hideFolder, Lang.getString(R.string.HideAllChats), OptionColor.NORMAL, R.drawable.baseline_eye_off_24));
@@ -3229,7 +3240,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
     options.item(new OptionItem(R.id.btn_chatFolders, Lang.getString(R.string.EditFolders), OptionColor.NORMAL, R.drawable.baseline_edit_folders_24));
     showOptions(options.build(), (v, id) -> {
-      if (id == R.id.btn_editFolder) {
+      if (id == R.id.btn_vgRenameArchive) {
+        navigateTo(EditChatFolderController.editArchiveName(context, tdlib));
+      } else if (id == R.id.btn_editFolder) {
         tdlib.send(new TdApi.GetChatFolder(chatFolderId), (chatFolder, error) -> runOnUiThreadOptional(() -> {
           if (error != null) {
             UI.showError(error);
@@ -3808,13 +3821,22 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       int labelRes = menuNeedArchive ? R.string.CategoryArchive : R.string.CategoryMainShort;
       return Lang.getString(labelRes);
     } else if (TD.isChatListArchive(chatList)) {
-      return Lang.getString(R.string.CategoryArchive);
+      return getArchiveName();
     } else if (TD.isChatListFolder(chatList)) {
       int chatFolderId = ((TdApi.ChatListFolder) chatList).chatFolderId;
       TdApi.ChatFolderInfo info = tdlib.chatFolderInfo(chatFolderId);
       return info != null ? Emoji.instance().replaceEmoji(TD.toCharSequence(info.name)) : "";
     }
     return "";
+  }
+
+  /** Name of the archive folder: set on this device or the default one. */
+  private CharSequence getArchiveName () {
+    TdApi.ChatFolderName name = tdlib.settings().archiveChatListName();
+    if (name != null) {
+      return Emoji.instance().replaceEmoji(TD.toCharSequence(name));
+    }
+    return Lang.getString(R.string.CategoryArchive);
   }
 
   private @DrawableRes int getFolderIcon (TdApi.ChatList chatList) {
@@ -3967,7 +3989,18 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private ViewPagerTopView.Item buildArchiveSectionItem (int pagerItemPosition, @ChatFolderStyle int chatFolderStyle) {
     CharSequence sectionName = getMenuSectionName(ARCHIVE_PAGER_ITEM_ID, pagerItemPosition, /* hasFolders */ true, chatFolderStyle);
     int iconResource = R.drawable.baseline_archive_24;
-    return buildSectionItem(ARCHIVE_PAGER_ITEM_ID, pagerItemPosition, ChatPosition.CHAT_LIST_ARCHIVE, sectionName, iconResource, chatFolderStyle);
+    TdApi.ChatFolderName name = tdlib.settings().archiveChatListName();
+    boolean hasName = name != null && chatFolderStyle != ChatFolderStyle.ICON_ONLY &&
+      getSelectedFilter(ARCHIVE_PAGER_ITEM_ID) == FILTER_NONE;
+    if (hasName) {
+      sectionName = TD.toCharSequence(name);
+    }
+    ViewPagerTopView.Item item = buildSectionItem(ARCHIVE_PAGER_ITEM_ID, pagerItemPosition,
+      ChatPosition.CHAT_LIST_ARCHIVE, sectionName, iconResource, chatFolderStyle);
+    if (hasName && TD.hasCustomEmoji(name.text)) {
+      item.setCustomEmojiText(tdlib, name.text, name.animateCustomEmoji);
+    }
+    return item;
   }
 
   private ViewPagerTopView.Item buildSectionItem (long pagerItemId, int pagerItemPosition, TdApi.ChatList chatList, TdApi.ChatFolderInfo chatFolderInfo, @ChatFolderStyle int chatFolderStyle) {
@@ -4128,6 +4161,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     @Override
     public void onChatListStateChanged (Tdlib tdlib, TdApi.ChatList chatList, boolean isEnabled) {
       updatePagerSections(false);
+    }
+
+    @Override
+    public void onArchiveChatListNameChanged (Tdlib tdlib) {
+      if (tdlib.settings().isChatListEnabled(ChatPosition.CHAT_LIST_ARCHIVE)) {
+        updatePagerSections(false);
+      }
     }
 
     @Override

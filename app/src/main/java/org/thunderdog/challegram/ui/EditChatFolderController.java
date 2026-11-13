@@ -70,6 +70,7 @@ import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.util.AdapterSubListUpdateCallback;
 import org.thunderdog.challegram.util.CharacterStyleFilter;
@@ -101,6 +102,12 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     private final int chatFolderId;
     private final TdApi.ChatFolderName chatFolderName;
     private final @Nullable TdApi.ChatFolder chatFolder;
+    /** Archive shown as a folder: only its local name is edited. */
+    private final boolean isArchive;
+
+    public static Arguments archive (TdApi.ChatFolderName archiveName) {
+      return new Arguments(NO_CHAT_FOLDER_ID, archiveName, null, true);
+    }
 
     public static Arguments newFolder () {
       return new Arguments(NO_CHAT_FOLDER_ID, (TdApi.ChatFolder) null);
@@ -123,10 +130,30 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     }
 
     private Arguments (int chatFolderId, TdApi.ChatFolderName chatFolderName, @Nullable TdApi.ChatFolder chatFolder) {
+      this(chatFolderId, chatFolderName, chatFolder, false);
+    }
+
+    private Arguments (int chatFolderId, TdApi.ChatFolderName chatFolderName,
+      @Nullable TdApi.ChatFolder chatFolder, boolean isArchive) {
       this.chatFolder = chatFolder;
       this.chatFolderId = chatFolderId;
       this.chatFolderName = chatFolderName;
+      this.isArchive = isArchive;
     }
+  }
+
+  /** Local name of the archive shown as a folder. */
+  public static EditChatFolderController editArchiveName (Context context, Tdlib tdlib) {
+    TdApi.ChatFolderName name = tdlib.settings().archiveChatListName();
+    if (name == null) {
+      boolean animate =
+        !Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
+      TdApi.FormattedText empty = new TdApi.FormattedText("", new TdApi.TextEntity[0]);
+      name = new TdApi.ChatFolderName(empty, animate);
+    }
+    EditChatFolderController controller = new EditChatFolderController(context, tdlib);
+    controller.setArguments(Arguments.archive(name));
+    return controller;
   }
 
   public static EditChatFolderController newFolder (Context context, Tdlib tdlib) {
@@ -157,6 +184,7 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
   private @Nullable EditHeaderView headerCell;
 
   private volatile int chatFolderId;
+  private boolean isArchive;
   private TdApi.ChatFolder originChatFolder;
   private TdApi.ChatFolder editedChatFolder;
 
@@ -184,6 +212,9 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
   @Override
   public CharSequence getName () {
     Arguments arguments = getArgumentsStrict();
+    if (isArchive) {
+      return Lang.getString(R.string.CategoryArchive);
+    }
     return chatFolderId != NO_CHAT_FOLDER_ID ? TD.toCharSequence(arguments.chatFolderName) : Lang.getString(R.string.NewFolder);
   }
 
@@ -214,7 +245,9 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
   public void setArguments (Arguments args) {
     super.setArguments(args);
     this.chatFolderId = args.chatFolderId;
-    this.originChatFolder = args.chatFolder;
+    this.isArchive = args.isArchive;
+    this.originChatFolder =
+      args.isArchive ? TD.newChatFolder(args.chatFolderName) : args.chatFolder;
     this.editedChatFolder = args.chatFolder != null ? Td.copyOf(args.chatFolder) : TD.newChatFolder(args.chatFolderName);
   }
 
@@ -227,8 +260,13 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     this.emojiHostView = contentView;
     headerCell.enableCustomEmoji(tdlib, v -> toggleEmojiPanel());
     headerCell.setInput(TD.toCharSequence(editedChatFolder.name));
-    headerCell.setInputOptions(R.string.FolderNameHint, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
-    headerCell.setOnPhotoClickListener(this::showIconSelector);
+    // Archive: an empty name means the default one, shown as the hint.
+    int hintRes = isArchive ? R.string.CategoryArchive : R.string.FolderNameHint;
+    headerCell.setInputOptions(hintRes,
+      InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+    if (!isArchive) {
+      headerCell.setOnPhotoClickListener(this::showIconSelector);
+    }
     headerCell.setImeOptions(EditorInfo.IME_ACTION_DONE);
     headerCell.getInputView().setFilters(new InputFilter[] {
       new CodePointCountFilter(MAX_CHAT_FOLDER_TITLE_LENGTH),
@@ -260,33 +298,37 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
       items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET_SMALL));
     }
 
-    items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.FolderIncludedChats));
-    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_folderIncludeChats, R.drawable.baseline_add_24, R.string.FolderActionIncludeChats).setTextColorId(ColorId.textNeutral));
-    fillIncludedChats(editedChatFolder, items);
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM, includedChatsNextItemId));
-    items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, Lang.getMarkdownString(this, R.string.FolderIncludedChatsInfo)));
-
-    if (!isShareable()) {
-      items.add(new ListItem(ListItem.TYPE_HEADER_PADDED, 0, 0, R.string.FolderExcludedChats));
+    if (isArchive) {
+      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_ArchiveNameInfo));
+    } else {
+      items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.FolderIncludedChats));
       items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_folderExcludeChats, R.drawable.baseline_add_24, R.string.FolderActionExcludeChats).setTextColorId(ColorId.textNeutral));
-      fillExcludedChats(editedChatFolder, items);
-      items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM, excludedChatsNextItemId));
-      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, Lang.getMarkdownString(this, R.string.FolderExcludedChatsInfo)));
-    }
+      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_folderIncludeChats, R.drawable.baseline_add_24, R.string.FolderActionIncludeChats).setTextColorId(ColorId.textNeutral));
+      fillIncludedChats(editedChatFolder, items);
+      items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM, includedChatsNextItemId));
+      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, Lang.getMarkdownString(this, R.string.FolderIncludedChatsInfo)));
 
-    if (chatFolderId != NO_CHAT_FOLDER_ID) {
-      items.add(new ListItem(ListItem.TYPE_HEADER_PADDED, 0, 0, R.string.InviteLinks));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_TOP, 0));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_createInviteLink, R.drawable.baseline_add_link_24, R.string.CreateANewLink)
-        .setTextColorId(ColorId.textNeutral)
-        .setDrawModifier(new PremiumLockModifier()));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM, inviteLinksNextItemId));
-      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.ChatFolderInviteLinksInfo));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_removeFolder, R.drawable.baseline_delete_24, R.string.RemoveFolder));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+      if (!isShareable()) {
+        items.add(new ListItem(ListItem.TYPE_HEADER_PADDED, 0, 0, R.string.FolderExcludedChats));
+        items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+        items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_folderExcludeChats, R.drawable.baseline_add_24, R.string.FolderActionExcludeChats).setTextColorId(ColorId.textNeutral));
+        fillExcludedChats(editedChatFolder, items);
+        items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM, excludedChatsNextItemId));
+        items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, Lang.getMarkdownString(this, R.string.FolderExcludedChatsInfo)));
+      }
+
+      if (chatFolderId != NO_CHAT_FOLDER_ID) {
+        items.add(new ListItem(ListItem.TYPE_HEADER_PADDED, 0, 0, R.string.InviteLinks));
+        items.add(new ListItem(ListItem.TYPE_SHADOW_TOP, 0));
+        items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_createInviteLink, R.drawable.baseline_add_link_24, R.string.CreateANewLink)
+          .setTextColorId(ColorId.textNeutral)
+          .setDrawModifier(new PremiumLockModifier()));
+        items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM, inviteLinksNextItemId));
+        items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.ChatFolderInviteLinksInfo));
+        items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+        items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_removeFolder, R.drawable.baseline_delete_24, R.string.RemoveFolder));
+        items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+      }
     }
 
     adapter = new Adapter(this);
@@ -543,6 +585,7 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     super.saveInstanceState(outState, keyPrefix);
     Arguments arguments = getArgumentsStrict();
     outState.putInt(keyPrefix + "_chatFolderId", arguments.chatFolderId);
+    outState.putBoolean(keyPrefix + "_isArchive", arguments.isArchive);
     Td.put(outState, keyPrefix + "_chatFolderName", arguments.chatFolderName);
     TD.saveChatFolder(outState, keyPrefix + "_originChatFolder", originChatFolder);
     TD.saveChatFolder(outState, keyPrefix + "_editedChatFolder", editedChatFolder);
@@ -559,8 +602,10 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     TdApi.ChatFolder originChatFolder = TD.restoreChatFolder(in, keyPrefix + "_originChatFolder");
     TdApi.ChatFolder editedChatFolder = TD.restoreChatFolder(in, keyPrefix + "_editedChatFolder");
     if (chatFolderName != null && editedChatFolder != null) {
-      super.setArguments(new Arguments(chatFolderId, chatFolderName, originChatFolder));
+      boolean isArchive = in.getBoolean(keyPrefix + "_isArchive");
+      super.setArguments(new Arguments(chatFolderId, chatFolderName, originChatFolder, isArchive));
       this.chatFolderId = chatFolderId;
+      this.isArchive = isArchive;
       this.originChatFolder = originChatFolder;
       this.editedChatFolder = editedChatFolder;
       this.showAllIncludedChats = in.getBoolean(keyPrefix + "_showAllIncludedChats");
@@ -991,18 +1036,27 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
   private boolean canSaveChanges () {
     TdApi.FormattedText newName = Td.trim(editedChatFolder.name.text);
     if (Td.isEmpty(newName)) {
-      return false;
+      // Archive: an empty name restores the default one.
+      return isArchive && hasUnsavedChanges();
     }
     int codePointCount = Character.codePointCount(newName.text, 0, newName.text.length());
     if (codePointCount > MAX_CHAT_FOLDER_TITLE_LENGTH) {
       return false;
+    }
+    if (isArchive) {
+      return hasUnsavedChanges();
     }
     return (editedChatFolder.includeContacts || editedChatFolder.includeNonContacts || editedChatFolder.includeGroups || editedChatFolder.includeChannels || editedChatFolder.includeBots || editedChatFolder.pinnedChatIds.length > 0 || editedChatFolder.includedChatIds.length > 0) &&
       (chatFolderId == NO_CHAT_FOLDER_ID || hasUnsavedChanges());
   }
 
   private void saveChanges (Runnable after) {
-    if (chatFolderId != NO_CHAT_FOLDER_ID) {
+    if (isArchive) {
+      TdApi.ChatFolderName name = editedChatFolder.name;
+      tdlib.settings().setArchiveChatListName(
+        new TdApi.ChatFolderName(Td.trim(name.text), name.animateCustomEmoji));
+      after.run();
+    } else if (chatFolderId != NO_CHAT_FOLDER_ID) {
       editChatFolder(chatFolderId, Td.copyOf(editedChatFolder), after);
     } else {
       createChatFolder(Td.copyOf(editedChatFolder), after);
@@ -1042,7 +1096,8 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
 
   private void updateFolderIcon () {
     if (headerCell != null) {
-      int iconResource = tdlib.chatFolderIconDrawable(editedChatFolder, R.drawable.baseline_folder_24);
+      int iconResource = isArchive ? R.drawable.baseline_archive_24 :
+        tdlib.chatFolderIconDrawable(editedChatFolder, R.drawable.baseline_folder_24);
       headerCell.setIcon(iconResource, ColorId.white);
     }
   }
