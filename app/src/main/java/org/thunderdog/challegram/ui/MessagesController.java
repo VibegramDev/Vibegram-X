@@ -1847,7 +1847,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     }
 
-    if (topicTabs != null && topicTabs.isSideTabs()) {
+    if (topicTabs instanceof ForumTopicTabs && topicTabs.isSideTabs()) {
+      // The title stays in the header, so it ends before the button that creates topics too
+      headerCell.setInnerRightMargin(((ForumTopicTabs) topicTabs).getMenuButtonsWidth());
       return topicTabs.wrapContent(contentView);
     }
     return contentView;
