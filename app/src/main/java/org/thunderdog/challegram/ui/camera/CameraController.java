@@ -141,6 +141,7 @@ public class CameraController extends ViewController<Void> implements CameraDele
   private @Nullable ReadyListener readyListener;
   private @Nullable QrCodeListener qrCodeListener;
   private String savedQrCodeData;
+  private @Nullable String lastScannedQrCode;
   private boolean qrCodeConfirmed;
   private int qrSubtitleRes;
   private boolean qrModeDebug;
@@ -168,6 +169,7 @@ public class CameraController extends ViewController<Void> implements CameraDele
 
   public void setMode (int mode, @Nullable ReadyListener readyListener) {
     this.qrCodeConfirmed = false;
+    this.lastScannedQrCode = null;
     this.readyListener = readyListener;
     if (this.cameraMode == mode) {
       if (this.cameraMode == MODE_QR) {
@@ -881,6 +883,7 @@ public class CameraController extends ViewController<Void> implements CameraDele
     }
 
     isPrepared = false;
+    lastScannedQrCode = null;
     if (cameraMode == MODE_QR && qrCodeListener != null) {
       qrCodeListener.onQrScannerClosed();
     }
@@ -1637,8 +1640,18 @@ public class CameraController extends ViewController<Void> implements CameraDele
 
   public void onQrCodeFoundAndWaited () {
     if (qrCodeListener != null && savedQrCodeData != null) {
-      qrCodeListener.onQrCodeScanned(savedQrCodeData);
+      String qrCode = savedQrCodeData;
       savedQrCodeData = null;
+      if (qrCodeListener.acceptsAnyQrCode()) {
+        // Mini apps may scan several codes and close the scanner themselves, so the camera stays
+        // open and a code still in the frame is not sent again.
+        if (!qrCode.equals(lastScannedQrCode)) {
+          lastScannedQrCode = qrCode;
+          qrCodeListener.onQrCodeScanned(qrCode);
+        }
+        return;
+      }
+      qrCodeListener.onQrCodeScanned(qrCode);
       qrCodeConfirmed = true;
       context.performBackPress(false);
     }

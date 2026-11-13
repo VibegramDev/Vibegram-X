@@ -150,15 +150,23 @@ public class BiometricAuthentication {
   private static long lastTimestamp;
 
   public static void authenticate (BaseActivity context, CharSequence title, CharSequence negativeButtonText, boolean strong, Callback callback) {
+    authenticate(context, title, null, negativeButtonText, strong, null, callback);
+  }
+
+  /** @param cryptoObject requires {@code strong} */
+  public static void authenticate (BaseActivity context, CharSequence title, @Nullable CharSequence description, CharSequence negativeButtonText, boolean strong, @Nullable BiometricPrompt.CryptoObject cryptoObject, Callback callback) {
     CancellationSignal signal = new CancellationSignal();
-    BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+    BiometricPrompt.PromptInfo.Builder infoBuilder = new BiometricPrompt.PromptInfo.Builder()
       .setConfirmationRequired(false)
       .setAllowedAuthenticators(
         strong ? BiometricManager.Authenticators.BIOMETRIC_STRONG : BiometricManager.Authenticators.BIOMETRIC_WEAK
       )
       .setTitle(title)
-      .setNegativeButtonText(negativeButtonText)
-      .build();
+      .setNegativeButtonText(negativeButtonText);
+    if (!StringUtils.isEmpty(description)) {
+      infoBuilder.setDescription(description);
+    }
+    BiometricPrompt.PromptInfo info = infoBuilder.build();
     BiometricPrompt prompt = new BiometricPrompt(context, new BiometricsCallback(callback, strong) {
       @Override
       protected void onComplete () {
@@ -173,7 +181,11 @@ public class BiometricAuthentication {
       @Override
       public void act () {
         lastTimestamp = SystemClock.uptimeMillis();
-        prompt.authenticate(info);
+        if (cryptoObject != null) {
+          prompt.authenticate(info, cryptoObject);
+        } else {
+          prompt.authenticate(info);
+        }
       }
     };
     signal.setOnCancelListener(() -> {

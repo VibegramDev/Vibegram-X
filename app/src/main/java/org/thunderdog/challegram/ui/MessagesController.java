@@ -8506,16 +8506,18 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private int getIdleCommandIcon () {
-    return botMenuButton != null ? 0 : R.drawable.deproko_baseline_bots_command_26;
+    return botMenuButton != null && WebApp.isSupported() ? 0 : R.drawable.deproko_baseline_bots_command_26;
   }
 
   private void updateBotMenuButtonView () {
-    boolean isVisible = botMenuButton != null && previewMode == PREVIEW_MODE_NONE &&
+    boolean isVisible = botMenuButton != null && WebApp.isSupported() &&
+      previewMode == PREVIEW_MODE_NONE &&
       emojiButton != null && emojiButton.getVisibility() == View.VISIBLE;
     if (isVisible && botMenuButtonView == null) {
       botMenuButtonView = new BotMenuButtonView(context());
       botMenuButtonView.setId(R.id.msg_botMenuButton);
       botMenuButtonView.setOnClickListener(this);
+      addThemeInvalidateListener(botMenuButtonView);
       RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
         ViewGroup.LayoutParams.WRAP_CONTENT, Screen.dp(49f));
       params.addRule(RelativeLayout.ALIGN_PARENT_TOP);

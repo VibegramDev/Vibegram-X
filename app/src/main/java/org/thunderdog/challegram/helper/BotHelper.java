@@ -24,6 +24,7 @@ import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.data.TGMessageBotInfo;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.ui.MessagesController;
+import org.thunderdog.challegram.webapp.WebApp;
 
 import java.util.ArrayList;
 
@@ -185,10 +186,8 @@ public class BotHelper implements Runnable, InlineSearchContext.CommandListProvi
           commands.add(new InlineResultCommand(context.context(), context.tdlib(), objectId, command));
         }
         this.commands = commands;
-        context.tdlib().uiExecute(this);
-      } else if (botInfoMessage != null || menuButton != null) {
-        context.tdlib().uiExecute(this);
       }
+      context.tdlib().uiExecute(this);
     }
   }
 
@@ -433,7 +432,7 @@ public class BotHelper implements Runnable, InlineSearchContext.CommandListProvi
       } else {
         context.getManager().checkBotStart();
       }
-      TdApi.BotMenuButton menuButton = type == TYPE_PRIVATE ? this.menuButton : null;
+      TdApi.BotMenuButton menuButton = type == TYPE_PRIVATE && WebApp.isSupported() ? this.menuButton : null;
       context.setBotMenuButton(menuButton);
       // With a menu button, commands are typed with "/", like in the official app.
       boolean needCommandsButton = hasCommands() && menuButton == null;

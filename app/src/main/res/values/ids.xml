@@ -1502,8 +1502,7 @@
   <item type="id" name="btn_webAppTerms" />
   <item type="id" name="btn_webAppReport" />
   <item type="id" name="btn_webAppDelete" />
-  <item type="id" name="btn_webAppPopup1" />
-  <item type="id" name="btn_webAppPopup2" />
-  <item type="id" name="btn_webAppPopup3" />
+  <item type="id" name="btn_webAppRevokeLocation" />
+  <item type="id" name="btn_webAppRevokeBiometry" />
   <item type="id" name="msg_botMenuButton" />
 </resources>

@@ -18,25 +18,24 @@ package org.thunderdog.challegram.webapp;
 
 import android.Manifest;
 import android.content.Intent;
-import android.content.pm.ShortcutInfo;
-import android.content.pm.ShortcutManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.text.InputType;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JsPromptResult;
-import android.webkit.PermissionRequest;
 import android.widget.Toast;
 
+import androidx.annotation.ChecksSdkIntAtLeast;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import androidx.annotation.StringRes;
 import androidx.core.content.pm.ShortcutInfoCompat;
 import androidx.core.content.pm.ShortcutManagerCompat;
 import androidx.core.graphics.drawable.IconCompat;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BaseActivity;
-import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.MainActivity;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
@@ -45,12 +44,14 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.telegram.ChatFilter;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibDelegate;
 import org.thunderdog.challegram.telegram.TdlibNotificationUtils;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
+import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.ChatsController;
 import org.thunderdog.challegram.ui.ListItem;
@@ -60,7 +61,11 @@ import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.Permissions;
 import org.thunderdog.challegram.widget.MaterialEditText;
 
+import java.util.Collections;
+import java.util.UUID;
+
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.Destroyable;
 import me.vkryl.core.lambda.RunnableBool;
 import me.vkryl.core.lambda.RunnableData;
 import tgx.td.ChatId;
@@ -73,12 +78,45 @@ import tgx.td.Td;
 public final class WebApp {
   private WebApp () { }
 
-  public static final String ACTION_OPEN_WEB_APP = BuildConfig.APPLICATION_ID + ".OPEN_WEB_APP";
   public static final String EXTRA_ACCOUNT_ID = "account_id", EXTRA_BOT_USER_ID = "bot_user_id";
+  public static final String EXTRA_SHORTCUT_TOKEN = "shortcut_token";
 
   private static final String APPLICATION_NAME = "android";
   private static final String KEY_LAUNCH_CONFIRMED = "webapp_launch_confirmed_";
+  private static final String KEY_SHORTCUT_TOKEN = "webapp_shortcut_token";
   private static final String SHORTCUT_PREFIX = "webapp_";
+
+  private static final int LAUNCH_ALERT_NONE = 0, LAUNCH_ALERT_UNLESS_CONFIRMED = 1;
+  private static final int LAUNCH_ALERT_ALWAYS = 2;
+
+  /**
+   * Mini apps need the WebView of Android 5.0: older ones expose every public method of the
+   * JavaScript interface to the page and have no evaluateJavascript.
+   */
+  @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.LOLLIPOP)
+  public static boolean isSupported () {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
+  }
+
+  @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.LOLLIPOP)
+  private static boolean checkSupported () {
+    if (isSupported()) {
+      return true;
+    }
+    UI.showApiLevelWarning(Build.VERSION_CODES.LOLLIPOP);
+    return false;
+  }
+
+  /** Called when the account starts logging out, while its user id is still known. */
+  public static void onLoggingOut (Tdlib tdlib, long userId) {
+    if (!isSupported()) {
+      return;
+    }
+    WebAppController.closeAll(tdlib.id());
+    WebAppStorage.onLoggedOut(userId);
+    WebAppBiometry.onLoggedOut(userId);
+    WebAppLocation.onLoggedOut(userId);
+  }
 
   // Entry points
 
@@ -88,6 +126,9 @@ public final class WebApp {
     TdApi.Message message,
     String url
   ) {
+    if (!checkSupported()) {
+      return;
+    }
     long botUserId = message.viaBotUserId != 0 ? message.viaBotUserId :
       Td.getSenderUserId(message);
     if (botUserId == 0) {
@@ -100,7 +141,7 @@ public final class WebApp {
     args.topicId = message.topicId;
     args.replyTo = new TdApi.InputMessageReplyToMessage(message.id, null, 0, null);
     args.mode = parseModeFromUrl(url, WebAppController.MODE_COMPACT);
-    launch(context, args, true);
+    launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
   /** {@code keyboardButtonTypeWebApp} of a reply keyboard: the app may send data back once. */
@@ -111,13 +152,16 @@ public final class WebApp {
     String buttonText,
     String url
   ) {
+    if (!checkSupported()) {
+      return;
+    }
     WebAppController.Args args = new WebAppController.Args(
       WebAppController.TYPE_KEYBOARD_BUTTON, botUserId,
       chatId);
     args.url = url;
     args.buttonText = buttonText;
     args.mode = parseModeFromUrl(url, WebAppController.MODE_COMPACT);
-    launch(context, args, true);
+    launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
   /** {@code botMenuButton} next to the composer of a chat with a bot. */
@@ -130,13 +174,16 @@ public final class WebApp {
       context.tdlib().ui().openUrl(context, button.url, null);
       return;
     }
+    if (!checkSupported()) {
+      return;
+    }
     WebAppController.Args args = new WebAppController.Args(
       WebAppController.TYPE_MENU_BUTTON, botUserId,
       ChatId.fromUserId(botUserId));
     args.url = button.url;
     args.needsContext = true;
     args.mode = parseModeFromUrl(button.url, WebAppController.MODE_COMPACT);
-    launch(context, args, true);
+    launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
   /** The «switch to web app» button above inline results. */
@@ -146,79 +193,44 @@ public final class WebApp {
     long botUserId,
     String url
   ) {
+    if (!checkSupported()) {
+      return;
+    }
     WebAppController.Args args = new WebAppController.Args(
       WebAppController.TYPE_INLINE_SWITCH, botUserId,
       chatId);
     args.url = url;
     args.needsContext = true;
     args.mode = parseModeFromUrl(url, WebAppController.MODE_COMPACT);
-    launch(context, args, true);
+    launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
-  /**
-   * The main mini app of a bot: the profile button, the «Open» button of the chat list and
-   * links.
-   */
-  public static void openMainApp (
-    TdlibDelegate context,
-    long botUserId,
-    long chatId,
-    @Nullable String startParameter,
-    @Nullable TdApi.WebAppOpenMode mode
-  ) {
-    ViewController<?> c = findController(context);
-    if (c == null) {
+  /** The main mini app of a bot from the «Open App» button of its profile. */
+  public static void openMainApp (ViewController<?> context, long botUserId) {
+    if (!checkSupported()) {
       return;
     }
     WebAppController.Args args = new WebAppController.Args(WebAppController.TYPE_MAIN_APP,
-      botUserId, chatId);
-    args.startParameter = startParameter;
-    args.mode = mode != null ? toMode(mode) : WebAppController.MODE_FULL_SIZE;
-    launch(c, args, false);
-  }
-
-  /** A bot of the attachment menu, opened in the given chat. */
-  public static void openAttachmentMenuBot (
-    ViewController<?> context,
-    long chatId,
-    long botUserId,
-    @Nullable String url,
-    @Nullable TdApi.MessageTopic topicId,
-    @Nullable TdApi.InputMessageReplyTo replyTo
-  ) {
-    Tdlib tdlib = context.tdlib();
-    TdApi.AttachmentMenuBot bot = tdlib.attachmentMenuBot(botUserId);
-    Runnable open = () -> {
-      WebAppController.Args args = new WebAppController.Args(
-        WebAppController.TYPE_ATTACHMENT_MENU, botUserId,
-        chatId);
-      args.url = url;
-      args.topicId = topicId;
-      args.replyTo = replyTo;
-      launch(context, args, false);
-    };
-    if (bot == null || !bot.isAdded) {
-      showDisclaimer(context, () -> tdlib.send(
-        new TdApi.ToggleBotIsAddedToAttachmentMenu(botUserId, true, true),
-        (ok, error) -> UI.post(() -> {
-          if (error != null) {
-            UI.showError(error);
-          } else {
-            open.run();
-          }
-        })));
-    } else {
-      open.run();
-    }
+      botUserId, 0);
+    args.mode = WebAppController.MODE_FULL_SIZE;
+    launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
   /**
    * {@code internalLinkTypeWebApp}, {@code internalLinkTypeMainWebApp} or
-   * {@code internalLinkTypeAttachmentMenuBot}.
+   * {@code internalLinkTypeAttachmentMenuBot}; {@code after} gets whether the link was handled.
    */
-  public static void openLink (TdlibDelegate context, TdApi.InternalLinkType linkType) {
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+  public static void openLink (
+    TdlibDelegate context,
+    TdApi.InternalLinkType linkType,
+    @Nullable RunnableBool after
+  ) {
     final ViewController<?> c = findController(context);
     if (c == null) {
+      if (after != null) {
+        after.runWithBool(false);
+      }
       return;
     }
     final Tdlib tdlib = context.tdlib();
@@ -234,16 +246,18 @@ public final class WebApp {
         botUsername = ((TdApi.InternalLinkTypeAttachmentMenuBot) linkType).botUsername;
         break;
       default:
-        return;
+        throw new IllegalArgumentException(linkType.toString());
     }
     tdlib.send(new TdApi.SearchPublicChat(botUsername), (chat, error) -> UI.post(() -> {
       long botUserId = chat != null ? tdlib.chatUserId(chat.id) : 0;
       TdApi.User bot = botUserId != 0 ? tdlib.cache().user(botUserId) : null;
-      if (error != null || bot == null ||
-        bot.type.getConstructor() != TdApi.UserTypeBot.CONSTRUCTOR) {
-        if (error != null) {
-          UI.showError(error);
-        }
+      boolean isBot = bot != null && bot.type.getConstructor() == TdApi.UserTypeBot.CONSTRUCTOR;
+      if (after != null) {
+        after.runWithBool(isBot);
+      } else if (error != null) {
+        UI.showError(error);
+      }
+      if (!isBot) {
         return;
       }
       long currentChatId = getCurrentChatId(c);
@@ -254,7 +268,7 @@ public final class WebApp {
         case TdApi.InternalLinkTypeMainWebApp.CONSTRUCTOR: {
           TdApi.InternalLinkTypeMainWebApp link = (TdApi.InternalLinkTypeMainWebApp) linkType;
           if (((TdApi.UserTypeBot) bot.type).hasMainWebApp) {
-            openMainApp(c, bot.id, currentChatId, link.startParameter, link.mode);
+            openMainAppLink(c, bot, currentChatId, link);
           } else {
             tdlib.ui().openPrivateChat(c, bot.id, null);
           }
@@ -270,6 +284,7 @@ public final class WebApp {
     }));
   }
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static void openAppLink (
     ViewController<?> context,
     TdApi.User bot,
@@ -290,14 +305,12 @@ public final class WebApp {
         args.startParameter = link.startParameter;
         args.allowWriteAccess = allowWriteAccess;
         args.mode = link.mode != null ? toMode(link.mode) : WebAppController.MODE_FULL_SIZE;
-        launch(context, args, false);
+        launch(context, args, LAUNCH_ALERT_NONE);
       };
       TdApi.AttachmentMenuBot menuBot = tdlib.attachmentMenuBot(bot.id);
       boolean canBeAdded = ((TdApi.UserTypeBot) bot.type).canBeAddedToAttachmentMenu;
       if (canBeAdded && (menuBot == null || !menuBot.isAdded)) {
-        showDisclaimer(context, () -> tdlib.send(
-          new TdApi.ToggleBotIsAddedToAttachmentMenu(bot.id, true, true),
-          (ok, toggleError) -> UI.post(() -> open.runWithBool(true))));
+        addToAttachmentMenu(context, bot.id, found.requestWriteAccess, open);
       } else if (found.requestWriteAccess ||
         (!found.skipConfirmation && !isLaunchConfirmed(tdlib, bot.id))) {
         showLaunchAlert(context, bot.id, found.requestWriteAccess, open);
@@ -307,6 +320,39 @@ public final class WebApp {
     }));
   }
 
+  /**
+   * TDLib asks to add bots that can be in the attachment menu before their main app is opened by
+   * a link.
+   */
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+  private static void openMainAppLink (
+    ViewController<?> context,
+    TdApi.User bot,
+    long chatId,
+    TdApi.InternalLinkTypeMainWebApp link
+  ) {
+    final Tdlib tdlib = context.tdlib();
+    WebAppController.Args args = new WebAppController.Args(WebAppController.TYPE_MAIN_APP,
+      bot.id, chatId);
+    args.startParameter = link.startParameter;
+    args.mode = link.mode != null ? toMode(link.mode) : WebAppController.MODE_FULL_SIZE;
+    if (!((TdApi.UserTypeBot) bot.type).canBeAddedToAttachmentMenu) {
+      launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
+      return;
+    }
+    tdlib.send(new TdApi.GetAttachmentMenuBot(bot.id), (menuBot, error) -> UI.post(() -> {
+      if (error != null) {
+        UI.showError(error);
+      } else if (menuBot.isAdded) {
+        launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
+      } else {
+        addToAttachmentMenu(context, bot.id, menuBot.requestWriteAccess,
+          allowWriteAccess -> launch(context, args, LAUNCH_ALERT_NONE));
+      }
+    }));
+  }
+
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static void openAttachmentMenuBotLink (
     ViewController<?> context,
     long botUserId,
@@ -322,22 +368,117 @@ public final class WebApp {
       switch (link.targetChat.getConstructor()) {
         case TdApi.TargetChatChosen.CONSTRUCTOR: {
           TdApi.TargetChatTypes types = ((TdApi.TargetChatChosen) link.targetChat).types;
-          pickChat(context, types, chat ->
-            openAttachmentMenuBot(context, chat.id, botUserId, link.url, null, null));
+          pickChat(context, chat -> isChatAllowed(tdlib, chat.id, types) &&
+            getAttachmentMenuBotError(tdlib, bot, chat.id) == 0,
+            chat -> openAttachmentMenuBot(context, bot, chat.id, link.url));
           break;
         }
-        case TdApi.TargetChatCurrent.CONSTRUCTOR:
-        case TdApi.TargetChatInternalLink.CONSTRUCTOR:
-        default: {
+        case TdApi.TargetChatInternalLink.CONSTRUCTOR: {
+          TdApi.InternalLinkType chatLink = ((TdApi.TargetChatInternalLink) link.targetChat).link;
+          tdlib.ui().openInternalLinkType(context, null, chatLink, null, isOpened -> {
+            if (isOpened) {
+              UI.post(() -> openAttachmentMenuBotInCurrentChat(context, bot, link.url));
+            }
+          });
+          break;
+        }
+        case TdApi.TargetChatCurrent.CONSTRUCTOR: {
           if (currentChatId != 0) {
-            openAttachmentMenuBot(context, currentChatId, botUserId, link.url, null, null);
+            openAttachmentMenuBotInChat(context, bot, currentChatId, link.url);
           } else {
             tdlib.ui().openPrivateChat(context, botUserId, null);
           }
           break;
         }
+        default:
+          throw new UnsupportedOperationException(link.targetChat.toString());
       }
     }));
+  }
+
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+  private static void openAttachmentMenuBotInCurrentChat (
+    ViewController<?> context,
+    TdApi.AttachmentMenuBot bot,
+    @Nullable String url
+  ) {
+    ViewController<?> current = context.context().navigation().getCurrentStackItem();
+    if (current instanceof MessagesController && !current.isDestroyed() &&
+      current.tdlib() == context.tdlib()) {
+      openAttachmentMenuBotInChat(current, bot, ((MessagesController) current).getChatId(), url);
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+  private static void openAttachmentMenuBotInChat (
+    ViewController<?> context,
+    TdApi.AttachmentMenuBot bot,
+    long chatId,
+    @Nullable String url
+  ) {
+    int errorRes = getAttachmentMenuBotError(context.tdlib(), bot, chatId);
+    if (errorRes != 0) {
+      UI.showToast(errorRes, Toast.LENGTH_SHORT);
+      return;
+    }
+    openAttachmentMenuBot(context, bot, chatId, url);
+  }
+
+  private static @StringRes int getAttachmentMenuBotError (
+    Tdlib tdlib,
+    TdApi.AttachmentMenuBot bot,
+    long chatId
+  ) {
+    TdApi.Chat chat = tdlib.chat(chatId);
+    if (chat == null) {
+      return R.string.vg_BotCantOpenAttachMenuUser;
+    }
+    switch (chat.type.getConstructor()) {
+      case TdApi.ChatTypePrivate.CONSTRUCTOR: {
+        if (((TdApi.ChatTypePrivate) chat.type).userId == bot.botUserId) {
+          return bot.supportsSelfChat ? 0 : R.string.vg_BotCantOpenAttachMenuSameBot;
+        }
+        if (tdlib.isBotChat(chat)) {
+          return bot.supportsBotChats ? 0 : R.string.vg_BotCantOpenAttachMenuBot;
+        }
+        return bot.supportsUserChats ? 0 : R.string.vg_BotCantOpenAttachMenuUser;
+      }
+      case TdApi.ChatTypeBasicGroup.CONSTRUCTOR:
+        return bot.supportsGroupChats ? 0 : R.string.vg_BotCantOpenAttachMenuGroup;
+      case TdApi.ChatTypeSupergroup.CONSTRUCTOR:
+        if (((TdApi.ChatTypeSupergroup) chat.type).isChannel) {
+          return bot.supportsChannelChats ? 0 : R.string.vg_BotCantOpenAttachMenuChannel;
+        }
+        return bot.supportsGroupChats ? 0 : R.string.vg_BotCantOpenAttachMenuGroup;
+      case TdApi.ChatTypeSecret.CONSTRUCTOR:
+        // Mini apps send nothing to secret chats.
+        return R.string.vg_BotCantOpenAttachMenuUser;
+      default:
+        Td.assertChatType_e562ec7d();
+        throw Td.unsupported(chat.type);
+    }
+  }
+
+  /** A bot of the attachment menu, opened in the given chat. */
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+  private static void openAttachmentMenuBot (
+    ViewController<?> context,
+    TdApi.AttachmentMenuBot bot,
+    long chatId,
+    @Nullable String url
+  ) {
+    RunnableBool open = allowWriteAccess -> {
+      WebAppController.Args args = new WebAppController.Args(
+        WebAppController.TYPE_ATTACHMENT_MENU, bot.botUserId,
+        chatId);
+      args.url = url;
+      launch(context, args, LAUNCH_ALERT_NONE);
+    };
+    if (bot.isAdded) {
+      open.runWithBool(false);
+    } else {
+      addToAttachmentMenu(context, bot.botUserId, bot.requestWriteAccess, open);
+    }
   }
 
   private static @Nullable ViewController<?> findController (TdlibDelegate context) {
@@ -355,10 +496,11 @@ public final class WebApp {
     return current instanceof MessagesController ? ((MessagesController) current).getChatId() : 0;
   }
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static void launch (
     ViewController<?> context,
     WebAppController.Args args,
-    boolean needLaunchAlert
+    int launchAlert
   ) {
     final Tdlib tdlib = context.tdlib();
     WebAppController open = WebAppController.findOpen(tdlib, args);
@@ -368,13 +510,16 @@ public final class WebApp {
       }
       return;
     }
-    if (needLaunchAlert && !isLaunchConfirmed(tdlib, args.botUserId)) {
+    boolean needLaunchAlert = launchAlert == LAUNCH_ALERT_ALWAYS ||
+      (launchAlert == LAUNCH_ALERT_UNLESS_CONFIRMED && !isLaunchConfirmed(tdlib, args.botUserId));
+    if (needLaunchAlert) {
       showLaunchAlert(context, args.botUserId, false, allowWriteAccess -> show(context, args));
       return;
     }
     show(context, args);
   }
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static void show (ViewController<?> context, WebAppController.Args args) {
     WebAppController c = new WebAppController(context.context(), context.tdlib());
     c.setArguments(args);
@@ -432,25 +577,50 @@ public final class WebApp {
   }
 
   /**
-   * «Terms of Use» of mini apps for bots of the attachment and side menus, before they are
-   * added.
+   * «Terms of Use» of mini apps for bots of the attachment and side menus, then adds the bot
+   * there. Write access is given only by its own checkbox.
    */
-  private static void showDisclaimer (ViewController<?> context, Runnable onAccept) {
+  private static void addToAttachmentMenu (
+    ViewController<?> context,
+    long botUserId,
+    boolean requestWriteAccess,
+    RunnableBool onAdded
+  ) {
+    final Tdlib tdlib = context.tdlib();
     CharSequence message = Lang.getMarkdownString(context, R.string.vg_BotWebAppDisclaimerSubtitle);
+    ListItem agreeItem = new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_webAppAgree, 0,
+      Lang.getMarkdownString(context, R.string.vg_BotWebAppDisclaimerCheck), false);
+    ListItem[] items;
+    if (requestWriteAccess) {
+      items = new ListItem[] {
+        agreeItem,
+        new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_webAppAllowWrite, 0,
+          Lang.getStringBold(R.string.vg_OpenUrlOption2, tdlib.cache().userName(botUserId)), true)
+      };
+    } else {
+      items = new ListItem[] {agreeItem};
+    }
     context.showSettings(new SettingsWrapBuilder(R.id.btn_webAppDisclaimer)
       .setHeadline(Lang.getString(R.string.vg_TermsOfUse))
       .setHeaderItem(new ListItem(ListItem.TYPE_INFO, R.id.text_title, 0, message, false))
-      .setRawItems(new ListItem[] {
-        new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_webAppAgree, 0,
-          Lang.getMarkdownString(context, R.string.vg_BotWebAppDisclaimerCheck), false)
-      })
+      .setRawItems(items)
       .setSaveStr(R.string.Continue)
       .setIntDelegate((id, result) -> {
-        if (result.get(R.id.btn_webAppAgree) != 0) {
-          onAccept.run();
-        } else {
+        if (result.get(R.id.btn_webAppAgree) == 0) {
           UI.showToast(R.string.vg_BotWebAppDisclaimerRequired, Toast.LENGTH_SHORT);
+          return;
         }
+        boolean allowWriteAccess = requestWriteAccess && result.get(R.id.btn_webAppAllowWrite) != 0;
+        tdlib.send(new TdApi.ToggleBotIsAddedToAttachmentMenu(botUserId, true, allowWriteAccess),
+          (ok, error) -> UI.post(() -> {
+            if (error != null) {
+              UI.showError(error);
+              return;
+            }
+            // The accepted terms cover the data sent to the bot on launch.
+            Settings.instance().pmc().putBoolean(launchConfirmedKey(tdlib, botUserId), true);
+            onAdded.runWithBool(allowWriteAccess);
+          }));
       }));
   }
 
@@ -463,7 +633,7 @@ public final class WebApp {
     b.setPositiveButton(Lang.getString(R.string.OK), (dialog, which) -> {
       tdlib.send(new TdApi.ToggleBotIsAddedToAttachmentMenu(botUserId, false, false),
         tdlib.typedOkHandler());
-      removeShortcut(botUserId);
+      removeShortcut(tdlib, botUserId);
       after.run();
     });
     b.setPositiveButtonDestructive();
@@ -502,6 +672,7 @@ public final class WebApp {
     return color & 0xffffff;
   }
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   static TdApi.WebAppOpenParameters buildOpenParameters (int mode) {
     TdApi.WebAppOpenMode openMode;
     switch (mode) {
@@ -519,6 +690,7 @@ public final class WebApp {
     return new TdApi.WebAppOpenParameters(buildThemeParameters(), APPLICATION_NAME, openMode);
   }
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   static int toMode (TdApi.WebAppOpenMode mode) {
     switch (mode.getConstructor()) {
       case TdApi.WebAppOpenModeFullScreen.CONSTRUCTOR:
@@ -535,40 +707,17 @@ public final class WebApp {
    * Button URLs may ask for a mode with the {@code mode} query parameter, like {@code t.me}
    * links.
    */
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static int parseModeFromUrl (String url, int defaultMode) {
-    try {
-      String mode = Uri.parse(url).getQueryParameter("mode");
-      if ("fullscreen".equals(mode)) {
-        return WebAppController.MODE_FULLSCREEN;
-      }
-      if ("compact".equals(mode)) {
-        return WebAppController.MODE_COMPACT;
-      }
-    } catch (Throwable ignored) {
-      // Not a hierarchical URI: no query parameters.
+    Uri uri = Uri.parse(url);
+    String mode = uri.isHierarchical() ? uri.getQueryParameter("mode") : null;
+    if ("fullscreen".equals(mode)) {
+      return WebAppController.MODE_FULLSCREEN;
+    }
+    if ("compact".equals(mode)) {
+      return WebAppController.MODE_COMPACT;
     }
     return defaultMode;
-  }
-
-  static String formatDuration (int seconds) {
-    int days = seconds / 86400, hours = seconds % 86400 / 3600, minutes = seconds % 3600 / 60;
-    StringBuilder b = new StringBuilder();
-    if (days > 0) {
-      b.append(Lang.plural(R.string.vg_BotEmojiStatusSetRequestForDay, days));
-    }
-    if (hours > 0) {
-      if (b.length() > 0) {
-        b.append(' ');
-      }
-      b.append(Lang.plural(R.string.vg_BotEmojiStatusSetRequestForHour, hours));
-    }
-    if (minutes > 0 || b.length() == 0) {
-      if (b.length() > 0) {
-        b.append(' ');
-      }
-      b.append(Lang.plural(R.string.vg_BotEmojiStatusSetRequestForMinute, Math.max(1, minutes)));
-    }
-    return b.toString();
   }
 
   static String getInlineQueryResultId (TdApi.InlineQueryResult result) {
@@ -626,27 +775,24 @@ public final class WebApp {
 
   private static void pickChat (
     ViewController<?> context,
-    @Nullable TdApi.TargetChatTypes types,
+    ChatFilter filter,
     RunnableData<TdApi.Chat> onPicked
   ) {
-    final Tdlib tdlib = context.tdlib();
-    ChatsController c = new ChatsController(context.context(), tdlib);
-    c.setArguments(new ChatsController.Arguments(new ChatsController.PickerDelegate() {
-      @Override
-      public boolean onChatPicked (TdApi.Chat chat, Runnable onDone) {
-        if (!isChatAllowed(tdlib, chat.id, types)) {
-          UI.showToast(R.string.vg_BotCantSharePreparedMessage, Toast.LENGTH_SHORT);
-          return false;
-        }
-        onPicked.runWithData(chat);
-        return true;
-      }
+    ChatsController c = new ChatsController(context.context(), context.tdlib());
+    c.setArguments(new ChatsController.Arguments(filter, (chat, onDone) -> {
+      onPicked.runWithData(chat);
+      return true;
     }));
     context.navigateTo(c);
   }
 
   // Requested chats and users
 
+  /**
+   * {@code web_app_request_chat}: the picked chat is shared with the bot and the page gets the
+   * result; the picked chat is not opened.
+   */
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   static boolean openRequestedChatPicker (
     WebAppController context,
     long botUserId,
@@ -655,122 +801,237 @@ public final class WebApp {
     RunnableBool onResult
   ) {
     final Tdlib tdlib = context.tdlib();
+    final ChatFilter filter;
+    final RunnableData<TdApi.Chat> share;
+    final RunnableBool reply = isShared -> {
+      onResult.runWithBool(isShared);
+      if (!context.isDestroyed()) {
+        context.restoreFromTab();
+      }
+    };
+    final Tdlib.ResultHandler<TdApi.Ok> handler = (ok, error) -> UI.post(() -> {
+      if (error != null) {
+        UI.showError(error);
+      }
+      reply.runWithBool(error == null);
+    });
     switch (button.type.getConstructor()) {
       case TdApi.KeyboardButtonTypeRequestUsers.CONSTRUCTOR: {
         TdApi.KeyboardButtonTypeRequestUsers request =
           (TdApi.KeyboardButtonTypeRequestUsers) button.type;
-        context.minimize();
-        pickChat(context, new TdApi.TargetChatTypes(true,
-          request.restrictUserIsBot ? request.userIsBot : true,
-          false, false), chat -> {
-          long userId = tdlib.chatUserId(chat.id);
-          tdlib.send(new TdApi.ShareUsersWithBot(source, request.id, new long[] {userId}, false),
-            (ok, error) ->
-            UI.post(() -> {
-              if (error != null) {
-                UI.showError(error);
-              }
-              onResult.runWithBool(error == null);
-              context.restoreFromTab();
-            }));
-        });
-        return true;
+        filter = chat -> isRequestedUser(tdlib, chat, botUserId, request);
+        share = chat -> tdlib.send(new TdApi.ShareUsersWithBot(source, request.id,
+          new long[] {tdlib.chatUserId(chat.id)}, false), handler);
+        break;
       }
       case TdApi.KeyboardButtonTypeRequestChat.CONSTRUCTOR: {
         TdApi.KeyboardButtonTypeRequestChat request =
           (TdApi.KeyboardButtonTypeRequestChat) button.type;
-        context.minimize();
-        pickChat(context,
-          new TdApi.TargetChatTypes(false, false, !request.chatIsChannel, request.chatIsChannel),
-          chat -> tdlib.send(new TdApi.ShareChatWithBot(source, request.id, chat.id, false),
-            (ok, error) ->
-            UI.post(() -> {
-              if (error != null) {
-                UI.showError(error);
-              }
-              onResult.runWithBool(error == null);
-              context.restoreFromTab();
-            })));
-        return true;
+        filter = chat -> isRequestedChat(tdlib, chat, request);
+        share = chat -> tdlib.send(new TdApi.ShareChatWithBot(source, request.id, chat.id, false),
+          handler);
+        break;
       }
       default:
         return false;
     }
+    final boolean[] isPicked = new boolean[1];
+    ChatsController c = new ChatsController(context.context(), tdlib);
+    c.setArguments(new ChatsController.Arguments(filter, (chat, onDone) -> {
+      if (!isPicked[0]) {
+        isPicked[0] = true;
+        share.runWithData(chat);
+        c.navigateBack();
+      }
+      return false;
+    }));
+    c.addDestroyListener(() -> {
+      if (!isPicked[0]) {
+        isPicked[0] = true;
+        reply.runWithBool(false);
+      }
+    });
+    context.minimize();
+    context.navigateTo(c);
+    return true;
+  }
+
+  private static boolean isRequestedUser (
+    Tdlib tdlib,
+    TdApi.Chat chat,
+    long botUserId,
+    TdApi.KeyboardButtonTypeRequestUsers request
+  ) {
+    if (chat.type.getConstructor() != TdApi.ChatTypePrivate.CONSTRUCTOR ||
+      tdlib.isSelfChat(chat) || tdlib.chatUserId(chat.id) == botUserId) {
+      return false;
+    }
+    TdApi.User user = tdlib.chatUser(chat);
+    if (user == null || user.type.getConstructor() == TdApi.UserTypeDeleted.CONSTRUCTOR) {
+      return false;
+    }
+    boolean isBot = user.type.getConstructor() == TdApi.UserTypeBot.CONSTRUCTOR;
+    return (!request.restrictUserIsBot || isBot == request.userIsBot) &&
+      (!request.restrictUserIsPremium || user.isPremium == request.userIsPremium);
+  }
+
+  /** The rights of the bot and its membership are checked by TDLib when the chat is shared. */
+  private static boolean isRequestedChat (
+    Tdlib tdlib,
+    TdApi.Chat chat,
+    TdApi.KeyboardButtonTypeRequestChat request
+  ) {
+    boolean isChannel = tdlib.isChannelChat(chat);
+    if (isChannel != request.chatIsChannel || (!isChannel && !tdlib.isMultiChat(chat))) {
+      return false;
+    }
+    if (request.restrictChatIsForum && tdlib.isForum(chat.id) != request.chatIsForum) {
+      return false;
+    }
+    if (request.restrictChatHasUsername &&
+      StringUtils.isEmpty(tdlib.chatUsername(chat)) == request.chatHasUsername) {
+      return false;
+    }
+    TdApi.ChatMemberStatus status = tdlib.chatStatus(chat.id);
+    int statusType = status != null ? status.getConstructor() : 0;
+    if (request.chatIsCreated) {
+      return statusType == TdApi.ChatMemberStatusCreator.CONSTRUCTOR;
+    }
+    return request.userAdministratorRights == null ||
+      statusType == TdApi.ChatMemberStatusCreator.CONSTRUCTOR ||
+      statusType == TdApi.ChatMemberStatusAdministrator.CONSTRUCTOR;
   }
 
   // QR codes
 
-  private static @Nullable CameraController.QrCodeListener activeQrListener;
+  /** The camera is shared by all mini apps: one scanner at a time. */
+  private static @Nullable QrScanner activeQrScanner;
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+  private static final class QrScanner implements CameraController.QrCodeListener, Destroyable {
+    private final WebAppController owner;
+    private final @Nullable String text;
+    private final RunnableData<String> onCode;
+    private final Runnable onClosed;
+
+    QrScanner (WebAppController owner, @Nullable String text, RunnableData<String> onCode,
+               Runnable onClosed) {
+      this.owner = owner;
+      this.text = text;
+      this.onCode = onCode;
+      this.onClosed = onClosed;
+    }
+
+    @Override
+    public void onQrCodeScanned (String qrCode) {
+      if (activeQrScanner == this) {
+        onCode.runWithData(qrCode);
+      }
+    }
+
+    @Override
+    public boolean acceptsAnyQrCode () {
+      return true;
+    }
+
+    @Override
+    public @Nullable String getQrSubtitle () {
+      return StringUtils.isEmpty(text) ? null : text;
+    }
+
+    @Override
+    public void onQrScannerClosed () {
+      if (release(true)) {
+        owner.setSheetHidden(false);
+        onClosed.run();
+      }
+    }
+
+    /** The controller went away with the camera open. */
+    @Override
+    public void performDestroy () {
+      if (release(false)) {
+        owner.context().closeCameraByBackPress();
+      }
+    }
+
+    private boolean release (boolean removeDestroyListener) {
+      if (activeQrScanner != this) {
+        return false;
+      }
+      activeQrScanner = null;
+      if (removeDestroyListener) {
+        owner.removeDestroyListener(this);
+      }
+      return true;
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   static boolean openQrScanner (
     WebAppController context,
     @Nullable String text,
     RunnableData<String> onCode,
     Runnable onClosed
   ) {
-    if (activeQrListener != null) {
+    if (activeQrScanner != null) {
       return false;
     }
-    CameraController.QrCodeListener listener = new CameraController.QrCodeListener() {
-      @Override
-      public void onQrCodeScanned (String qrCode) {
-        onCode.runWithData(qrCode);
-      }
-
-      @Override
-      public boolean acceptsAnyQrCode () {
-        return true;
-      }
-
-      @Override
-      public @Nullable String getQrSubtitle () {
-        return StringUtils.isEmpty(text) ? null : text;
-      }
-
-      @Override
-      public void onQrScannerClosed () {
-        if (activeQrListener == this) {
-          activeQrListener = null;
-          context.setSheetHidden(false);
-          onClosed.run();
-        }
-      }
-    };
-    activeQrListener = listener;
+    QrScanner scanner = new QrScanner(context, text, onCode, onClosed);
+    activeQrScanner = scanner;
+    context.addDestroyListener(scanner);
     // The camera lives under the popups of the activity, so the sheet steps aside while it is open.
     context.setSheetHidden(true);
     context.openInAppCamera(new ViewController.CameraOpenOptions()
       .noTrace(true)
       .allowSystem(false)
       .mode(CameraController.MODE_QR)
-      .qrCodeListener(listener));
+      .qrCodeListener(scanner));
     return true;
   }
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   static void closeQrScanner (WebAppController context) {
-    if (activeQrListener != null) {
-      activeQrListener = null;
+    QrScanner scanner = activeQrScanner;
+    if (scanner != null && scanner.owner == context && scanner.release(true)) {
       context.setSheetHidden(false);
-      context.context().performBackPress(false);
+      context.context().closeCameraByBackPress();
     }
   }
 
   // Home screen
 
-  private static String shortcutId (long botUserId) {
-    return SHORTCUT_PREFIX + botUserId;
+  private static String shortcutId (Tdlib tdlib, long botUserId) {
+    return SHORTCUT_PREFIX + tdlib.id() + "_" + botUserId;
+  }
+
+  /** Random per installation: shortcut intents without it may come from other apps. */
+  private static String getShortcutToken () {
+    String token = Settings.instance().pmc().getString(KEY_SHORTCUT_TOKEN, null);
+    if (token == null) {
+      token = UUID.randomUUID().toString();
+      Settings.instance().pmc().putString(KEY_SHORTCUT_TOKEN, token);
+    }
+    return token;
+  }
+
+  public static boolean isShortcutTokenValid (@Nullable String token) {
+    return token != null &&
+      token.equals(Settings.instance().pmc().getString(KEY_SHORTCUT_TOKEN, null));
   }
 
   static String getHomeScreenStatus (Tdlib tdlib, long botUserId) {
+    if (!ShortcutManagerCompat.isRequestPinShortcutSupported(UI.getContext())) {
+      return "unsupported";
+    }
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-      return "unsupported";
+      // Shortcuts pinned through the launcher broadcast can't be queried.
+      return "unknown";
     }
-    ShortcutManager manager = UI.getContext().getSystemService(ShortcutManager.class);
-    if (manager == null || !manager.isRequestPinShortcutSupported()) {
-      return "unsupported";
-    }
-    for (ShortcutInfo info : manager.getPinnedShortcuts()) {
-      if (info.getId().equals(shortcutId(botUserId))) {
+    String id = shortcutId(tdlib, botUserId);
+    for (ShortcutInfoCompat info : ShortcutManagerCompat.getShortcuts(UI.getContext(),
+      ShortcutManagerCompat.FLAG_MATCH_PINNED)) {
+      if (info.getId().equals(id)) {
         return "added";
       }
     }
@@ -793,48 +1054,50 @@ public final class WebApp {
       Bitmap bitmap = botChat != null ?
         TdlibNotificationUtils.buildLargeIcon(tdlib, botChat, true) : null;
       UI.post(() -> {
-      Intent intent = new Intent(UI.getContext(), MainActivity.class);
-      intent.setAction(ACTION_OPEN_WEB_APP);
-      intent.putExtra(EXTRA_ACCOUNT_ID, tdlib.id());
-      intent.putExtra(EXTRA_BOT_USER_ID, botUserId);
-      ShortcutInfoCompat.Builder b =
-        new ShortcutInfoCompat.Builder(UI.getContext(), shortcutId(botUserId))
-        .setShortLabel(tdlib.cache().userName(botUserId))
-        .setIntent(intent);
-      if (U.isValidBitmap(bitmap)) {
-        b.setIcon(IconCompat.createWithBitmap(bitmap));
-      } else {
-        b.setIcon(IconCompat.createWithResource(UI.getContext(), R.mipmap.app_launcher));
-      }
-      boolean requested;
-      try {
-        requested = ShortcutManagerCompat.requestPinShortcut(UI.getContext(), b.build(), null);
-      } catch (Throwable t) {
-        requested = false;
-      }
-      onResult.runWithBool(requested);
+        Intent intent = new Intent(UI.getContext(), MainActivity.class);
+        intent.setAction(Intents.ACTION_OPEN_WEB_APP);
+        intent.putExtra(EXTRA_ACCOUNT_ID, tdlib.id());
+        intent.putExtra(EXTRA_BOT_USER_ID, botUserId);
+        intent.putExtra(EXTRA_SHORTCUT_TOKEN, getShortcutToken());
+        ShortcutInfoCompat.Builder b =
+          new ShortcutInfoCompat.Builder(UI.getContext(), shortcutId(tdlib, botUserId))
+          .setShortLabel(tdlib.cache().userName(botUserId))
+          .setIntent(intent);
+        if (U.isValidBitmap(bitmap)) {
+          b.setIcon(IconCompat.createWithBitmap(bitmap));
+        } else {
+          b.setIcon(IconCompat.createWithResource(UI.getContext(), R.mipmap.app_launcher));
+        }
+        boolean requested;
+        try {
+          requested = ShortcutManagerCompat.requestPinShortcut(UI.getContext(), b.build(), null);
+        } catch (IllegalStateException e) {
+          // The app is not in the foreground anymore.
+          requested = false;
+        }
+        onResult.runWithBool(requested);
       });
     });
   }
 
-  private static void removeShortcut (long botUserId) {
-    try {
-      ShortcutManagerCompat.disableShortcuts(UI.getContext(),
-        java.util.Collections.singletonList(shortcutId(botUserId)), null);
-    } catch (Throwable ignored) {
-      // Launchers without pinned shortcuts.
-    }
+  private static void removeShortcut (Tdlib tdlib, long botUserId) {
+    ShortcutManagerCompat.disableShortcuts(UI.getContext(),
+      Collections.singletonList(shortcutId(tdlib, botUserId)), null);
   }
 
-  /** Opens the main app of the bot of a home screen shortcut, see {@link #addToHomeScreen}. */
-  public static void openFromShortcut (
-    @Nullable ViewController<?> context,
-    int accountId,
-    long botUserId
-  ) {
-    if (context != null && context.tdlib().id() == accountId && botUserId != 0) {
-      openMainApp(context, botUserId, 0, null, null);
+  /**
+   * Opens the main app of the bot of a home screen shortcut, see {@link #addToHomeScreen}.
+   * Intents without the token of the app's shortcuts always get the launch confirmation.
+   */
+  public static void openFromShortcut (ViewController<?> context, long botUserId,
+                                       boolean isTrusted) {
+    if (!checkSupported()) {
+      return;
     }
+    WebAppController.Args args = new WebAppController.Args(WebAppController.TYPE_MAIN_APP,
+      botUserId, 0);
+    args.mode = WebAppController.MODE_FULL_SIZE;
+    launch(context, args, isTrusted ? LAUNCH_ALERT_UNLESS_CONFIRMED : LAUNCH_ALERT_ALWAYS);
   }
 
   // WebView prompts
@@ -870,48 +1133,12 @@ public final class WebApp {
     }
   }
 
-  static void onPermissionRequest (
-    ViewController<?> context,
-    String botName,
-    PermissionRequest request
-  ) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-      return;
+  /** {@code request} is an {@code android.webkit.PermissionRequest}, which API 16 can't load. */
+  static void onPermissionRequest (ViewController<?> context, String botName, Object request) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      WebAppPermissions.onPermissionRequest(context, botName,
+        (android.webkit.PermissionRequest) request);
     }
-    final String[] resources = request.getResources();
-    boolean audio = false, video = false, other = false;
-    for (String resource : resources) {
-      if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
-        audio = true;
-      } else if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
-        video = true;
-      } else {
-        other = true;
-      }
-    }
-    if (other || (!audio && !video)) {
-      request.deny();
-      return;
-    }
-    final String[] permissions;
-    final int textRes;
-    if (audio && video) {
-      permissions = new String[] {Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
-      textRes = R.string.vg_BotWebViewRequestCameraMicPermission;
-    } else if (video) {
-      permissions = new String[] {Manifest.permission.CAMERA};
-      textRes = R.string.vg_BotWebViewRequestCameraPermission;
-    } else {
-      permissions = new String[] {Manifest.permission.RECORD_AUDIO};
-      textRes = R.string.vg_BotWebViewRequestMicrophonePermission;
-    }
-    askPermission(context, botName, textRes, permissions, granted -> {
-      if (granted) {
-        request.grant(resources);
-      } else {
-        request.deny();
-      }
-    });
   }
 
   static void onGeolocationPermissionRequest (
@@ -926,7 +1153,7 @@ public final class WebApp {
     }, granted -> callback.invoke(origin, granted, false));
   }
 
-  private static void askPermission (
+  static void askPermission (
     ViewController<?> context,
     String botName,
     int textRes,

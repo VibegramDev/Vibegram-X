@@ -4223,9 +4223,15 @@ public class TdlibUi extends Handler {
       case TdApi.InternalLinkTypeAttachmentMenuBot.CONSTRUCTOR:
       case TdApi.InternalLinkTypeWebApp.CONSTRUCTOR:
       case TdApi.InternalLinkTypeMainWebApp.CONSTRUCTOR: {
-        WebApp.openLink(context, linkType);
+        if (WebApp.isSupported()) {
+          WebApp.openLink(context, linkType, after);
+          return; // async
+        }
+        // Callers with a fallback open the link in the browser.
         if (after != null) {
-          after.runWithBool(true);
+          ok = false;
+        } else {
+          unsupported.run();
         }
         break;
       }

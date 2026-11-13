@@ -1,5 +1,6 @@
 /*
  * This file is a part of Vibegram X, a fork of Telegram X
+ * Based on BotButtons from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,23 +23,35 @@ import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.os.Build;
+import android.os.Bundle;
 import android.os.SystemClock;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.accessibility.AccessibilityEvent;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
+import androidx.customview.widget.ExploreByTouchHelper;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.ThemeChangeListener;
+import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Fonts;
+import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.text.Text;
@@ -53,11 +66,15 @@ import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 
+import java.util.List;
+
 /**
  * Main and secondary buttons of a mini app: one view that lays out, animates and draws both, so
- * their slots, colors and the bar height change in one transition.
+ * their slots, colors and the bar height change in one transition. Accessibility services see them
+ * as two virtual buttons.
  */
-final class WebAppButtonsView extends View implements FactorAnimator.Target {
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+final class WebAppButtonsView extends View implements FactorAnimator.Target, ThemeChangeListener {
   interface Callback {
     void onButtonPressed (boolean isMain);
     void onVisibleHeightChanged (int targetHeight);
@@ -70,6 +87,7 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
   private static final float TEXT_PADDING = 16f, ICON_GAP = 6f, PROGRESS_SHIFT = 10f;
   private static final long DURATION = 320L, SHINE_DURATION = 2000L;
   private static final String ICON_PLACEHOLDER = "\u2B50";
+  private static final int VIRTUAL_ID_MAIN = 0, VIRTUAL_ID_SECONDARY = 1;
 
   private static TextStyleProvider iconStyleProvider;
 
@@ -78,8 +96,8 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
   private final Button mainButton, secondaryButton;
   private final FactorAnimator animator;
   private final ComplexReceiver iconReceiver;
+  private final AccessibilityHelper accessibilityHelper;
   private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Paint separatorPaint = new Paint();
   private final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
   private final float textBaselineOffset;
 
@@ -96,11 +114,12 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
     this.secondaryButton = new Button(false);
     this.animator = new FactorAnimator(0, this, M3.EMPHASIZED, DURATION);
     this.iconReceiver = new ComplexReceiver(this);
+    this.accessibilityHelper = new AccessibilityHelper();
+    ViewCompat.setAccessibilityDelegate(this, accessibilityHelper);
     textPaint.setTypeface(Fonts.getRobotoMedium());
     textPaint.setTextSize(Screen.sp(14f));
     Paint.FontMetricsInt metrics = textPaint.getFontMetricsInt();
     textBaselineOffset = -(metrics.ascent + metrics.descent) / 2f;
-    separatorPaint.setColor(0x1A000000);
   }
 
   static int getMaxHeight () {
@@ -123,12 +142,28 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
     }
   }
 
-  void attach () {
+  @Override
+  protected void onAttachedToWindow () {
+    super.onAttachedToWindow();
     iconReceiver.attach();
+    ThemeManager.instance().addThemeListener(this);
   }
 
-  void detach () {
+  @Override
+  protected void onDetachedFromWindow () {
+    super.onDetachedFromWindow();
     iconReceiver.detach();
+    ThemeManager.instance().removeThemeListener(this);
+  }
+
+  @Override
+  public boolean needsTempUpdates () {
+    return true;
+  }
+
+  @Override
+  public void onThemeColorsChanged (boolean areTemp, @Nullable ColorState state) {
+    invalidate();
   }
 
   void performDestroy () {
@@ -142,7 +177,7 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
 
   /**
    * Applies {@code web_app_setup_main_button} or {@code web_app_setup_secondary_button}. Values
-   * missing in the event keep the last ones, like the official client.
+   * missing in the event keep the last ones.
    */
   void setup (
     boolean isMain,
@@ -175,6 +210,7 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
       secondaryPosition = position;
     }
     relayout(true);
+    accessibilityHelper.invalidateRoot();
   }
 
   boolean isVisible (boolean isMain) {
@@ -260,7 +296,9 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
   }
 
   @Override
-  public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) { }
+  public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) {
+    accessibilityHelper.invalidateRoot();
+  }
 
   @Override
   protected void onDraw (@NonNull Canvas c) {
@@ -271,7 +309,7 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
     final float top = getMeasuredHeight() - visibleHeight;
     fillPaint.setColor(barColor);
     c.drawRect(0, top, width, getMeasuredHeight(), fillPaint);
-    c.drawRect(0, top, width, top + 1, separatorPaint);
+    c.drawRect(0, top, width, top + 1, Paints.fillingPaint(M3.outlineVariant()));
     c.save();
     c.clipRect(0, top, width, getMeasuredHeight());
     c.translate(0, top);
@@ -291,6 +329,33 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
     }
   }
 
+  private @Nullable Button findButton (float x, float y, boolean needActive) {
+    final float buttonY = y - (getMeasuredHeight() - visibleHeight);
+    if (mainButton.contains(x, buttonY, needActive)) {
+      return mainButton;
+    }
+    if (secondaryButton.contains(x, buttonY, needActive)) {
+      return secondaryButton;
+    }
+    return null;
+  }
+
+  private boolean performButtonClick (Button button) {
+    if (!button.isVisible || !button.isActive) {
+      return false;
+    }
+    callback.onButtonPressed(button.isMain);
+    accessibilityHelper.sendEventForVirtualView(button.virtualViewId,
+      AccessibilityEvent.TYPE_VIEW_CLICKED);
+    return true;
+  }
+
+  @Override
+  protected boolean dispatchHoverEvent (MotionEvent e) {
+    return accessibilityHelper.dispatchHoverEvent(e) || super.dispatchHoverEvent(e);
+  }
+
+  // Accessibility services click the buttons through accessibilityHelper, not performClick.
   @SuppressLint("ClickableViewAccessibility")
   @Override
   public boolean onTouchEvent (MotionEvent e) {
@@ -298,15 +363,11 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
     final float x = e.getX(), y = e.getY() - top;
     switch (e.getAction()) {
       case MotionEvent.ACTION_DOWN: {
-        pressedButton = null;
         if (e.getY() < top) {
+          pressedButton = null;
           return false;
         }
-        if (mainButton.isHit(x, y)) {
-          pressedButton = mainButton;
-        } else if (secondaryButton.isHit(x, y)) {
-          pressedButton = secondaryButton;
-        }
+        pressedButton = findButton(e.getX(), e.getY(), true);
         if (pressedButton != null) {
           pressedButton.isPressed = true;
           invalidate();
@@ -322,8 +383,8 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
       case MotionEvent.ACTION_UP: {
         Button button = pressedButton;
         clearPressed();
-        if (button != null && button.isHit(x, y)) {
-          callback.onButtonPressed(button.isMain);
+        if (button != null && button.contains(x, y, true)) {
+          performButtonClick(button);
         }
         return true;
       }
@@ -354,17 +415,20 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
 
   private final class Button {
     final boolean isMain;
+    final int virtualViewId;
     final RectF from = new RectF(), to = new RectF(), current = new RectF();
     final ProgressComponent progress;
     final Matrix shineMatrix = new Matrix();
-    final TextColorSet iconColorSet = () -> Button.this.currentTextColor;
+    final TextColorSet iconColorSet = () -> Button.this.currentTextColor();
 
     String text = "";
-    @ColorInt int color = M3.primary(), textColor = M3.onPrimary();
+    /** Colors set by the bot; 0 until then, so the theme colors apply. */
+    @ColorInt int color, textColor;
     boolean isVisible, isActive = true, isProgressVisible, hasShine, isPressed;
 
     float fromAlpha, toAlpha, alpha;
-    @ColorInt int fromColor, fromTextColor, currentColor, currentTextColor;
+    @ColorInt int fromColor, fromTextColor;
+    float colorFactor = 1f;
     float fromProgress, toProgress, progressFactor;
     float fromShine, toShine, shineFactor;
 
@@ -378,9 +442,24 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
 
     Button (boolean isMain) {
       this.isMain = isMain;
+      this.virtualViewId = isMain ? VIRTUAL_ID_MAIN : VIRTUAL_ID_SECONDARY;
       this.progress = ProgressComponent.simpleInstance(WebAppButtonsView.this, 9f, 0, 0, 0, 0);
-      this.currentColor = color;
-      this.currentTextColor = textColor;
+    }
+
+    @ColorInt int containerColor () {
+      return color != 0 ? color : M3.primary();
+    }
+
+    @ColorInt int labelColor () {
+      return textColor != 0 ? textColor : M3.onPrimary();
+    }
+
+    @ColorInt int currentColor () {
+      return ColorUtils.fromToArgb(fromColor, containerColor(), colorFactor);
+    }
+
+    @ColorInt int currentTextColor () {
+      return ColorUtils.fromToArgb(fromTextColor, labelColor(), colorFactor);
     }
 
     void setTarget (float left, float top, float right, float bottom) {
@@ -399,8 +478,8 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
       from.set(current);
       fromAlpha = alpha;
       toAlpha = isVisible ? 1f : 0f;
-      fromColor = currentColor;
-      fromTextColor = currentTextColor;
+      fromColor = currentColor();
+      fromTextColor = currentTextColor();
       fromProgress = progressFactor;
       toProgress = isProgressVisible ? 1f : 0f;
       fromShine = shineFactor;
@@ -416,14 +495,13 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
         MathUtils.fromTo(from.bottom, to.bottom, factor)
       );
       alpha = MathUtils.fromTo(fromAlpha, toAlpha, factor);
-      currentColor = ColorUtils.fromToArgb(fromColor, color, factor);
-      currentTextColor = ColorUtils.fromToArgb(fromTextColor, textColor, factor);
+      colorFactor = factor;
       progressFactor = MathUtils.fromTo(fromProgress, toProgress, factor);
       shineFactor = MathUtils.fromTo(fromShine, toShine, factor);
     }
 
-    boolean isHit (float x, float y) {
-      return isVisible && isActive && alpha > .5f && current.contains(x, y);
+    boolean contains (float x, float y, boolean needActive) {
+      return isVisible && (isActive || !needActive) && alpha > .5f && current.contains(x, y);
     }
 
     void setIcon (long customEmojiId) {
@@ -489,6 +567,7 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
       final float radius = Screen.dp(M3.CORNER_MEDIUM);
       final float scale = MathUtils.fromTo(.7f, 1f, alpha);
       final float centerX = current.centerX(), centerY = current.centerY();
+      final int currentColor = currentColor(), currentTextColor = currentTextColor();
       final int saveCount = c.save();
       c.scale(scale, scale, centerX, centerY);
 
@@ -542,6 +621,53 @@ final class WebAppButtonsView extends View implements FactorAnimator.Target {
         c.restore();
       }
       c.restoreToCount(saveCount);
+    }
+  }
+
+  private final class AccessibilityHelper extends ExploreByTouchHelper {
+    private final Rect bounds = new Rect();
+
+    AccessibilityHelper () {
+      super(WebAppButtonsView.this);
+    }
+
+    private Button buttonFor (int virtualViewId) {
+      return virtualViewId == VIRTUAL_ID_MAIN ? mainButton : secondaryButton;
+    }
+
+    @Override
+    protected int getVirtualViewAt (float x, float y) {
+      Button button = findButton(x, y, false);
+      return button != null ? button.virtualViewId : INVALID_ID;
+    }
+
+    @Override
+    protected void getVisibleVirtualViews (List<Integer> virtualViewIds) {
+      if (mainButton.isVisible) {
+        virtualViewIds.add(VIRTUAL_ID_MAIN);
+      }
+      if (secondaryButton.isVisible) {
+        virtualViewIds.add(VIRTUAL_ID_SECONDARY);
+      }
+    }
+
+    @Override
+    protected void onPopulateNodeForVirtualView (int virtualViewId, @NonNull AccessibilityNodeInfoCompat node) {
+      Button button = buttonFor(virtualViewId);
+      node.setClassName(android.widget.Button.class.getName());
+      node.setText(button.text);
+      node.setEnabled(button.isActive);
+      button.to.roundOut(bounds);
+      bounds.offset(0, getMeasuredHeight() - (int) toHeight);
+      node.setBoundsInParent(bounds);
+      if (button.isActive) {
+        node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK);
+      }
+    }
+
+    @Override
+    protected boolean onPerformActionForVirtualView (int virtualViewId, int action, @Nullable Bundle arguments) {
+      return action == AccessibilityNodeInfoCompat.ACTION_CLICK && performButtonClick(buttonFor(virtualViewId));
     }
   }
 

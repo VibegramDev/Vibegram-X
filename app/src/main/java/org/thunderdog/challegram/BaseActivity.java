@@ -141,7 +141,6 @@ import org.thunderdog.challegram.util.AppUpdater;
 import org.thunderdog.challegram.util.KonfettiBuilder;
 import org.thunderdog.challegram.util.Permissions;
 import org.thunderdog.challegram.util.StuckWatch;
-import org.thunderdog.challegram.webapp.WebAppTabs;
 import org.thunderdog.challegram.widget.BaseRootLayout;
 import org.thunderdog.challegram.widget.DragDropLayout;
 import org.thunderdog.challegram.widget.ForceTouchView;
@@ -560,7 +559,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     }
 
     rootView.addView(contentView);
-    WebAppTabs.attach(this);
 
     checkPasscode(false);
 
@@ -3886,6 +3884,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   public static final int ORIENTATION_FLAG_CROP = 1 << 6;
   public static final int ORIENTATION_FLAG_PROXIMITY = 1 << 7;
   public static final int ORIENTATION_FLAG_CAMERA = 1 << 8;
+  public static final int ORIENTATION_FLAG_WEB_APP = 1 << 9;
 
   private int orientationFlags;
 

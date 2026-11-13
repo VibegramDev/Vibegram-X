@@ -22,38 +22,35 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.text.TextUtils;
-import android.widget.TextView;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
-import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.unsorted.AppContext;
 import org.thunderdog.challegram.util.Permissions;
 
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
-import me.vkryl.core.lambda.RunnableLong;
+import me.vkryl.core.StringUtils;
 
 /**
  * {@code web_app_request_file_download}: a confirmation, then the system DownloadManager into
  * public Downloads.
  *
- * <p>State is in memory only and touched on the UI thread: URLs already handed to DownloadManager
- * per (account user, bot), and the bots whose prompt is open.
+ * <p>State is in memory only and touched on the UI thread: the bots whose prompt is open, per
+ * account user.
  */
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 public final class WebAppDownloads {
   public static final String STATUS_DOWNLOADING = "downloading", STATUS_CANCELLED = "cancelled";
 
@@ -65,9 +62,10 @@ public final class WebAppDownloads {
     void onResult (String status);
   }
 
-  private static final int PROBE_TIMEOUT_MS = 5000;
+  // UTF-16 units: even 3-byte characters stay within the 255-byte name limit of file systems.
+  private static final int MAX_FILE_NAME_LENGTH = 80;
+  private static final int MAX_EXTENSION_LENGTH = 16;
 
-  private static final Map<String, Set<String>> startedUrls = new HashMap<>();
   private static final Set<String> pendingBots = new HashSet<>();
 
   private WebAppDownloads () { }
@@ -85,13 +83,8 @@ public final class WebAppDownloads {
     if (pendingBots.contains(botKey)) {
       return;
     }
-    Set<String> urls = startedUrls.get(botKey);
-    if (urls != null && urls.contains(url)) {
-      callback.onResult(STATUS_DOWNLOADING);
-      return;
-    }
-    Uri uri = parseHttpUrl(url);
-    String safeFileName = sanitizeFileName(fileName);
+    Uri uri = parseHttpsUrl(url);
+    String safeFileName = toSafeFileName(fileName);
     if (uri == null || safeFileName == null) {
       callback.onResult(STATUS_CANCELLED);
       return;
@@ -102,7 +95,7 @@ public final class WebAppDownloads {
         if (error != null || context.isDestroyed()) {
           finish(botKey, callback, STATUS_CANCELLED);
         } else {
-          showPrompt(context, botKey, botName, uri, url, safeFileName, callback);
+          showPrompt(context, botKey, botName, uri, safeFileName, callback);
         }
       })
     );
@@ -118,16 +111,15 @@ public final class WebAppDownloads {
     String botKey,
     String botName,
     Uri uri,
-    String url,
     String fileName,
     Callback callback
   ) {
     CharSequence text = Lang.getStringBold(R.string.vg_BotDownloadFileText, botName);
     AlertPopup popup = context.showAlert(new AlertPopup.Builder(context.context())
       .setTitle(Lang.getString(R.string.vg_BotDownloadFileTitle))
-      .setMessage(buildMessage(text, fileName, -1))
+      .setMessage(TextUtils.concat(text, "\n\n", fileName))
       .setPositiveButton(Lang.getString(R.string.vg_BotDownloadFileDownload), (dialog, which) ->
-        startDownload(context, botKey, uri, url, fileName, callback)
+        startDownload(context, botKey, uri, fileName, callback)
       )
       .setNegativeButton(Lang.getString(R.string.Cancel), (dialog, which) ->
         finish(botKey, callback, STATUS_CANCELLED)
@@ -136,21 +128,6 @@ public final class WebAppDownloads {
     );
     if (popup == null) {
       finish(botKey, callback, STATUS_CANCELLED);
-      return;
-    }
-    probeSize(url, size -> {
-      TextView messageView = popup.getMessageView();
-      if (size > 0 && messageView != null && popup.isShowing()) {
-        messageView.setText(buildMessage(text, fileName, size));
-      }
-    });
-  }
-
-  private static CharSequence buildMessage (CharSequence text, String fileName, long size) {
-    if (size > 0) {
-      return TextUtils.concat(text, "\n\n", fileName, "\n", Strings.buildSize(size));
-    } else {
-      return TextUtils.concat(text, "\n\n", fileName);
     }
   }
 
@@ -158,7 +135,6 @@ public final class WebAppDownloads {
     ViewController<?> context,
     String botKey,
     Uri uri,
-    String url,
     String fileName,
     Callback callback
   ) {
@@ -168,7 +144,7 @@ public final class WebAppDownloads {
         Permissions.WriteType.DOWNLOADS,
         granted -> {
           if (granted) {
-            enqueue(botKey, uri, url, fileName, callback);
+            enqueue(botKey, uri, fileName, callback);
           } else {
             finish(botKey, callback, STATUS_CANCELLED);
           }
@@ -178,115 +154,72 @@ public final class WebAppDownloads {
         return;
       }
     }
-    enqueue(botKey, uri, url, fileName, callback);
+    enqueue(botKey, uri, fileName, callback);
   }
 
-  private static void enqueue (
-    String botKey,
-    Uri uri,
-    String url,
-    String fileName,
-    Callback callback
-  ) {
+  private static void enqueue (String botKey, Uri uri, String fileName, Callback callback) {
+    DownloadManager manager =
+      (DownloadManager) AppContext.get().getSystemService(Context.DOWNLOAD_SERVICE);
+    if (manager == null) {
+      finish(botKey, callback, STATUS_CANCELLED);
+      return;
+    }
     try {
-      DownloadManager manager =
-        (DownloadManager) AppContext.get().getSystemService(Context.DOWNLOAD_SERVICE);
-      if (manager == null) {
-        finish(botKey, callback, STATUS_CANCELLED);
-        return;
-      }
       DownloadManager.Request request = new DownloadManager.Request(uri);
       request.setTitle(fileName);
       request.setNotificationVisibility(
         DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
       );
+      // Throws IllegalStateException when external storage is unavailable.
       request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
       manager.enqueue(request);
-    } catch (Throwable t) {
-      Log.e("Cannot start a mini app download", t);
+    } catch (IllegalStateException | SecurityException e) {
+      Log.e("Cannot start a mini app download", e);
       finish(botKey, callback, STATUS_CANCELLED);
       return;
     }
-    Set<String> urls = startedUrls.get(botKey);
-    if (urls == null) {
-      urls = new HashSet<>();
-      startedUrls.put(botKey, urls);
-    }
-    urls.add(url);
     finish(botKey, callback, STATUS_DOWNLOADING);
   }
 
-  /**
-   * HEAD request for Content-Length; {@code after} runs on the UI thread, only when the size is
-   * known.
-   */
-  private static void probeSize (String url, RunnableLong after) {
-    new Thread(() -> {
-      long size = -1;
-      HttpURLConnection connection = null;
-      try {
-        connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setRequestMethod("HEAD");
-        connection.setConnectTimeout(PROBE_TIMEOUT_MS);
-        connection.setReadTimeout(PROBE_TIMEOUT_MS);
-        connection.setInstanceFollowRedirects(true);
-        int responseCode = connection.getResponseCode();
-        if (responseCode >= 200 && responseCode < 300) {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            size = connection.getContentLengthLong();
-          } else {
-            size = parseLength(connection.getHeaderField("Content-Length"));
-          }
-        }
-      } catch (Throwable t) {
-        Log.w("Cannot get the size of a mini app download", t);
-      } finally {
-        if (connection != null) {
-          connection.disconnect();
-        }
-      }
-      if (size > 0) {
-        long knownSize = size;
-        UI.post(() -> after.runWithLong(knownSize));
-      }
-    }, "WebAppDownloadProbe").start();
-  }
-
-  private static long parseLength (@Nullable String value) {
-    if (value == null) {
-      return -1;
-    }
-    try {
-      return Long.parseLong(value.trim());
-    } catch (NumberFormatException e) {
-      return -1;
-    }
-  }
-
-  private static @Nullable Uri parseHttpUrl (@Nullable String url) {
-    if (url == null || url.isEmpty()) {
+  private static @Nullable Uri parseHttpsUrl (@Nullable String url) {
+    if (StringUtils.isEmpty(url)) {
       return null;
     }
     Uri uri = Uri.parse(url);
-    String scheme = uri.getScheme();
-    boolean isHttp = "https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme);
-    return isHttp && !TextUtils.isEmpty(uri.getHost()) ? uri : null;
+    boolean isHttps = "https".equalsIgnoreCase(uri.getScheme());
+    return isHttps && !TextUtils.isEmpty(uri.getHost()) ? uri : null;
   }
 
-  /** The name goes into a path under Downloads: separators would let it leave the folder. */
-  private static @Nullable String sanitizeFileName (@Nullable String fileName) {
+  /**
+   * The name goes into a path under Downloads and into the confirmation: besides separators and
+   * leading dots ({@link U#getSecureFileName}) it loses control and format characters, so that
+   * bidi overrides can't disguise the extension, and gets a length that file systems accept.
+   */
+  private static @Nullable String toSafeFileName (@Nullable String fileName) {
     if (fileName == null) {
       return null;
     }
     StringBuilder builder = new StringBuilder(fileName.length());
     for (int i = 0; i < fileName.length(); i++) {
       char c = fileName.charAt(i);
-      builder.append(c == '/' || c == '\\' || c < ' ' ? '_' : c);
+      if (!Character.isISOControl(c) && Character.getType(c) != Character.FORMAT) {
+        builder.append(c);
+      }
     }
-    String result = builder.toString().trim();
-    if (result.isEmpty() || result.equals(".") || result.equals("..")) {
+    String name = U.getSecureFileName(builder.toString().trim());
+    if (StringUtils.isEmpty(name)) {
       return null;
     }
-    return result;
+    if (name.length() > MAX_FILE_NAME_LENGTH) {
+      int dot = name.lastIndexOf('.');
+      String extension =
+        dot > 0 && name.length() - dot <= MAX_EXTENSION_LENGTH ? name.substring(dot) : "";
+      int end = MAX_FILE_NAME_LENGTH - extension.length();
+      if (Character.isHighSurrogate(name.charAt(end - 1))) {
+        end--;
+      }
+      name = name.substring(0, end) + extension;
+    }
+    return name;
   }
 }

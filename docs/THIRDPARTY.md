@@ -61,7 +61,26 @@ Voice messages are transcribed on the device. The native libraries are prebuilt 
 ## Telegram for Android (WEB proxy)
 
 The WEB proxy transport (`app/src/main/java/org/thunderdog/challegram/proxy/`) and the format of `webproxy` links are based on
-the WEB proxy implementation of [Telegram for Android](https://github.com/DrKLO/Telegram) (licensed under GNU GPL v. 2 or later).
+the WEB proxy implementation of [Telegram for Android](https://github.com/DrKLO/Telegram), licensed under GPL-2.0-or-later
+(per https://telegram.org/apps; the repository LICENSE contains the GPL-2.0 text) and used under GPL-3.0.
+
+## Telegram for Android (mini apps)
+
+Files of the mini apps package `app/src/main/java/org/thunderdog/challegram/webapp/` are rewritten in the TGX style from
+classes of [Telegram for Android](https://github.com/DrKLO/Telegram); each such file names its source class in the header:
+
+* `WebAppHaptics.java` — `org.telegram.messenger.BotWebViewVibrationEffect`;
+* `WebAppStorage.java`, `WebAppBiometry.java`, `WebAppSensors.java`, `WebAppLocation.java` — `org.telegram.ui.bots.BotStorage`,
+  `BotBiometry`, `BotSensors`, `BotLocation`;
+* `WebAppTabsOverlay.java`, `WebAppTabsView.java` — `org.telegram.ui.ActionBar.BottomSheetTabsOverlay`, `BottomSheetTabs`;
+* `WebAppController.java`, `WebAppBridge.java` — `org.telegram.ui.web.BotWebViewContainer`, `org.telegram.ui.bots.BotWebViewSheet`,
+  `org.telegram.ui.Components.ChatAttachAlertBotWebViewLayout`;
+* `WebAppButtonsView.java` — metrics of `org.telegram.ui.bots.BotButtons`.
+
+The mini app strings in `app/src/main/res/values*/vibegram_webapp.xml` are based on `TMessagesProj/src/main/res/values/strings.xml`,
+and the bot menu button icon `app/src/main/res/drawable/vg_bot_webview_20.xml` is the first frame of the `bot_webview_sheet_to_cross`
+animation. Telegram for Android is licensed under GPL-2.0-or-later (per https://telegram.org/apps; the repository LICENSE contains
+the GPL-2.0 text); this code is used under GPL-3.0.
 
 ## Telegram for Android icons (v12.3.1)
 

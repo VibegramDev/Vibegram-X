@@ -6083,13 +6083,5 @@
        the rest is in vibegram_webapp.xml) -->
   <string name="vg_BotMoreTabs_one">%2$s &amp; %1$s Other</string>
   <string name="vg_BotMoreTabs_other">%2$s &amp; %1$s Others</string>
-  <string name="vg_BotSharedToMany_one">Sent message to %1$s chat</string>
-  <string name="vg_BotSharedToMany_other">Sent message to %1$s chats</string>
-  <string name="vg_BotEmojiStatusSetRequestForDay_one">%1$s day</string>
-  <string name="vg_BotEmojiStatusSetRequestForDay_other">%1$s days</string>
-  <string name="vg_BotEmojiStatusSetRequestForHour_one">%1$s hour</string>
-  <string name="vg_BotEmojiStatusSetRequestForHour_other">%1$s hours</string>
-  <string name="vg_BotEmojiStatusSetRequestForMinute_one">%1$s minute</string>
-  <string name="vg_BotEmojiStatusSetRequestForMinute_other">%1$s minutes</string>
 
 </resources>

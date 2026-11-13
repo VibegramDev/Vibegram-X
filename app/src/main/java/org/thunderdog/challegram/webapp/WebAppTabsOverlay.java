@@ -1,5 +1,6 @@
 /*
  * This file is a part of Vibegram X, a fork of Telegram X
+ * Based on BottomSheetTabsOverlay from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,10 +24,11 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.drawable.Drawable;
+import android.os.Build;
+import android.os.Bundle;
 import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -34,33 +36,40 @@ import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.OverScroller;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
+import androidx.customview.widget.ExploreByTouchHelper;
 
 import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.R;
-import org.thunderdog.challegram.charts.CubicBezierInterpolator;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.HeaderView;
+import org.thunderdog.challegram.support.ViewSupport;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
-import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
-import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.widget.PopupLayout;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 
 /**
- * All minimized mini apps of the account as a stack of tilted cards (ui.md §4.5), shown for two
- * or more tabs. The background is a dim instead of the official blurred snapshot of the app.
+ * All minimized mini apps of the account as a stack of tilted cards over a dim, shown for two or
+ * more tabs.
  */
 @SuppressLint("ViewConstructor")
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 public final class WebAppTabsOverlay extends View implements
   PopupLayout.AnimatedPopupProvider,
   PopupLayout.DismissListener,
@@ -75,10 +84,11 @@ public final class WebAppTabsOverlay extends View implements
   private static final long LAYOUT_DURATION = 250L;
 
   private static final float HEADER_HEIGHT = 50f;
-  private static final float CARD_RADIUS = 18f;
   private static final float SCROLL_STEP = 200f;
   private static final float DISMISS_DISTANCE = 300f;
   private static final float DISMISS_THRESHOLD = .4f;
+
+  private static final int ID_CLOSE_ALL = Integer.MAX_VALUE;
 
   /** Shows the overlay over the activity of the strip, for the account the strip shows. */
   static void show (BaseActivity activity, WebAppTabsView strip) {
@@ -105,7 +115,7 @@ public final class WebAppTabsOverlay extends View implements
     final @Nullable Bitmap preview;
     final FactorAnimator dismissAnimator;
     final RectF bounds = new RectF();
-    @Nullable String title;
+    @Nullable Text title;
     float fromIndex, toIndex;
     float dismiss, dismissFrom, dismissTo;
     boolean removed;
@@ -118,7 +128,7 @@ public final class WebAppTabsOverlay extends View implements
       this.dismissAnimator = new FactorAnimator(
         0,
         this,
-        CubicBezierInterpolator.EASE_OUT_QUINT,
+        AnimatorUtils.DECELERATE_INTERPOLATOR,
         LAYOUT_DURATION
       );
     }
@@ -166,13 +176,12 @@ public final class WebAppTabsOverlay extends View implements
 
   private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-  private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-  private final TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
   private final TextPaint buttonPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-  private final float titleCenterOffset, buttonCenterOffset;
+  private final float buttonCenterOffset;
   private final String closeAllText;
   private final float closeAllTextWidth;
-  private final Drawable closeIcon, expandIcon;
+  private final WebAppTabsView.CardHeader header;
+  private final AccessibilityHelper accessibilityHelper;
 
   private final Matrix matrix = new Matrix();
   private final float[] source = new float[8];
@@ -184,7 +193,6 @@ public final class WebAppTabsOverlay extends View implements
   private final int[] stripLocation = new int[2];
   private final int[] location = new int[2];
   private int stripOffsetX, stripOffsetY;
-  private int iconColor;
 
   private float fromCount, toCount;
   private float offset;
@@ -206,20 +214,20 @@ public final class WebAppTabsOverlay extends View implements
     this.openAnimator = new FactorAnimator(
       ANIMATOR_OPEN,
       this,
-      CubicBezierInterpolator.EASE_OUT_QUINT,
+      AnimatorUtils.DECELERATE_INTERPOLATOR,
       OPEN_DURATION
     );
     this.layoutAnimator = new FactorAnimator(
       ANIMATOR_LAYOUT,
       this,
-      CubicBezierInterpolator.EASE_OUT_QUINT,
+      AnimatorUtils.DECELERATE_INTERPOLATOR,
       LAYOUT_DURATION,
       1f
     );
     this.scrollAnimator = new FactorAnimator(
       ANIMATOR_SCROLL,
       this,
-      CubicBezierInterpolator.EASE_OUT_QUINT,
+      AnimatorUtils.DECELERATE_INTERPOLATOR,
       LAYOUT_DURATION
     );
     this.scroller = new OverScroller(activity);
@@ -229,19 +237,17 @@ public final class WebAppTabsOverlay extends View implements
     this.maximumVelocity = configuration.getScaledMaximumFlingVelocity();
 
     fillPaint.setStyle(Paint.Style.FILL);
-    titlePaint.setTypeface(Fonts.getRobotoMedium());
-    titlePaint.setTextSize(Screen.sp(17f));
-    Paint.FontMetrics metrics = titlePaint.getFontMetrics();
-    titleCenterOffset = -(metrics.ascent + metrics.descent) / 2f;
     buttonPaint.setTypeface(Fonts.getRobotoMedium());
     buttonPaint.setTextSize(Screen.sp(14f));
-    buttonPaint.getFontMetrics(metrics);
+    Paint.FontMetrics metrics = buttonPaint.getFontMetrics();
     buttonCenterOffset = -(metrics.ascent + metrics.descent) / 2f;
+    // The overlay is modal and short-lived: the language cannot change while it is shown
     closeAllText = Lang.getString(R.string.vg_BotCloseAllTabs);
     closeAllTextWidth = buttonPaint.measureText(closeAllText);
 
-    closeIcon = Drawables.get(getResources(), R.drawable.baseline_close_24);
-    expandIcon = Drawables.get(getResources(), R.drawable.baseline_keyboard_arrow_up_24);
+    header = new WebAppTabsView.CardHeader(this);
+    accessibilityHelper = new AccessibilityHelper();
+    ViewCompat.setAccessibilityDelegate(this, accessibilityHelper);
 
     setLayoutParams(FrameLayoutFix.newParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
@@ -311,6 +317,7 @@ public final class WebAppTabsOverlay extends View implements
     if (remaining == 0) {
       close(true);
     }
+    accessibilityHelper.invalidateRoot();
   }
 
   private void onCardDismissed (Card card) {
@@ -337,6 +344,7 @@ public final class WebAppTabsOverlay extends View implements
     toCount = cards.size();
     layoutAnimator.forceFactor(0f);
     layoutAnimator.animateTo(1f);
+    accessibilityHelper.invalidateRoot();
     if (cards.isEmpty()) {
       close(true);
     } else {
@@ -405,6 +413,7 @@ public final class WebAppTabsOverlay extends View implements
 
   @Override
   public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) {
+    accessibilityHelper.invalidateRoot();
     if (id != ANIMATOR_OPEN || popup == null) {
       return;
     }
@@ -422,7 +431,7 @@ public final class WebAppTabsOverlay extends View implements
   }
 
   private float getPaddingBottomOffset () {
-    return Screen.dp(68f) + activity.getRootView().getSystemInsetsWithoutIme().bottom;
+    return Screen.dp(WebAppTabs.STRIP_HEIGHT_STACK) + activity.getRootView().getSystemInsetsWithoutIme().bottom;
   }
 
   private float getCardWidth () {
@@ -433,16 +442,10 @@ public final class WebAppTabsOverlay extends View implements
   protected void onSizeChanged (int width, int height, int oldWidth, int oldHeight) {
     super.onSizeChanged(width, height, oldWidth, oldHeight);
     if (width != oldWidth) {
-      int titleWidth = (int) getCardWidth() - Screen.dp(100f);
+      float cardWidth = getCardWidth();
       for (int i = 0; i < cards.size(); i++) {
         Card card = cards.get(i);
-        CharSequence title = card.tab.getTabTitle();
-        if (TextUtils.isEmpty(title) || titleWidth <= 0) {
-          card.title = null;
-        } else {
-          card.title = TextUtils.ellipsize(title, titlePaint, titleWidth, TextUtils.TruncateAt.END)
-            .toString();
-        }
+        card.title = header.buildTitle(card.tab.getTabTitle().toString(), cardWidth);
       }
     }
   }
@@ -515,7 +518,7 @@ public final class WebAppTabsOverlay extends View implements
   }
 
   private void drawCard (Canvas c, Card card, float expand, float alpha, int stripCardColor) {
-    final float radius = Screen.dp(CARD_RADIUS);
+    final float radius = Screen.dp(WebAppTabsView.CARD_RADIUS);
     final float headerHeight = Screen.dp(HEADER_HEIGHT);
     final int saveCount = c.save();
 
@@ -548,7 +551,7 @@ public final class WebAppTabsOverlay extends View implements
 
     clipPath.rewind();
     clipPath.addRoundRect(rect, radius, radius, Path.Direction.CW);
-    c.clipPath(clipPath);
+    final int clipSaveCount = ViewSupport.clipPath(c, clipPath);
 
     // The header is stretched as much as the perspective squeezes it
     final float headerScale = MathUtils.fromTo(1f, 1.3f, expand);
@@ -569,22 +572,9 @@ public final class WebAppTabsOverlay extends View implements
     fillPaint.setColor(ColorUtils.alphaColor(alpha, headerColor));
     c.drawRect(rect.left, rect.top, rect.right, rect.top + headerHeight, fillPaint);
 
-    final int contentColor = WebAppTabsView.isDark(headerColor) ? Color.WHITE : Color.BLACK;
-    if (iconColor != contentColor || iconPaint.getColorFilter() == null) {
-      iconColor = contentColor;
-      iconPaint.setColorFilter(Paints.getColorFilter(contentColor));
-    }
     final float centerY = rect.top + headerHeight / 2f;
-    iconPaint.setAlpha((int) (255f * alpha));
-    Drawables.drawCentered(c, closeIcon, rect.left + Screen.dp(24f), centerY, iconPaint);
-    if (expand < 1f) {
-      iconPaint.setAlpha((int) (255f * alpha * (1f - expand)));
-      Drawables.drawCentered(c, expandIcon, rect.right - Screen.dp(28f), centerY, iconPaint);
-    }
-    if (card.title != null) {
-      titlePaint.setColor(ColorUtils.alphaColor(alpha, contentColor));
-      c.drawText(card.title, rect.left + Screen.dp(60f), centerY + titleCenterOffset, titlePaint);
-    }
+    header.draw(c, rect, centerY, card.title, M3.contrast(headerColor), alpha, alpha * (1f - expand));
+    ViewSupport.restoreClipPath(c, clipSaveCount);
     c.restoreToCount(saveCount);
   }
 
@@ -600,7 +590,7 @@ public final class WebAppTabsOverlay extends View implements
       (width + buttonWidth) / 2f,
       centerY + Screen.dp(14f)
     );
-    // The dim makes the background dark in both themes, so the official dark style fits
+    // The dim makes the background dark in both themes
     fillPaint.setColor(ColorUtils.alphaColor(alpha, pressedCloseAll ? 0x33ffffff : 0x20ffffff));
     c.drawRoundRect(buttonRect, Screen.dp(14f), Screen.dp(14f), fillPaint);
     buttonPaint.setColor(ColorUtils.alphaColor(alpha, Color.WHITE));
@@ -637,7 +627,7 @@ public final class WebAppTabsOverlay extends View implements
   }
 
   private boolean isInsideClose (Card card, float x, float y) {
-    return x - card.bounds.left < Screen.dp(HEADER_HEIGHT) &&
+    return WebAppTabsView.CardHeader.isInsideClose(card.bounds, x) &&
       y - card.bounds.top < Screen.dp(HEADER_HEIGHT) * 1.3f;
   }
 
@@ -809,6 +799,117 @@ public final class WebAppTabsOverlay extends View implements
         );
         postInvalidateOnAnimation();
       }
+    }
+  }
+
+  // Accessibility: every visible card and the button that closes all of them are virtual views
+
+  @Override
+  protected boolean dispatchHoverEvent (MotionEvent e) {
+    return accessibilityHelper.dispatchHoverEvent(e) || super.dispatchHoverEvent(e);
+  }
+
+  private boolean isAccessible (Card card) {
+    return !card.removed && !card.bounds.isEmpty() && Math.abs(card.dismiss) < DISMISS_THRESHOLD;
+  }
+
+  private final class AccessibilityHelper extends ExploreByTouchHelper {
+    private final Rect bounds = new Rect();
+
+    AccessibilityHelper () {
+      super(WebAppTabsOverlay.this);
+    }
+
+    private @Nullable Card cardFor (int virtualViewId) {
+      if (virtualViewId >= 0 && virtualViewId < cards.size()) {
+        Card card = cards.get(virtualViewId);
+        return isAccessible(card) ? card : null;
+      }
+      return null;
+    }
+
+    private boolean isReady () {
+      return openAnimator.getFactor() == 1f && !isClosing;
+    }
+
+    @Override
+    protected int getVirtualViewAt (float x, float y) {
+      if (!isReady()) {
+        return INVALID_ID;
+      }
+      if (buttonRect.contains(x, y)) {
+        return ID_CLOSE_ALL;
+      }
+      Card card = findCardAt(x, y);
+      return card != null ? cards.indexOf(card) : INVALID_ID;
+    }
+
+    @Override
+    protected void getVisibleVirtualViews (List<Integer> virtualViewIds) {
+      if (!isReady()) {
+        return;
+      }
+      // Front card first, the order of the strip
+      for (int i = 0; i < cards.size(); i++) {
+        if (isAccessible(cards.get(i))) {
+          virtualViewIds.add(i);
+        }
+      }
+      virtualViewIds.add(ID_CLOSE_ALL);
+    }
+
+    @Override
+    protected void onPopulateNodeForVirtualView (int virtualViewId, @NonNull AccessibilityNodeInfoCompat node) {
+      node.setClassName(android.widget.Button.class.getName());
+      Card card = virtualViewId != ID_CLOSE_ALL ? cardFor(virtualViewId) : null;
+      if (card == null) {
+        node.setContentDescription(closeAllText);
+        buttonRect.roundOut(bounds);
+        node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK);
+      } else {
+        node.setContentDescription(card.tab.getTabTitle());
+        // The visible part of a tilted card
+        card.bounds.roundOut(bounds);
+        bounds.bottom = bounds.top + (int) (card.bounds.height() * .6f);
+        node.addAction(new AccessibilityNodeInfoCompat.AccessibilityActionCompat(
+          AccessibilityNodeInfoCompat.ACTION_CLICK, Lang.getString(R.string.Open)
+        ));
+        node.addAction(new AccessibilityNodeInfoCompat.AccessibilityActionCompat(
+          AccessibilityNodeInfoCompat.ACTION_DISMISS, Lang.getString(R.string.vg_Close)
+        ));
+        node.setDismissable(true);
+      }
+      if (bounds.isEmpty()) {
+        bounds.set(0, 0, 1, 1);
+      }
+      node.setBoundsInParent(bounds);
+    }
+
+    @Override
+    protected boolean onPerformActionForVirtualView (int virtualViewId, int action, @Nullable Bundle arguments) {
+      if (!isReady()) {
+        return false;
+      }
+      if (virtualViewId == ID_CLOSE_ALL) {
+        if (action == AccessibilityNodeInfoCompat.ACTION_CLICK) {
+          closeAll();
+          return true;
+        }
+        return false;
+      }
+      Card card = cardFor(virtualViewId);
+      if (card == null) {
+        return false;
+      }
+      switch (action) {
+        case AccessibilityNodeInfoCompat.ACTION_CLICK:
+          restore(card);
+          return true;
+        case AccessibilityNodeInfoCompat.ACTION_DISMISS:
+          card.tab.closeFromTab(false);
+          return true;
+      }
+      return false;
     }
   }
 }

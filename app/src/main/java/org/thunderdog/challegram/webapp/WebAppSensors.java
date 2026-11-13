@@ -1,5 +1,6 @@
 /*
  * This file is a part of Vibegram X, a fork of Telegram X
+ * Based on BotSensors from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,10 +26,12 @@ import android.os.Build;
 import android.os.SystemClock;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
-import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.unsorted.AppContext;
+
+import me.vkryl.core.MathUtils;
 
 /**
  * Accelerometer, gyroscope and device orientation of {@code web_app_start_*} /
@@ -37,6 +40,7 @@ import org.thunderdog.challegram.unsorted.AppContext;
  * <p>All methods are called on the UI thread; sensor events arrive there too (listeners are
  * registered without a handler).
  */
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 public final class WebAppSensors {
   public static final int TYPE_ACCELEROMETER = 0, TYPE_GYROSCOPE = 1, TYPE_DEVICE_ORIENTATION = 2;
 
@@ -54,13 +58,7 @@ public final class WebAppSensors {
 
   public WebAppSensors (Listener listener) {
     this.listener = listener;
-    SensorManager sensorManager = null;
-    try {
-      sensorManager = (SensorManager) AppContext.get().getSystemService(Context.SENSOR_SERVICE);
-    } catch (Throwable t) {
-      Log.e("SensorManager is unavailable", t);
-    }
-    this.sensorManager = sensorManager;
+    this.sensorManager = (SensorManager) AppContext.get().getSystemService(Context.SENSOR_SERVICE);
     this.channels = new Channel[] {
       new Channel(TYPE_ACCELEROMETER, "accelerometer_changed"),
       new Channel(TYPE_GYROSCOPE, "gyroscope_changed"),
@@ -74,10 +72,19 @@ public final class WebAppSensors {
       return false;
     }
     Channel channel = channels[type];
-    int refreshRate = Math.max(MIN_REFRESH_RATE_MS, Math.min(MAX_REFRESH_RATE_MS, refreshRateMs));
+    int refreshRate = MathUtils.clamp(refreshRateMs, MIN_REFRESH_RATE_MS, MAX_REFRESH_RATE_MS);
     if (channel.isRunning) {
       if (type != TYPE_DEVICE_ORIENTATION || channel.isAbsolute == needAbsolute) {
+        boolean needRegister = channel.isRegistered &&
+          samplingPeriodFor(refreshRate) != samplingPeriodFor(channel.refreshRateMs);
         channel.refreshRateMs = refreshRate;
+        if (needRegister) {
+          channel.unregister();
+          if (!channel.register()) {
+            channel.stop();
+            return false;
+          }
+        }
         return true;
       }
       channel.stop();
@@ -193,7 +200,7 @@ public final class WebAppSensors {
               primarySensor = null;
             }
             isAbsolute = true;
-          } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+          } else {
             primarySensor = manager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
           }
           if (primarySensor != null && rotationMatrix == null) {
@@ -313,7 +320,8 @@ public final class WebAppSensors {
         }
       } else {
         float[] vector = eventValues;
-        // Some Samsung devices deliver 5 values, which getRotationMatrixFromVector rejects.
+        // Some Samsung devices deliver 5 values, which getRotationMatrixFromVector rejects
+        // (crbug.com/335298).
         if (eventValues.length > 4 && rotationVector != null) {
           System.arraycopy(eventValues, 0, rotationVector, 0, 4);
           vector = rotationVector;

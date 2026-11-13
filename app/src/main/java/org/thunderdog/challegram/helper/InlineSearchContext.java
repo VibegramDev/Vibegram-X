@@ -52,6 +52,7 @@ import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.CancellableResultHandler;
+import org.thunderdog.challegram.webapp.WebApp;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -720,8 +721,19 @@ public class InlineSearchContext implements LocationHelper.LocationChangeListene
     }
   }
 
+  private static boolean isSupportedButton (TdApi.InlineQueryResultsButtonType type) {
+    switch (type.getConstructor()) {
+      case TdApi.InlineQueryResultsButtonTypeStartBot.CONSTRUCTOR:
+        return true;
+      case TdApi.InlineQueryResultsButtonTypeWebApp.CONSTRUCTOR:
+        return WebApp.isSupported();
+      default:
+        return false;
+    }
+  }
+
   private static ArrayList<InlineResult<?>> parseInlineResults (BaseActivity context, Tdlib tdlib, long inlineBotUserId, String inlineQuery, TdApi.InlineQueryResults results, TdApi.GetInlineQueryResults queryResults, String inlineNextOffset, boolean isMore) {
-    boolean hasButton = !isMore && results.button != null;
+    boolean hasButton = !isMore && results.button != null && isSupportedButton(results.button.type);
     final ArrayList<InlineResult<?>> items = new ArrayList<>(results.results.length + (hasButton ? 1 : 0));
     if (hasButton) {
       items.add(new InlineResultButton(context, tdlib, inlineBotUserId, results.button));

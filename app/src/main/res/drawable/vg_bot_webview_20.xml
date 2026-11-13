@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The bot menu button icon of the official Android app (first frame of bot_webview_sheet_to_cross). -->
+<!-- First frame of bot_webview_sheet_to_cross from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later, see docs/THIRDPARTY.md. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
   android:width="20dp"
   android:height="20dp"

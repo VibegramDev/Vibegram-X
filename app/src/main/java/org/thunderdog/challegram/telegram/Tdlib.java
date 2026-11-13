@@ -90,6 +90,8 @@ import org.thunderdog.challegram.util.WrapperProvider;
 import org.thunderdog.challegram.util.text.Letters;
 import org.thunderdog.challegram.voip.VoIPLogs;
 import org.thunderdog.challegram.voip.annotation.CallState;
+import org.thunderdog.challegram.webapp.WebApp;
+import org.thunderdog.challegram.webapp.WebAppController;
 
 import java.io.File;
 import java.lang.annotation.Retention;
@@ -861,6 +863,9 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       checkPauseTimeout();
       if (isLoggingOut) {
         notifications().onDropNotificationData(true);
+        // The user id is still known here; mini app data is stored per user.
+        final long userId = myUserId(true);
+        runOnUiThread(() -> WebApp.onLoggingOut(this, userId));
       }
     }
   }
@@ -9395,11 +9400,6 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     attachmentMenuBots = update.bots;
   }
 
-  /** Bots added to the attachment or side menu, from {@code updateAttachmentMenuBots}. */
-  public TdApi.AttachmentMenuBot[] attachmentMenuBots () {
-    return attachmentMenuBots;
-  }
-
   public @Nullable TdApi.AttachmentMenuBot attachmentMenuBot (long botUserId) {
     for (TdApi.AttachmentMenuBot bot : attachmentMenuBots) {
       if (bot.botUserId == botUserId) {
@@ -9411,8 +9411,9 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
 
   @TdlibThread
   private void updateWebAppMessageSent (TdApi.UpdateWebAppMessageSent update) {
-    runOnUiThread(() -> org.thunderdog.challegram.webapp.WebAppController.onWebAppMessageSent(this,
-      update.webAppLaunchId));
+    if (WebApp.isSupported()) {
+      runOnUiThread(() -> WebAppController.onWebAppMessageSent(this, update.webAppLaunchId));
+    }
   }
 
   // Updates: NOTIFICATIONS
