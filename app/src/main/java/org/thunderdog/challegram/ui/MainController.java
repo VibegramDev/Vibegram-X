@@ -367,7 +367,16 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return !isTabletNavigationBar() && Settings.instance().getNavigationStyle() == Settings.NAVIGATION_STYLE_BAR;
   }
 
-  private final Settings.NavigationStyleListener navigationStyleListener = newStyle -> {
+  private final Settings.NavigationStyleListener navigationStyleListener =
+    newStyle -> onNavigationLayoutChanged();
+
+  private final Settings.SettingsChangeListener dockSettingsListener = (newFlags, oldFlags) -> {
+    if (BitwiseUtils.hasFlag(newFlags ^ oldFlags, Settings.SETTING_FLAG_DOCK_CONTACTS)) {
+      onNavigationLayoutChanged();
+    }
+  };
+
+  private void onNavigationLayoutChanged () {
     if (isDestroyed()) {
       return;
     }
@@ -378,7 +387,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     updateBottomBarMargins();
     invalidateBottomBarOffset();
     updateHeaderSearchButton();
-  };
+  }
 
   @Override
   protected void onCreateView (Context context, FrameLayoutFix contentView, ViewPager pager) {
@@ -456,6 +465,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     tdlib.context().global().addCountersListener(this);
     Settings.instance().addChatFolderSettingsListener(this);
     Settings.instance().addNavigationStyleListener(navigationStyleListener);
+    Settings.instance().addNewSettingsListener(dockSettingsListener);
     if (Settings.instance().chatFoldersEnabled()) {
       if (this.chatFolderInfos != tdlib.chatFolders()) {
         updatePagerSections(true);
@@ -1489,6 +1499,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     // Over a section this screen is detached (its insets are 0): the system inset comes from the navigation controller.
     int barInset = navigationInOverlay && overlayNavigation != null ? overlayNavigation.getBottomInsetWithoutIme() : extraBottomInsetWithoutIme;
     navigationBar.setLayoutMode(isBar, isNavBarStyle(), barInset);
+    boolean showContacts = Settings.instance().getNewSetting(Settings.SETTING_FLAG_DOCK_CONTACTS);
+    navigationBar.setItemVisible(MainNavigationBar.ITEM_CONTACTS, showContacts);
     if (navigationScrim != null) {
       // Covers the bar, its margins and the fade above it.
       int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + barInset;
@@ -1877,6 +1889,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       chatListUnreadCountListener = null;
     }
     if (navigationCounterListener != null) {
+    Settings.instance().removeNewSettingsListener(dockSettingsListener);
       tdlib.listeners().removeTotalChatCounterListener(navigationCounterListener);
       navigationCounterListener = null;
     }

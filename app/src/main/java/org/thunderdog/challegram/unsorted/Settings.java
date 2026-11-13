@@ -434,6 +434,7 @@ public class Settings {
   public static final long SETTING_FLAG_FORCE_DEFAULT_ANIMATION_FOR_RIGHT_SWIPE_EDGE = 1 << 19;
   public static final long SETTING_FLAG_FORCE_DISABLE_HLS_VIDEO = 1 << 20;
   public static final long SETTING_FLAG_FOLDER_SLIDE_OFF_FILTERS = 1 << 21;
+  public static final long SETTING_FLAG_DOCK_CONTACTS = 1 << 22;
 
   public static final long EXPERIMENT_FLAG_ALLOW_EXPERIMENTS = 1;
   public static final long EXPERIMENT_FLAG_SHOW_PEER_IDS = 1 << 2;

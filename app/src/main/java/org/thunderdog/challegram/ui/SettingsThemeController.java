@@ -229,6 +229,9 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
         } else if (itemId == R.id.btn_navigationStyle) {
           int navigationStyle = Settings.instance().getNavigationStyle();
           v.setData(navigationStyle == Settings.NAVIGATION_STYLE_BAR ? R.string.NavigationStyleBar : R.string.NavigationStyleDock);
+        } else if (itemId == R.id.btn_vgDockContacts) {
+          long flag = Settings.SETTING_FLAG_DOCK_CONTACTS;
+          v.getToggler().setRadioEnabled(Settings.instance().getNewSetting(flag), isUpdate);
         } else if (itemId == R.id.btn_compactChats) {
           v.getToggler().setRadioEnabled(Settings.instance().useCompactChats(), isUpdate);
         } else if (itemId == R.id.btn_centerTitles) {
@@ -417,6 +420,9 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_centerTitles, 0, R.string.CenterTitles));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_navigationStyle, 0, R.string.NavigationStyle));
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgDockContacts, 0,
+        R.string.vg_DockContacts));
 
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_chatBackground, 0, R.string.Wallpaper));
@@ -1219,6 +1225,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       Settings.instance().setNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS, adapter.toggleView(v));
     } else if (viewId == R.id.btn_chatListStyle) {
       showChatListOptions();
+    } else if (viewId == R.id.btn_vgDockContacts) {
+      Settings.instance().setNewSetting(Settings.SETTING_FLAG_DOCK_CONTACTS, adapter.toggleView(v));
     } else if (viewId == R.id.btn_navigationStyle) {
       int style = Settings.instance().getNavigationStyle();
       showSettings(new SettingsWrapBuilder(R.id.btn_navigationStyle).setRawItems(new ListItem[] {

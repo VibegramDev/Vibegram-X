@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Vibegram X: chat folder settings. -->
+<!-- Vibegram X: chat folder and navigation settings. -->
 <resources>
   <item type="id" name="btn_vgFolderSlideOffFilters" />
+  <item type="id" name="btn_vgDockContacts" />
 
   <string name="vg_FolderSlideOffFilters">Swipe from a folder to filter chats</string>
+  <string name="vg_DockContacts">Contacts in navigation</string>
 </resources>
