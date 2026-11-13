@@ -745,7 +745,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   }
 
   public boolean updateForumUnreadTopicCount (long chatId) {
-    if (chat.id == chatId && tdlib.isForum(chatId)) {
+    if (chat.id == chatId && (tdlib.isForum(chatId) || tdlib.isBotForum(chatId))) {
       // Through the batched layout of changes, like the other counters: at most once in CHAT_CHANGES_INTERVAL_MS
       postChanges(CHANGE_COUNTER);
       return true;
@@ -1029,7 +1029,9 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     if (chat == null || getSource() != null) {
       return false;
     }
-    return chat.unreadCount > 0 || chat.isMarkedAsUnread;
+    // Forums and bot forums count by their topics, which TDLib doesn't do for the chat
+    return chat.isMarkedAsUnread ||
+      (forumTopic != null ? chat.unreadCount > 0 : tdlib.chatListUnreadCount(chat) != 0);
   }
 
   public boolean needAnimateChanges () {
