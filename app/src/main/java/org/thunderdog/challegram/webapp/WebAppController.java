@@ -758,6 +758,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   @Override
   public boolean performOnBackPressed (boolean fromTop, boolean commit) {
+    super.performOnBackPressed(fromTop, commit);
     if (commit) {
       if (isBackButtonVisible) {
         bridge.onBackButtonPressed();
@@ -978,6 +979,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   @Override
   public void onThemeColorsChanged (boolean areTemp, @Nullable ColorState state) {
+    super.onThemeColorsChanged(areTemp, state);
     if (sheetLayout == null) {
       return;
     }
