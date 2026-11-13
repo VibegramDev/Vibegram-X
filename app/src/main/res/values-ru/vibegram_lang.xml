@@ -40,6 +40,11 @@
     <item>vg_StarsSubscriptionCompletedText</item>
     <item>vg_StarsTransactionMessageFee</item>
     <item>vg_StarsTransactionMessages</item>
+    <item>vg_BotEmojiStatusSetRequestForDay</item>
+    <item>vg_BotEmojiStatusSetRequestForHour</item>
+    <item>vg_BotEmojiStatusSetRequestForMinute</item>
+    <item>vg_BotMoreTabs</item>
+    <item>vg_BotSharedToMany</item>
   </string-array>
   <string name="Mute">Выключить уведомления</string>
   <string name="Unmute">Включить уведомления</string>

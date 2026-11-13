@@ -278,7 +278,8 @@ public final class M3 {
     cache[INVERSE_PRIMARY] = dark ? ColorUtils.fromToArgb(primary, 0xFF000000, .4f) : ColorUtils.fromToArgb(primary, 0xFFFFFFFF, .45f);
   }
 
-  private static int contrast (int color) {
+  /** Black or white, whichever reads better on {@code color}. */
+  public static int contrast (int color) {
     double l = (0.2126 * Color.red(color) + 0.7152 * Color.green(color) + 0.0722 * Color.blue(color)) / 255.0;
     return l > .6 ? 0xFF000000 : 0xFFFFFFFF;
   }
