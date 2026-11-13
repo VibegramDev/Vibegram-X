@@ -1241,6 +1241,9 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       Settings.instance().setUseCompactChats(adapter.toggleView(v));
     } else if (viewId == R.id.btn_centerTitles) {
       Settings.instance().setNeedCenterTitles(adapter.toggleView(v));
+      if (navigationController != null) {
+        navigationController.getHeaderViewFor(this).updateTextTitleLayout(this);
+      }
     } else if (viewId == R.id.btn_instantViewMode) {
       showInstantViewOptions();
     } else if (viewId == R.id.btn_chatSwipes) {

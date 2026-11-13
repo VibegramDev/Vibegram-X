@@ -65,7 +65,9 @@ public class DoubleHeaderView extends FrameLayoutFix implements RtlCheckListener
         super.onDraw(canvas);
         if (titleIcon != null && titleIcon.getMinimumWidth() > 0 && titleIcon.getMinimumHeight() > 0) {
           Layout layout = getLayout();
-          float left = getPaddingLeft() + (layout != null ? U.getWidth(layout) + Screen.dp(1f) : 0);
+          // Line right, not its width: the title can be centered.
+          float lineRight = layout != null ? layout.getLineRight(0) + Screen.dp(1f) : 0;
+          float left = getPaddingLeft() + lineRight;
           if (left + titleIcon.getMinimumWidth() <= getWidth() - getPaddingRight()) {
             float top = getPaddingTop() + (getHeight() - getPaddingTop() - getPaddingBottom()) / 2f - titleIcon.getMinimumHeight() / 2f;
             Drawables.draw(canvas, titleIcon, left, top, Paints.getIconGrayPorterDuffPaint());
@@ -113,6 +115,7 @@ public class DoubleHeaderView extends FrameLayoutFix implements RtlCheckListener
       subtitleView.setGravity(Lang.gravity());
       Views.updateLayoutParams(subtitleView);
     }
+    checkCenterTitles();
   }
 
   public void setThemedTextColor (ViewController<?> themeProvider) {
@@ -157,16 +160,35 @@ public class DoubleHeaderView extends FrameLayoutFix implements RtlCheckListener
   }
 
   public void initWithMargin (int marginRight, boolean transparentHeaderColor) {
-    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, HeaderView.getSize(false), Lang.gravity(), Lang.rtl() ? marginRight : Screen.dp(68f), 0, Lang.rtl() ? Screen.dp(68f) : marginRight, 0));
+    setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT,
+      HeaderView.getSize(false), Lang.gravity(),
+      getSideMargin(marginRight, true), 0, getSideMargin(marginRight, false), 0));
+    checkCenterTitles();
     if (transparentHeaderColor) {
       subtitleView.setTextColor(Theme.subtitleColor(titleView.getCurrentTextColor()));
     }
   }
 
+  /** Centered titles: both lines centered in the whole app bar, with equal room on both sides. */
+  private static int getSideMargin (int marginRight, boolean left) {
+    if (HeaderView.needCenterTitle()) {
+      return Math.max(Screen.dp(68f), marginRight);
+    }
+    return left == Lang.rtl() ? marginRight : Screen.dp(68f);
+  }
+
+  private void checkCenterTitles () {
+    int gravity = HeaderView.needCenterTitle() ? Gravity.CENTER_HORIZONTAL : Lang.gravity();
+    titleView.setGravity(gravity);
+    subtitleView.setGravity(gravity);
+  }
+
   public void checkRtlMargin (int marginRight) {
     if (Views.setGravity(this, Lang.gravity())) {
-      Views.setMargins(((FrameLayout.LayoutParams) getLayoutParams()), Lang.rtl() ? marginRight : Screen.dp(68f), 0, Lang.rtl() ? Screen.dp(68f) : marginRight, 0);
+      Views.setMargins(((FrameLayout.LayoutParams) getLayoutParams()),
+        getSideMargin(marginRight, true), 0, getSideMargin(marginRight, false), 0);
       Views.updateLayoutParams(this);
+      checkCenterTitles();
     }
   }
 
