@@ -57,6 +57,7 @@ import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.component.attach.GridSpacingItemDecoration;
 import org.thunderdog.challegram.component.chat.EmojiToneHelper;
 import org.thunderdog.challegram.component.chat.InputView;
+import org.thunderdog.challegram.component.chat.MessagesManager;
 import org.thunderdog.challegram.component.dialogs.SearchManager;
 import org.thunderdog.challegram.component.sticker.TGStickerObj;
 import org.thunderdog.challegram.config.Config;
@@ -85,6 +86,7 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibChatList;
 import org.thunderdog.challegram.telegram.TdlibChatListSlice;
 import org.thunderdog.challegram.telegram.TdlibFilesManager;
+import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.Theme;
@@ -3655,7 +3657,11 @@ public class ShareController extends TelegramViewController<ShareController.Args
       // Shared with one chat: that chat opens (it used to open only for content shared from other apps).
       ViewController<?> c = context().navigation().getCurrentStackItem();
       if (!(c instanceof MessagesController && ((MessagesController) c).compareChat(selectedChats.valueAt(0).getAnyId(), (TdApi.MessageTopic) null))) {
-        UI.post(() -> tdlib.ui().openChat(ShareController.this, selectedChats.valueAt(0).getAnyId(), null), 250);
+        // At the newest messages, where the shared ones arrive, not at the saved scroll position
+        TdlibUi.ChatOpenParameters params = new TdlibUi.ChatOpenParameters()
+          .highlightMessage(MessagesManager.HIGHLIGHT_MODE_NONE, null);
+        long chatId = selectedChats.valueAt(0).getAnyId();
+        UI.post(() -> tdlib.ui().openChat(ShareController.this, chatId, params), 250);
       }
     } else if (!mayBePaid) {
       UI.showToast(R.string.Done, Toast.LENGTH_SHORT);
