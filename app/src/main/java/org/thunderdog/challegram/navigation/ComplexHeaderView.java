@@ -54,7 +54,6 @@ import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Icons;
 import org.thunderdog.challegram.tool.Paints;
-import org.thunderdog.challegram.tool.PorterDuffPaint;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
@@ -887,7 +886,12 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
         if (showMute) {
           float muteAlpha = 1f - this.muteFadeFactor;
           Drawable drawable = getSparseDrawable(R.drawable.deproko_baseline_notifications_off_24, 0);
-          Drawables.draw(c, drawable, iconLeft + iconsAdded, trimmedTitle.getHeight() / 2f - drawable.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.headerText, muteAlpha * .4f));
+          // The secondary color of the header, as the mute mark in the chat list: 40% of the
+          // title color was barely visible on the dark surface.
+          int muteColor = ColorUtils.alphaColor(muteAlpha, getSubtitleColor());
+          float muteTop = trimmedTitle.getHeight() / 2f - drawable.getMinimumHeight() / 2f;
+          Paint mutePaint = Paints.getPorterDuffPaint(muteColor);
+          Drawables.draw(c, drawable, iconLeft + iconsAdded, muteTop, mutePaint);
         }
 
         c.restore();
@@ -957,8 +961,10 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
             statusTextColor = ColorUtils.fromToArgb(this instanceof ChatHeaderView ? Theme.headerTextColor() : ColorUtils.color(0xff, (subtitleColor & 0x00ffffff)), Theme.chatListActionColor(), darkness);
             knownColorId = ColorId.chatListAction;
           }
-          float statusLeft = centered ? getCenteredLeft(text.getWidth()) : baseTextLeft;
-          float expandedLeft = (viewWidth - text.getWidth()) / 2f;
+          // The action icon is the start margin of the first line, out of the text width.
+          int statusWidth = text.getWidth() + text.getLineStartMargin(0, 0);
+          float statusLeft = centered ? getCenteredLeft(statusWidth) : baseTextLeft;
+          float expandedLeft = (viewWidth - statusWidth) / 2f;
           statusLeft = MathUtils.fromTo(statusLeft, expandedLeft, expandFactor);
           DrawAlgorithms.drawStatus(c, state, statusLeft, top + text.getLineHeight() / 2f, ColorUtils.alphaColor(statusVisibility, statusTextColor), this, statusVisibility == 1f ? knownColorId : 0);
           text.draw(c, (int) statusLeft, (int) top, null, statusVisibility);
