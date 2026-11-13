@@ -1076,14 +1076,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     List<TdlibAccount> accounts = TdlibManager.instance().getActiveAccounts();
     List<HapticMenuHelper.MenuItem> items = new ArrayList<>(accounts.size());
     for (TdlibAccount account : accounts) {
-      if (account.id == tdlib.id()) {
-        continue;
-      }
       String name = Lang.getDebugString(account.getName(), account.isDebug());
       TdApi.MessageSender sender = new TdApi.MessageSenderUser(account.getKnownUserId());
       HapticMenuHelper.MenuItem item =
         new HapticMenuHelper.MenuItem(R.id.account, name, null, 0, tdlib, sender, false);
       item.accountId = account.id;
+      item.setSelected(account.id == tdlib.id());
       items.add(item.setOnClickListener((view, parentView, menuItem) -> {
         long now = SystemClock.uptimeMillis();
         if (account.context().preferredAccountId() != account.id &&
@@ -1109,14 +1107,24 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return null;
     }
     List<HapticMenuHelper.MenuItem> items = new ArrayList<>(pagerChatLists.size());
+    int currentPosition = getCurrentPagerItemPosition();
     for (int position = 0; position < pagerChatLists.size(); position++) {
       TdApi.ChatList chatList = pagerChatLists.get(position);
+      HapticMenuHelper.MenuItem item = new HapticMenuHelper.MenuItem(R.id.btn_folder,
+        getFolderLabel(chatList), getFolderIcon(chatList));
+      if (TD.isChatListFolder(chatList)) {
+        int chatFolderId = ((TdApi.ChatListFolder) chatList).chatFolderId;
+        TdApi.ChatFolderInfo info = tdlib.chatFolderInfo(chatFolderId);
+        if (info != null && TD.hasCustomEmoji(info.name.text)) {
+          item.setFormattedTitle(tdlib, info.name.text, info.name.animateCustomEmoji);
+        }
+      }
       int folderPosition = position;
-      items.add(new HapticMenuHelper.MenuItem(R.id.btn_folder, getFolderLabel(chatList),
-        getFolderIcon(chatList)).setOnClickListener((view, parentView, menuItem) -> {
-        openChatFolder(folderPosition);
-        return true;
-      }));
+      items.add(item.setSelected(position == currentPosition)
+        .setOnClickListener((view, parentView, menuItem) -> {
+          openChatFolder(folderPosition);
+          return true;
+        }));
     }
     return items;
   }

@@ -74,6 +74,11 @@ public class HapticMenuHelper implements View.OnTouchListener, View.OnLongClickL
 
     /** Avatar of this account instead of the sender's one (the account's TDLib may be paused). */
     public int accountId = TdlibAccount.NO_ID;
+    /** Current entry (folder, account): trailing check. */
+    public boolean isSelected;
+    /** Title with custom emoji, drawn over the plain {@link #title} that keeps the item size. */
+    public @Nullable TdApi.FormattedText formattedTitle;
+    public boolean animateCustomEmoji;
 
     public MenuItem (int id, CharSequence title, int iconResId) {
       this.id = id;
@@ -132,6 +137,18 @@ public class HapticMenuHelper implements View.OnTouchListener, View.OnLongClickL
       if (isCheckboxSelectedAnimated != null) {
         isCheckboxSelectedAnimated.forceValue(checkboxSelected, checkboxSelected ? 1f : 0f);
       }
+      return this;
+    }
+
+    public MenuItem setSelected (boolean isSelected) {
+      this.isSelected = isSelected;
+      return this;
+    }
+
+    public MenuItem setFormattedTitle (Tdlib tdlib, TdApi.FormattedText title, boolean animate) {
+      this.tdlib = tdlib;
+      this.formattedTitle = title;
+      this.animateCustomEmoji = animate;
       return this;
     }
 

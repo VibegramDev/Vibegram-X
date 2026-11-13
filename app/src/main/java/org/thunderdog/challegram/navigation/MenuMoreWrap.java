@@ -41,6 +41,7 @@ import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.loader.AvatarReceiver;
@@ -59,6 +60,10 @@ import org.thunderdog.challegram.tool.PorterDuffPaint;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.util.HapticMenuHelper;
+import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.util.text.TextColorSet;
+import org.thunderdog.challegram.util.text.TextEntity;
+import org.thunderdog.challegram.util.text.TextEntityMessage;
 import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.RootFrameLayout;
@@ -69,6 +74,7 @@ import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.Animated;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
+import me.vkryl.android.util.SingleViewProvider;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
@@ -411,12 +417,23 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   }
 
   public View addItem (@Nullable Tdlib tdlib, HapticMenuHelper.MenuItem menuItem, OnClickListener listener) {
-    if (!menuItem.isCheckbox && ((StringUtils.isEmpty(menuItem.subtitle) && menuItem.messageSenderId == null) || tdlib == null)) {
+    boolean hasDetails =
+      !StringUtils.isEmpty(menuItem.subtitle) || menuItem.messageSenderId != null;
+    boolean needsCustomItem = menuItem.isCheckbox || menuItem.isSelected ||
+      (tdlib != null && (hasDetails || menuItem.formattedTitle != null));
+    if (!needsCustomItem) {
       return addItem(menuItem.id, menuItem.title, menuItem.iconResId, menuItem.icon, listener);
     }
 
     final int maxWidth = Screen.dp(250);
-    final int textRightOffset = Screen.dp(menuItem.isLocked ? ITEM_PADDING + 24 : ITEM_PADDING);
+    final int textRightOffset = Screen.dp(menuItem.isSelected ? ITEM_PADDING + 32 :
+      menuItem.isLocked ? ITEM_PADDING + 24 : ITEM_PADDING);
+    final Drawable checkIcon =
+      menuItem.isSelected ? Drawables.get(getResources(), R.drawable.baseline_check_24) : null;
+    final Text customTitle = menuItem.formattedTitle != null && tdlib != null ?
+      buildCustomTitle(tdlib, menuItem.formattedTitle, menuItem.animateCustomEmoji,
+        maxWidth - Screen.dp(ITEM_TEXT_START) - textRightOffset) :
+      null;
     final Drawable finalIcon = menuItem.iconResId != 0 ? Drawables.get(getResources(), menuItem.iconResId) : menuItem.icon;
     final AvatarReceiver receiver = (menuItem.messageSenderId != null && menuItem.iconResId == 0) ?
       complexAvatarReceiver.getAvatarReceiver(Td.getSenderId(menuItem.messageSenderId)) : null;
@@ -437,7 +454,17 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
           receiver.draw(canvas);
         }
 
-        if (menuItem.isLocked) {
+        if (customTitle != null) {
+          int textY = (getMeasuredHeight() - customTitle.getHeight()) / 2;
+          customTitle.draw(canvas, Screen.dp(ITEM_TEXT_START), textY, null, 1f, textMediaReceiver);
+        }
+
+        if (checkIcon != null) {
+          float x = getMeasuredWidth() - Screen.dp(ITEM_PADDING + 24);
+          float y = (getMeasuredHeight() - checkIcon.getMinimumHeight()) / 2f;
+          int color = M3.get(M3.PRIMARY, forcedTheme);
+          Drawables.draw(canvas, checkIcon, x, y, Paints.getPorterDuffPaint(color));
+        } else if (menuItem.isLocked) {
           Drawable icon = Drawables.get(getResources(), R.drawable.baseline_lock_16);
           if (icon != null) {
             float x = getMeasuredWidth() - Screen.dp(ITEM_PADDING + 16);
@@ -558,6 +585,10 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
       themeListeners.addThemeInvalidateListener(frameLayout);
     }
 
+    if (customTitle != null) {
+      // Keeps the size of the item, the title with custom emoji is drawn in its place.
+      titleTextItem.setVisibility(View.INVISIBLE);
+    }
     frameLayout.addView(titleTextItem);
     if (subtitleTextItem != null) {
       frameLayout.addView(subtitleTextItem);
@@ -908,15 +939,68 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     }
   }
 
+  // Titles with custom emoji
+
+  private static final long TEXT_MEDIA_KEYS_PER_ITEM = 32;
+  private final TextColorSet customTitleColorSet = this::getOnContainerColor;
+  private @Nullable ComplexReceiver textMediaReceiver;
+  private long nextTextMediaKey;
+
+  private Text buildCustomTitle (Tdlib tdlib, TdApi.FormattedText title, boolean animate,
+    int maxWidth) {
+    if (textMediaReceiver == null) {
+      textMediaReceiver =
+        new ComplexReceiver().setUpdateListener((receiver, key) -> invalidateItems());
+    }
+    ComplexReceiver mediaReceiver = textMediaReceiver;
+    long mediaKeyOffset = nextTextMediaKey;
+    nextTextMediaKey += TEXT_MEDIA_KEYS_PER_ITEM;
+    TextEntity[] entities = TextEntity.valueOf(tdlib, title, null);
+    if (entities != null && !animate) {
+      for (TextEntity entity : entities) {
+        if (entity instanceof TextEntityMessage) {
+          ((TextEntityMessage) entity).setForceDisableAnimations(true);
+        }
+      }
+    }
+    Text text = new Text.Builder(title.text, Math.max(maxWidth, 1), Paints.robotoStyleProvider(16f),
+      customTitleColorSet)
+      .entities(entities, (updatedText, specificMedia) -> {
+        if (!updatedText.invalidateMediaContent(mediaReceiver, specificMedia)) {
+          updatedText.requestMedia(mediaReceiver, mediaKeyOffset, TEXT_MEDIA_KEYS_PER_ITEM);
+        }
+        invalidateItems();
+      })
+      .singleLine()
+      .ignoreNewLines()
+      .noClickable()
+      .viewProvider(new SingleViewProvider(this))
+      .build();
+    text.requestMedia(mediaReceiver, mediaKeyOffset, TEXT_MEDIA_KEYS_PER_ITEM);
+    return text;
+  }
+
+  private void invalidateItems () {
+    for (int i = 0; i < itemsLayout.getChildCount(); i++) {
+      itemsLayout.getChildAt(i).invalidate();
+    }
+  }
+
   @Override
   protected void onAttachedToWindow () {
     super.onAttachedToWindow();
     complexAvatarReceiver.attach();
+    if (textMediaReceiver != null) {
+      textMediaReceiver.attach();
+    }
   }
 
   @Override
   protected void onDetachedFromWindow () {
     super.onDetachedFromWindow();
     complexAvatarReceiver.detach();
+    if (textMediaReceiver != null) {
+      textMediaReceiver.detach();
+    }
   }
 }
