@@ -471,6 +471,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
         @Override
         public boolean onSlideOffPrepare (View view, MotionEvent event, int index) {
+          if (!Settings.instance().getNewSetting(Settings.SETTING_FLAG_FOLDER_SLIDE_OFF_FILTERS)) {
+            return false;
+          }
           if (hasFolders()) {
             return !useGlobalFilter() || globalFilter == FILTER_NONE;
           }

@@ -156,6 +156,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_appBadge, 0, R.string.BadgeCounter));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_archiveAsFolder, 0, R.string.ArchiveAsFolder));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+    items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgFolderSlideOffFilters, 0,
+      R.string.vg_FolderSlideOffFilters));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ChatFolders));
@@ -346,6 +349,10 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
         } else if (item.getId() == R.id.btn_archiveAsFolder) {
           boolean showArchiveAsFolder = tdlib.settings().isChatListEnabled(ChatPosition.CHAT_LIST_ARCHIVE);
           view.getToggler().setRadioEnabled(showArchiveAsFolder, isUpdate);
+        } else if (item.getId() == R.id.btn_vgFolderSlideOffFilters) {
+          boolean isEnabled =
+            Settings.instance().getNewSetting(Settings.SETTING_FLAG_FOLDER_SLIDE_OFF_FILTERS);
+          view.getToggler().setRadioEnabled(isEnabled, isUpdate);
         }
       }
     };
@@ -521,6 +528,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
       boolean showArchiveAsFolder = adapter.toggleView(v);
       tdlib.settings().setChatListEnabled(ChatPosition.CHAT_LIST_ARCHIVE, showArchiveAsFolder);
       updateChatFolders();
+    } else if (v.getId() == R.id.btn_vgFolderSlideOffFilters) {
+      Settings.instance().setNewSetting(Settings.SETTING_FLAG_FOLDER_SLIDE_OFF_FILTERS,
+        adapter.toggleView(v));
     }
   }
 
