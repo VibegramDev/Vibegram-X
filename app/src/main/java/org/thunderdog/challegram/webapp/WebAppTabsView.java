@@ -1,5 +1,6 @@
 /*
  * This file is a part of Vibegram X, a fork of Telegram X
+ * Based on BottomSheetTabs from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,49 +26,54 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
-import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BaseActivity;
 import org.thunderdog.challegram.R;
-import org.thunderdog.challegram.charts.CubicBezierInterpolator;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.navigation.DrawerController;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.theme.ColorState;
+import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Drawables;
-import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
+import org.thunderdog.challegram.util.text.Text;
+import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 
 /**
- * Minimized mini apps of the current account (ui.md §4.3): a strip at the very bottom of the
- * app, above the system navigation bar and under every screen. The screens end above it through
+ * Minimized mini apps of the current account: a strip at the very bottom of the app, above the
+ * system navigation bar and under every screen. The screens end above it through
  * {@link NavigationController#setExtraBottomInset}.
  */
 @SuppressLint("ViewConstructor")
@@ -76,15 +82,17 @@ public final class WebAppTabsView extends View implements
   FactorAnimator.Target,
   WebAppTabs.Listener,
   GlobalAccountListener,
-  ThemeChangeListener {
+  ThemeChangeListener,
+  Lang.Listener,
+  ViewTreeObserver.OnPreDrawListener {
+
+  static final float CARD_RADIUS = 18f;
+  static final float CLOSE_SIZE = 50f;
 
   private static final float CARD_HEIGHT = 50f;
-  private static final float CARD_RADIUS = 18f;
   private static final float CARD_MARGIN = 4f;
   private static final float STACK_SHIFT = 8f;
   private static final float CORNER_RADIUS = 10f;
-  private static final float CLOSE_SIZE = 50f;
-  private static final float MAX_STRIP_HEIGHT = 68f;
   private static final int MAX_CARDS = 4;
   private static final long ANIMATION_DURATION = 320L;
 
@@ -98,8 +106,8 @@ public final class WebAppTabsView extends View implements
     final WebAppTab tab;
     float fromPosition, toPosition;
     float fromAlpha, toAlpha;
-    @Nullable CharSequence titleSource;
-    @Nullable String title;
+    @Nullable String titleSource;
+    @Nullable Text title;
     int titleWidth = -1;
 
     Card (WebAppTab tab) {
@@ -115,17 +123,86 @@ public final class WebAppTabsView extends View implements
     }
   }
 
+  /** Close icon, bot name and expand icon of a tab card; the overlay of all tabs draws the same header. */
+  static final class CardHeader {
+    private static final float CLOSE_ICON_X = 24f;
+    private static final float EXPAND_ICON_X = 28f;
+    private static final float TITLE_X = 60f;
+    /** Room for the icons on both sides of the title. */
+    private static final float TITLE_PADDING = 100f;
+    private static final float TITLE_TEXT_SIZE = 17f;
+
+    private static final TextColorSet WHITE = () -> Color.WHITE;
+    private static final TextColorSet BLACK = () -> Color.BLACK;
+
+    private final View view;
+    private final Drawable closeIcon, expandIcon;
+    private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private int iconColor;
+
+    CardHeader (View view) {
+      this.view = view;
+      this.closeIcon = Drawables.get(view.getResources(), R.drawable.baseline_close_24);
+      this.expandIcon = Drawables.get(view.getResources(), R.drawable.baseline_keyboard_arrow_up_24);
+    }
+
+    @Nullable Text buildTitle (@Nullable String title, float cardWidth) {
+      int maxWidth = (int) cardWidth - Screen.dp(TITLE_PADDING);
+      if (TextUtils.isEmpty(title) || maxWidth <= 0) {
+        return null;
+      }
+      return new Text.Builder(title, maxWidth, Paints.robotoStyleProvider(TITLE_TEXT_SIZE), WHITE)
+        .view(view)
+        .allBold()
+        .singleLine()
+        .build();
+    }
+
+    static boolean isInsideClose (RectF card, float x) {
+      int size = Screen.dp(CLOSE_SIZE);
+      return Lang.rtl() ? x > card.right - size : x < card.left + size;
+    }
+
+    static void getCloseBounds (RectF card, float centerY, Rect out) {
+      int size = Screen.dp(CLOSE_SIZE);
+      int left = Lang.rtl() ? (int) card.right - size : (int) card.left;
+      out.set(left, (int) (centerY - size / 2f), left + size, (int) (centerY + size / 2f));
+    }
+
+    void draw (Canvas c, RectF card, float centerY, @Nullable Text title, int contentColor, float alpha, float expandAlpha) {
+      final boolean rtl = Lang.rtl();
+      if (iconColor != contentColor || iconPaint.getColorFilter() == null) {
+        iconColor = contentColor;
+        iconPaint.setColorFilter(Paints.getColorFilter(contentColor));
+      }
+      iconPaint.setAlpha((int) (255f * alpha));
+      float closeX = rtl ? card.right - Screen.dp(CLOSE_ICON_X) : card.left + Screen.dp(CLOSE_ICON_X);
+      Drawables.drawCentered(c, closeIcon, closeX, centerY, iconPaint);
+      if (expandAlpha > 0f) {
+        iconPaint.setAlpha((int) (255f * expandAlpha));
+        float expandX = rtl ? card.left + Screen.dp(EXPAND_ICON_X) : card.right - Screen.dp(EXPAND_ICON_X);
+        Drawables.drawCentered(c, expandIcon, expandX, centerY, iconPaint);
+      }
+      if (title != null) {
+        int x = rtl ?
+          (int) (card.right - Screen.dp(TITLE_X)) - title.getWidth() :
+          (int) (card.left + Screen.dp(TITLE_X));
+        int y = (int) (centerY - title.getHeight() / 2f);
+        title.draw(c, x, y, contentColor == Color.WHITE ? WHITE : BLACK, alpha);
+      }
+    }
+  }
+
   private final BaseActivity activity;
   private final FactorAnimator positionAnimator;
+  private final CardHeader header;
 
   private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint cardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-  private final TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-  private final float titleCenterOffset;
   private final Path cornerPath = new Path();
   private final RectF rect = new RectF();
-  private final Drawable closeIcon, expandIcon, closeRipple;
+  private final Rect closeBounds = new Rect();
+  private final Drawable closeRipple;
 
   private int accountId = -1;
   private ArrayList<Card> cards = new ArrayList<>(MAX_CARDS);
@@ -133,7 +210,7 @@ public final class WebAppTabsView extends View implements
   private float fromBand, toBand;
   private int navigationInset;
   private int appliedExtraInset;
-  private int iconColor;
+  private boolean hasTabs, isContentCovered;
   private boolean cardsHidden;
   private boolean pressedClose, pressedCard;
 
@@ -143,23 +220,20 @@ public final class WebAppTabsView extends View implements
     this.positionAnimator = new FactorAnimator(
       0,
       this,
-      CubicBezierInterpolator.EASE_OUT_QUINT,
+      AnimatorUtils.DECELERATE_INTERPOLATOR,
       ANIMATION_DURATION,
       1f
     );
+    this.header = new CardHeader(this);
     backgroundPaint.setStyle(Paint.Style.FILL);
     cardPaint.setStyle(Paint.Style.FILL);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       // Hardware rendering draws shadows of shapes only since Android 9
       cardPaint.setShadowLayer(Screen.dp(2.33f), 0, Screen.dp(1f), 0x10000000);
     }
-    titlePaint.setTypeface(Fonts.getRobotoMedium());
-    titlePaint.setTextSize(Screen.sp(17f));
-    Paint.FontMetrics metrics = titlePaint.getFontMetrics();
-    titleCenterOffset = -(metrics.ascent + metrics.descent) / 2f;
 
-    // Inverse rounded corner at the left top edge of the strip: the content above it looks clipped
-    // with rounded bottom corners, as the official app clips it
+    // Inverse rounded corner at the left top edge of the strip: the content above it looks
+    // clipped with rounded bottom corners
     float radius = Screen.dp(CORNER_RADIUS);
     cornerPath.moveTo(0, -radius);
     cornerPath.lineTo(0, 0);
@@ -168,11 +242,10 @@ public final class WebAppTabsView extends View implements
     cornerPath.arcTo(rect, 90f, 90f);
     cornerPath.close();
 
-    closeIcon = Drawables.get(getResources(), R.drawable.baseline_close_24);
-    expandIcon = Drawables.get(getResources(), R.drawable.baseline_keyboard_arrow_up_24);
     closeRipple = Theme.transparentRoundSelector(Screen.dp(CLOSE_SIZE / 2f));
     closeRipple.setCallback(this);
 
+    updateAccessibilityActions();
     setVisibility(View.GONE);
     setLayoutParams(FrameLayoutFix.newParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
@@ -182,7 +255,7 @@ public final class WebAppTabsView extends View implements
   }
 
   private int getLayoutHeight () {
-    return Screen.dp(CORNER_RADIUS) + Screen.dp(MAX_STRIP_HEIGHT) + navigationInset;
+    return Screen.dp(CORNER_RADIUS) + Screen.dp(WebAppTabs.STRIP_HEIGHT_STACK) + navigationInset;
   }
 
   // Lifecycle
@@ -193,6 +266,8 @@ public final class WebAppTabsView extends View implements
     WebAppTabs.addListener(this);
     TdlibManager.instance().global().addAccountListener(this);
     ThemeManager.instance().addThemeListener(this);
+    Lang.addLanguageListener(this);
+    getViewTreeObserver().addOnPreDrawListener(this);
     setAccountId(activity.hasTdlib() ? activity.currentTdlib().id() : -1);
   }
 
@@ -202,6 +277,8 @@ public final class WebAppTabsView extends View implements
     WebAppTabs.removeListener(this);
     TdlibManager.instance().global().removeAccountListener(this);
     ThemeManager.instance().removeThemeListener(this);
+    Lang.removeLanguageListener(this);
+    getViewTreeObserver().removeOnPreDrawListener(this);
   }
 
   @Override
@@ -231,6 +308,47 @@ public final class WebAppTabsView extends View implements
     }
   }
 
+  @Override
+  public void onLanguagePackEvent (int event, int arg1) {
+    if (event != Lang.EVENT_DATE_FORMAT_CHANGED) {
+      updateTitles(WebAppTabs.list(accountId));
+      updateAccessibilityActions();
+      invalidate();
+    }
+  }
+
+  @Override
+  public boolean onPreDraw () {
+    setContentCovered(checkContentCovered());
+    return true;
+  }
+
+  /**
+   * The strip belongs to the content, but lies above it in the root view: it must not stay on top
+   * of the drawer and the recorder of voice and video messages, which are inside the content, nor
+   * of the camera, which slides the content away and then removes it.
+   */
+  private boolean checkContentCovered () {
+    DrawerController drawer = activity.getDrawer();
+    View contentView = activity.getContentView();
+    return (drawer != null && drawer.getShowFactor() > 0f) ||
+      activity.getRecordAudioVideoController().isOpen() ||
+      contentView.getParent() == null ||
+      contentView.getTranslationY() != 0f;
+  }
+
+  private void setContentCovered (boolean isCovered) {
+    if (this.isContentCovered != isCovered) {
+      this.isContentCovered = isCovered;
+      resetTouch();
+      updateVisibility();
+    }
+  }
+
+  private void updateVisibility () {
+    setVisibility(hasTabs && !isContentCovered ? View.VISIBLE : View.GONE);
+  }
+
   int getAccountId () {
     return accountId;
   }
@@ -253,7 +371,7 @@ public final class WebAppTabsView extends View implements
     Rect insets,
     Rect insetsWithoutIme
   ) {
-    // The keyboard covers the strip, like in the official app
+    // The keyboard covers the strip
     boolean edgeToEdge = Settings.instance().useEdgeToEdge();
     int navigationInset = edgeToEdge ? insetsWithoutIme.bottom : 0;
     Views.setMargins(
@@ -341,18 +459,7 @@ public final class WebAppTabsView extends View implements
       nextCards.set(j + 1, card);
     }
     cards = nextCards;
-
-    for (int i = 0; i < cards.size(); i++) {
-      Card card = cards.get(i);
-      if (card.toAlpha == 0f) {
-        continue;
-      }
-      CharSequence title = card.tab.getTabTitle();
-      if (card.toPosition == 0f && count > 1) {
-        title = Lang.plural(R.string.vg_BotMoreTabs, count - 1, title);
-      }
-      setCardTitle(card, title);
-    }
+    updateTitles(tabs);
 
     fromVisibility = visibility;
     fromBand = band;
@@ -362,7 +469,8 @@ public final class WebAppTabsView extends View implements
       fromBand = toBand;
     }
     if (count > 0) {
-      setVisibility(View.VISIBLE);
+      hasTabs = true;
+      updateVisibility();
     }
     applyExtraInset();
 
@@ -374,6 +482,21 @@ public final class WebAppTabsView extends View implements
       onPositionsChanged();
       onPositionsSettled();
     }
+  }
+
+  private void updateTitles (List<WebAppTab> tabs) {
+    for (int i = 0; i < cards.size(); i++) {
+      Card card = cards.get(i);
+      if (card.toAlpha != 0f) {
+        setCardTitle(card, card.toPosition == 0f ? getFrontTitle(tabs) : card.tab.getTabTitle().toString());
+      }
+    }
+    setContentDescription(tabs.isEmpty() ? null : getFrontTitle(tabs));
+  }
+
+  private static String getFrontTitle (List<WebAppTab> tabs) {
+    String title = tabs.get(0).getTabTitle().toString();
+    return tabs.size() > 1 ? Lang.plural(R.string.vg_BotMoreTabs, tabs.size() - 1, title) : title;
   }
 
   private @Nullable Card findCard (WebAppTab tab) {
@@ -403,24 +526,18 @@ public final class WebAppTabsView extends View implements
     return .87f * (1f - Math.min(1f, position - 1f));
   }
 
-  private int getTitleWidth () {
-    int width = getWidth() - Screen.dp(CARD_MARGIN) * 2 - Screen.dp(100f);
-    return Math.max(0, width);
+  private float getCardWidth () {
+    return getWidth() - Screen.dp(CARD_MARGIN) * 2;
   }
 
-  private void setCardTitle (Card card, @Nullable CharSequence title) {
-    int width = getTitleWidth();
-    if (width == card.titleWidth && TextUtils.equals(title, card.titleSource)) {
+  private void setCardTitle (Card card, String title) {
+    int width = (int) getCardWidth();
+    if (width == card.titleWidth && title.equals(card.titleSource)) {
       return;
     }
     card.titleSource = title;
     card.titleWidth = width;
-    if (TextUtils.isEmpty(title) || width == 0) {
-      card.title = null;
-    } else {
-      card.title = TextUtils.ellipsize(title, titlePaint, width, TextUtils.TruncateAt.END)
-        .toString();
-    }
+    card.title = header.buildTitle(title, width);
   }
 
   @Override
@@ -429,7 +546,9 @@ public final class WebAppTabsView extends View implements
     if (width != oldWidth) {
       for (int i = 0; i < cards.size(); i++) {
         Card card = cards.get(i);
-        setCardTitle(card, card.titleSource);
+        if (card.titleSource != null) {
+          setCardTitle(card, card.titleSource);
+        }
       }
     }
   }
@@ -460,7 +579,8 @@ public final class WebAppTabsView extends View implements
       }
     }
     if (toVisibility == 0f) {
-      setVisibility(View.GONE);
+      hasTabs = false;
+      updateVisibility();
     }
   }
 
@@ -489,7 +609,7 @@ public final class WebAppTabsView extends View implements
   }
 
   private void getCardBounds (RectF out, float position, float bottom) {
-    float width = getWidth() - Screen.dp(CARD_MARGIN) * 2;
+    float width = getCardWidth();
     float height = Screen.dp(CARD_HEIGHT);
     float scale = MathUtils.fromTo(1f, .95f, Math.abs(position));
     float centerX = getWidth() / 2f;
@@ -504,15 +624,9 @@ public final class WebAppTabsView extends View implements
   }
 
   static int getCardColor (int backgroundColor) {
-    boolean isDark = isDark(backgroundColor);
+    boolean isDark = M3.contrast(backgroundColor) == Color.WHITE;
     int overlay = ColorUtils.alphaColor(isDark ? .08f : .75f, Color.WHITE);
     return ColorUtils.compositeColor(backgroundColor, overlay);
-  }
-
-  static boolean isDark (int color) {
-    float brightness = (.2126f * Color.red(color) + .7152f * Color.green(color)
-      + .0722f * Color.blue(color)) / 255f;
-    return brightness < .721f;
   }
 
   static int getStripColor () {
@@ -547,11 +661,7 @@ public final class WebAppTabsView extends View implements
     }
 
     final int cardColor = getCardColor(backgroundColor);
-    final int contentColor = isDark(cardColor) ? Color.WHITE : Color.BLACK;
-    if (iconColor != contentColor || iconPaint.getColorFilter() == null) {
-      iconColor = contentColor;
-      iconPaint.setColorFilter(Paints.getColorFilter(contentColor));
-    }
+    final int contentColor = M3.contrast(cardColor);
     final float radius = Screen.dp(CARD_RADIUS);
     for (int i = 0; i < cards.size(); i++) {
       Card card = cards.get(i);
@@ -570,27 +680,11 @@ public final class WebAppTabsView extends View implements
       }
       float centerY = rect.centerY();
       if (card.toPosition == 0f && card.toAlpha == 1f) {
-        int closeSize = Screen.dp(CLOSE_SIZE);
-        closeRipple.setBounds(
-          (int) rect.left,
-          (int) (centerY - closeSize / 2f),
-          (int) rect.left + closeSize,
-          (int) (centerY + closeSize / 2f)
-        );
+        CardHeader.getCloseBounds(rect, centerY, closeBounds);
+        closeRipple.setBounds(closeBounds);
         closeRipple.draw(c);
       }
-      iconPaint.setAlpha((int) (255f * contentAlpha));
-      Drawables.drawCentered(c, closeIcon, rect.left + Screen.dp(24f), centerY, iconPaint);
-      Drawables.drawCentered(c, expandIcon, rect.right - Screen.dp(28f), centerY, iconPaint);
-      if (card.title != null) {
-        titlePaint.setColor(ColorUtils.alphaColor(contentAlpha, contentColor));
-        c.drawText(
-          card.title,
-          rect.left + Screen.dp(60f),
-          centerY + titleCenterOffset,
-          titlePaint
-        );
-      }
+      header.draw(c, rect, centerY, card.title, contentColor, contentAlpha, contentAlpha);
     }
   }
 
@@ -645,7 +739,7 @@ public final class WebAppTabsView extends View implements
         if (!findFrontBounds() || !rect.contains(x, y)) {
           return false;
         }
-        if (x < rect.left + Screen.dp(CLOSE_SIZE)) {
+        if (CardHeader.isInsideClose(rect, x)) {
           setClosePressed(true, x, y);
         } else {
           pressedCard = true;
@@ -663,10 +757,7 @@ public final class WebAppTabsView extends View implements
         boolean click = pressedCard;
         resetTouch();
         if (close) {
-          List<WebAppTab> tabs = WebAppTabs.list(accountId);
-          if (!tabs.isEmpty()) {
-            tabs.get(0).closeFromTab(false);
-          }
+          closeFrontTab();
         } else if (click) {
           performClick();
         }
@@ -680,15 +771,41 @@ public final class WebAppTabsView extends View implements
     return pressedClose || pressedCard;
   }
 
+  private boolean closeFrontTab () {
+    List<WebAppTab> tabs = WebAppTabs.list(accountId);
+    if (tabs.isEmpty()) {
+      return false;
+    }
+    tabs.get(0).closeFromTab(false);
+    return true;
+  }
+
   @Override
   public boolean performClick () {
     super.performClick();
     List<WebAppTab> tabs = WebAppTabs.list(accountId);
     if (tabs.size() == 1) {
       tabs.get(0).restoreFromTab();
-    } else if (tabs.size() > 1) {
+    } else if (tabs.size() > 1 && WebApp.isSupported()) {
       WebAppTabsOverlay.show(activity, this);
     }
     return true;
+  }
+
+  // Accessibility: the strip is one node, its click opens the front tab and dismiss closes it
+
+  private void updateAccessibilityActions () {
+    ViewCompat.replaceAccessibilityAction(
+      this,
+      AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
+      Lang.getString(R.string.Open),
+      (view, arguments) -> performClick()
+    );
+    ViewCompat.replaceAccessibilityAction(
+      this,
+      AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_DISMISS,
+      Lang.getString(R.string.vg_Close),
+      (view, arguments) -> closeFrontTab()
+    );
   }
 }

@@ -16,169 +16,70 @@
  */
 package org.thunderdog.challegram.webapp;
 
-import android.content.Context;
 import android.os.Build;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
-import android.os.VibratorManager;
+import android.view.View;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
-import org.thunderdog.challegram.Log;
-import org.thunderdog.challegram.unsorted.AppContext;
+import org.thunderdog.challegram.tool.UI;
 
-/** {@code web_app_trigger_haptic_feedback}: the waveforms of the official client. */
+/**
+ * {@code web_app_trigger_haptic_feedback} through the haptics of the app, so the system haptic
+ * feedback setting and the Custom Vibrations setting apply to mini apps too.
+ */
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 public final class WebAppHaptics {
   private WebAppHaptics () { }
 
-  private static final int
-    EFFECT_NONE = -1,
-    EFFECT_IMPACT_LIGHT = 0,
-    EFFECT_IMPACT_MEDIUM = 1,
-    EFFECT_IMPACT_HEAVY = 2,
-    EFFECT_IMPACT_RIGID = 3,
-    EFFECT_IMPACT_SOFT = 4,
-    EFFECT_NOTIFICATION_ERROR = 5,
-    EFFECT_NOTIFICATION_SUCCESS = 6,
-    EFFECT_NOTIFICATION_WARNING = 7,
-    EFFECT_SELECTION_CHANGE = 8;
-
-  private static final long[][] TIMINGS = {
-    {7},
-    {7},
-    {7},
-    {3},
-    {10},
-    {14, 48, 14, 48, 14, 48, 20},
-    {14, 65, 14},
-    {14, 64, 14},
-    {1}
-  };
-
-  private static final int[][] AMPLITUDES = {
-    {65},
-    {145},
-    {255},
-    {225},
-    {175},
-    {200, 0, 200, 0, 255, 0, 145},
-    {175, 0, 255},
-    {225, 0, 175},
-    {65}
-  };
-
-  // Patterns without amplitudes start with an off period: the leading 0 makes the first value of
-  // the official fallback a vibration, as its waveform with amplitudes is (the official one only
-  // waits on single values).
-  private static final long[][] FALLBACK_PATTERNS = {
-    {0, 60},
-    {0, 70},
-    {0, 80},
-    {0, 50},
-    {0, 55},
-    {0, 40, 60, 40, 60, 65, 60, 40},
-    {0, 50, 60, 65},
-    {0, 65, 60, 40},
-    {0, 30}
-  };
-
   /**
+   * @param view a view of the mini app attached to the window
    * @param type {@code impact}, {@code notification} or {@code selection_change}
    * @param impactStyle {@code light}, {@code medium}, {@code heavy}, {@code rigid} or {@code soft}
    * @param notificationType {@code error}, {@code success} or {@code warning}
    */
   public static void perform (
+    View view,
     String type,
     @Nullable String impactStyle,
     @Nullable String notificationType
   ) {
-    int effect = findEffect(type, impactStyle, notificationType);
-    if (effect == EFFECT_NONE) {
-      return;
-    }
-    Vibrator vibrator = getVibrator();
-    if (vibrator == null || !vibrator.hasVibrator()) {
-      return;
-    }
-    try {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        if (vibrator.hasAmplitudeControl()) {
-          vibrator.vibrate(VibrationEffect.createWaveform(TIMINGS[effect], AMPLITUDES[effect], -1));
-        } else {
-          vibrator.vibrate(VibrationEffect.createWaveform(FALLBACK_PATTERNS[effect], -1));
-        }
-      } else {
-        vibrateLegacy(vibrator, FALLBACK_PATTERNS[effect]);
-      }
-    } catch (Throwable t) {
-      Log.w("Cannot play haptic feedback", t);
-    }
-  }
-
-  private static int findEffect (
-    @Nullable String type,
-    @Nullable String impactStyle,
-    @Nullable String notificationType
-  ) {
-    if (type == null) {
-      return EFFECT_NONE;
-    }
     switch (type) {
       case "impact": {
         if (impactStyle == null) {
-          return EFFECT_NONE;
+          return;
         }
         switch (impactStyle) {
           case "light":
-            return EFFECT_IMPACT_LIGHT;
-          case "medium":
-            return EFFECT_IMPACT_MEDIUM;
-          case "heavy":
-            return EFFECT_IMPACT_HEAVY;
-          case "rigid":
-            return EFFECT_IMPACT_RIGID;
           case "soft":
-            return EFFECT_IMPACT_SOFT;
+            UI.hapticVibrate(view, false);
+            break;
+          case "medium":
+          case "heavy":
+          case "rigid":
+            UI.hapticVibrate(view, true);
+            break;
         }
-        return EFFECT_NONE;
+        break;
       }
       case "notification": {
         if (notificationType == null) {
-          return EFFECT_NONE;
+          return;
         }
         switch (notificationType) {
           case "error":
-            return EFFECT_NOTIFICATION_ERROR;
+            UI.forceVibrateError(view);
+            break;
           case "success":
-            return EFFECT_NOTIFICATION_SUCCESS;
           case "warning":
-            return EFFECT_NOTIFICATION_WARNING;
+            UI.hapticVibrate(view, true);
+            break;
         }
-        return EFFECT_NONE;
+        break;
       }
       case "selection_change":
-        return EFFECT_SELECTION_CHANGE;
+        UI.hapticVibrate(view, false);
+        break;
     }
-    return EFFECT_NONE;
-  }
-
-  private static @Nullable Vibrator getVibrator () {
-    Context context = AppContext.get();
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      VibratorManager manager = context.getSystemService(VibratorManager.class);
-      return manager != null ? manager.getDefaultVibrator() : null;
-    } else {
-      return getVibratorLegacy(context);
-    }
-  }
-
-  @SuppressWarnings("deprecation")
-  private static @Nullable Vibrator getVibratorLegacy (Context context) {
-    return (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
-  }
-
-  @SuppressWarnings("deprecation")
-  private static void vibrateLegacy (Vibrator vibrator, long[] pattern) {
-    vibrator.vibrate(pattern, -1);
   }
 }

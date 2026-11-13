@@ -1,5 +1,6 @@
 /*
  * This file is a part of Vibegram X, a fork of Telegram X
+ * Based on BotWebViewContainer from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,15 +17,24 @@
  */
 package org.thunderdog.challegram.webapp;
 
+import android.annotation.SuppressLint;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 
 import androidx.annotation.Keep;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.annotation.UiThread;
+import androidx.webkit.JavaScriptReplyProxy;
+import androidx.webkit.WebMessageCompat;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
 import org.drinkless.tdlib.TdApi;
 import org.json.JSONArray;
@@ -42,39 +52,59 @@ import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.ShareController;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Locale;
+import java.util.Set;
 
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.RunnableBool;
 import tgx.td.ChatId;
+import tgx.td.Td;
 
 /**
  * The {@code TelegramWebviewProxy} of a mini app: receives {@code web_app_*} events of the page and
- * sends events back with {@code window.Telegram.WebView.receiveEvent}. Event names and payloads
- * follow the official clients (core.telegram.org/api/web-events).
+ * sends events back with {@code window.Telegram.WebView.receiveEvent}. Event names and payloads:
+ * core.telegram.org/api/web-events.
  */
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 final class WebAppBridge implements WebAppSensors.Listener {
   static final String INTERFACE_NAME = "TelegramWebviewProxy";
+  private static final String LISTENER_NAME = "TelegramWebviewProxyChannel";
+  /**
+   * Defines {@code TelegramWebviewProxy.postEvent} on top of the message listener, so the page
+   * sees the same API as with {@code addJavascriptInterface}.
+   */
+  private static final String PROXY_SCRIPT =
+    "(function(){var c=window." + LISTENER_NAME + ";if(!c)return;" +
+    "window." + INTERFACE_NAME + "={postEvent:function(t,d){" +
+    "c.postMessage(JSON.stringify([String(t),d===undefined||d===null?null:String(d)]));}};})();";
 
   private static final int MAX_MESSAGE_LENGTH = 1024 * 1024, MAX_EVENT_NAME_LENGTH = 128;
   private static final long USER_GESTURE_TIMEOUT_MS = 10_000L;
-  private static final long POPUP_REOPEN_WINDOW_MS = 150L, POPUP_COOLDOWN_MS = 3_000L;
-  private static final int POPUP_MAX_RAPID_OPENS = 3;
+  private static final long DIALOG_REOPEN_WINDOW_MS = 150L, DIALOG_COOLDOWN_MS = 3_000L;
+  private static final int DIALOG_MAX_RAPID_OPENS = 3;
+  private static final long HAPTIC_MIN_INTERVAL_MS = 50L;
+  private static final int MAX_POPUP_MESSAGE_LENGTH = 256, MAX_POPUP_TEXT_LENGTH = 64;
+  private static final long MAX_EMOJI_STATUS_DURATION = 366L * 24 * 60 * 60;
 
   private final WebAppController controller;
   private final Tdlib tdlib;
   private final long botUserId;
 
-  /**
-   * Incremented on each navigation of the page, so replies to requests of a previous page are
-   * dropped.
-   */
-  private int documentGeneration;
-  private long lastUserGestureMs;
+  private @Nullable String trustedOrigin;
+  private boolean isAttached, usesMessageListener;
 
-  private boolean isPopupShown, isPermissionDialogShown, isQrScannerShown, isInvoiceOpen,
-    isDataSent;
-  private long lastPopupClosedMs, popupCooldownUntilMs;
-  private int rapidPopupCount;
+  /**
+   * Incremented on each navigation of the page. Events are stamped with it when they arrive, so
+   * events and replies of a previous page are dropped.
+   */
+  private volatile int documentGeneration;
+  private long lastUserGestureMs, lastHapticMs;
+
+  private boolean isDialogShown, isQrScannerShown, isInvoiceOpen, isDataSent,
+    isBiometryRequestPending, isLocationRequestPending;
+  private long lastDialogClosedMs, dialogCooldownUntilMs;
+  private int rapidDialogCount;
 
   private @Nullable WebAppStorage deviceStorage, secureStorage;
   private @Nullable WebAppBiometry biometry;
@@ -89,12 +119,59 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   // Lifecycle
 
+  /**
+   * Installs the bridge before the launch URL is loaded. With the message listener, events of
+   * other origins (when {@code trustedOrigin} is set) and of child frames never reach the app.
+   */
+  // addDocumentStartJavaScript is @RestrictTo only in androidx.webkit 1.4.0 of the legacy flavor,
+  // the newer androidx.webkit of the other flavors has it as a public API.
+  @SuppressLint("RestrictedApi")
+  void attachTo (WebView webView, @Nullable String trustedOrigin) {
+    if (isAttached) {
+      return;
+    }
+    isAttached = true;
+    this.trustedOrigin = trustedOrigin;
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
+      WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+      Set<String> rules = Collections.singleton(trustedOrigin != null ? trustedOrigin : "*");
+      try {
+        WebViewCompat.addWebMessageListener(webView, LISTENER_NAME, rules, this::onWebMessage);
+        WebViewCompat.addDocumentStartJavaScript(webView, PROXY_SCRIPT, rules);
+        usesMessageListener = true;
+        return;
+      } catch (IllegalArgumentException e) {
+        Log.e("Mini app origin %s is not a valid origin rule", e, trustedOrigin);
+      }
+    }
+    webView.addJavascriptInterface(this, INTERFACE_NAME);
+  }
+
+  // The document start script stays: its reference type differs between androidx.webkit versions
+  // of the flavors, and without the listener it defines nothing.
+  void detachFrom (WebView webView) {
+    if (!isAttached) {
+      return;
+    }
+    isAttached = false;
+    if (usesMessageListener) {
+      WebViewCompat.removeWebMessageListener(webView, LISTENER_NAME);
+      usesMessageListener = false;
+    } else {
+      webView.removeJavascriptInterface(INTERFACE_NAME);
+    }
+  }
+
   void onPageStarted () {
     documentGeneration++;
     lastUserGestureMs = 0;
     if (sensors != null) {
       sensors.release();
       sensors = null;
+    }
+    if (location != null) {
+      location.release();
+      location = null;
     }
   }
 
@@ -123,7 +200,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
     }
   }
 
-  private boolean consumeUserGesture () {
+  boolean consumeUserGesture () {
     if (SystemClock.uptimeMillis() - lastUserGestureMs > USER_GESTURE_TIMEOUT_MS) {
       return false;
     }
@@ -162,23 +239,193 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   // Incoming events
 
-  // Only the page calls it, so R8 would remove it without @Keep.
+  // Without the message listener only the page calls it, so R8 would remove it without @Keep.
   @Keep
   @JavascriptInterface
   public void postEvent (final String eventType, final String eventData) {
+    onEvent(documentGeneration, eventType, eventData);
+  }
+
+  @UiThread
+  private void onWebMessage (
+    @NonNull WebView view,
+    @NonNull WebMessageCompat message,
+    @NonNull Uri sourceOrigin,
+    boolean isMainFrame,
+    @NonNull JavaScriptReplyProxy replyProxy
+  ) {
+    if (!isMainFrame || (trustedOrigin != null && !trustedOrigin.equals(sourceOrigin.toString()))) {
+      return;
+    }
+    final int generation = documentGeneration;
+    String data = message.getData();
+    if (data == null) {
+      return;
+    }
+    try {
+      JSONArray event = new JSONArray(data);
+      onEvent(generation, event.getString(0), event.isNull(1) ? null : event.getString(1));
+    } catch (JSONException e) {
+      Log.w("Invalid mini app message", e);
+    }
+  }
+
+  private void onEvent (int generation, String eventType, @Nullable String eventData) {
     if (StringUtils.isEmpty(eventType) || eventType.length() > MAX_EVENT_NAME_LENGTH ||
       (eventData != null && eventData.length() > MAX_MESSAGE_LENGTH)) {
       return;
     }
     UI.post(() -> {
-      if (!controller.isDestroyed() && controller.isTrustedDocument()) {
-        try {
-          handleEvent(eventType, eventData);
-        } catch (Throwable t) {
-          Log.e("Cannot handle mini app event %s", t, eventType);
-        }
+      if (controller.isDestroyed() || generation != documentGeneration ||
+        !controller.isTrustedDocument()) {
+        return;
+      }
+      if (showsUi(eventType) && !isInForeground()) {
+        rejectEvent(generation, eventType, eventData);
+        return;
+      }
+      try {
+        handleEvent(generation, eventType, eventData);
+      } catch (JSONException | IllegalArgumentException e) {
+        Log.w("Invalid mini app event %s", e, eventType);
+        rejectEvent(generation, eventType, eventData);
       }
     });
+  }
+
+  private boolean isInForeground () {
+    return !controller.isMinimized() &&
+      controller.context().getActivityState() == UI.State.RESUMED;
+  }
+
+  /** Events that show something over the app, open screens or vibrate. */
+  private static boolean showsUi (String eventType) {
+    switch (eventType) {
+      case "web_app_open_link":
+      case "web_app_open_tg_link":
+      case "web_app_open_invoice":
+      case "web_app_open_popup":
+      case "web_app_open_scan_qr_popup":
+      case "web_app_read_text_from_clipboard":
+      case "web_app_trigger_haptic_feedback":
+      case "web_app_switch_inline_query":
+      case "web_app_request_write_access":
+      case "web_app_request_phone":
+      case "web_app_biometry_request_access":
+      case "web_app_biometry_request_auth":
+      case "web_app_biometry_update_token":
+      case "web_app_biometry_open_settings":
+      case "web_app_share_to_story":
+      case "web_app_add_to_home_screen":
+      case "web_app_set_emoji_status":
+      case "web_app_request_emoji_status_access":
+      case "web_app_request_location":
+      case "web_app_open_location_settings":
+      case "web_app_request_file_download":
+      case "web_app_send_prepared_message":
+      case "web_app_request_chat":
+      case "web_app_secure_storage_restore_key":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Answers a request that won't be handled, so the page doesn't wait forever: the SDK keeps
+   * popups, invoices and the QR scanner marked as open until their closing event.
+   */
+  private void rejectEvent (int generation, String eventType, @Nullable String eventData) {
+    JSONObject data;
+    try {
+      data = parse(eventData);
+    } catch (JSONException e) {
+      data = new JSONObject();
+    }
+    final String requestId = data.optString("req_id", "");
+    switch (eventType) {
+      case "web_app_open_popup":
+        reply(generation, "popup_closed", new JSONObject());
+        break;
+      case "web_app_open_scan_qr_popup":
+        reply(generation, "scan_qr_popup_closed", null);
+        break;
+      case "web_app_open_invoice":
+        replyInvoice(generation, data.optString("slug", ""), "cancelled");
+        break;
+      case "web_app_read_text_from_clipboard":
+        replyRequestId(generation, "clipboard_text_received", requestId);
+        break;
+      case "web_app_invoke_custom_method": {
+        JSONObject payload = new JSONObject();
+        put(payload, "req_id", requestId);
+        put(payload, "error", "UNKNOWN_ERROR");
+        reply(generation, "custom_method_invoked", payload);
+        break;
+      }
+      case "web_app_request_write_access":
+        replyStatus(generation, "write_access_requested", "cancelled");
+        break;
+      case "web_app_request_phone":
+        replyStatus(generation, "phone_requested", "cancelled");
+        break;
+      case "web_app_biometry_request_access":
+        reply(generation, "biometry_info_received", biometry().getInfo());
+        break;
+      case "web_app_biometry_request_auth":
+        replyStatus(generation, "biometry_auth_requested", "failed");
+        break;
+      case "web_app_biometry_update_token":
+        replyStatus(generation, "biometry_token_updated", "failed");
+        break;
+      case "web_app_add_to_home_screen":
+        replyError(generation, "home_screen_failed", "UNSUPPORTED");
+        break;
+      case "web_app_request_fullscreen":
+        replyError(generation, "fullscreen_failed", "UNSUPPORTED");
+        break;
+      case "web_app_set_emoji_status":
+        replyError(generation, "emoji_status_failed", "USER_DECLINED");
+        break;
+      case "web_app_request_emoji_status_access":
+        replyStatus(generation, "emoji_status_access_requested", "cancelled");
+        break;
+      case "web_app_request_location":
+        replyLocationUnavailable(generation);
+        break;
+      case "web_app_request_file_download":
+        replyStatus(generation, "file_download_requested", "cancelled");
+        break;
+      case "web_app_send_prepared_message":
+        replyError(generation, "prepared_message_failed", "USER_DECLINED");
+        break;
+      case "web_app_request_chat":
+        replyRequestId(generation, "requested_chat_failed", requestId);
+        break;
+      case "web_app_start_accelerometer":
+        replyError(generation, "accelerometer_failed", "UNSUPPORTED");
+        break;
+      case "web_app_start_gyroscope":
+        replyError(generation, "gyroscope_failed", "UNSUPPORTED");
+        break;
+      case "web_app_start_device_orientation":
+        replyError(generation, "device_orientation_failed", "UNSUPPORTED");
+        break;
+      case "web_app_device_storage_save_key":
+      case "web_app_device_storage_get_key":
+      case "web_app_device_storage_clear":
+      case "web_app_secure_storage_save_key":
+      case "web_app_secure_storage_get_key":
+      case "web_app_secure_storage_clear":
+      case "web_app_secure_storage_restore_key": {
+        JSONObject payload = new JSONObject();
+        put(payload, "req_id", requestId);
+        put(payload, "error", WebAppStorage.ERROR_UNKNOWN);
+        reply(generation, eventType.startsWith("web_app_secure_storage_") ?
+          "secure_storage_failed" : "device_storage_failed", payload);
+        break;
+      }
+    }
   }
 
   private static JSONObject parse (@Nullable String data) throws JSONException {
@@ -186,8 +433,8 @@ final class WebAppBridge implements WebAppSensors.Listener {
   }
 
   @UiThread
-  private void handleEvent (String eventType, @Nullable String eventData) throws JSONException {
-    final int generation = documentGeneration;
+  private void handleEvent (int generation, String eventType, @Nullable String eventData)
+    throws JSONException {
     switch (eventType) {
       case "web_app_ready":
         controller.onPageReady();
@@ -196,7 +443,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
         controller.expand();
         break;
       case "web_app_close":
-        controller.closeByApp(parse(eventData).optBoolean("return_back", false));
+        controller.closeNow();
         break;
       case "web_app_setup_main_button":
       case "web_app_setup_secondary_button":
@@ -233,9 +480,14 @@ final class WebAppBridge implements WebAppSensors.Listener {
       }
       case "web_app_set_bottom_bar_color": {
         String color = parse(eventData).optString("color", null);
-        controller.setBottomBarColor(
-          StringUtils.isEmpty(color) ? 0 : parseColor(color) | 0xff000000
-        );
+        if (StringUtils.isEmpty(color)) {
+          controller.setBottomBarColor(0);
+        } else {
+          int value = parseColor(color);
+          if (value != 0) {
+            controller.setBottomBarColor(value | 0xff000000);
+          }
+        }
         break;
       }
       case "web_app_request_theme":
@@ -245,10 +497,10 @@ final class WebAppBridge implements WebAppSensors.Listener {
         controller.sendViewport(true);
         break;
       case "web_app_request_safe_area":
-        controller.sendSafeArea(true);
+        controller.sendSafeArea();
         break;
       case "web_app_request_content_safe_area":
-        controller.sendContentSafeArea(true);
+        controller.sendContentSafeArea();
         break;
       case "web_app_setup_closing_behavior":
         controller.setNeedClosingConfirmation(
@@ -260,12 +512,6 @@ final class WebAppBridge implements WebAppSensors.Listener {
         if (data.has("allow_vertical_swipe")) {
           controller.setAllowSwipes(data.optBoolean("allow_vertical_swipe", true));
         }
-        break;
-      }
-      case "web_app_allow_scroll": {
-        JSONArray data = StringUtils.isEmpty(eventData) ?
-          new JSONArray() : new JSONArray(eventData);
-        controller.setPageScrollAllowed(data.optBoolean(0, true), data.optBoolean(1, true));
         break;
       }
       case "web_app_open_link":
@@ -291,8 +537,12 @@ final class WebAppBridge implements WebAppSensors.Listener {
         break;
       case "web_app_trigger_haptic_feedback": {
         JSONObject data = parse(eventData);
-        WebAppHaptics.perform(data.optString("type", ""), data.optString("impact_style", null),
-          data.optString("notification_type", null));
+        long now = SystemClock.uptimeMillis();
+        if (now - lastHapticMs >= HAPTIC_MIN_INTERVAL_MS) {
+          lastHapticMs = now;
+          WebAppHaptics.perform(controller.getValue(), data.optString("type", ""),
+            data.optString("impact_style", null), data.optString("notification_type", null));
+        }
         break;
       }
       case "web_app_data_send":
@@ -313,14 +563,28 @@ final class WebAppBridge implements WebAppSensors.Listener {
       case "web_app_biometry_get_info":
         send("biometry_info_received", biometry().getInfo());
         break;
-      case "web_app_biometry_request_access":
-        biometry().requestAccess(controller, controller.getBotName(), optReason(eventData), () ->
-          reply(generation, "biometry_info_received", biometry().getInfo())
-        );
+      case "web_app_biometry_request_access": {
+        String reason = optReason(eventData);
+        if (isBiometryRequestPending) {
+          rejectEvent(generation, eventType, eventData);
+          break;
+        }
+        isBiometryRequestPending = true;
+        biometry().requestAccess(controller, controller.getBotName(), reason, () -> {
+          isBiometryRequestPending = false;
+          reply(generation, "biometry_info_received", biometry().getInfo());
+        });
         break;
-      case "web_app_biometry_request_auth":
-        biometry().requestAuth(controller, controller.getBotName(), optReason(eventData),
-          (status, token) -> {
+      }
+      case "web_app_biometry_request_auth": {
+        String reason = optReason(eventData);
+        if (isBiometryRequestPending) {
+          rejectEvent(generation, eventType, eventData);
+          break;
+        }
+        isBiometryRequestPending = true;
+        biometry().requestAuth(controller, controller.getBotName(), reason, (status, token) -> {
+          isBiometryRequestPending = false;
           JSONObject payload = new JSONObject();
           put(payload, "status", status);
           if (token != null) {
@@ -329,12 +593,19 @@ final class WebAppBridge implements WebAppSensors.Listener {
           reply(generation, "biometry_auth_requested", payload);
         });
         break;
+      }
       case "web_app_biometry_update_token": {
         JSONObject data = parse(eventData);
         String token = data.getString("token");
+        if (isBiometryRequestPending) {
+          rejectEvent(generation, eventType, eventData);
+          break;
+        }
+        isBiometryRequestPending = true;
         biometry().updateToken(controller, controller.getBotName(), token,
           data.optString("reason", null),
           (status, ignored) -> {
+            isBiometryRequestPending = false;
             JSONObject payload = new JSONObject();
             put(payload, "status", status);
             reply(generation, "biometry_token_updated", payload);
@@ -400,11 +671,11 @@ final class WebAppBridge implements WebAppSensors.Listener {
             if (added) {
               reply(generation, "home_screen_added", null);
             } else {
-              JSONObject payload = new JSONObject();
-              put(payload, "error", "UNSUPPORTED");
-              reply(generation, "home_screen_failed", payload);
+              replyError(generation, "home_screen_failed", "UNSUPPORTED");
             }
           });
+        } else {
+          rejectEvent(generation, eventType, eventData);
         }
         break;
       case "web_app_check_home_screen": {
@@ -416,18 +687,28 @@ final class WebAppBridge implements WebAppSensors.Listener {
       case "web_app_set_emoji_status":
         if (consumeUserGesture()) {
           setEmojiStatus(generation, parse(eventData));
+        } else {
+          rejectEvent(generation, eventType, eventData);
         }
         break;
       case "web_app_request_emoji_status_access":
         if (consumeUserGesture()) {
           requestEmojiStatusAccess(generation);
+        } else {
+          rejectEvent(generation, eventType, eventData);
         }
         break;
       case "web_app_check_location":
         send("location_checked", location().check());
         break;
       case "web_app_request_location":
+        if (isLocationRequestPending) {
+          replyLocationUnavailable(generation);
+          break;
+        }
+        isLocationRequestPending = true;
         location().request(controller, controller.getBotName(), payload -> {
+          isLocationRequestPending = false;
           reply(generation, "location_requested", payload);
           reply(generation, "location_checked", location().check());
         });
@@ -443,6 +724,8 @@ final class WebAppBridge implements WebAppSensors.Listener {
       case "web_app_send_prepared_message":
         if (consumeUserGesture()) {
           sendPreparedMessage(generation, parse(eventData).optString("id", ""));
+        } else {
+          rejectEvent(generation, eventType, eventData);
         }
         break;
       case "web_app_request_chat":
@@ -494,13 +777,30 @@ final class WebAppBridge implements WebAppSensors.Listener {
   // Theme
 
   void sendTheme () {
-    try {
-      JSONObject payload = new JSONObject();
-      payload.put("theme_params", new JSONObject(controller.buildThemeJson()));
-      send("theme_changed", payload);
-    } catch (JSONException e) {
-      send("theme_changed", new JSONObject());
-    }
+    TdApi.ThemeParameters theme = WebApp.buildThemeParameters();
+    JSONObject params = new JSONObject();
+    put(params, "bg_color", hex(theme.backgroundColor));
+    put(params, "secondary_bg_color", hex(theme.secondaryBackgroundColor));
+    put(params, "header_bg_color", hex(theme.headerBackgroundColor));
+    put(params, "bottom_bar_bg_color", hex(theme.bottomBarBackgroundColor));
+    put(params, "section_bg_color", hex(theme.sectionBackgroundColor));
+    put(params, "section_separator_color", hex(theme.sectionSeparatorColor));
+    put(params, "text_color", hex(theme.textColor));
+    put(params, "accent_text_color", hex(theme.accentTextColor));
+    put(params, "section_header_text_color", hex(theme.sectionHeaderTextColor));
+    put(params, "subtitle_text_color", hex(theme.subtitleTextColor));
+    put(params, "destructive_text_color", hex(theme.destructiveTextColor));
+    put(params, "hint_color", hex(theme.hintColor));
+    put(params, "link_color", hex(theme.linkColor));
+    put(params, "button_color", hex(theme.buttonColor));
+    put(params, "button_text_color", hex(theme.buttonTextColor));
+    JSONObject payload = new JSONObject();
+    put(payload, "theme_params", params);
+    send("theme_changed", payload);
+  }
+
+  private static String hex (int color) {
+    return String.format(Locale.US, "#%06X", color & 0xffffff);
   }
 
   // Buttons
@@ -573,14 +873,25 @@ final class WebAppBridge implements WebAppSensors.Listener {
       return;
     }
     isInvoiceOpen = true;
-    final boolean[] paid = new boolean[1];
-    StarsPaymentSheet.open(controller, tdlib, new TdApi.InputInvoiceName(slug),
-      () -> paid[0] = true,
-      () -> {
+    StarsPaymentSheet.open(controller, tdlib, new TdApi.InputInvoiceName(slug), null, null,
+      result -> {
         isInvoiceOpen = false;
-        replyInvoice(generation, slug, paid[0] ? "paid" : "cancelled");
+        replyInvoice(generation, slug, invoiceStatus(result));
       }
     );
+  }
+
+  private static String invoiceStatus (int result) {
+    switch (result) {
+      case StarsPaymentSheet.RESULT_PAID:
+        return "paid";
+      case StarsPaymentSheet.RESULT_PENDING:
+        return "pending";
+      case StarsPaymentSheet.RESULT_FAILED:
+        return "failed";
+      default:
+        return "cancelled";
+    }
   }
 
   private void replyInvoice (int generation, String slug, String status) {
@@ -590,24 +901,76 @@ final class WebAppBridge implements WebAppSensors.Listener {
     reply(generation, "invoice_closed", payload);
   }
 
-  // Popups
+  // Dialogs
+
+  /**
+   * Whether the page may show one more dialog now. A page reopening dialogs as soon as they close
+   * gets a cooldown, so it can't lock the user in a loop of dialogs.
+   */
+  private boolean canShowDialog () {
+    final long now = SystemClock.uptimeMillis();
+    if (isDialogShown || now < dialogCooldownUntilMs || !isInForeground()) {
+      return false;
+    }
+    if (now - lastDialogClosedMs < DIALOG_REOPEN_WINDOW_MS) {
+      if (++rapidDialogCount >= DIALOG_MAX_RAPID_OPENS) {
+        rapidDialogCount = 0;
+        dialogCooldownUntilMs = now + DIALOG_COOLDOWN_MS;
+        return false;
+      }
+    } else {
+      rapidDialogCount = 0;
+    }
+    return true;
+  }
+
+  /** Shows a dialog of the page, {@code onClosed} runs when it's closed. */
+  private boolean showDialog (AlertPopup.Builder b, Runnable onClosed) {
+    if (!canShowDialog()) {
+      return false;
+    }
+    b.setOnDismissListener(dialog -> {
+      isDialogShown = false;
+      lastDialogClosedMs = SystemClock.uptimeMillis();
+      onClosed.run();
+    });
+    isDialogShown = controller.showAlert(b) != null;
+    return isDialogShown;
+  }
+
+  private void confirm (
+    CharSequence title,
+    CharSequence message,
+    String okText,
+    String cancelText,
+    RunnableBool onResult
+  ) {
+    final boolean[] confirmed = new boolean[1];
+    AlertPopup.Builder b = new AlertPopup.Builder(controller.context())
+      .setTitle(title)
+      .setMessage(message)
+      .setPositiveButton(okText, (dialog, which) -> confirmed[0] = true)
+      .setNegativeButton(cancelText, null);
+    if (!showDialog(b, () -> onResult.runWithBool(confirmed[0]))) {
+      onResult.runWithBool(false);
+    }
+  }
 
   private void openPopup (int generation, JSONObject data) throws JSONException {
-    final long now = SystemClock.uptimeMillis();
-    if (isPopupShown || now < popupCooldownUntilMs) {
-      return;
-    }
+    String title = data.optString("title", "");
     String message = data.getString("message");
     JSONArray buttons = data.getJSONArray("buttons");
-    if (buttons.length() == 0 || buttons.length() > 3 || message.length() > 256) {
-      return;
+    if (title.length() > MAX_POPUP_TEXT_LENGTH || message.isEmpty() ||
+      message.length() > MAX_POPUP_MESSAGE_LENGTH || buttons.length() == 0 ||
+      buttons.length() > 3) {
+      throw new IllegalArgumentException("Invalid popup");
     }
     String[] ids = new String[buttons.length()];
     String[] texts = new String[buttons.length()];
-    boolean[] destructive = new boolean[buttons.length()];
+    int destructiveIndex = -1;
     for (int i = 0; i < buttons.length(); i++) {
       JSONObject button = buttons.getJSONObject(i);
-      ids[i] = button.getString("id");
+      ids[i] = button.optString("id", "");
       String type = button.optString("type", "default");
       switch (type) {
         case "ok":
@@ -620,30 +983,36 @@ final class WebAppBridge implements WebAppSensors.Listener {
           texts[i] = Lang.getString(R.string.Cancel);
           break;
         case "destructive":
-          destructive[i] = true;
+        case "default":
           texts[i] = button.getString("text");
+          if (texts[i].isEmpty()) {
+            throw new IllegalArgumentException("Empty popup button");
+          }
+          if (type.equals("destructive") && destructiveIndex == -1) {
+            destructiveIndex = i;
+          }
           break;
         default:
-          texts[i] = button.getString("text");
-          break;
+          throw new IllegalArgumentException("Unknown popup button type");
+      }
+      if (ids[i].length() > MAX_POPUP_TEXT_LENGTH || texts[i].length() > MAX_POPUP_TEXT_LENGTH) {
+        throw new IllegalArgumentException("Popup button is too long");
       }
     }
-    if (now - lastPopupClosedMs < POPUP_REOPEN_WINDOW_MS) {
-      if (++rapidPopupCount >= POPUP_MAX_RAPID_OPENS) {
-        rapidPopupCount = 0;
-        popupCooldownUntilMs = now + POPUP_COOLDOWN_MS;
-        return;
-      }
-    } else {
-      rapidPopupCount = 0;
+    // Only the positive button of AlertPopup can be destructive.
+    if (destructiveIndex > 0) {
+      String id = ids[0], text = texts[0];
+      ids[0] = ids[destructiveIndex];
+      texts[0] = texts[destructiveIndex];
+      ids[destructiveIndex] = id;
+      texts[destructiveIndex] = text;
     }
     final String[] chosenId = new String[1];
-    String title = data.optString("title", "");
     AlertPopup.Builder b = new AlertPopup.Builder(controller.context());
     b.setTitle(StringUtils.isEmpty(title) ? controller.getBotName() : title);
     b.setMessage(message);
     b.setPositiveButton(texts[0], (dialog, which) -> chosenId[0] = ids[0]);
-    if (destructive[0]) {
+    if (destructiveIndex != -1) {
       b.setPositiveButtonDestructive();
     }
     if (ids.length > 1) {
@@ -652,9 +1021,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
     if (ids.length > 2) {
       b.setNeutralButton(texts[2], (dialog, which) -> chosenId[0] = ids[2]);
     }
-    b.setOnDismissListener(dialog -> {
-      isPopupShown = false;
-      lastPopupClosedMs = SystemClock.uptimeMillis();
+    boolean isShown = showDialog(b, () -> {
       JSONObject payload = new JSONObject();
       if (chosenId[0] != null) {
         onUserInteraction();
@@ -662,7 +1029,9 @@ final class WebAppBridge implements WebAppSensors.Listener {
       }
       reply(generation, "popup_closed", payload);
     });
-    isPopupShown = controller.showAlert(b) != null;
+    if (!isShown) {
+      reply(generation, "popup_closed", new JSONObject());
+    }
   }
 
   // QR codes
@@ -709,82 +1078,87 @@ final class WebAppBridge implements WebAppSensors.Listener {
         UI.showError(error);
       }
     });
-    controller.closeByApp(false);
+    controller.closeNow();
   }
 
   private void switchInlineQuery (JSONObject data) throws JSONException {
     String query = data.getString("query");
-    JSONArray chatTypes = data.getJSONArray("chat_types");
-    controller.switchInlineQuery(query, chatTypes.length() == 0);
+    JSONArray chatTypes = data.optJSONArray("chat_types");
+    controller.switchInlineQuery(query, chatTypes != null ? parseChatTypes(chatTypes) : null);
+  }
+
+  /** {@code null} when the query is for the current chat. */
+  private static @Nullable TdApi.TargetChatTypes parseChatTypes (JSONArray chatTypes) {
+    TdApi.TargetChatTypes types = new TdApi.TargetChatTypes();
+    for (int i = 0; i < chatTypes.length(); i++) {
+      switch (chatTypes.optString(i, "")) {
+        case "users":
+          types.allowUserChats = true;
+          break;
+        case "bots":
+          types.allowBotChats = true;
+          break;
+        case "groups":
+          types.allowGroupChats = true;
+          break;
+        case "channels":
+          types.allowChannelChats = true;
+          break;
+      }
+    }
+    boolean isAny = types.allowUserChats || types.allowBotChats || types.allowGroupChats ||
+      types.allowChannelChats;
+    return isAny ? types : null;
   }
 
   // Permissions
 
   private void requestWriteAccess (int generation) {
-    if (isPermissionDialogShown) {
-      replyStatus(generation, "write_access_requested", "cancelled");
-      return;
-    }
-    isPermissionDialogShown = true;
     tdlib.send(new TdApi.CanBotSendMessages(botUserId), (ok, error) -> UI.post(() -> {
       if (error == null) {
-        isPermissionDialogShown = false;
         replyStatus(generation, "write_access_requested", "allowed");
         return;
       }
-      final boolean[] allowed = new boolean[1];
-      AlertPopup.Builder b = new AlertPopup.Builder(controller.context());
-      b.setTitle(Lang.getString(R.string.vg_BotWebViewRequestWriteTitle));
-      b.setMessage(Lang.getString(R.string.vg_BotWebViewRequestWriteMessage));
-      b.setPositiveButton(Lang.getString(R.string.vg_BotWebViewRequestAllow),
-        (dialog, which) -> allowed[0] = true);
-      b.setNegativeButton(Lang.getString(R.string.vg_BotWebViewRequestDontAllow), null);
-      b.setOnDismissListener(dialog -> {
-        if (!allowed[0]) {
-          isPermissionDialogShown = false;
-          replyStatus(generation, "write_access_requested", "cancelled");
-          return;
-        }
-        tdlib.send(new TdApi.AllowBotToSendMessages(botUserId),
-          (result, allowError) -> UI.post(() -> {
-          isPermissionDialogShown = false;
-          if (allowError != null) {
-            UI.showError(allowError);
+      confirm(
+        Lang.getString(R.string.vg_BotWebViewRequestWriteTitle),
+        Lang.getString(R.string.vg_BotWebViewRequestWriteMessage),
+        Lang.getString(R.string.vg_BotWebViewRequestAllow),
+        Lang.getString(R.string.vg_BotWebViewRequestDontAllow),
+        allowed -> {
+          if (!allowed) {
+            replyStatus(generation, "write_access_requested", "cancelled");
+            return;
           }
-          replyStatus(generation, "write_access_requested",
-            allowError == null ? "allowed" : "cancelled");
-        }));
-      });
-      if (controller.showAlert(b) == null) {
-        isPermissionDialogShown = false;
-        replyStatus(generation, "write_access_requested", "cancelled");
-      }
+          tdlib.send(new TdApi.AllowBotToSendMessages(botUserId),
+            (result, allowError) -> UI.post(() -> {
+            if (allowError != null) {
+              UI.showError(allowError);
+            }
+            replyStatus(generation, "write_access_requested",
+              allowError == null ? "allowed" : "cancelled");
+          }));
+        }
+      );
     }));
   }
 
   private void requestPhone (int generation) {
     TdApi.User me = tdlib.myUser();
-    if (isPermissionDialogShown || me == null) {
+    if (me == null) {
       replyStatus(generation, "phone_requested", "cancelled");
       return;
     }
-    isPermissionDialogShown = true;
-    final boolean isBlocked = tdlib.chatFullyBlocked(ChatId.fromUserId(botUserId));
+    final long chatId = ChatId.fromUserId(botUserId);
+    final boolean isBlocked = tdlib.chatFullyBlocked(chatId);
     CharSequence message = Lang.getStringBold(R.string.vg_AreYouSureShareMyContactInfoWebapp,
       controller.getBotName());
     if (isBlocked) {
       message = TextUtils.concat(message, "\n\n",
         Lang.getString(R.string.vg_AreYouSureShareMyContactInfoBotUnblock));
     }
-    final boolean[] share = new boolean[1];
-    AlertPopup.Builder b = new AlertPopup.Builder(controller.context());
-    b.setTitle(Lang.getString(R.string.vg_ShareYouPhoneNumberTitle));
-    b.setMessage(message);
-    b.setPositiveButton(Lang.getString(R.string.ShareContact), (dialog, which) -> share[0] = true);
-    b.setNegativeButton(Lang.getString(R.string.Cancel), null);
-    b.setOnDismissListener(dialog -> {
-      isPermissionDialogShown = false;
-      if (!share[0]) {
+    confirm(Lang.getString(R.string.vg_ShareYouPhoneNumberTitle), message,
+      Lang.getString(R.string.ShareContact), Lang.getString(R.string.Cancel), share -> {
+      if (!share) {
         replyStatus(generation, "phone_requested", "cancelled");
         return;
       }
@@ -793,19 +1167,13 @@ final class WebAppBridge implements WebAppSensors.Listener {
           new TdApi.SetMessageSenderBlockList(new TdApi.MessageSenderUser(botUserId), null),
           tdlib.typedOkHandler());
       }
-      TdApi.Contact contact = new TdApi.Contact(me.phoneNumber, me.firstName, me.lastName, "",
+      TdApi.Contact contact = new TdApi.Contact(me.phoneNumber, me.firstName, me.lastName, null,
         me.id);
-      TdApi.SendMessage function = new TdApi.SendMessage(
-        ChatId.fromUserId(botUserId), null, null, null,
-        null, new TdApi.InputMessageContact(contact));
-      tdlib.send(function, (sent, error) -> UI.post(() ->
-        replyStatus(generation, "phone_requested", error == null ? "sent" : "cancelled")
-      ));
+      tdlib.sendMessage(chatId, null, null, Td.newSendOptions(),
+        new TdApi.InputMessageContact(contact), sent -> UI.post(() ->
+          replyStatus(generation, "phone_requested", sent != null ? "sent" : "cancelled")
+        ));
     });
-    if (controller.showAlert(b) == null) {
-      isPermissionDialogShown = false;
-      replyStatus(generation, "phone_requested", "cancelled");
-    }
   }
 
   private void replyStatus (int generation, String eventName, String status) {
@@ -819,8 +1187,9 @@ final class WebAppBridge implements WebAppSensors.Listener {
   private void invokeCustomMethod (int generation, JSONObject data) throws JSONException {
     final String requestId = data.getString("req_id");
     final String method = data.getString("method");
-    final Object params = data.get("params");
-    tdlib.send(new TdApi.SendWebAppCustomRequest(botUserId, method, params.toString()),
+    final Object params = data.opt("params");
+    final String paramsJson = params == null || params == JSONObject.NULL ? "{}" : params.toString();
+    tdlib.send(new TdApi.SendWebAppCustomRequest(botUserId, method, paramsJson),
       (result, error) ->
       UI.post(() -> {
         JSONObject payload = new JSONObject();
@@ -845,8 +1214,8 @@ final class WebAppBridge implements WebAppSensors.Listener {
     if (sensors == null) {
       sensors = new WebAppSensors(this);
     }
-    int refreshRate = Math.max(20, Math.min(1000, data.optInt("refresh_rate", 1000)));
-    if (sensors.start(type, refreshRate, data.optBoolean("need_absolute", false))) {
+    if (sensors.start(type, data.optInt("refresh_rate", 1000),
+      data.optBoolean("need_absolute", false))) {
       send(name + "_started", null);
     } else {
       JSONObject payload = new JSONObject();
@@ -866,27 +1235,20 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   private void setEmojiStatus (int generation, JSONObject data) {
     long customEmojiId = StringUtils.parseLong(data.optString("custom_emoji_id", "0"));
-    int duration = Math.max(0, data.optInt("duration", 0));
+    final int duration = (int) Math.min(MAX_EMOJI_STATUS_DURATION,
+      Math.max(0, data.optLong("duration", 0)));
     if (customEmojiId == 0) {
       replyError(generation, "emoji_status_failed", "SUGGESTED_EMOJI_INVALID");
       return;
     }
-    final boolean[] confirmed = new boolean[1];
-    AlertPopup.Builder b = new AlertPopup.Builder(controller.context());
-    b.setTitle(controller.getBotName());
-    if (duration > 0) {
-      b.setMessage(Lang.getStringBold(R.string.vg_BotEmojiStatusSetRequestFor,
-        controller.getBotName(),
-        WebApp.formatDuration(duration)));
-    } else {
-      b.setMessage(Lang.getStringBold(R.string.vg_BotEmojiStatusSetRequest,
-        controller.getBotName()));
-    }
-    b.setPositiveButton(Lang.getString(R.string.vg_BotEmojiStatusConfirm),
-      (dialog, which) -> confirmed[0] = true);
-    b.setNegativeButton(Lang.getString(R.string.Cancel), null);
-    b.setOnDismissListener(dialog -> {
-      if (!confirmed[0]) {
+    String botName = controller.getBotName();
+    CharSequence message = duration > 0 ?
+      Lang.getStringBold(R.string.vg_BotEmojiStatusSetRequestFor, botName,
+        Lang.getDurationFull(duration)) :
+      Lang.getStringBold(R.string.vg_BotEmojiStatusSetRequest, botName);
+    confirm(botName, message, Lang.getString(R.string.vg_BotEmojiStatusConfirm),
+      Lang.getString(R.string.Cancel), confirmed -> {
+      if (!confirmed) {
         replyError(generation, "emoji_status_failed", "USER_DECLINED");
         return;
       }
@@ -907,9 +1269,6 @@ final class WebAppBridge implements WebAppSensors.Listener {
         }
       }));
     });
-    if (controller.showAlert(b) == null) {
-      replyError(generation, "emoji_status_failed", "USER_DECLINED");
-    }
   }
 
   private void requestEmojiStatusAccess (int generation) {
@@ -922,17 +1281,12 @@ final class WebAppBridge implements WebAppSensors.Listener {
         replyStatus(generation, "emoji_status_access_requested", "allowed");
         return;
       }
-      final boolean[] allowed = new boolean[1];
-      AlertPopup.Builder b = new AlertPopup.Builder(controller.context());
-      b.setTitle(controller.getBotName());
-      b.setMessage(Lang.getStringBold(R.string.vg_BotEmojiStatusPermissionRequest,
-        controller.getBotName(),
-        controller.getBotName()));
-      b.setPositiveButton(Lang.getString(R.string.vg_BotEmojiStatusPermissionAllow),
-        (dialog, which) -> allowed[0] = true);
-      b.setNegativeButton(Lang.getString(R.string.vg_BotEmojiStatusPermissionDecline), null);
-      b.setOnDismissListener(dialog -> {
-        if (!allowed[0]) {
+      String botName = controller.getBotName();
+      confirm(botName,
+        Lang.getStringBold(R.string.vg_BotEmojiStatusPermissionRequest, botName, botName),
+        Lang.getString(R.string.vg_BotEmojiStatusPermissionAllow),
+        Lang.getString(R.string.vg_BotEmojiStatusPermissionDecline), allowed -> {
+        if (!allowed) {
           replyStatus(generation, "emoji_status_access_requested", "cancelled");
           return;
         }
@@ -947,14 +1301,10 @@ final class WebAppBridge implements WebAppSensors.Listener {
             error == null ? "allowed" : "cancelled");
           if (error == null) {
             controller.showBulletin(Lang.getStringBold(
-              R.string.vg_BotEmojiStatusPermissionRequestGranted,
-              controller.getBotName()));
+              R.string.vg_BotEmojiStatusPermissionRequestGranted, botName));
           }
         }));
       });
-      if (controller.showAlert(b) == null) {
-        replyStatus(generation, "emoji_status_access_requested", "cancelled");
-      }
     }));
   }
 
@@ -962,6 +1312,12 @@ final class WebAppBridge implements WebAppSensors.Listener {
     JSONObject payload = new JSONObject();
     put(payload, "error", error);
     reply(generation, eventName, payload);
+  }
+
+  private void replyLocationUnavailable (int generation) {
+    JSONObject payload = new JSONObject();
+    put(payload, "available", false);
+    reply(generation, "location_requested", payload);
   }
 
   // Downloads
@@ -977,6 +1333,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
       return;
     }
     if (!consumeUserGesture()) {
+      replyStatus(generation, "file_download_requested", "cancelled");
       return;
     }
     WebAppDownloads.request(controller, tdlib, botUserId, controller.getBotName(), url, fileName,
@@ -1020,10 +1377,6 @@ final class WebAppBridge implements WebAppSensors.Listener {
           prepared.inlineQueryId,
           prepared.result != null ? WebApp.getInlineQueryResultId(prepared.result) : "",
           false));
-        if (!isSent[0]) {
-          isSent[0] = true;
-          UI.post(() -> reply(generation, "prepared_message_sent", null));
-        }
       }
 
       @Override
@@ -1031,6 +1384,10 @@ final class WebAppBridge implements WebAppSensors.Listener {
         return WebApp.isChatAllowed(tdlib, chatId, types) ? null :
           Lang.getString(R.string.vg_BotCantSharePreparedMessage);
       }
+    }).setAfter(() -> {
+      // ShareController reports when the messages are handed to TDLib, not their delivery.
+      isSent[0] = true;
+      UI.post(() -> reply(generation, "prepared_message_sent", null));
     }));
     c.addDestroyListener(() -> {
       if (!isSent[0]) {

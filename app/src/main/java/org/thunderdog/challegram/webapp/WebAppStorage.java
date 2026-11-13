@@ -1,5 +1,6 @@
 /*
  * This file is a part of Vibegram X, a fork of Telegram X
+ * Based on BotStorage from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,7 +30,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
-import org.thunderdog.challegram.core.Background;
+import org.thunderdog.challegram.core.BaseThread;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.navigation.AlertPopup;
@@ -49,13 +50,17 @@ import java.nio.charset.Charset;
 import java.security.GeneralSecurityException;
 import java.security.Key;
 import java.security.KeyStore;
+import java.security.ProviderException;
+import java.security.UnrecoverableKeyException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -64,13 +69,17 @@ import javax.crypto.spec.GCMParameterSpec;
 /**
  * Device storage and secure storage of a mini app, per (account user, bot).
  *
- * <p>Files live in {@code <filesDir>/apps_storage/} with the names of the official client:
- * {@code <userId>_<botId>} (plain JSON) and {@code <storageId>_<botId>_s} (AES-GCM encrypted JSON),
- * where {@code secure_config.json} maps every storage id to its owner. Storages of accounts that
- * logged out are kept so that {@link #restore} can import them. All file work runs on the
- * {@link Background} thread, which serializes operations of every instance; the public methods are
+ * <p>Files live in {@code <filesDir>/apps_storage/}: {@code <userId>_<botId>} (plain JSON) and
+ * {@code <storageId>_<botId>_s} (AES-GCM encrypted JSON), where {@code secure_config.json} maps
+ * every storage id to its owner, one id per account. Secure storages of accounts that logged out
+ * are kept so that {@link #restore} can move them to another account.
+ *
+ * <p>Every operation reads the file again, so instances of the same storage (one per open mini app)
+ * never overwrite each other with stale data. All file work runs on one storage thread, which
+ * serializes the operations of every instance; the public methods except {@link #onLoggedOut} are
  * called on the UI thread.
  */
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 public final class WebAppStorage {
   public static final String
     ERROR_QUOTA_EXCEEDED = "QUOTA_EXCEEDED",
@@ -106,14 +115,20 @@ public final class WebAppStorage {
     CONFIG_CREATED_AT = "created_at",
     CONFIG_EDITED_AT = "edited_at";
 
+  private static final class StorageThread {
+    // Not the shared Background thread: JSON of up to 5 MB, Keystore crypto and fsync would delay
+    // unrelated work queued there.
+    static final BaseThread INSTANCE = new BaseThread("WebAppStorage");
+  }
+
+  private static void post (Runnable task) {
+    StorageThread.INSTANCE.post(task, 0);
+  }
+
   private final long accountUserId;
   private final String accountUserName;
   private final long botUserId;
   private final boolean secure;
-
-  // Accessed only on the Background thread.
-  private @Nullable JSONObject data;
-  private @Nullable String storageId;
 
   public WebAppStorage (Tdlib tdlib, long botUserId, boolean secure) {
     this.accountUserId = tdlib.myUserId(true);
@@ -123,16 +138,35 @@ public final class WebAppStorage {
     this.secure = secure;
   }
 
+  /**
+   * Deletes the device storages of a user that logs out; called on any thread. Secure storages are
+   * kept: {@link #restore} offers them to the other accounts of this device.
+   */
+  public static void onLoggedOut (long userId) {
+    post(() -> {
+      File[] files = getDirectory().listFiles();
+      if (files == null) {
+        return;
+      }
+      String prefix = userId + "_";
+      for (File file : files) {
+        String name = file.getName();
+        // Secure files start with a storage id (a UUID), which never looks like "<digits>_".
+        if (name.startsWith(prefix) && !name.endsWith(SECURE_FILE_SUFFIX)) {
+          deleteFile(file);
+        }
+      }
+    });
+  }
+
   /** @param value null removes the key */
   public void save (String key, @Nullable String value, Callback callback) {
-    Background.instance().post(() -> {
+    post(() -> {
       String error = null;
       try {
         saveImpl(key, value);
       } catch (StorageException e) {
         error = e.error;
-      } catch (OutOfMemoryError e) {
-        error = ERROR_QUOTA_EXCEEDED;
       }
       deliver(callback, null, error, false);
     });
@@ -144,7 +178,7 @@ public final class WebAppStorage {
    */
   public void get (String key, Callback callback) {
     final long[] activeUserIds = secure ? collectActiveUserIds() : null;
-    Background.instance().post(() -> {
+    post(() -> {
       String value = null, error = null;
       boolean canRestore = false;
       try {
@@ -154,39 +188,35 @@ public final class WebAppStorage {
         value = valueOf(data.opt(key));
         // Restoring is possible only into an empty storage, see restoreImpl.
         if (value == null && activeUserIds != null && data.length() == 0) {
-          canRestore = !findRestoreCandidates(key, activeUserIds).isEmpty();
+          canRestore = !findRestoreCandidates(key, activeUserIds, true).isEmpty();
         }
       } catch (StorageException e) {
         error = e.error;
-      } catch (OutOfMemoryError e) {
-        error = ERROR_QUOTA_EXCEEDED;
       }
       deliver(callback, value, error, canRestore);
     });
   }
 
   public void clear (Callback callback) {
-    Background.instance().post(() -> {
+    post(() -> {
       String error = null;
       try {
         clearImpl();
       } catch (StorageException e) {
         error = e.error;
-      } catch (OutOfMemoryError e) {
-        error = ERROR_QUOTA_EXCEEDED;
       }
       deliver(callback, null, error, false);
     });
   }
 
   /**
-   * Secure storage only: offers the storages of accounts that are no longer logged in on this
-   * device and have {@code key}, moves the chosen one to the current account and returns the value
-   * of {@code key}.
+   * Secure storage only: offers the storages that accounts no longer logged in on this device kept
+   * for this bot and that have {@code key}, moves the chosen one to the current account and returns
+   * the value of {@code key}.
    */
   public void restore (ViewController<?> context, String botName, String key, Callback callback) {
     final long[] activeUserIds = collectActiveUserIds();
-    Background.instance().post(() -> {
+    post(() -> {
       List<RestoreCandidate> candidates;
       try {
         if (!secure) {
@@ -197,15 +227,12 @@ public final class WebAppStorage {
         if (loadData().length() > 0) {
           throw new StorageException(ERROR_STORAGE_NOT_EMPTY);
         }
-        candidates = findRestoreCandidates(key, activeUserIds);
+        candidates = findRestoreCandidates(key, activeUserIds, false);
         if (candidates.isEmpty()) {
           throw new StorageException(ERROR_RESTORE_UNAVAILABLE);
         }
       } catch (StorageException e) {
         deliver(callback, null, e.error, false);
-        return;
-      } catch (OutOfMemoryError e) {
-        deliver(callback, null, ERROR_QUOTA_EXCEEDED, false);
         return;
       }
       UI.post(() -> showRestoreChooser(context, botName, key, candidates, callback));
@@ -274,14 +301,12 @@ public final class WebAppStorage {
   }
 
   private void restoreFrom (RestoreCandidate candidate, String key, Callback callback) {
-    Background.instance().post(() -> {
+    post(() -> {
       String value = null, error = null;
       try {
         value = restoreImpl(candidate, key);
       } catch (StorageException e) {
         error = e.error;
-      } catch (OutOfMemoryError e) {
-        error = ERROR_QUOTA_EXCEEDED;
       }
       deliver(callback, value, error, false);
     });
@@ -296,47 +321,47 @@ public final class WebAppStorage {
     UI.post(() -> callback.onResult(value, error, canRestore));
   }
 
-  // Operations (Background thread)
+  // Operations (storage thread)
 
   private void saveImpl (String key, @Nullable String value) throws StorageException {
     checkSupported();
     checkKey(key);
     JSONObject data = loadData();
-    Object previousValue = data.opt(key);
     if (value == null) {
-      if (previousValue == null) {
+      if (data.remove(key) == null) {
         return;
       }
-      data.remove(key);
     } else {
       if ((long) key.length() + value.length() > MAX_SIZE) {
         throw new StorageException(ERROR_QUOTA_EXCEEDED);
       }
-      if (secure && previousValue == null && data.length() >= MAX_SECURE_KEY_COUNT) {
+      if (secure && !data.has(key) && data.length() >= MAX_SECURE_KEY_COUNT) {
         throw new StorageException(ERROR_QUOTA_EXCEEDED);
       }
-      putValue(data, key, value);
-    }
-    try {
-      writeData(data);
-    } catch (StorageException e) {
-      // Keep the cached object equal to the file.
-      if (previousValue != null) {
-        putValue(data, key, previousValue);
-      } else {
-        data.remove(key);
+      try {
+        data.put(key, value);
+      } catch (JSONException e) {
+        throw new StorageException(ERROR_VALUE_INVALID);
       }
-      throw e;
     }
+    writeData(data);
   }
 
   private void clearImpl () throws StorageException {
     checkSupported();
-    JSONObject empty = new JSONObject();
-    if (!secure || findStorageId(false) != null) {
-      writeData(empty);
+    File file;
+    if (secure) {
+      String id = findStorageId(readConfig());
+      if (id == null) {
+        return;
+      }
+      file = getSecureFile(id);
+    } else {
+      file = getDeviceFile();
     }
-    data = empty;
+    if (!deleteFile(file)) {
+      throw new StorageException(ERROR_UNKNOWN);
+    }
   }
 
   private String restoreImpl (RestoreCandidate candidate, String key) throws StorageException {
@@ -344,28 +369,17 @@ public final class WebAppStorage {
     if (loadData().length() > 0) {
       throw new StorageException(ERROR_STORAGE_NOT_EMPTY);
     }
-    JSONObject config = readConfig();
-    JSONObject entry = config.optJSONObject(candidate.storageId);
-    File restoredFile = getSecureFile(candidate.storageId);
-    if (entry == null || !restoredFile.exists()) {
+    File source = getSecureFile(candidate.storageId);
+    if (!source.exists()) {
       throw new StorageException(ERROR_RESTORE_UNAVAILABLE);
     }
-    try {
-      entry.put(CONFIG_USER_ID, accountUserId);
-      entry.put(CONFIG_USER_NAME, accountUserName);
-      entry.put(CONFIG_EDITED_AT, System.currentTimeMillis());
-    } catch (JSONException e) {
+    // Only the file of this bot moves: the account keeps its single storage id, and what the old
+    // account kept for other bots stays offered to them.
+    File target = getSecureFile(requireStorageId());
+    if (!source.renameTo(target)) {
+      Log.e("Cannot move %s to %s", source, target);
       throw new StorageException(ERROR_UNKNOWN);
     }
-    writeConfig(config);
-    String currentStorageId = findStorageId(false);
-    if (currentStorageId != null && !currentStorageId.equals(candidate.storageId)) {
-      // The current storage of this bot is empty: without its file the restored one is found from
-      // now on.
-      deleteFile(getSecureFile(currentStorageId));
-    }
-    storageId = candidate.storageId;
-    data = null;
     return valueOf(loadData().opt(key));
   }
 
@@ -391,51 +405,37 @@ public final class WebAppStorage {
     return value instanceof String ? (String) value : value.toString();
   }
 
-  private static void putValue (JSONObject data, String key, Object value) throws StorageException {
-    try {
-      data.put(key, value);
-    } catch (JSONException e) {
-      throw new StorageException(ERROR_VALUE_INVALID);
-    }
-  }
-
   private JSONObject loadData () throws StorageException {
-    if (data != null) {
-      return data;
-    }
-    JSONObject result;
-    if (secure) {
-      String id = findStorageId(false);
-      File file = id != null ? getSecureFile(id) : null;
-      if (file == null || !file.exists()) {
-        result = new JSONObject();
-      } else {
-        try {
-          result = readJsonFile(file, true);
-        } catch (GeneralSecurityException | IOException | JSONException e) {
-          Log.e("Cannot read secure storage of a mini app", e);
-          // As the official client: a storage that can't be decrypted is reset.
-          JSONObject empty = new JSONObject();
-          data = empty;
-          writeData(empty);
-          throw new StorageException(ERROR_UNKNOWN);
-        }
-      }
-    } else {
-      File file = getDeviceFile();
-      if (!file.exists()) {
-        result = new JSONObject();
-      } else {
-        try {
-          result = readJsonFile(file, false);
-        } catch (GeneralSecurityException | IOException | JSONException e) {
-          Log.e("Cannot read device storage of a mini app", e);
-          result = new JSONObject();
-        }
+    if (!secure) {
+      try {
+        return readJsonFile(getDeviceFile(), false);
+      } catch (JSONException e) {
+        // Nothing to save from a damaged file: the next write replaces it.
+        Log.e("Device storage of a mini app is damaged", e);
+        return new JSONObject();
+      } catch (GeneralSecurityException | IOException e) {
+        Log.e("Cannot read device storage of a mini app", e);
+        throw new StorageException(ERROR_UNKNOWN);
       }
     }
-    data = result;
-    return result;
+    String id = findStorageId(readConfig());
+    if (id == null) {
+      return new JSONObject();
+    }
+    File file = getSecureFile(id);
+    try {
+      return readJsonFile(file, true);
+    } catch (AEADBadTagException | UnrecoverableKeyException | JSONException e) {
+      // The key is lost (e.g. the Keystore was cleared) or the file is damaged: the data can't come
+      // back, so the storage starts over.
+      Log.e("Secure storage of a mini app can't be decrypted, resetting", e);
+      deleteFile(file);
+      throw new StorageException(ERROR_UNKNOWN);
+    } catch (GeneralSecurityException | IOException | ProviderException e) {
+      // Keystore errors may be temporary: the file is kept.
+      Log.e("Cannot read secure storage of a mini app", e);
+      throw new StorageException(ERROR_UNKNOWN);
+    }
   }
 
   private void writeData (JSONObject data) throws StorageException {
@@ -445,14 +445,10 @@ public final class WebAppStorage {
     }
     File file;
     if (secure) {
-      String id = findStorageId(true);
-      if (id == null) {
-        throw new StorageException(ERROR_UNKNOWN);
-      }
-      file = getSecureFile(id);
+      file = getSecureFile(requireStorageId());
       try {
         bytes = encrypt(bytes);
-      } catch (GeneralSecurityException | IOException e) {
+      } catch (GeneralSecurityException | IOException | ProviderException e) {
         Log.e("Cannot encrypt secure storage of a mini app", e);
         throw new StorageException(ERROR_UNKNOWN);
       }
@@ -465,80 +461,93 @@ public final class WebAppStorage {
       Log.e("Cannot write storage of a mini app", e);
       throw new StorageException(ERROR_UNKNOWN);
     }
-    if (secure) {
-      touchConfig(storageId);
-    }
   }
 
   // Secure storage owners
 
-  /**
-   * Storage id of the current account for this bot: the one that has a file for this bot, else the
-   * most recently edited one. With {@code create} a new id is registered when the account has none.
-   */
-  private @Nullable String findStorageId (boolean create) throws StorageException {
-    if (storageId != null) {
-      return storageId;
-    }
-    JSONObject config = readConfig();
-    String bestId = null;
-    boolean bestHasFile = false;
-    long bestEditedAt = 0;
-    Iterator<String> ids = config.keys();
-    while (ids.hasNext()) {
-      String id = ids.next();
+  private @Nullable String findStorageId (JSONObject config) throws StorageException {
+    List<String> ids = new ArrayList<>();
+    Iterator<String> keys = config.keys();
+    while (keys.hasNext()) {
+      String id = keys.next();
       JSONObject entry = config.optJSONObject(id);
-      if (entry == null || entry.optLong(CONFIG_USER_ID) != accountUserId) {
-        continue;
-      }
-      boolean hasFile = getSecureFile(id).exists();
-      long editedAt = entry.optLong(CONFIG_EDITED_AT);
-      boolean isBetter = bestId == null ||
-        (hasFile && !bestHasFile) ||
-        (hasFile == bestHasFile && editedAt > bestEditedAt);
-      if (isBetter) {
-        bestId = id;
-        bestHasFile = hasFile;
-        bestEditedAt = editedAt;
+      if (entry != null && entry.optLong(CONFIG_USER_ID) == accountUserId) {
+        ids.add(id);
       }
     }
-    if (bestId == null && create) {
-      bestId = UUID.randomUUID().toString();
-      long now = System.currentTimeMillis();
-      JSONObject entry = new JSONObject();
-      try {
-        entry.put(CONFIG_USER_ID, accountUserId);
-        entry.put(CONFIG_USER_NAME, accountUserName);
-        entry.put(CONFIG_CREATED_AT, now);
-        entry.put(CONFIG_EDITED_AT, now);
-        config.put(bestId, entry);
-      } catch (JSONException e) {
-        throw new StorageException(ERROR_UNKNOWN);
-      }
-      writeConfig(config);
+    if (ids.isEmpty()) {
+      return null;
     }
-    storageId = bestId;
-    return bestId;
+    return ids.size() == 1 ? ids.get(0) : mergeStorageIds(config, ids);
   }
 
-  private void touchConfig (@Nullable String id) {
-    if (id == null) {
-      return;
+  /**
+   * Older versions moved a whole storage id on restore, so an account could own several ids and
+   * each bot used the most recently edited id that had its file. The files are merged into one id
+   * with the same choice; the files that choice hid are deleted.
+   */
+  private String mergeStorageIds (JSONObject config, List<String> ids) throws StorageException {
+    Collections.sort(ids, (a, b) -> Long.compare(
+      config.optJSONObject(b).optLong(CONFIG_EDITED_AT),
+      config.optJSONObject(a).optLong(CONFIG_EDITED_AT)
+    ));
+    String primaryId = ids.get(0);
+    File[] files = getDirectory().listFiles();
+    for (int i = 1; i < ids.size(); i++) {
+      String id = ids.get(i);
+      if (files != null) {
+        for (File file : files) {
+          String name = file.getName();
+          if (!name.startsWith(id + "_") || !name.endsWith(SECURE_FILE_SUFFIX)) {
+            continue;
+          }
+          File target = new File(file.getParentFile(), primaryId + name.substring(id.length()));
+          if (target.exists()) {
+            deleteFile(file);
+          } else if (!file.renameTo(target)) {
+            Log.w("Cannot move %s to %s", file, target);
+          }
+        }
+      }
+      config.remove(id);
+    }
+    writeConfig(config);
+    return primaryId;
+  }
+
+  /** Registers a storage id for the account when it has none. */
+  private String requireStorageId () throws StorageException {
+    JSONObject config = readConfig();
+    String id = findStorageId(config);
+    JSONObject entry = id != null ? config.optJSONObject(id) : null;
+    boolean isNameKnown = accountUserName.isEmpty() ||
+      (entry != null && accountUserName.equals(entry.optString(CONFIG_USER_NAME)));
+    if (entry != null && isNameKnown) {
+      return id;
     }
     try {
-      JSONObject config = readConfig();
-      JSONObject entry = config.optJSONObject(id);
-      if (entry != null) {
-        entry.put(CONFIG_USER_NAME, accountUserName);
-        entry.put(CONFIG_EDITED_AT, System.currentTimeMillis());
-        writeConfig(config);
+      if (entry == null) {
+        id = UUID.randomUUID().toString();
+        entry = new JSONObject();
+        entry.put(CONFIG_USER_ID, accountUserId);
+        entry.put(CONFIG_CREATED_AT, System.currentTimeMillis());
+        config.put(id, entry);
       }
-    } catch (JSONException | StorageException e) {
-      Log.w("Cannot update secure storage config of mini apps", e);
+      // The name is shown when another account is offered to restore this storage.
+      entry.put(CONFIG_USER_NAME, accountUserName);
+    } catch (JSONException e) {
+      throw new StorageException(ERROR_UNKNOWN);
     }
+    writeConfig(config);
+    return id;
   }
 
-  private List<RestoreCandidate> findRestoreCandidates (String key, long[] activeUserIds) {
+  /** Decrypts only the files of this bot, and with {@code firstOnly} stops at the first match. */
+  private List<RestoreCandidate> findRestoreCandidates (
+    String key,
+    long[] activeUserIds,
+    boolean firstOnly
+  ) {
     List<RestoreCandidate> candidates = new ArrayList<>();
     JSONObject config = readConfig();
     Iterator<String> ids = config.keys();
@@ -564,8 +573,11 @@ public final class WebAppStorage {
             entry.optString(CONFIG_USER_NAME),
             entry.optLong(CONFIG_CREATED_AT)
           ));
+          if (firstOnly) {
+            break;
+          }
         }
-      } catch (GeneralSecurityException | IOException | JSONException e) {
+      } catch (GeneralSecurityException | IOException | JSONException | ProviderException e) {
         Log.w("Skipping unreadable secure storage of mini apps", e);
       }
     }
@@ -598,12 +610,8 @@ public final class WebAppStorage {
   }
 
   private static JSONObject readConfig () {
-    File file = getConfigFile();
-    if (!file.exists()) {
-      return new JSONObject();
-    }
     try {
-      return readJsonFile(file, false);
+      return readJsonFile(getConfigFile(), false);
     } catch (GeneralSecurityException | IOException | JSONException e) {
       Log.e("Cannot read secure storage config of mini apps", e);
       return new JSONObject();
@@ -637,11 +645,11 @@ public final class WebAppStorage {
     return new File(getDirectory(), id + "_" + botUserId + SECURE_FILE_SUFFIX);
   }
 
-  /** A file over the size limit counts as empty, as in the official client. */
+  /** Writes never exceed the size limit, so a bigger file is foreign and counts as empty. */
   private static JSONObject readJsonFile (File file, boolean encrypted)
     throws GeneralSecurityException, IOException, JSONException {
     long maxLength = encrypted ? MAX_SIZE + MAX_SECURE_FILE_OVERHEAD : MAX_SIZE;
-    if (file.length() > maxLength) {
+    if (!file.exists() || file.length() > maxLength) {
       return new JSONObject();
     }
     byte[] bytes = readFile(file);
@@ -692,10 +700,12 @@ public final class WebAppStorage {
     }
   }
 
-  private static void deleteFile (File file) {
-    if (file.exists() && !file.delete()) {
-      Log.w("Cannot delete %s", file);
+  private static boolean deleteFile (File file) {
+    if (!file.exists() || file.delete()) {
+      return true;
     }
+    Log.w("Cannot delete %s", file);
+    return false;
   }
 
   // Encryption: [1 byte IV length][IV][AES-GCM ciphertext with a 128-bit tag]
@@ -731,13 +741,11 @@ public final class WebAppStorage {
 
   @RequiresApi(Build.VERSION_CODES.M)
   private static byte[] decryptImpl (byte[] bytes) throws GeneralSecurityException, IOException {
-    if (bytes.length == 0) {
-      throw new GeneralSecurityException("Empty file");
-    }
-    int ivLength = bytes[0] & 0xff;
+    int ivLength = bytes.length > 0 ? bytes[0] & 0xff : 0;
     int offset = 1 + ivLength;
     if (ivLength == 0 || offset > bytes.length) {
-      throw new GeneralSecurityException("Malformed file");
+      // Damaged like a file with a wrong tag: the storage is reset.
+      throw new AEADBadTagException("Malformed file");
     }
     Cipher cipher = Cipher.getInstance(CIPHER_TRANSFORMATION);
     GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH_BITS, bytes, 1, ivLength);

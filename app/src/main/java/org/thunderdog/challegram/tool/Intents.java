@@ -79,6 +79,7 @@ public class Intents {
   public static final int ACTIVITY_RESULT_RINGTONE_NOTIFICATION = 108;
   public static final int ACTIVITY_RESULT_VIDEO_CAPTURE = 109;
   public static final int ACTIVITY_RESULT_MANAGE_STORAGE = 110;
+  public static final int ACTIVITY_RESULT_WEB_APP_FILE_CHOOSER = 111;
 
   private static final String PACKAGE_NAME = BuildConfig.APPLICATION_ID; // AppContext.get().getPackageName();
 
@@ -101,6 +102,7 @@ public class Intents {
 
   public static final String ACTION_OPEN_MAIN = PACKAGE_NAME + ".OPEN_MAIN";
   public static final String ACTION_OPEN_OAUTH = PACKAGE_NAME + ".OPEN_OAUTH";
+  public static final String ACTION_OPEN_WEB_APP = PACKAGE_NAME + ".OPEN_WEB_APP";
 
   public static final String ACTION_MESSAGE_REPLY = PACKAGE_NAME + ".ACTION_MESSAGE_REPLY";
   public static final String ACTION_MESSAGE_MUTE = PACKAGE_NAME + ".ACTION_MESSAGE_MUTE";

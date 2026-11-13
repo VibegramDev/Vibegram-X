@@ -629,7 +629,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     if (!isBot && TD.hasPhoneNumber(user)) {
       ids.append(R.id.more_btn_share);
       strings.append(R.string.ShareContact);
-    } else if (isBot && ((TdApi.UserTypeBot) user.type).hasMainWebApp && Td.hasUsername(user)) {
+    } else if (isBot && ((TdApi.UserTypeBot) user.type).hasMainWebApp && WebApp.isSupported() && Td.hasUsername(user)) {
       ids.append(R.id.more_btn_share);
       strings.append(R.string.vg_ProfileActionShare);
     }
@@ -2740,7 +2740,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           actions.add(newProfileAction(R.id.btn_vgProfileShare, R.drawable.baseline_share_arrow_24, R.string.vg_ProfileActionShare));
           break;
         }
-        boolean hasMainWebApp = TD.isBot(user) && ((TdApi.UserTypeBot) user.type).hasMainWebApp;
+        boolean hasMainWebApp = TD.isBot(user) && ((TdApi.UserTypeBot) user.type).hasMainWebApp &&
+          WebApp.isSupported();
         if (hasMainWebApp) {
           actions.add(newProfileAction(R.id.btn_vgProfileOpenApp, R.drawable.baseline_apps_24,
             R.string.vg_ProfileActionOpenApp));
@@ -2886,7 +2887,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     if (id == R.id.btn_vgProfileChat) {
       openProfileChat();
     } else if (id == R.id.btn_vgProfileOpenApp) {
-      WebApp.openMainApp(this, user.id, 0, null, null);
+      WebApp.openMainApp(this, user.id);
     } else if (id == R.id.btn_vgProfileSound) {
       // Exactly the former "Notifications" row (no long press).
       tdlib.ui().showMuteOptions(this, chat.id, true, null);

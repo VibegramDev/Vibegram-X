@@ -71,6 +71,7 @@ import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.CancellableResultHandler;
 import org.thunderdog.challegram.util.ScrollJumpCompensator;
 import org.thunderdog.challegram.v.MessagesRecyclerView;
+import org.thunderdog.challegram.webapp.WebApp;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1589,6 +1590,11 @@ public class MessagesManager implements Client.ResultHandler, MessagesSearchMana
   private static boolean isSupported (@NonNull TdApi.InternalLinkType internalLinkType) {
     // Matches TdlibUi.openInternalLinkType
     switch (internalLinkType.getConstructor()) {
+      case TdApi.InternalLinkTypeAttachmentMenuBot.CONSTRUCTOR:
+      case TdApi.InternalLinkTypeWebApp.CONSTRUCTOR:
+      case TdApi.InternalLinkTypeMainWebApp.CONSTRUCTOR:
+        return WebApp.isSupported();
+
       case TdApi.InternalLinkTypeStory.CONSTRUCTOR:
       case TdApi.InternalLinkTypeLiveStory.CONSTRUCTOR:
       case TdApi.InternalLinkTypeStoryAlbum.CONSTRUCTOR:

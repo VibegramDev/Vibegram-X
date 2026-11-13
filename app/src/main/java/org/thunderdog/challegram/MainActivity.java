@@ -97,6 +97,7 @@ import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.Crash;
 import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.webapp.WebApp;
+import org.thunderdog.challegram.webapp.WebAppTabs;
 import org.thunderdog.challegram.widget.GearView;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.PopupLayout;
@@ -130,6 +131,10 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     super.onCreate(savedInstanceState);
 
     Log.i("MainActivity.onCreate");
+
+    if (WebApp.isSupported()) {
+      WebAppTabs.attach(this);
+    }
 
     handler = new Handler(Looper.getMainLooper());
 
@@ -806,16 +811,29 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
 
     // Custom
 
-    if (action.equals(WebApp.ACTION_OPEN_WEB_APP)) {
-      int accountId = intent.getIntExtra(WebApp.EXTRA_ACCOUNT_ID, TdlibAccount.NO_ID);
-      long botUserId = intent.getLongExtra(WebApp.EXTRA_BOT_USER_ID, 0);
-      if (accountId != TdlibAccount.NO_ID && TdlibManager.instance().hasAccount(accountId)) {
-        Tdlib tdlib = TdlibManager.instanceForAccountId(accountId).account(accountId).tdlib();
-        tdlib.awaitInitialization(() -> handler.post(() -> {
-          openMainController(tdlib.id());
-          WebApp.openFromShortcut(navigation.getCurrentStackItem(), accountId, botUserId);
-        }));
+    if (action.equals(Intents.ACTION_OPEN_WEB_APP)) {
+      // MainActivity is exported: only shortcuts created by the app carry the token, other intents
+      // get the launch confirmation.
+      final int accountId = intent.getIntExtra(WebApp.EXTRA_ACCOUNT_ID, TdlibAccount.NO_ID);
+      final long botUserId = intent.getLongExtra(WebApp.EXTRA_BOT_USER_ID, 0);
+      final boolean isTrusted = WebApp.isShortcutTokenValid(intent.getStringExtra(WebApp.EXTRA_SHORTCUT_TOKEN));
+      if (accountId == TdlibAccount.NO_ID || botUserId == 0 || !TdlibManager.instance().hasAccount(accountId)) {
+        return false;
       }
+      final Tdlib webAppTdlib = TdlibManager.instanceForAccountId(accountId).account(accountId).tdlib();
+      webAppTdlib.awaitInitialization(() -> {
+        webAppTdlib.incrementUiReferenceCount();
+        handler.post(() -> {
+          openMainController(accountId);
+          handler.post(() -> {
+            ViewController<?> c = navigation.getCurrentStackItem();
+            if (c != null && !c.isDestroyed() && c.tdlib() != null && c.tdlib().id() == accountId) {
+              WebApp.openFromShortcut(c, botUserId, isTrusted);
+            }
+            webAppTdlib.decrementUiReferenceCount();
+          });
+        });
+      });
       return true;
     }
 

@@ -9,37 +9,22 @@
 <resources>
   <!-- Sheet, header and options menu -->
   <string name="vg_BotWebViewOpenBot">Показать бота</string>
-  <string name="vg_BotWebViewSettings">Настройки</string>
   <string name="vg_BotWebViewReloadPage">Обновить страницу</string>
   <string name="vg_AddShortcut">Создать ярлык</string>
   <string name="vg_BotWebViewToS">Условия использования</string>
-  <string name="vg_BotWebViewReportBot">Пожаловаться</string>
   <string name="vg_BotWebViewDeleteBot">Убрать из меню</string>
-  <string name="vg_BotShare">Поделиться</string>
-  <string name="vg_BotPrivacyPolicy">Политика конфиденциальности</string>
-  <string name="vg_BotDownloads">Загрузки</string>
   <string name="vg_BotRemoveFromMenuTitle">Удалить бота</string>
   <string name="vg_BotRemoveFromMenu">Бот %1$s будет удалён из всех меню.</string>
-  <string name="vg_BotRemoveInlineFromMenu">Скрыть %1$s из предложенных?</string>
   <string name="vg_BotWebViewChangesMayNotBeSaved">Внесённые изменения могут быть потеряны.</string>
   <string name="vg_BotWebViewCloseAnyway">Всё равно закрыть</string>
   <string name="vg_BotWebViewNotAvailablePlaceholder">WebView недоступен. Для использования ботов WebView необходимо его обновить.</string>
   <string name="vg_WebErrorTitle">Ошибка</string>
   <string name="vg_WebErrorInfoBot">Не удалось загрузить %1$s.</string>
-  <string name="vg_WebErrorInfo">Не удалось загрузить страницу.</string>
-  <string name="vg_WebErrorInfoDomain">Не удалось загрузить %1$s.</string>
   <string name="vg_Refresh">Обновить</string>
   <string name="vg_BotFullscreenClose">Закрыть</string>
   <string name="vg_BotFullscreenBack">Назад</string>
   <string name="vg_Close">Закрыть</string>
-  <string name="vg_Back">Назад</string>
-  <string name="vg_Start">Начать</string>
-  <string name="vg_Enable">Включить</string>
-  <string name="vg_UndoNoCaps">Отмена</string>
   <string name="vg_BotCloseAllTabs">Закрыть все вкладки</string>
-  <string name="vg_AccDescrTabs">Веб-вкладки %1$s</string>
-  <string name="vg_WebEmpty">Веб-страница</string>
-  <string name="vg_WebsiteSays">Ответ %1$s:</string>
 
   <!-- Launch, disclaimer, attachment menu, entry points -->
   <string name="vg_BotWebViewStartPermission2">Открывая это мини-приложение, Вы принимаете **Условия использования мини-приложений**.</string>
@@ -48,21 +33,12 @@
   <string name="vg_TermsOfUse">Условия использования</string>
   <string name="vg_BotWebAppDisclaimerSubtitle">Вы собираетесь воспользоваться мини-приложением, которое поддерживается сторонним разработчиком, **не имеющим отношения к Telegram**. Чтобы продолжить, необходимо принять Условия использования мини-приложений.</string>
   <string name="vg_BotWebAppDisclaimerCheck">Я принимаю **Условия использования**</string>
-  <string name="vg_BotRequestAttachPermission">%1$s запрашивает разрешение добавить свою кнопку в меню вложений, которое Вы видите в любом чате.</string>
-  <string name="vg_BotAddToMenu">Добавить в меню</string>
-  <string name="vg_BotAlreadyAddedToAttachMenu">Этот бот уже добавлен в Ваше меню вложений.</string>
   <string name="vg_BotCantOpenAttachMenuSameBot">Этого бота нельзя использовать в чате с ним самим.</string>
   <string name="vg_BotCantOpenAttachMenuBot">Этого бота нельзя использовать в чатах с ботами.</string>
   <string name="vg_BotCantOpenAttachMenuUser">Этого бота нельзя использовать в чатах с пользователями.</string>
   <string name="vg_BotCantOpenAttachMenuGroup">Этого бота нельзя использовать в группах.</string>
   <string name="vg_BotCantOpenAttachMenuChannel">Этого бота нельзя использовать в каналах.</string>
-  <string name="vg_BotAttachMenuShortcatAddedAttachAndSide">Бот %1$s добавлен в меню вложений и боковое меню.</string>
-  <string name="vg_BotAttachMenuShortcatAddedSide">Бот %1$s добавлен в боковое меню.</string>
-  <string name="vg_BotAttachMenuShortcatAddedAttach">Бот %1$s добавлен в меню вложений.</string>
-  <string name="vg_BotsMenuTitle">Меню</string>
   <string name="vg_AccDescrBotMenu">Меню бота</string>
-  <string name="vg_BotOpen">Открыть</string>
-  <string name="vg_ProfileBotOpenApp">Открыть приложение</string>
 
   <!-- Bridge: write access, phone, biometry -->
   <string name="vg_BotWebViewRequestWriteTitle">Разрешить отправку сообщений</string>
@@ -71,28 +47,15 @@
   <string name="vg_BotWebViewRequestDontAllow">Не разрешать</string>
   <string name="vg_ShareYouPhoneNumberTitle">Поделиться номером телефона?</string>
   <string name="vg_AreYouSureShareMyContactInfoWebapp">%1$s будет знать номер Вашего телефона. Это может быть полезно для интеграции с другими сервисами.</string>
-  <string name="vg_AreYouSureShareMyContactInfoBot">Бот будет знать номер Вашего телефона. Это может быть полезно для интеграции с другими сервисами.\n\n⚠️ Внимание! Никогда не вводите коды для входа в Telegram в мини-приложениях.</string>
   <string name="vg_AreYouSureShareMyContactInfoBotUnblock">При этом бот будет разблокирован.</string>
   <string name="vg_BotAllowBiometryTitle">Использование биометрии</string>
   <string name="vg_BotAllowBiometryMessage">Разрешить %1$s использовать биометрические данные?</string>
-  <string name="vg_PrivacyBiometryBots">Боты с биометрией</string>
-  <string name="vg_PrivacyBiometryBotsInfo">Веб-приложения могут запрашивать разрешение на подтверждение отпечатком пальца.</string>
 
   <!-- Bridge: downloads, location -->
   <string name="vg_BotDownloadFileTitle">Скачивание файла</string>
   <string name="vg_BotDownloadFileText">%1$s предлагает скачать файл:</string>
   <string name="vg_BotDownloadFileDownload">Скачать</string>
-  <string name="vg_AccActionDownload">Загрузка</string>
-  <string name="vg_WebDownloading">Загрузка...</string>
-  <string name="vg_WebDownloadingFile">Загрузка %1$s...</string>
-  <string name="vg_BotLocationPermissionRequest">%1$s запрашивает доступ к геопозиции. Это разрешение можно будет в любой момент отозвать в профиле %2$s.</string>
-  <string name="vg_BotLocationPermissionSettings">Настройки</string>
-  <string name="vg_BotLocationPermissionAllow">Разрешить</string>
   <string name="vg_BotLocationPermissionDecline">Отклонить</string>
-  <string name="vg_BotLocationPermissionRequestGranted">У %1$s теперь есть доступ к Вашей геопозиции</string>
-  <string name="vg_BotLocationPermissionRequestDeniedApp">У %1$s больше нет доступа к Вашей геопозиции, поскольку Вы отключили это разрешение для Telegram.</string>
-  <string name="vg_BotLocationPermissionRequestDeniedAppSettings">Изменить в настройках &gt;</string>
-  <string name="vg_GpsDisabledAlertText">Чтобы использовать геопозицию, пожалуйста, включите GPS.</string>
 
   <!-- Bridge: emoji status -->
   <string name="vg_BotEmojiStatusSetRequest">Установить этот эмодзи, предложенный %1$s, в качестве статуса?</string>
@@ -105,11 +68,6 @@
   <string name="vg_BotEmojiStatusPermissionRequestGranted">%1$s теперь может изменять Ваш эмодзи-статус.</string>
 
   <!-- Bridge: prepared message, storage restore -->
-  <string name="vg_BotShareMessage">Отправить сообщение</string>
-  <string name="vg_BotShareMessagePreview">Предпросмотр сообщения</string>
-  <string name="vg_BotShareMessageShare">Выбрать получателей...</string>
-  <string name="vg_BotShareMessageInfo">%1$s предлагает отправить это сообщение в выбранный Вами чат.</string>
-  <string name="vg_BotSharedToOne">Сообщение отправлено %1$s</string>
   <string name="vg_BotRestoreStorageTitle">Импорт данных</string>
   <string name="vg_BotRestoreStorageText">%1$s запрашивает разрешение на импорт данных из аккаунта в Telegram, который использовался на устройстве ранее.</string>
   <string name="vg_BotRestoreStorageHeader">Импорт данных из аккаунта</string>
@@ -118,19 +76,11 @@
 
   <!-- Bridge: WebView permissions, renderer crash, misc -->
   <string name="vg_BotWebViewRequestGeolocationPermission">Разрешить %1$s доступ к геопозиции?\n\nРазработчик %1$s будет иметь доступ к Вашей геопозиции, когда открыто это веб-приложение.</string>
-  <string name="vg_BotWebViewRequestGeolocationPermissionWithHint">Разрешить **%1$s** доступ к геопозиции?\n\nРазработчик **%1$s** будет иметь доступ к Вашей геопозиции, когда открыто это веб-приложение.\n\nДля этого необходимо включить опцию **Геопозиция** в настройках устройства &gt; Разрешения.</string>
   <string name="vg_BotWebViewRequestMicrophonePermission">Разрешить %1$s доступ к микрофону?\n\nРазработчик %1$s будет иметь доступ к Вашему микрофону, когда открыто это веб-приложение.</string>
-  <string name="vg_BotWebViewRequestMicrophonePermissionWithHint">Разрешить **%1$s** доступ к микрофону?\n\nРазработчик **%1$s** будет иметь доступ к Вашему микрофону, когда открыто это веб-приложение.\n\nДля этого необходимо включить опцию **Микрофон** в настройках устройства &gt; Разрешения.</string>
   <string name="vg_BotWebViewRequestCameraPermission">Разрешить %1$s доступ к камере?\n\nРазработчик %1$s будет иметь доступ к камере Вашего устройства, когда открыто это веб-приложение.</string>
-  <string name="vg_BotWebViewRequestCameraPermissionWithHint">Разрешить **%1$s** доступ к камере?\n\nРазработчик **%1$s** будет иметь доступ к камере Вашего устройства, когда открыто это веб-приложение.\n\nДля этого необходимо включить опцию **Камера** в настройках устройства &gt; Разрешения.</string>
   <string name="vg_BotWebViewRequestCameraMicPermission">Разрешить %1$s доступ к камере и микрофону?\n\nРазработчик %1$s будет иметь доступ к Вашим камере и микрофону, когда открыто это веб-приложение.</string>
-  <string name="vg_BotWebViewRequestCameraMicPermissionWithHint">Разрешить **%1$s** доступ к камере и микрофону?\n\nРазработчик **%1$s** будет иметь доступ к Вашим камере и микрофону, когда открыто это веб-приложение.\n\nДля этого необходимо включить опцию **Камера** в настройках устройства &gt; Разрешения.</string>
   <string name="vg_ChromeCrashTitle">Опаньки...</string>
   <string name="vg_ChromeCrashMessage">При загрузке этой страницы возникли неполадки.\n\nЕсли эта проблема возникает часто, попробуйте обновить компонент **Android WebView**.</string>
-  <string name="vg_OpenInTelegramBrowser">Открыть в Telegram</string>
-  <string name="vg_UnknownError">Неизвестная ошибка</string>
-  <string name="vg_CreateManagedBotCreatedTitle">%1$s создан!</string>
-  <string name="vg_CreateManagedBotCreatedText">%1$s будет управлять этим ботом.</string>
 
   <!-- Vibegram X only (self-translated) -->
   <string name="vg_WebAppNotSupportedStory">Публикация в истории пока не поддерживается.</string>
@@ -140,24 +90,11 @@
   <string name="vg_BotMoreTabs_few">%2$s и ещё %1$s</string>
   <string name="vg_BotMoreTabs_many">%2$s и ещё %1$s</string>
   <string name="vg_BotMoreTabs_other">%2$s и ещё %1$s</string>
-  <string name="vg_BotSharedToMany_one">Сообщение отправлено в %1$s чат</string>
-  <string name="vg_BotSharedToMany_few">Сообщение отправлено в %1$s чата</string>
-  <string name="vg_BotSharedToMany_many">Сообщение отправлено в %1$s чатов</string>
-  <string name="vg_BotSharedToMany_other">Сообщение отправлено в %1$s чата</string>
-  <string name="vg_BotEmojiStatusSetRequestForDay_one">%1$s день</string>
-  <string name="vg_BotEmojiStatusSetRequestForDay_few">%1$s дня</string>
-  <string name="vg_BotEmojiStatusSetRequestForDay_many">%1$s дней</string>
-  <string name="vg_BotEmojiStatusSetRequestForDay_other">%1$s дня</string>
-  <string name="vg_BotEmojiStatusSetRequestForHour_one">%1$s час</string>
-  <string name="vg_BotEmojiStatusSetRequestForHour_few">%1$s часа</string>
-  <string name="vg_BotEmojiStatusSetRequestForHour_many">%1$s часов</string>
-  <string name="vg_BotEmojiStatusSetRequestForHour_other">%1$s часа</string>
-  <string name="vg_BotEmojiStatusSetRequestForMinute_one">%1$s минуту</string>
-  <string name="vg_BotEmojiStatusSetRequestForMinute_few">%1$s минуты</string>
-  <string name="vg_BotEmojiStatusSetRequestForMinute_many">%1$s минут</string>
-  <string name="vg_BotEmojiStatusSetRequestForMinute_other">%1$s минуты</string>
   <string name="vg_BotWebViewStart">Запустить</string>
   <string name="vg_BotWebAppDisclaimerRequired">Чтобы продолжить, примите Условия использования.</string>
   <string name="vg_BotCantSharePreparedMessage">Это мини-приложение не может отправлять сообщения в этот чат.</string>
   <string name="vg_WebAppPremiumRequired">Для этой функции нужен Telegram Premium.</string>
+  <string name="vg_WebAppRevokeLocation">Отозвать доступ к геопозиции</string>
+  <string name="vg_WebAppRevokeBiometry">Отозвать доступ к биометрии</string>
+  <string name="vg_BotLocationRequest">%1$s запрашивает доступ к вашей геопозиции. Отозвать доступ можно в меню мини-приложения.</string>
 </resources>

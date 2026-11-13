@@ -66,6 +66,10 @@ public class LocationHelper implements ActivityResultHandler {
   }
 
   public static LocationHelper requestLocation (BaseActivity context, long timeout, boolean allowResolution, boolean needBackground, final @NonNull LocationCallback callback) {
+    return requestLocation(context, timeout, allowResolution, needBackground, false, callback);
+  }
+
+  public static LocationHelper requestLocation (BaseActivity context, long timeout, boolean allowResolution, boolean needBackground, boolean skipPermissionAlert, final @NonNull LocationCallback callback) {
     final LocationHelper helper = new LocationHelper(context, new LocationHelper.LocationChangeListener() {
       @Override
       public void onLocationResult (LocationHelper context, @NonNull String arg, @Nullable Location location) {
@@ -79,7 +83,7 @@ public class LocationHelper implements ActivityResultHandler {
         callback.onLocationResult(errorCode, savedLocation);
       }
     }, true, needBackground);
-    helper.receiveLocation("", null, timeout, allowResolution);
+    helper.receiveLocation("", null, timeout, allowResolution, skipPermissionAlert);
     return helper;
   }
 

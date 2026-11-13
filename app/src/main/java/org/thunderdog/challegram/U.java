@@ -1161,6 +1161,23 @@ public class U {
     return new String(hexChars);
   }
 
+  /** Accepts both cases; null when {@code hex} is not an even-length hex string. */
+  public static @Nullable byte[] fromHex (@Nullable String hex) {
+    if (hex == null || hex.isEmpty() || hex.length() % 2 != 0) {
+      return null;
+    }
+    byte[] bytes = new byte[hex.length() / 2];
+    for (int i = 0; i < bytes.length; i++) {
+      int high = Character.digit(hex.charAt(i * 2), 16);
+      int low = Character.digit(hex.charAt(i * 2 + 1), 16);
+      if (high < 0 || low < 0) {
+        return null;
+      }
+      bytes[i] = (byte) ((high << 4) | low);
+    }
+    return bytes;
+  }
+
   public static String buildHex (byte[] keyHash) {
     StringBuilder b = new StringBuilder();
     if (keyHash.length > 16) {

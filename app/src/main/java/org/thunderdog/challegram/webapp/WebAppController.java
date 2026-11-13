@@ -1,5 +1,6 @@
 /*
  * This file is a part of Vibegram X, a fork of Telegram X
+ * Based on BotWebViewSheet, BotWebViewContainer and ChatAttachAlertBotWebViewLayout from Telegram for Android (https://github.com/DrKLO/Telegram), GPL-2.0-or-later.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,18 +18,19 @@
 package org.thunderdog.challegram.webapp;
 
 import android.annotation.SuppressLint;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
@@ -59,11 +61,12 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.UiThread;
+import androidx.annotation.RequiresApi;
 
 import org.drinkless.tdlib.TdApi;
 import org.json.JSONException;
@@ -73,11 +76,11 @@ import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.data.TGSwitchInline;
 import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
-import org.thunderdog.challegram.navigation.MenuMoreWrap;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
@@ -88,14 +91,13 @@ import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeDelegate;
 import org.thunderdog.challegram.theme.ThemeManager;
-import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Intents;
 import org.thunderdog.challegram.tool.Keyboard;
-import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.ui.ChatsController;
 import org.thunderdog.challegram.ui.MessagesController;
 import org.thunderdog.challegram.widget.M3ButtonView;
 import org.thunderdog.challegram.widget.M3Sheets;
@@ -118,10 +120,11 @@ import tgx.td.ChatId;
 import tgx.td.Td;
 
 /**
- * A mini app: the bottom sheet of the official Android client with the WebView, its header, the
- * main and secondary buttons and the fullscreen mode. Minimizing keeps this controller, its popup
- * and the WebView alive and puts it into {@link WebAppTabs}.
+ * A mini app: the bottom sheet with the WebView, its header, the main and secondary buttons and the
+ * fullscreen mode. Minimizing keeps this controller, its popup and the WebView alive and puts it
+ * into {@link WebAppTabs}.
  */
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 public class WebAppController extends ViewController<WebAppController.Args> implements
   FactorAnimator.Target,
   PopupLayout.AnimatedPopupProvider,
@@ -166,6 +169,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
   }
 
+  /** Controllers of the sheets that are open or minimized into {@link WebAppTabs}. */
   private static final ArrayList<WebAppController> openControllers = new ArrayList<>();
 
   private static final float
@@ -174,7 +178,11 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   private static final float FLING_DOWN_VELOCITY = 650f, FLING_UP_VELOCITY = 700f;
   private static final float LONG_DRAG_DISTANCE = 200f, CONTENT_DRAG_DEAD_ZONE = 60f;
   private static final long LONG_DRAG_DURATION = 250L, CONTEXT_OPEN_DELAY = 220L;
-  private static final float PILL_HEIGHT = 30f, PILL_MARGIN = 8f, RIGHT_PILL_WIDTH = 71.66f;
+  private static final float HEADER_CLOSE_WIDTH = 56f, HEADER_BUTTON_WIDTH = 48f;
+  private static final float HEADER_BUTTONS_MARGIN = 4f, HEADER_TITLE_GAP = 12f;
+  private static final float PILL_HEIGHT = 30f, PILL_MARGIN = 8f, PILL_BUTTON_WIDTH = 36f;
+  private static final float PILL_ICON_SCALE = .75f;
+  private static final int PILL_COLOR = 0x59000000, PILL_CONTENT_COLOR = 0xffffffff;
   private static final float CONTENT_SAFE_AREA_TOP = PILL_MARGIN + PILL_HEIGHT + PILL_MARGIN;
   private static final long FULLSCREEN_NAME_DURATION = 2500L;
   private static final int DIM_ALPHA = 0x40;
@@ -186,7 +194,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   private static final int ANIMATOR_COLORS = 3, ANIMATOR_PROGRESS = 4, ANIMATOR_BACK = 5;
   private static final int ANIMATOR_LOADED = 6;
 
-  private static final int REQUEST_FILE_CHOOSER = 3000;
+  private static @Nullable Bitmap videoPoster;
 
   public WebAppController (Context context, Tdlib tdlib) {
     super(context, tdlib);
@@ -201,11 +209,13 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   private SheetLayout sheetLayout;
   private FrameLayoutFix headerView;
+  private LinearLayout titleGroup, buttonsGroup;
+  private Drawable titlePill, buttonsPill;
   private BackHeaderButton closeButton;
   private TextView titleView;
   private ImageView minimizeButton, moreButton;
   private FrameLayoutFix contentView;
-  private @Nullable WebView webView;
+  private @Nullable WebView webView, windowTarget;
   private PlaceholderView placeholderView;
   private @Nullable LinearLayout errorView;
   private WebAppButtonsView buttonsView;
@@ -217,13 +227,12 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   // State
 
   private long launchId;
+  private boolean isLaunchClosed;
   private boolean requireSameOrigin;
   private @Nullable String trustedOrigin;
-  private @Nullable String launchUrl;
   private boolean isPageLoaded, isMinimized, isClosing, hasShown;
   private boolean isBackButtonVisible, isSettingsButtonVisible, needClosingConfirmation;
-  private boolean allowSwipes = true, pageAllowsScrollX = true, pageAllowsScrollY = true;
-  private boolean hasPageScrollReply, isScrollScriptInjected;
+  private boolean allowSwipes = true;
   private boolean isFullscreen, isOrientationLocked;
   private int restingPosition = POSITION_COMPACT;
   private long fullscreenEnteredAt;
@@ -306,6 +315,16 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
   }
 
+  /** Closes the open and minimized apps of an account that is logging out. */
+  static void closeAll (int accountId) {
+    for (int i = openControllers.size() - 1; i >= 0; i--) {
+      WebAppController c = openControllers.get(i);
+      if (c.tdlib.id() == accountId) {
+        c.closeNow();
+      }
+    }
+  }
+
   boolean isMinimized () {
     return isMinimized;
   }
@@ -315,7 +334,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
    * camera.
    */
   void setSheetHidden (boolean isHidden) {
-    if (popupLayout == null || isMinimized) {
+    if (popupLayout == null || isMinimized || isDestroyed()) {
       return;
     }
     popupLayout.setVisibility(isHidden ? View.INVISIBLE : View.VISIBLE);
@@ -432,55 +451,116 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       ViewGroup.LayoutParams.MATCH_PARENT, HeaderView.getSize(false), Gravity.TOP));
     headerView.setAlpha(0f);
 
+    // In fullscreen the same views become the pills over the page, see updateHeaderLayout().
+    final int pillInset = (HeaderView.getSize(false) - Screen.dp(PILL_HEIGHT)) / 2;
+    titlePill = newPillBackground(pillInset);
+    buttonsPill = newPillBackground(pillInset);
+
+    titleGroup = new LinearLayout(context);
+    titleGroup.setOrientation(LinearLayout.HORIZONTAL);
+    titleGroup.setBackground(titlePill);
+    titleGroup.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT));
+    headerView.addView(titleGroup);
+
     closeButton = new BackHeaderButton(context);
     closeButton.setButtonFactor(BackHeaderButton.TYPE_CLOSE);
     closeButton.setId(R.id.btn_webAppClose);
     closeButton.setOnClickListener(this);
-    closeButton.setLayoutParams(FrameLayoutFix.newParams(Screen.dp(56f),
-      ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT));
-    headerView.addView(closeButton);
+    closeButton.setLayoutParams(new LinearLayout.LayoutParams(Screen.dp(HEADER_CLOSE_WIDTH),
+      ViewGroup.LayoutParams.MATCH_PARENT));
+    titleGroup.addView(closeButton);
 
     titleView = new TextView(context);
-    titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 19f);
-    titleView.setTypeface(Fonts.getRobotoMedium());
     titleView.setSingleLine(true);
     titleView.setEllipsize(TextUtils.TruncateAt.END);
     titleView.setGravity(Gravity.CENTER_VERTICAL);
-    FrameLayout.LayoutParams titleParams = FrameLayoutFix.newParams(
-      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-    titleParams.leftMargin = Screen.dp(68f);
-    titleParams.rightMargin = Screen.dp(104f);
-    titleView.setLayoutParams(titleParams);
-    titleView.setText(Emoji.instance().replaceEmoji(getBotName()));
-    headerView.addView(titleView);
+    titleView.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+      ViewGroup.LayoutParams.MATCH_PARENT));
+    titleGroup.addView(titleView);
 
-    moreButton = newHeaderButton(context, R.id.menu_btn_more, R.drawable.baseline_more_vert_24, 0);
+    buttonsGroup = new LinearLayout(context);
+    buttonsGroup.setOrientation(LinearLayout.HORIZONTAL);
+    buttonsGroup.setBackground(buttonsPill);
+    buttonsGroup.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+      ViewGroup.LayoutParams.MATCH_PARENT, Gravity.RIGHT));
     minimizeButton = newHeaderButton(context, R.id.btn_webAppMinimize,
-      R.drawable.baseline_keyboard_arrow_down_24, Screen.dp(48f));
-    headerView.addView(minimizeButton);
-    headerView.addView(moreButton);
+      R.drawable.baseline_keyboard_arrow_down_24);
+    moreButton = newHeaderButton(context, R.id.menu_btn_more, R.drawable.baseline_more_vert_24);
+    buttonsGroup.addView(minimizeButton);
+    buttonsGroup.addView(moreButton);
+    headerView.addView(buttonsGroup);
     sheetLayout.addView(headerView);
 
+    updateHeaderLayout();
     initColors();
     ThemeManager.instance().addThemeListener(this);
     return sheetLayout;
   }
 
-  private ImageView newHeaderButton (Context context, int id, int icon, int rightMargin) {
+  private ImageView newHeaderButton (Context context, int id, int icon) {
     ImageView button = new ImageView(context);
     button.setId(id);
     button.setScaleType(ImageView.ScaleType.CENTER);
     button.setImageResource(icon);
     button.setOnClickListener(this);
     Views.setClickable(button);
-    FrameLayout.LayoutParams params = FrameLayoutFix.newParams(Screen.dp(48f),
-      ViewGroup.LayoutParams.MATCH_PARENT, Gravity.RIGHT);
-    params.rightMargin = rightMargin + Screen.dp(4f);
-    button.setLayoutParams(params);
+    button.setLayoutParams(new LinearLayout.LayoutParams(Screen.dp(HEADER_BUTTON_WIDTH),
+      ViewGroup.LayoutParams.MATCH_PARENT));
     return button;
   }
 
-  @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+  private static Drawable newPillBackground (int verticalInset) {
+    GradientDrawable pill = new GradientDrawable();
+    pill.setColor(PILL_COLOR);
+    pill.setCornerRadius(Screen.dp(PILL_HEIGHT) / 2f);
+    Drawable background = new InsetDrawable(pill, 0, verticalInset, 0, verticalInset);
+    background.setAlpha(0);
+    return background;
+  }
+
+  /** Switches the header views between the header of the sheet and the pills of fullscreen. */
+  private void updateHeaderLayout () {
+    FrameLayout.LayoutParams titleParams = (FrameLayout.LayoutParams) titleGroup.getLayoutParams();
+    titleParams.width = isFullscreen ?
+      ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT;
+    titleParams.leftMargin = isFullscreen ? Screen.dp(PILL_MARGIN) : 0;
+    titleParams.rightMargin = Screen.dp(HEADER_BUTTON_WIDTH + HEADER_BUTTONS_MARGIN) * 2;
+    closeButton.getLayoutParams().width =
+      Screen.dp(isFullscreen ? PILL_HEIGHT : HEADER_CLOSE_WIDTH);
+    final int titleGap = Screen.dp(HEADER_TITLE_GAP);
+    titleView.setPadding(isFullscreen ? 0 : titleGap, 0, isFullscreen ? titleGap : 0, 0);
+    titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, isFullscreen ? 13f : 19f);
+    titleView.setTypeface(isFullscreen ? Fonts.getRobotoBold() : Fonts.getRobotoMedium());
+    // The whole left pill acts as the close button, the title of the sheet header does not.
+    titleGroup.setOnClickListener(isFullscreen ? this : null);
+    titleGroup.setClickable(isFullscreen);
+    FrameLayout.LayoutParams buttonsParams =
+      (FrameLayout.LayoutParams) buttonsGroup.getLayoutParams();
+    buttonsParams.rightMargin = Screen.dp(isFullscreen ? PILL_MARGIN : HEADER_BUTTONS_MARGIN);
+    final int buttonWidth = Screen.dp(isFullscreen ? PILL_BUTTON_WIDTH : HEADER_BUTTON_WIDTH);
+    minimizeButton.getLayoutParams().width = buttonWidth;
+    moreButton.getLayoutParams().width = buttonWidth;
+    headerView.requestLayout();
+    updateTitle();
+  }
+
+  /**
+   * In fullscreen the left pill shows the bot name for a moment after entering it, then what the
+   * button does.
+   */
+  private void updateTitle () {
+    if (isDestroyed()) {
+      return;
+    }
+    final boolean showName = !isFullscreen ||
+      SystemClock.uptimeMillis() - fullscreenEnteredAt < FULLSCREEN_NAME_DURATION;
+    titleView.setText(showName ? Emoji.instance().replaceEmoji(getBotName()) :
+      Lang.getString(isBackButtonVisible ?
+        R.string.vg_BotFullscreenBack : R.string.vg_BotFullscreenClose));
+  }
+
+  @SuppressLint("SetJavaScriptEnabled")
   private void setupWebView (WebView webView) {
     WebSettings settings = webView.getSettings();
     settings.setJavaScriptEnabled(true);
@@ -497,17 +577,13 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     settings.setUserAgentString(buildUserAgent(settings.getUserAgentString()));
     webView.setVerticalScrollBarEnabled(false);
     webView.setBackgroundColor(Theme.getColor(ColorId.filling));
-    webView.addJavascriptInterface(bridge, WebAppBridge.INTERFACE_NAME);
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      GeolocationPermissions.getInstance().clearAll();
-    }
     webView.setWebViewClient(new MiniAppWebViewClient());
     webView.setWebChromeClient(new MiniAppChromeClient());
   }
 
   /**
-   * The official clients append a platform token that mini apps sniff to tell Android apart, so it
-   * keeps the format of the official one.
+   * Mini apps sniff the platform token of the official clients to tell Android apart, so the token
+   * keeps their format, with the version of this app.
    */
   private static String buildUserAgent (@Nullable String defaultUserAgent) {
     String userAgent = defaultUserAgent != null ? defaultUserAgent : "";
@@ -554,8 +630,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   // Layout
 
   private int getTabsHeight () {
-    // The strip of other minimized apps stays visible under an open sheet, like in the official
-    // client.
+    // The strip of other minimized apps stays visible under an open sheet.
     return WebAppTabs.getStripHeight(tdlib.id());
   }
 
@@ -605,7 +680,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     final float halfway = compactTop - (compactTop - expandedTop) / 2f;
     headerAnimator.setValue(
       sheetTop <= halfway && !isFullscreen && !isMinimizedOrHiding(), hasShown);
-    sheetLayout.invalidate();
+    updateHeaderAppearance();
     placeholderView.invalidate();
   }
 
@@ -676,13 +751,14 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   @Override
   public boolean shouldTouchOutside (float x, float y) {
-    // Touches on the strip of other minimized apps reach it, like in the official client.
+    // Touches on the strip of other minimized apps reach it.
     return sheetLayout != null && getTabsHeight() > 0 &&
       y >= sheetLayout.getMeasuredHeight() - insetsWithoutIme.bottom - getTabsHeight();
   }
 
   @Override
   public boolean performOnBackPressed (boolean fromTop, boolean commit) {
+    super.performOnBackPressed(fromTop, commit);
     if (commit) {
       if (isBackButtonVisible) {
         bridge.onBackButtonPressed();
@@ -750,28 +826,46 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         placeholderView.setVisibility(finalFactor == 1f ? View.GONE : View.VISIBLE);
         break;
       }
-      case ANIMATOR_FULLSCREEN: {
-        headerView.setVisibility(finalFactor == 1f ? View.INVISIBLE : View.VISIBLE);
-        break;
-      }
     }
   }
 
   private void updateHeaderAppearance () {
     final float fullscreen = fullscreenAnimator.getFloatValue();
-    headerView.setAlpha(headerAnimator.getFloatValue() * (1f - fullscreen));
-    headerView.setTranslationY(insets.top - headerView.getMeasuredHeight() * fullscreen);
+    headerView.setAlpha(MathUtils.fromTo(headerAnimator.getFloatValue(), 1f, fullscreen));
+    // The pills follow the page when the sheet is dragged and are centered in the safe area.
+    final float pillsOffset =
+      (headerView.getMeasuredHeight() - Screen.dp(CONTENT_SAFE_AREA_TOP)) / 2f;
+    headerView.setTranslationY(
+      insets.top + (contentView.getTranslationY() - pillsOffset) * fullscreen);
+    final int pillAlpha = (int) (255 * fullscreen);
+    titlePill.setAlpha(pillAlpha);
+    buttonsPill.setAlpha(pillAlpha);
+    final float iconScale = MathUtils.fromTo(1f, PILL_ICON_SCALE, fullscreen);
+    closeButton.setScaleX(iconScale);
+    closeButton.setScaleY(iconScale);
+    minimizeButton.setScaleX(iconScale);
+    minimizeButton.setScaleY(iconScale);
+    moreButton.setScaleX(iconScale);
+    moreButton.setScaleY(iconScale);
+    applyHeaderContentColor();
     sheetLayout.invalidate();
   }
 
   // Colors
 
   private void initColors () {
+    updateBotColors(Theme.isDark());
+    headerColor = toHeaderColor = getDefaultHeaderColor();
+    backgroundColor = toBackgroundColor = getDefaultBackgroundColor();
+    bottomBarColor = toBottomBarColor = getDefaultBottomBarColor();
+    applyColors();
+  }
+
+  private void updateBotColors (boolean isDark) {
     TdApi.UserFullInfo userFull = tdlib.cache().userFull(getBotUserId());
     botHeaderColor = 0;
     botBackgroundColor = 0;
     if (userFull != null && userFull.botInfo != null) {
-      boolean isDark = Theme.isDark();
       int header = isDark ? userFull.botInfo.webAppHeaderDarkColor :
         userFull.botInfo.webAppHeaderLightColor;
       int background = isDark ? userFull.botInfo.webAppBackgroundDarkColor :
@@ -779,10 +873,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       botHeaderColor = header != -1 ? header | 0xff000000 : 0;
       botBackgroundColor = background != -1 ? background | 0xff000000 : 0;
     }
-    headerColor = toHeaderColor = getDefaultHeaderColor();
-    backgroundColor = toBackgroundColor = getDefaultBackgroundColor();
-    bottomBarColor = toBottomBarColor = getDefaultBottomBarColor();
-    applyColors();
   }
 
   private @ColorInt int getDefaultHeaderColor () {
@@ -836,15 +926,20 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     return isLightColor(headerColor) ? 0xff000000 : 0xffffffff;
   }
 
+  private void applyHeaderContentColor () {
+    final int color = ColorUtils.fromToArgb(getHeaderContentColor(), PILL_CONTENT_COLOR,
+      fullscreenAnimator.getFloatValue());
+    closeButton.setColor(color);
+    titleView.setTextColor(color);
+    minimizeButton.setColorFilter(color);
+    moreButton.setColorFilter(color);
+  }
+
   private void applyColors () {
     if (sheetLayout == null) {
       return;
     }
-    final int contentColor = getHeaderContentColor();
-    closeButton.setColor(contentColor);
-    titleView.setTextColor(contentColor);
-    minimizeButton.setColorFilter(contentColor);
-    moreButton.setColorFilter(contentColor);
+    applyHeaderContentColor();
     contentView.setBackgroundColor(backgroundColor);
     if (webView != null) {
       webView.setBackgroundColor(backgroundColor);
@@ -884,6 +979,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   @Override
   public void onThemeColorsChanged (boolean areTemp, @Nullable ColorState state) {
+    super.onThemeColorsChanged(areTemp, state);
     if (sheetLayout == null) {
       return;
     }
@@ -899,43 +995,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   @Override
   public void onThemeChanged (ThemeDelegate fromTheme, ThemeDelegate toTheme) {
-    initColors();
-    if (isPageLoaded) {
-      bridge.sendTheme();
-    }
-  }
-
-  /**
-   * Colors of the app in the format of {@code theme_changed}, the URL and
-   * {@link TdApi.ThemeParameters}.
-   */
-  String buildThemeJson () {
-    TdApi.ThemeParameters theme = WebApp.buildThemeParameters();
-    JSONObject object = new JSONObject();
-    try {
-      object.put("bg_color", hex(theme.backgroundColor));
-      object.put("secondary_bg_color", hex(theme.secondaryBackgroundColor));
-      object.put("header_bg_color", hex(theme.headerBackgroundColor));
-      object.put("bottom_bar_bg_color", hex(theme.bottomBarBackgroundColor));
-      object.put("section_bg_color", hex(theme.sectionBackgroundColor));
-      object.put("section_separator_color", hex(theme.sectionSeparatorColor));
-      object.put("text_color", hex(theme.textColor));
-      object.put("accent_text_color", hex(theme.accentTextColor));
-      object.put("section_header_text_color", hex(theme.sectionHeaderTextColor));
-      object.put("subtitle_text_color", hex(theme.subtitleTextColor));
-      object.put("destructive_text_color", hex(theme.destructiveTextColor));
-      object.put("hint_color", hex(theme.hintColor));
-      object.put("link_color", hex(theme.linkColor));
-      object.put("button_color", hex(theme.buttonColor));
-      object.put("button_text_color", hex(theme.buttonTextColor));
-    } catch (JSONException ignored) {
-      // Keys are constants and values are strings.
-    }
-    return object.toString();
-  }
-
-  private static String hex (int color) {
-    return String.format(Locale.US, "#%06X", color & 0xffffff);
+    // Only the colors of the bot: onThemeColorsChanged follows and keeps the ones the page set.
+    updateBotColors(toTheme.isDark());
   }
 
   // Loading
@@ -956,7 +1017,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
           } else {
             launchId = info.launchId;
             if (isClosing) {
-              tdlib.send(new TdApi.CloseWebApp(launchId), tdlib.typedOkHandler());
+              closeLaunch();
               return;
             }
             loadUrl(info.url);
@@ -1022,8 +1083,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
     requireSameOrigin = url.requireSameOrigin;
     trustedOrigin = requireSameOrigin ? getOrigin(url.url) : null;
-    launchUrl = url.url;
     loadPlaceholder();
+    bridge.attachTo(webView, trustedOrigin);
     webView.loadUrl(url.url);
   }
 
@@ -1042,8 +1103,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     isPageLoaded = true;
     loadedAnimator.setValue(true, true);
     sendViewport(true, !positionAnimator.isAnimating());
-    sendSafeArea(true);
-    sendContentSafeArea(true);
+    sendSafeArea();
+    sendContentSafeArea();
   }
 
   private void setLoadingProgress (float progress) {
@@ -1163,7 +1224,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     bridge.send("viewport_changed", payload);
   }
 
-  void sendSafeArea (boolean force) {
+  void sendSafeArea () {
     JSONObject payload = new JSONObject();
     boolean hasBottomInset = !isKeyboardVisible() && buttonsView.getTargetHeight() == 0;
     try {
@@ -1178,7 +1239,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     bridge.send("safe_area_changed", payload);
   }
 
-  void sendContentSafeArea (boolean force) {
+  void sendContentSafeArea () {
     JSONObject payload = new JSONObject();
     try {
       payload.put("left", 0);
@@ -1209,9 +1270,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     if (isBackButtonVisible != isVisible) {
       isBackButtonVisible = isVisible;
       backAnimator.setValue(isVisible, hasShown);
-      if (isFullscreen) {
-        sheetLayout.invalidatePills();
-      }
+      updateTitle();
     }
   }
 
@@ -1225,12 +1284,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   void setAllowSwipes (boolean allowSwipes) {
     this.allowSwipes = allowSwipes;
-  }
-
-  void setPageScrollAllowed (boolean allowX, boolean allowY) {
-    pageAllowsScrollX = allowX;
-    pageAllowsScrollY = allowY;
-    hasPageScrollReply = true;
   }
 
   void setupButton (
@@ -1259,7 +1312,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     if (sheetLayout != null) {
       sheetLayout.requestLayout();
       sendViewport(true, true);
-      sendSafeArea(true);
+      sendSafeArea();
     }
   }
 
@@ -1280,18 +1333,17 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   private void setFullscreen (boolean fullscreen) {
     isFullscreen = fullscreen;
     fullscreenEnteredAt = fullscreen ? SystemClock.uptimeMillis() : 0;
-    headerView.setVisibility(View.VISIBLE);
+    updateHeaderLayout();
     fullscreenAnimator.setValue(fullscreen, hasShown);
     sheetLayout.requestLayout();
     if (targetPosition != POSITION_HIDDEN && hasShown) {
       animatePosition(fullscreen ? POSITION_FULLSCREEN : POSITION_EXPANDED);
     }
-    sheetLayout.invalidatePills();
     if (fullscreen) {
-      sheetLayout.postDelayed(sheetLayout::invalidatePills, FULLSCREEN_NAME_DURATION);
+      sheetLayout.postDelayed(this::updateTitle, FULLSCREEN_NAME_DURATION);
     }
-    sendSafeArea(true);
-    sendContentSafeArea(true);
+    sendSafeArea();
+    sendContentSafeArea();
   }
 
   void setOrientationLocked (boolean locked) {
@@ -1299,15 +1351,14 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       return;
     }
     isOrientationLocked = locked;
-    BaseActivity activity = context();
-    if (locked) {
-      int orientation = activity.getResources().getConfiguration().orientation;
-      activity.setRequestedOrientation(orientation == Configuration.ORIENTATION_LANDSCAPE ?
-        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE :
-        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-    } else {
-      activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+    // A minimized app has already released the lock, which may belong to the open one now.
+    if (!isMinimized) {
+      setOrientationLockFlag(locked);
     }
+  }
+
+  private void setOrientationLockFlag (boolean enabled) {
+    context().setOrientationLockFlagEnabled(BaseActivity.ORIENTATION_FLAG_WEB_APP, enabled);
   }
 
   void openBotProfile () {
@@ -1363,13 +1414,13 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     return WebApp.isAttachmentMenuBot(tdlib, getBotUserId());
   }
 
-  void switchInlineQuery (String query, boolean currentChat) {
+  void switchInlineQuery (String query, @Nullable TdApi.TargetChatTypes chatTypes) {
     TdApi.User bot = tdlib.cache().user(getBotUserId());
     if (bot == null || !Td.hasUsername(bot)) {
       return;
     }
     String username = Td.primaryUsername(bot);
-    if (currentChat) {
+    if (chatTypes == null) {
       ViewController<?> c = context().navigation().getCurrentStackItem();
       if (c instanceof MessagesController &&
         ((MessagesController) c).getChatId() == getArgumentsStrict().chatId) {
@@ -1380,7 +1431,23 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       return;
     }
     closeNow();
-    tdlib.ui().switchInline(this, username, query, false);
+    ChatsController c = new ChatsController(context(), tdlib);
+    c.setArguments(new ChatsController.Arguments(new ChatsController.PickerDelegate() {
+      @Override
+      public boolean onChatPicked (TdApi.Chat chat, Runnable onDone) {
+        if (!WebApp.isChatAllowed(tdlib, chat.id, chatTypes) || !tdlib.canSendBasicMessage(chat)) {
+          UI.showToast(R.string.YouCantSendMessages, Toast.LENGTH_SHORT);
+          return false;
+        }
+        return true;
+      }
+
+      @Override
+      public Object getShareItem () {
+        return new TGSwitchInline(username, query);
+      }
+    }));
+    navigateTo(c);
   }
 
   void addToHomeScreen (RunnableBool onResult) {
@@ -1392,7 +1459,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   }
 
   void showPremiumRequired () {
-    UI.showToast(R.string.vg_WebAppPremiumRequired, android.widget.Toast.LENGTH_SHORT);
+    showBulletin(Lang.getString(R.string.vg_WebAppPremiumRequired));
   }
 
   void showBulletin (CharSequence text) {
@@ -1432,7 +1499,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   @Override
   public void onClick (View v) {
     final int id = v.getId();
-    if (id == R.id.btn_webAppClose) {
+    if (id == R.id.btn_webAppClose || v == titleGroup) {
       if (isBackButtonVisible) {
         bridge.onBackButtonPressed();
       } else {
@@ -1446,49 +1513,53 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   }
 
   private void showMenu (View anchor) {
-    int[] location = Views.getLocationOnScreen(anchor);
-    showMenu(location[0], location[1], location[0] + anchor.getWidth(),
-      location[1] + anchor.getHeight());
-  }
-
-  private void showMenu (int anchorLeft, int anchorTop, int anchorRight, int anchorBottom) {
-    final TdApi.User bot = tdlib.cache().user(getBotUserId());
+    final long botUserId = getBotUserId();
+    final TdApi.User bot = tdlib.cache().user(botUserId);
     final boolean hasMainWebApp = bot != null &&
       bot.type.getConstructor() == TdApi.UserTypeBot.CONSTRUCTOR &&
       ((TdApi.UserTypeBot) bot.type).hasMainWebApp;
-    MenuMoreWrap menu = new MenuMoreWrap(context());
-    menu.init(getThemeListeners(), null);
-    View.OnClickListener listener = v -> {
-      ((PopupLayout) v.getParent().getParent()).hideWindow(true);
-      onMenuItemPressed(v.getId());
-    };
-    menu.addItem(R.id.btn_webAppOpenBot, Lang.getString(R.string.vg_BotWebViewOpenBot),
-      R.drawable.deproko_baseline_bots_24, null, listener);
+    Options.Builder b = new Options.Builder();
+    b.item(newMenuItem(R.id.btn_webAppOpenBot, R.string.vg_BotWebViewOpenBot,
+      R.drawable.deproko_baseline_bots_24));
     if (isSettingsButtonVisible) {
-      menu.addItem(R.id.btn_webAppSettings, Lang.getString(R.string.vg_BotWebViewSettings),
-        R.drawable.baseline_settings_24, null, listener);
+      b.item(newMenuItem(R.id.btn_webAppSettings, R.string.Settings,
+        R.drawable.baseline_settings_24));
     }
-    menu.addItem(R.id.btn_webAppReload, Lang.getString(R.string.vg_BotWebViewReloadPage),
-      R.drawable.baseline_replay_24, null, listener);
+    b.item(newMenuItem(R.id.btn_webAppReload, R.string.vg_BotWebViewReloadPage,
+      R.drawable.baseline_replay_24));
     if (hasMainWebApp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      menu.addItem(R.id.btn_webAppAddToHomeScreen, Lang.getString(R.string.vg_AddShortcut),
-        R.drawable.baseline_home_24, null, listener);
+      b.item(newMenuItem(R.id.btn_webAppAddToHomeScreen, R.string.vg_AddShortcut,
+        R.drawable.baseline_home_24));
     }
-    menu.addItem(R.id.btn_webAppTerms, Lang.getString(R.string.vg_BotWebViewToS),
-      R.drawable.baseline_policy_24, null, listener);
-    menu.addItem(R.id.btn_webAppReport, Lang.getString(R.string.vg_BotWebViewReportBot),
-      R.drawable.baseline_report_24, null, listener);
-    if (WebApp.isAttachmentMenuBot(tdlib, getBotUserId())) {
-      menu.addItem(R.id.btn_webAppDelete, Lang.getString(R.string.vg_BotWebViewDeleteBot),
-        R.drawable.baseline_delete_24, null, listener);
+    // The only place where the user takes back the access granted to the bot.
+    if (WebAppLocation.isGranted(tdlib, botUserId)) {
+      b.item(newMenuItem(R.id.btn_webAppRevokeLocation, R.string.vg_WebAppRevokeLocation,
+        R.drawable.baseline_location_on_24));
     }
-    menu.setAnchor(anchorLeft, anchorTop, anchorRight, anchorBottom, true);
-    PopupLayout menuPopup = new PopupLayout(context());
-    menuPopup.init(true);
-    menuPopup.setNeedRootInsets();
-    menuPopup.setOverlayStatusBar(true);
-    menuPopup.setDismissOtherPopUps(false);
-    menuPopup.showMoreView(menu);
+    if (WebAppBiometry.isAccessGranted(tdlib, botUserId)) {
+      b.item(newMenuItem(R.id.btn_webAppRevokeBiometry, R.string.vg_WebAppRevokeBiometry,
+        R.drawable.baseline_fingerprint_24));
+    }
+    b.item(newMenuItem(R.id.btn_webAppTerms, R.string.vg_BotWebViewToS,
+      R.drawable.baseline_policy_24));
+    b.item(newMenuItem(R.id.btn_webAppReport, R.string.Report, R.drawable.baseline_report_24));
+    if (WebApp.isAttachmentMenuBot(tdlib, botUserId)) {
+      b.item(newMenuItem(R.id.btn_webAppDelete, R.string.vg_BotWebViewDeleteBot,
+        R.drawable.baseline_delete_24));
+    }
+    Options options = b.build();
+    // The sheet is a popup itself and must stay under the menu.
+    options.setIgnoreOtherPopUps(true);
+    int[] location = Views.getLocationOnScreen(anchor);
+    float[] anchorPoint = {location[0] + anchor.getWidth(), location[1] + anchor.getHeight()};
+    showOptions(options, (v, id) -> {
+      onMenuItemPressed(id);
+      return true;
+    }, null, anchorPoint, null);
+  }
+
+  private static OptionItem newMenuItem (int id, int title, int icon) {
+    return new OptionItem.Builder().id(id).name(title).icon(icon).build();
   }
 
   private void onMenuItemPressed (int id) {
@@ -1507,15 +1578,14 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       TdlibUi.reportChat(this, ChatId.fromUserId(getBotUserId()), null, null, null, true);
     } else if (id == R.id.btn_webAppDelete) {
       WebApp.confirmRemoveFromMenu(this, getBotUserId(), this::closeNow);
+    } else if (id == R.id.btn_webAppRevokeLocation) {
+      WebAppLocation.revoke(tdlib, getBotUserId());
+    } else if (id == R.id.btn_webAppRevokeBiometry) {
+      WebAppBiometry.revokeAccess(tdlib, getBotUserId());
     }
   }
 
   // Closing and minimizing
-
-  /** Closes the app on its request: no confirmation, like the official client. */
-  void closeByApp (boolean returnBack) {
-    closeNow();
-  }
 
   void close (boolean byUser) {
     if (isClosing) {
@@ -1547,8 +1617,10 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
     isClosing = true;
     WebAppTabs.remove(this);
-    if (launchId != 0) {
-      tdlib.send(new TdApi.CloseWebApp(launchId), tdlib.typedOkHandler());
+    if (qrClosedListener != null) {
+      qrCodeListener = null;
+      qrClosedListener = null;
+      WebApp.closeQrScanner(this);
     }
     if (bridge != null) {
       bridge.release();
@@ -1572,6 +1644,9 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       return;
     }
     isMinimized = true;
+    if (isOrientationLocked) {
+      setOrientationLockFlag(false);
+    }
     hideSoftwareKeyboard();
     tabPreview = takePreview();
     animatePosition(POSITION_HIDDEN);
@@ -1604,8 +1679,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       c.translate(-webView.getScrollX(), -webView.getScrollY());
       webView.draw(c);
       return bitmap;
-    } catch (Throwable t) {
-      Log.e("Cannot take a preview of a mini app", t);
+    } catch (OutOfMemoryError e) {
+      Log.e("Cannot take a preview of a mini app", e);
       return null;
     }
   }
@@ -1634,6 +1709,9 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
     WebAppTabs.remove(this);
     isMinimized = false;
+    if (isOrientationLocked) {
+      setOrientationLockFlag(true);
+    }
     popupLayout.setVisibility(View.VISIBLE);
     context().letsRememberAboutThisWindow(popupLayout);
     if (webView != null) {
@@ -1673,6 +1751,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     super.onActivityPause();
     if (webView != null && !isMinimized) {
       webView.onPause();
+      bridge.onVisibilityChanged(false);
     }
   }
 
@@ -1681,11 +1760,13 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     super.onActivityResume();
     if (webView != null && !isMinimized) {
       webView.onResume();
+      bridge.onVisibilityChanged(true);
     }
   }
 
   private void onFileChooserResult (int requestCode, int resultCode, Intent data) {
-    if (requestCode == REQUEST_FILE_CHOOSER && fileChooserCallback != null) {
+    if (requestCode == Intents.ACTIVITY_RESULT_WEB_APP_FILE_CHOOSER &&
+      fileChooserCallback != null) {
       ValueCallback<Uri[]> callback = fileChooserCallback;
       fileChooserCallback = null;
       Uri[] result = null;
@@ -1710,10 +1791,11 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     openControllers.remove(this);
     WebAppTabs.remove(this);
     ThemeManager.instance().removeThemeListener(this);
-    if (!isClosing && launchId != 0) {
-      tdlib.send(new TdApi.CloseWebApp(launchId), tdlib.typedOkHandler());
-    }
     isClosing = true;
+    closeLaunch();
+    setOrientationLocked(false);
+    qrCodeListener = null;
+    qrClosedListener = null;
     positionAnimator.cancel();
     colorAnimator.cancel();
     if (bridge != null) {
@@ -1726,9 +1808,10 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       fileChooserCallback.onReceiveValue(null);
       fileChooserCallback = null;
     }
+    destroyWindowTarget(windowTarget);
     if (webView != null) {
       webView.stopLoading();
-      webView.removeJavascriptInterface(WebAppBridge.INTERFACE_NAME);
+      bridge.detachFrom(webView);
       ViewGroup parent = (ViewGroup) webView.getParent();
       if (parent != null) {
         parent.removeView(webView);
@@ -1742,23 +1825,18 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
   }
 
-  // WebView clients
+  /**
+   * Closes the launch in TDLib once, whichever comes last: closing the sheet or the reply of
+   * {@code openWebApp}.
+   */
+  private void closeLaunch () {
+    if (launchId != 0 && !isLaunchClosed) {
+      isLaunchClosed = true;
+      tdlib.send(new TdApi.CloseWebApp(launchId), tdlib.typedOkHandler());
+    }
+  }
 
-  private static final String SCROLL_SCRIPT =
-    "(function(){if(window.__vgScroll)return;window.__vgScroll=1;" +
-    "var p=window." + WebAppBridge.INTERFACE_NAME + ";if(!p)return;" +
-    "var t=null,sent=false,blocked=false,pd=TouchEvent.prototype.preventDefault;" +
-    "TouchEvent.prototype.preventDefault=function(){blocked=true;return pd.call(this);};" +
-    "function ok(el,y){for(;el&&el.nodeType===1;el=el.parentElement){" +
-    "if(y?el.scrollTop>0:el.scrollLeft>0)" +
-    "return false;}var v=window.visualViewport;if(v&&(y?v.offsetTop:v.offsetLeft)>0)return false;" +
-    "return y?(window.scrollY||0)<=0:(window.scrollX||0)<=0;}" +
-    "function send(){if(sent)return;sent=true;" +
-    "p.postEvent('web_app_allow_scroll',JSON.stringify([!blocked&&ok(t,0),!blocked&&ok(t,1)]));}" +
-    "addEventListener('touchstart',function(e){t=e.target;sent=false;blocked=false;}," +
-    "{capture:true,passive:true});" +
-    "addEventListener('touchmove',function(){setTimeout(send,16);},{capture:true,passive:true});" +
-    "addEventListener('scroll',function(){if(t)send();},{capture:true,passive:true});})();";
+  // WebView clients
 
   private final class MiniAppWebViewClient extends WebViewClient {
     @Override
@@ -1766,27 +1844,23 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       super.onPageStarted(view, url, favicon);
       bridge.onPageStarted();
       view.getSettings().setMediaPlaybackRequiresUserGesture(true);
-      hasPageScrollReply = false;
-      isScrollScriptInjected = false;
     }
 
     @Override
     public void onPageFinished (WebView view, String url) {
       super.onPageFinished(view, url);
-      view.evaluateJavascript(SCROLL_SCRIPT, null);
-      isScrollScriptInjected = true;
       onPageReady();
     }
 
     @SuppressWarnings("deprecation")
     @Override
     public boolean shouldOverrideUrlLoading (WebView view, String url) {
-      return overrideUrlLoading(url);
+      return overrideUrlLoading(Uri.parse(url), null);
     }
 
     @Override
     public boolean shouldOverrideUrlLoading (WebView view, WebResourceRequest request) {
-      return overrideUrlLoading(request.getUrl().toString());
+      return overrideUrlLoading(request.getUrl(), request);
     }
 
     @Override
@@ -1834,6 +1908,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         if (parent != null) {
           parent.removeView(view);
         }
+        bridge.detachFrom(view);
         view.destroy();
         webView = null;
       }
@@ -1841,25 +1916,86 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
   }
 
-  private boolean overrideUrlLoading (String url) {
-    Uri uri = Uri.parse(url);
-    String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase(Locale.ROOT) : "";
-    if (scheme.equals("http") || scheme.equals("https")) {
-      if (tdlib.isKnownHost(uri.getHost(), false)) {
-        openTelegramLink(url);
-        return true;
-      }
+  private static final int LINK_WEB = 0, LINK_LOCAL = 1, LINK_TELEGRAM_WEB = 2, LINK_TELEGRAM = 3;
+  private static final int LINK_OTHER_APP = 4, LINK_BLOCKED = 5;
+
+  private int getLinkType (Uri uri) {
+    final String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase(Locale.ROOT) : "";
+    switch (scheme) {
+      case "http":
+      case "https":
+        return tdlib.isKnownHost(uri.getHost(), false) ? LINK_TELEGRAM_WEB : LINK_WEB;
+      case "about":
+      case "data":
+      case "blob":
+        return LINK_LOCAL;
+      case "tg":
+        return LINK_TELEGRAM;
+      case "tel":
+      case "mailto":
+      case "sms":
+        return LINK_OTHER_APP;
+      default:
+        return LINK_BLOCKED;
+    }
+  }
+
+  /**
+   * Navigations of the page bypass the checks of {@code web_app_open_tg_link}, so leaving the
+   * WebView needs the same user gesture, and only from the page itself, not from its frames.
+   *
+   * @param request null on API 21-23, where the WebView reports neither the frame nor the gesture.
+   */
+  private boolean overrideUrlLoading (Uri uri, @Nullable WebResourceRequest request) {
+    final int type = getLinkType(uri);
+    final boolean isMainFrame = request == null || request.isForMainFrame();
+    if (type == LINK_WEB || type == LINK_LOCAL || (type == LINK_TELEGRAM_WEB && !isMainFrame)) {
       return false;
     }
-    if (scheme.equals("tg")) {
-      openTelegramLink(url);
-      return true;
+    if (type != LINK_BLOCKED && isMainFrame && hasUserGesture(request)) {
+      openLinkOutside(uri.toString(), type);
     }
-    if (scheme.equals("sms")) {
-      return false;
-    }
-    Intents.openUri(url);
     return true;
+  }
+
+  private boolean hasUserGesture (@Nullable WebResourceRequest request) {
+    if (request != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      return request.hasGesture();
+    }
+    return bridge.consumeUserGesture();
+  }
+
+  private void openLinkOutside (String url, int linkType) {
+    if (linkType == LINK_TELEGRAM || linkType == LINK_TELEGRAM_WEB) {
+      openTelegramLink(url);
+    } else if (linkType == LINK_OTHER_APP) {
+      // Never hand the user to another app without asking, as for links in messages.
+      AlertPopup.Builder b = new AlertPopup.Builder(context());
+      b.setTitle(getBotName());
+      b.setMessage(Lang.getString(R.string.OpenThisLink, url));
+      b.setPositiveButton(Lang.getString(R.string.Open), (dialog, which) -> Intents.openUri(url));
+      b.setNegativeButton(Lang.getString(R.string.Cancel), null);
+      showAlert(b);
+    }
+  }
+
+  /** {@code window.open} after a user gesture: the URL opens outside the app sheet. */
+  private void openLinkFromWindow (Uri uri) {
+    final int type = getLinkType(uri);
+    if (type == LINK_WEB) {
+      openExternalLink(uri.toString(), false);
+    } else {
+      openLinkOutside(uri.toString(), type);
+    }
+  }
+
+  private void destroyWindowTarget (@Nullable WebView target) {
+    if (target != null) {
+      if (windowTarget == target) {
+        windowTarget = null;
+      }
+      target.destroy();
+    }
   }
 
   private final class MiniAppChromeClient extends WebChromeClient {
@@ -1875,7 +2011,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
     @Override
     public void onCloseWindow (WebView window) {
-      closeByApp(false);
+      closeNow();
     }
 
     @Override
@@ -1885,25 +2021,34 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       boolean isUserGesture,
       android.os.Message message
     ) {
-      // window.open: the page asks for a new window, open its URL in the app or the browser
-      // instead.
-      WebView target = new WebView(view.getContext());
+      if (!isUserGesture) {
+        return false;
+      }
+      // window.open: a WebView that is never shown only catches the URL of the new window, which
+      // opens outside the sheet instead. It is kept until then, as the page may write into it.
+      destroyWindowTarget(windowTarget);
+      final WebView target = new WebView(view.getContext());
       target.setWebViewClient(new WebViewClient() {
         @Override
         public boolean shouldOverrideUrlLoading (WebView ignored, WebResourceRequest request) {
-          openLinkFromWindow(request.getUrl().toString());
-          target.destroy();
+          onWindowUrl(request.getUrl());
           return true;
         }
 
         @SuppressWarnings("deprecation")
         @Override
         public boolean shouldOverrideUrlLoading (WebView ignored, String url) {
-          openLinkFromWindow(url);
-          target.destroy();
+          onWindowUrl(Uri.parse(url));
           return true;
         }
+
+        private void onWindowUrl (Uri uri) {
+          openLinkFromWindow(uri);
+          // Not from inside the callback of the WebView being destroyed.
+          UI.post(() -> destroyWindowTarget(target));
+        }
       });
+      windowTarget = target;
       WebView.WebViewTransport transport = (WebView.WebViewTransport) message.obj;
       transport.setWebView(target);
       message.sendToTarget();
@@ -1970,9 +2115,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       ValueCallback<Uri[]> filePathCallback,
       FileChooserParams fileChooserParams
     ) {
-      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-        return false;
-      }
       if (fileChooserCallback != null) {
         fileChooserCallback.onReceiveValue(null);
       }
@@ -1982,45 +2124,36 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         if (fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
           intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         }
-        context().putActivityResultHandler(REQUEST_FILE_CHOOSER,
+        context().putActivityResultHandler(Intents.ACTIVITY_RESULT_WEB_APP_FILE_CHOOSER,
           WebAppController.this::onFileChooserResult);
-        context().startActivityForResult(intent, REQUEST_FILE_CHOOSER);
+        context().startActivityForResult(intent, Intents.ACTIVITY_RESULT_WEB_APP_FILE_CHOOSER);
         return true;
-      } catch (Throwable t) {
+      } catch (ActivityNotFoundException e) {
         fileChooserCallback = null;
         return false;
       }
     }
 
+    /** A transparent poster instead of the gray play button of the WebView. */
     @Override
     public @Nullable Bitmap getDefaultVideoPoster () {
-      return Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888);
+      if (videoPoster == null) {
+        videoPoster = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+      }
+      return videoPoster;
     }
-  }
-
-  private void openLinkFromWindow (String url) {
-    if (overrideUrlLoading(url)) {
-      return;
-    }
-    openExternalLink(url, false);
   }
 
   // Sheet
 
   private final class SheetLayout extends FrameLayoutFix {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
-    private final RectF leftPill = new RectF(), rightPill = new RectF();
-    private final Drawable backIcon, closeIcon, minimizeIcon, moreIcon;
-    private String pillLabel = "";
-    private float pillLabelWidth;
     private final int touchSlop;
     private @Nullable VelocityTracker velocityTracker;
     private @Nullable Runnable onLaidOut;
 
     private boolean isDragging, isTouchingOutside, isTouchingContent;
-    private int touchedPill;
     private float startX, startY, startTop;
     private long startTime;
     private int lastWidth, lastHeight;
@@ -2029,13 +2162,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       super(context);
       setWillNotDraw(false);
       touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
-      textPaint.setTypeface(Fonts.getRobotoBold());
-      textPaint.setTextSize(Screen.sp(13f));
-      textPaint.setColor(0xffffffff);
-      backIcon = Drawables.get(getResources(), R.drawable.baseline_arrow_back_24);
-      closeIcon = Drawables.get(getResources(), R.drawable.baseline_close_24);
-      minimizeIcon = Drawables.get(getResources(), R.drawable.baseline_keyboard_arrow_down_24);
-      moreIcon = Drawables.get(getResources(), R.drawable.baseline_more_vert_24);
     }
 
     boolean isDragging () {
@@ -2048,20 +2174,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       } else {
         onLaidOut = runnable;
       }
-    }
-
-    /**
-     * The label shows the bot name for a moment after entering fullscreen, then what the left
-     * button does.
-     */
-    void invalidatePills () {
-      boolean showName =
-        SystemClock.uptimeMillis() - fullscreenEnteredAt < FULLSCREEN_NAME_DURATION;
-      pillLabel = showName ? getBotName() :
-        Lang.getString(isBackButtonVisible ?
-          R.string.vg_BotFullscreenBack : R.string.vg_BotFullscreenClose);
-      pillLabelWidth = textPaint.measureText(pillLabel);
-      invalidate();
     }
 
     @Override
@@ -2080,7 +2192,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       buttonsParams.leftMargin = buttonsParams.rightMargin = horizontalMargin;
       FrameLayout.LayoutParams headerParams =
         (FrameLayout.LayoutParams) headerView.getLayoutParams();
-      headerParams.leftMargin = headerParams.rightMargin = horizontalMargin;
+      headerParams.leftMargin = horizontalMargin + (isFullscreen ? insets.left : 0);
+      headerParams.rightMargin = horizontalMargin + (isFullscreen ? insets.right : 0);
       super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
@@ -2164,64 +2277,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         c.drawRect(left, y, left + sheetWidth * loadingProgress, y + Screen.dp(2f), paint);
       }
 
-      if (fullscreen > 0f) {
-        drawPills(c, fullscreen);
-      }
-    }
-
-    private void drawPills (Canvas c, float alpha) {
-      final float pillHeight = Screen.dp(PILL_HEIGHT), margin = Screen.dp(PILL_MARGIN);
-      final float top = insets.top + margin;
-      final float labelWidth = pillLabelWidth;
-      leftPill.set(insets.left + margin, top,
-        insets.left + margin + pillHeight + labelWidth + Screen.dp(12f), top + pillHeight);
-      rightPill.set(getMeasuredWidth() - insets.right - margin - Screen.dp(RIGHT_PILL_WIDTH), top,
-        getMeasuredWidth() - insets.right - margin, top + pillHeight);
-      paint.setColor(Color.argb((int) (0x59 * alpha), 0, 0, 0));
-      c.drawRoundRect(leftPill, pillHeight / 2f, pillHeight / 2f, paint);
-      c.drawRoundRect(rightPill, pillHeight / 2f, pillHeight / 2f, paint);
-      Paint iconPaint = Paints.getPorterDuffPaint(ColorUtils.alphaColor(alpha, 0xffffffff));
-      final float iconScale = .75f;
-      drawIcon(c, isBackButtonVisible ? backIcon : closeIcon, leftPill.left + pillHeight / 2f,
-        leftPill.centerY(), iconScale, iconPaint);
-      textPaint.setAlpha((int) (255 * alpha));
-      c.drawText(pillLabel, leftPill.left + pillHeight,
-        leftPill.centerY() + textPaint.getTextSize() / 2.8f, textPaint);
-      final float half = rightPill.width() / 2f;
-      drawIcon(c, minimizeIcon, rightPill.left + half / 2f, rightPill.centerY(), iconScale,
-        iconPaint);
-      drawIcon(c, moreIcon, rightPill.right - half / 2f, rightPill.centerY(), iconScale, iconPaint);
-    }
-
-    private void drawIcon (
-      Canvas c,
-      Drawable drawable,
-      float centerX,
-      float centerY,
-      float scale,
-      Paint iconPaint
-    ) {
-      c.save();
-      c.scale(scale, scale, centerX, centerY);
-      Drawables.draw(c, drawable, centerX - drawable.getMinimumWidth() / 2f,
-        centerY - drawable.getMinimumHeight() / 2f, iconPaint);
-      c.restore();
-    }
-
-    private int findPill (float x, float y) {
-      if (!isFullscreen || fullscreenAnimator.getFloatValue() < 1f) {
-        return 0;
-      }
-      final float extend = Screen.dp(PILL_MARGIN);
-      if (x >= leftPill.left - extend && x <= leftPill.right + extend &&
-        y >= leftPill.top - extend && y <= leftPill.bottom + extend) {
-        return 1;
-      }
-      if (x >= rightPill.left - extend && x <= rightPill.right + extend &&
-        y >= rightPill.top - extend && y <= rightPill.bottom + extend) {
-        return x < rightPill.centerX() ? 2 : 3;
-      }
-      return 0;
     }
 
     private boolean canStartDrag (float dx, float dy) {
@@ -2237,10 +2292,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         if (dy < 0 || isKeyboardVisible()) {
           return false;
         }
-        // The page script reports whether the touched element can scroll up; until it does, the
-        // page keeps the gesture, so inner scrollers of the page don't drag the sheet away.
-        return webView == null || (webView.getScrollY() == 0 &&
-          (!isScrollScriptInjected || (hasPageScrollReply && pageAllowsScrollY)));
+        // Pages with own scrollers turn this off with web_app_setup_swipe_behavior.
+        return webView == null || webView.getScrollY() == 0;
       }
       return true;
     }
@@ -2254,17 +2307,15 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
           startTop = sheetTop;
           startTime = SystemClock.uptimeMillis();
           isDragging = false;
-          touchedPill = findPill(startX, startY);
           final float handle = Screen.dp(HANDLE_AREA);
           final boolean isHeaderVisible = headerAnimator.getValue();
           isTouchingOutside = startY < sheetTop && !isHeaderVisible && !isFullscreen;
-          isTouchingContent = startY >= sheetTop + handle && touchedPill == 0 &&
+          isTouchingContent = startY >= sheetTop + handle &&
             startY < getMeasuredHeight() - bottomPadding - buttonsView.getVisibleHeight();
-          hasPageScrollReply = false;
           obtainVelocityTracker(e);
           final boolean isHandle = startY >= sheetTop && startY < sheetTop + handle &&
             !isHeaderVisible;
-          return isTouchingOutside || touchedPill != 0 || isHandle;
+          return isTouchingOutside || isHandle;
         }
         case MotionEvent.ACTION_MOVE: {
           trackVelocity(e);
@@ -2301,12 +2352,11 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         case MotionEvent.ACTION_MOVE: {
           trackVelocity(e);
           final float dy = e.getY() - startY;
-          if (!isDragging && (touchedPill != 0 || isTouchingOutside)) {
+          if (!isDragging && isTouchingOutside) {
             if (Math.abs(dy) > touchSlop || Math.abs(e.getX() - startX) > touchSlop) {
-              touchedPill = 0;
               isTouchingOutside = false;
             }
-            if (!isTouchingOutside && touchedPill == 0 && canStartDrag(e.getX() - startX, dy)) {
+            if (!isTouchingOutside && canStartDrag(e.getX() - startX, dy)) {
               startDrag(e);
             }
             return true;
@@ -2327,15 +2377,12 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         }
         case MotionEvent.ACTION_UP: {
           trackVelocity(e);
-          if (touchedPill != 0) {
-            onPillClick(touchedPill);
-          } else if (isTouchingOutside) {
+          if (isTouchingOutside) {
             minimize();
           } else if (isDragging) {
             finishDrag(e);
           }
           isDragging = false;
-          touchedPill = 0;
           isTouchingOutside = false;
           recycleVelocityTracker();
           return true;
@@ -2345,7 +2392,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
             animatePosition(isFullscreen ? POSITION_FULLSCREEN : restingPosition);
           }
           isDragging = false;
-          touchedPill = 0;
           isTouchingOutside = false;
           recycleVelocityTracker();
           return true;
@@ -2407,30 +2453,6 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       } else {
         animatePosition(POSITION_EXPANDED);
       }
-    }
-
-    private void onPillClick (int pill) {
-      switch (pill) {
-        case 1:
-          if (isBackButtonVisible) {
-            bridge.onBackButtonPressed();
-          } else {
-            close(true);
-          }
-          break;
-        case 2:
-          minimize();
-          break;
-        case 3:
-          showMenuAt(rightPill);
-          break;
-      }
-    }
-
-    private void showMenuAt (RectF anchorRect) {
-      int[] location = Views.getLocationOnScreen(this);
-      showMenu(location[0] + (int) anchorRect.left, location[1] + (int) anchorRect.top,
-        location[0] + (int) anchorRect.right, location[1] + (int) anchorRect.bottom);
     }
 
     private void obtainVelocityTracker (MotionEvent e) {

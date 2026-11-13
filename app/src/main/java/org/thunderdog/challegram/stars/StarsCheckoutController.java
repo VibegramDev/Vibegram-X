@@ -54,6 +54,7 @@ import java.util.ArrayList;
 
 import me.vkryl.core.CurrencyUtils;
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.RunnableInt;
 
 /**
  * «Checkout» of the official app: payment of an invoice in money through a payment provider. In Vibegram X it's
@@ -70,12 +71,22 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
     public final TdApi.PaymentForm form;
     public final @Nullable TdApi.StarPaymentOption starOption;
     public final @Nullable Runnable onPaid;
+    private @Nullable RunnableInt onClosed;
 
     public Args (TdApi.InputInvoice invoice, TdApi.PaymentForm form, @Nullable TdApi.StarPaymentOption starOption, @Nullable Runnable onPaid) {
       this.invoice = invoice;
       this.form = form;
       this.starOption = starOption;
       this.onPaid = onPaid;
+    }
+
+    /** Reports the outcome once: the checkout closes before a 3-D Secure payment is finished. */
+    private void close (int result) {
+      RunnableInt onClosed = this.onClosed;
+      this.onClosed = null;
+      if (onClosed != null) {
+        onClosed.runWithInt(result);
+      }
     }
   }
 
@@ -99,14 +110,33 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   }
 
   public static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @NonNull TdApi.PaymentForm form, @Nullable TdApi.StarPaymentOption starOption, @Nullable Runnable onPaid) {
+    open(context, tdlib, invoice, form, starOption, onPaid, null);
+  }
+
+  /**
+   * @param onClosed receives a {@code StarsPaymentSheet.RESULT_*} once the payment is done or the checkout is closed
+   * without paying
+   */
+  public static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @NonNull TdApi.PaymentForm form, @Nullable TdApi.StarPaymentOption starOption, @Nullable Runnable onPaid, @Nullable RunnableInt onClosed) {
     TdApi.PaymentFormTypeRegular regular = (TdApi.PaymentFormTypeRegular) form.type;
     if (regular.invoice.needShippingAddress || regular.invoice.isFlexible) {
       // Delivery of physical goods isn't supported by this checkout.
       UI.showToast(R.string.vg_PaymentShippingUnsupported, Toast.LENGTH_LONG);
+      if (onClosed != null) {
+        onClosed.runWithInt(StarsPaymentSheet.RESULT_FAILED);
+      }
       return;
     }
     StarsCheckoutController c = new StarsCheckoutController(context.context(), tdlib);
-    c.setArguments(new Args(invoice, form, starOption, onPaid));
+    Args args = new Args(invoice, form, starOption, onPaid);
+    args.onClosed = onClosed;
+    c.setArguments(args);
+    // A sent payment reports its outcome itself, even after the checkout is closed.
+    c.addDestroyListener(() -> {
+      if (!c.isSending && !c.isPaid) {
+        args.close(c.isFailed ? StarsPaymentSheet.RESULT_FAILED : StarsPaymentSheet.RESULT_CANCELLED);
+      }
+    });
     context.navigateTo(c);
   }
 
@@ -136,7 +166,7 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   private String orderName = "", orderPhone = "", orderEmail = "";
 
   private boolean termsAccepted;
-  private boolean isConfirming, isPaying, isPaid;
+  private boolean isConfirming, isPaying, isPaid, isSending, isFailed;
 
   private M3ButtonView payButton;
 
@@ -487,13 +517,19 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
   private void pay (TdApi.InputCredentials credentials, String orderInfoId) {
     final Args args = getArgumentsStrict();
     // The result is handled even when the screen is already destroyed: the payment is done anyway.
+    isSending = true;
     tdlib.send(new TdApi.SendPaymentForm(args.invoice, args.form.id, orderInfoId, "", credentials, 0), (result, error) -> UI.post(() -> {
+      isSending = false;
       if (error == null) {
         isPaid = true;
       }
       setPaying(false);
       if (error != null) {
+        isFailed = true;
         UI.showError(error);
+        if (isDestroyed()) {
+          args.close(StarsPaymentSheet.RESULT_FAILED);
+        }
         return;
       }
       if (!StringUtils.isEmpty(result.verificationUrl) && !isDestroyed()) {
@@ -517,8 +553,10 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
       if (args.onPaid != null) {
         args.onPaid.run();
       }
+      args.close(StarsPaymentSheet.RESULT_PAID);
     } else {
       UI.showToast(R.string.vg_PaymentProcessing, Toast.LENGTH_LONG);
+      args.close(StarsPaymentSheet.RESULT_PENDING);
     }
     if (!isDestroyed()) {
       // After 3-D Secure the checkout is already removed from the stack.
