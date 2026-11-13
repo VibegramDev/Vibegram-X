@@ -1345,6 +1345,8 @@ public class RoundVideoController extends BasePlaybackController implements
   private float overlayTranslationX;
   private float overlayTranslationY;
 
+  private final android.graphics.Path floatingButtonsPath = new android.graphics.Path();
+
   private boolean layoutPlayer () {
     TGMessage msg = targetView.getMessageView().getMessage();
 
@@ -1393,9 +1395,14 @@ public class RoundVideoController extends BasePlaybackController implements
         bottomClip = Math.max(bottomClip, rootView.getHeight() - composerTop);
       }
       setMargins(topOffset + Math.max(0, translationY), bottomClip);
+      floatingButtonsPath.rewind();
+      boolean hasButtons = rootView.getHeight() > 0 && m.addFloatingButtonsShape(rootView, floatingButtonsPath);
+      rootView.setExcludedPath(floatingButtonsPath, !hasButtons);
       abort = abort || !m.isFocused() && isAnimatingBackward;
     } else {
       // setBottomMargin(0);
+      floatingButtonsPath.rewind();
+      rootView.setExcludedPath(floatingButtonsPath, true);
       abort = true;
     }
 

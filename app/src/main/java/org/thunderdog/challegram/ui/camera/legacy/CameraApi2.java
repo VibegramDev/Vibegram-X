@@ -1574,7 +1574,21 @@ public class CameraApi2 extends CameraApi {
 
   @Override
   protected void onDisplayOrientationChanged () {
-    // Camera2 rotates SurfaceTexture output by itself, nothing to reconfigure
+    // The round recorder turns the picture itself, see getRoundContentRotation()
+  }
+
+  // Camera2 rotates SurfaceTexture frames by the sensor orientation only, i.e. upright for the natural
+  // orientation of the display. The display rotation is left to the app: without it the round came out
+  // sideways and oval whenever the display was rotated (landscape, inner screens of foldables).
+
+  @Override
+  protected int getRoundFrameOrientation () {
+    return isFrontFacing ? (360 - sensorOrientation) % 360 : sensorOrientation;
+  }
+
+  @Override
+  protected int getRoundContentRotation () {
+    return mDisplayOrientation;
   }
 
   @Override

@@ -10,6 +10,9 @@
 #   surface, onSurface, primaryContainer, ...   Material 3 color role of the current scheme
 #   P40 S90 T30 N94 NV80 E40                    tone 0..100 of a tonal palette (primary, secondary, tertiary,
 #                                               neutral, neutral variant, error), the same in light and dark
+#   contrast(A, BG, 4.5)                        A, or the nearest tone of A's hue that is 4.5:1 apart from BG
+#                                               (WCAG ratio; 4.5 for text, 3 for icons and lines)
+#   $name                                       a `$name: value` line of the templates
 #   value@NN                                    value with NN % opacity
 #   mix(A,B,P)                                  A blended towards B by P percent
 #   #RGB #RGBA #RRGGBB #RRGGBBAA                literal colors
@@ -249,7 +252,7 @@ blockQuoteLine: primary
 bubbleIn_blockQuoteText: onSurface
 bubbleIn_blockQuoteLine: primary
 bubbleOut_blockQuoteText: onPrimaryContainer
-bubbleOut_blockQuoteLine: primary
+bubbleOut_blockQuoteLine: $outAccent
 
 # Service messages on the plain chat background (no wallpaper): tonal pills
 bubble_date_noWallpaper: secondaryContainer
@@ -287,39 +290,44 @@ bubbleIn_fillingPositiveContent: onPrimary
 bubbleIn_fillingPositive_overlay: primary
 bubbleIn_fillingPositiveContent_overlay: onPrimary
 
-# Outgoing bubbles: primaryContainer, onPrimaryContainer content, primary accents
+# Outgoing bubbles: primaryContainer, onPrimaryContainer content, primary accents.
+# The schemes keep primary apart from primaryContainer by hue only where there is hue: in the monochrome scheme and
+# for gray wallpapers both are near-white in dark (near-black in light) and the accents vanish, so they are given
+# the tone of their hue that reads on the bubble.
+$outAccent: contrast(primary, primaryContainer, 4.5)
+$outCorrect: contrast(tertiary, primaryContainer, 3)
 bubbleOut_background: primaryContainer
 bubbleOut_text: onPrimaryContainer
 bubbleOut_time: onPrimaryContainer@85
 bubbleOut_progress: onPrimaryContainer@85
-bubbleOut_textLink: primary
-bubbleOut_textLinkPressHighlight: primary@20
-bubbleOut_outline: primary@30
+bubbleOut_textLink: $outAccent
+bubbleOut_textLinkPressHighlight: $outAccent@20
+bubbleOut_outline: $outAccent@30
 bubbleOut_separator: onPrimaryContainer@30
 bubbleOut_pressed: onPrimaryContainer@10
-bubbleOut_chatVerticalLine: primary
+bubbleOut_chatVerticalLine: $outAccent
 bubbleOut_chatNeutralFillingContent: onPrimary
-bubbleOut_chatCorrectFilling: tertiary
-bubbleOut_chatCorrectFillingContent: onTertiary
-bubbleOut_chatCorrectChosenFilling: tertiary
-bubbleOut_chatCorrectChosenFillingContent: onTertiary
+bubbleOut_chatCorrectFilling: $outCorrect
+bubbleOut_chatCorrectFillingContent: contrast(onTertiary, $outCorrect, 4.5)
+bubbleOut_chatCorrectChosenFilling: $outCorrect
+bubbleOut_chatCorrectChosenFillingContent: contrast(onTertiary, $outCorrect, 4.5)
 bubbleOut_chatNegativeFilling: error
 bubbleOut_chatNegativeFillingContent: onError
-bubbleOut_inlineText: primary
-bubbleOut_inlineOutline: primary
-bubbleOut_inlineIcon: primary
-bubbleOut_waveformActive: primary
-bubbleOut_waveformInactive: primary@30
-bubbleOut_ticks: primary
-bubbleOut_ticksRead: primary
-bubbleOut_messageAuthor: primary
-bubbleOut_messageAuthorPsa: tertiary
-bubbleOut_fillingActive: primary@16
+bubbleOut_inlineText: $outAccent
+bubbleOut_inlineOutline: $outAccent
+bubbleOut_inlineIcon: $outAccent
+bubbleOut_waveformActive: $outAccent
+bubbleOut_waveformInactive: $outAccent@30
+bubbleOut_ticks: $outAccent
+bubbleOut_ticksRead: $outAccent
+bubbleOut_messageAuthor: $outAccent
+bubbleOut_messageAuthorPsa: contrast(tertiary, primaryContainer, 4.5)
+bubbleOut_fillingActive: $outAccent@16
 bubbleOut_fillingActiveContent: onPrimaryContainer
-bubbleOut_fillingPositive: primary
-bubbleOut_fillingPositiveContent: onPrimary
-bubbleOut_fillingPositive_overlay: primary
-bubbleOut_fillingPositiveContent_overlay: onPrimary
+bubbleOut_fillingPositive: $outAccent
+bubbleOut_fillingPositiveContent: contrast(onPrimary, $outAccent, 4.5)
+bubbleOut_fillingPositive_overlay: $outAccent
+bubbleOut_fillingPositiveContent_overlay: contrast(onPrimary, $outAccent, 4.5)
 
 # Attach menu: tonal containers, one icon color for all of them (every "on container" tone pairs with any container)
 attachPhoto: primaryContainer

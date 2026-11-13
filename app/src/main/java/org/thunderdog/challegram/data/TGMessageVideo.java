@@ -358,6 +358,9 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   private void setUnmuted (boolean unmuted) {
     if (this.isUnmuted != unmuted) {
       this.isUnmuted = unmuted;
+      if (unmuted && !isFullSizeAnimator.getValue() && videoSmallSize > 0) {
+        updateFullSize();
+      }
 
       scrollCompensationFactor = 0.5f;
       if (!unmuted) {
@@ -432,10 +435,24 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   private int videoSize;
   private int videoFullSize;
 
+  /**
+   * Size of the expanded (playing with sound) round. Tablet split: the chat pane is narrower than the screen's smallest
+   * side, so it is capped by the message width. Landscape: it must also fit between the top bars and the composer;
+   * that height is known only once the list is laid out, so it is checked again right before the round expands.
+   */
+  private void updateFullSize () {
+    int fullSize = Math.min(getVideoSize(), width - Screen.dp(32f));
+    int maxHeight = manager.controller().getExpandedRoundMaxHeight();
+    if (maxHeight > 0) {
+      fullSize = Math.min(fullSize, maxHeight - Screen.dp(16f));
+    }
+    videoFullSize = Math.max(videoSmallSize, fullSize);
+  }
+
   @Override
   protected void buildContent (int maxWidth) {
     videoSmallSize = Math.min(Screen.dp(200f), maxWidth);
-    videoFullSize = getVideoSize();
+    updateFullSize();
     videoSize = computeVideoSize();
     if (compact) {
       buildCompact(maxWidth);

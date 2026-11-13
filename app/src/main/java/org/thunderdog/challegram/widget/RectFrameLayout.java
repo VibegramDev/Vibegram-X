@@ -16,6 +16,8 @@ package org.thunderdog.challegram.widget;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Path;
+import android.graphics.Region;
 import android.os.Build;
 import android.view.View;
 
@@ -65,8 +67,37 @@ public class RectFrameLayout extends FrameLayoutFix {
     }
   }
 
+  private final Path excludedPath = new Path();
+  private boolean hasExcludedPath;
+
+  /** Area the children must not draw over (floating buttons of the chat above the round video), or an empty path. */
+  public void setExcludedPath (Path path, boolean isEmpty) {
+    if (isEmpty && !hasExcludedPath) {
+      return;
+    }
+    hasExcludedPath = !isEmpty;
+    excludedPath.set(path);
+    invalidate();
+  }
+
   @Override
   protected void dispatchDraw(Canvas c) {
+    if (hasExcludedPath) {
+      final int saveCount = Views.save(c);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        c.clipOutPath(excludedPath);
+      } else {
+        //noinspection deprecation
+        c.clipPath(excludedPath, Region.Op.DIFFERENCE);
+      }
+      dispatchDrawClipped(c);
+      Views.restore(c, saveCount);
+    } else {
+      dispatchDrawClipped(c);
+    }
+  }
+
+  private void dispatchDrawClipped (Canvas c) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !Config.DEBUG_CLIPPING) {
       super.dispatchDraw(c);
     } else {

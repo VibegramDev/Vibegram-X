@@ -122,6 +122,11 @@ public class ChatBottomBarView extends BaseView {
     return true;
   }
 
+  /** Corner radius of the button at its current collapse state. */
+  public float getButtonRadius () {
+    return calculateRadius();
+  }
+
   // Colours
 
   private static @ColorInt int containerColor (boolean filled) {

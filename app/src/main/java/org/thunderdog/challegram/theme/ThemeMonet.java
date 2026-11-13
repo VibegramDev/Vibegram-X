@@ -32,6 +32,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Built-in Material You ("Monet") theme.
@@ -172,6 +174,14 @@ public final class ThemeMonet implements ThemeDelegate {
     for (String name : TEMPLATE_NAMES) {
       final Map<String, String> source = new LinkedHashMap<>();
       loadTemplate(context, name, source);
+      final Map<String, String> variables = new HashMap<>();
+      for (java.util.Iterator<Map.Entry<String, String>> it = source.entrySet().iterator(); it.hasNext(); ) {
+        Map.Entry<String, String> entry = it.next();
+        if (entry.getKey().startsWith("$")) {
+          variables.put(entry.getKey(), entry.getValue());
+          it.remove();
+        }
+      }
       final int[] colorIds = new int[source.size()];
       final Value[] values = new Value[source.size()];
       int count = 0;
@@ -182,7 +192,7 @@ public final class ThemeMonet implements ThemeDelegate {
           continue;
         }
         try {
-          values[count] = parse(entry.getValue());
+          values[count] = parse(expand(entry.getValue(), variables, 0));
           colorIds[count] = colorId;
           count++;
         } catch (IllegalArgumentException e) {
@@ -221,6 +231,29 @@ public final class ThemeMonet implements ThemeDelegate {
 
   // Values
 
+  private static final Pattern VARIABLE = Pattern.compile("\\$[A-Za-z][A-Za-z0-9_]*");
+
+  /** Substitutes `$name` variables (`$name: value` lines of the template; a variable may use other variables). */
+  private static String expand (String value, Map<String, String> variables, int depth) {
+    if (value.indexOf('$') == -1) {
+      return value;
+    }
+    if (depth > 8) {
+      throw new IllegalArgumentException(value);
+    }
+    Matcher m = VARIABLE.matcher(value);
+    StringBuffer b = new StringBuffer();
+    while (m.find()) {
+      String definition = variables.get(m.group());
+      if (definition == null) {
+        throw new IllegalArgumentException(value);
+      }
+      m.appendReplacement(b, Matcher.quoteReplacement(expand(definition, variables, depth + 1)));
+    }
+    m.appendTail(b);
+    return b.toString();
+  }
+
   private static Map<String, Integer> roleIndexes;
 
   private static int roleIndex (String name) {
@@ -235,7 +268,10 @@ public final class ThemeMonet implements ThemeDelegate {
     return index != null ? index : -1;
   }
 
-  /** Parses `role`, `P40` (palette tone), `#RRGGBB[AA]`, `mix(A,B,P)`, each optionally followed by `@NN` (opacity, %). */
+  /**
+   * Parses `role`, `P40` (palette tone), `#RRGGBB[AA]`, `mix(A,B,P)`, `contrast(A,BG,R)`, each optionally followed by
+   * `@NN` (opacity, %).
+   */
   private static Value parse (String value) {
     value = value.trim();
     int at = value.lastIndexOf('@');
@@ -253,6 +289,16 @@ public final class ThemeMonet implements ThemeDelegate {
       final Value b = parse(args[1]);
       final float p = Integer.parseInt(args[2].trim()) / 100f;
       return (scheme, palette) -> mix(a.resolve(scheme, palette), b.resolve(scheme, palette), p);
+    }
+    if (value.startsWith("contrast(") && value.endsWith(")")) {
+      String[] args = splitArguments(value.substring(9, value.length() - 1));
+      final Value color = parse(args[0]);
+      final Value background = parse(args[1]);
+      final double ratio = Double.parseDouble(args[2].trim());
+      if (!(ratio >= 1 && ratio <= 21)) {
+        throw new IllegalArgumentException(value);
+      }
+      return (scheme, palette) -> ensureContrast(color.resolve(scheme, palette), background.resolve(scheme, palette), ratio);
     }
     if (value.startsWith("#")) {
       final int color = parseLiteral(value.substring(1));
@@ -280,6 +326,59 @@ public final class ThemeMonet implements ThemeDelegate {
       }
     }
     throw new IllegalArgumentException(value);
+  }
+
+  /**
+   * `contrast(A, BG, R)`: color A, or, when it is less than R:1 apart from BG (WCAG contrast ratio), the nearest color
+   * with the same hue and chroma (CIELAB a*, b*) and a lightness (= M3 tone) that gives R:1, as Material 3 dynamic color
+   * moves a role's tone along its contrast curve. The schemes keep their accents apart by hue, and in schemes without
+   * hue (monochrome, low-chroma wallpapers) `primary` and `primaryContainer` can get almost the same tone.
+   * When no tone reaches R:1, the tone with the highest contrast is used.
+   */
+  static @ColorInt int ensureContrast (@ColorInt int color, @ColorInt int background, double ratio) {
+    final int alpha = Color.alpha(color);
+    final int opaque = color | 0xFF000000;
+    background |= 0xFF000000;
+    if (androidx.core.graphics.ColorUtils.calculateContrast(opaque, background) >= ratio) {
+      return color;
+    }
+    final double[] lab = new double[3];
+    androidx.core.graphics.ColorUtils.colorToLAB(opaque, lab);
+    final double l = lab[0];
+    final double[] backgroundLab = new double[3];
+    androidx.core.graphics.ColorUtils.colorToLAB(background, backgroundLab);
+    int best = 0;
+    double bestDistance = Double.MAX_VALUE, bestContrast = 0;
+    int fallback = opaque;
+    for (int direction = -1; direction <= 1; direction += 2) {
+      final double limit = direction < 0 ? 0 : 100;
+      final int extreme = androidx.core.graphics.ColorUtils.LABToColor(limit, lab[1], lab[2]);
+      final double extremeContrast = androidx.core.graphics.ColorUtils.calculateContrast(extreme, background);
+      if (extremeContrast < ratio) {
+        if (extremeContrast > bestContrast) {
+          bestContrast = extremeContrast;
+          fallback = extreme;
+        }
+        continue;
+      }
+      // Contrast grows while the tone moves away from the background's tone: the nearest tone is a bisection
+      // (on the far side of the background it starts from the background's tone).
+      double near = direction < 0 ? Math.min(l, backgroundLab[0]) : Math.max(l, backgroundLab[0]), far = limit;
+      for (int i = 0; i < 16; i++) {
+        double mid = (near + far) / 2;
+        if (androidx.core.graphics.ColorUtils.calculateContrast(androidx.core.graphics.ColorUtils.LABToColor(mid, lab[1], lab[2]), background) >= ratio) {
+          far = mid;
+        } else {
+          near = mid;
+        }
+      }
+      if (Math.abs(far - l) < bestDistance) {
+        bestDistance = Math.abs(far - l);
+        best = androidx.core.graphics.ColorUtils.LABToColor(far, lab[1], lab[2]);
+      }
+    }
+    final int result = bestDistance != Double.MAX_VALUE ? best : fallback;
+    return (result & 0x00FFFFFF) | (alpha << 24);
   }
 
   /** Splits top-level comma-separated arguments (nested mix() calls keep their commas). */
