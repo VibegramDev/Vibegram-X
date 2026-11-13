@@ -594,10 +594,27 @@ public class PinnedMessagesBar extends ViewGroup implements Destroyable, Message
           messageListener.onSelectLinkPreviewUrl(this, entry.linkPreviewContext, entry.linkPreviewUrl);
         } else if (entry.isMessage()) {
           messageListener.onMessageClick(this, entry.message, entry.quote);
+          showNextPinnedMessage(recyclerView.getChildAdapterPosition(v));
         } else {
           // TODO
         }
       }
+    }
+  }
+
+  /**
+   * Collapsed list of pinned messages: after a tap the bar moves on to the next (older) pinned message and
+   * wraps to the newest one after the oldest, as in the official client.
+   */
+  private void showNextPinnedMessage (int position) {
+    if (messageList == null || position == RecyclerView.NO_POSITION || getExpandFactor() != 0f) {
+      return;
+    }
+    int nextPosition = position + 1;
+    if (nextPosition < messagesAdapter.getItemCount()) {
+      recyclerView.smoothScrollToPosition(nextPosition);
+    } else if (nextPosition >= messageList.getTotalCount()) {
+      recyclerView.scrollToPosition(0);
     }
   }
 
