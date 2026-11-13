@@ -25,4 +25,9 @@ public interface CustomEmojiSurfaceProvider {
   int getDuplicateMediaItemCount (EmojiSpan span, ComplexMediaItem mediaItem);
   long attachToReceivers (EmojiSpan span, ComplexMediaItem complexMediaItem);
   void detachFromReceivers (EmojiSpan span, ComplexMediaItem complexMediaItem, long mediaKey);
+
+  /** Custom emoji of this surface are drawn static (folder name with animations turned off). */
+  default boolean disableCustomEmojiAnimations () {
+    return false;
+  }
 }

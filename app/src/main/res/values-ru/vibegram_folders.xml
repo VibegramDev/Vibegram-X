@@ -5,4 +5,5 @@
   <string name="vg_RenameArchive">Переименовать</string>
   <string name="vg_ArchiveNameInfo">Название видно только на этом устройстве. Оставьте поле пустым, чтобы вернуть стандартное название.</string>
   <string name="vg_DockContacts">Контакты в панели навигации</string>
+  <string name="vg_AnimateFolderEmoji">Анимировать эмодзи</string>
 </resources>

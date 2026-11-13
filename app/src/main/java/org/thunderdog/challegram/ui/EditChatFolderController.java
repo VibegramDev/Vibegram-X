@@ -76,9 +76,11 @@ import org.thunderdog.challegram.util.AdapterSubListUpdateCallback;
 import org.thunderdog.challegram.util.CharacterStyleFilter;
 import org.thunderdog.challegram.util.ListItemDiffUtilCallback;
 import org.thunderdog.challegram.util.PremiumLockModifier;
+import org.thunderdog.challegram.v.HeaderEditText;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -259,6 +261,8 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     // Must be enabled before setInput(), otherwise custom emoji in the initial text degrade to plain emoji
     this.emojiHostView = contentView;
     headerCell.enableCustomEmoji(tdlib, v -> toggleEmojiPanel());
+    ((HeaderEditText) headerCell.getInputView())
+      .setDisableCustomEmojiAnimations(!editedChatFolder.name.animateCustomEmoji);
     headerCell.setInput(TD.toCharSequence(editedChatFolder.name));
     // Archive: an empty name means the default one, shown as the hint.
     int hintRes = isArchive ? R.string.CategoryArchive : R.string.FolderNameHint;
@@ -296,6 +300,11 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
     } else {
       items.add(new ListItem(ListItem.TYPE_EMPTY_OFFSET_SMALL));
+    }
+    animateEmojiIndex = items.size();
+    animateEmojiVisible = TD.hasCustomEmoji(editedChatFolder.name.text);
+    if (animateEmojiVisible) {
+      Collections.addAll(items, newAnimateEmojiItems());
     }
 
     if (isArchive) {
@@ -641,6 +650,8 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
           updateExcludedChats();
         }
       }
+    } else if (id == R.id.btn_vgAnimateFolderEmoji) {
+      toggleAnimateEmoji(v);
     } else if (id == R.id.btn_visible) {
       UI.forceVibrate(v, false);
       boolean isEnabled = adapter.toggleView(v);
@@ -743,6 +754,44 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
     editedChatFolder.name = text;
     updateDoneButton();
     updateFolderIcon();
+    checkAnimateEmojiItems();
+  }
+
+  // Animated custom emoji in the name: switch shown only while the name has custom emoji,
+  // as "Disable animations" next to the folder name in the official client.
+
+  private int animateEmojiIndex;
+  private boolean animateEmojiVisible;
+
+  private ListItem[] newAnimateEmojiItems () {
+    return new ListItem[] {
+      new ListItem(ListItem.TYPE_SHADOW_TOP),
+      new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgAnimateFolderEmoji, 0,
+        R.string.vg_AnimateFolderEmoji),
+      new ListItem(ListItem.TYPE_SHADOW_BOTTOM)
+    };
+  }
+
+  private void checkAnimateEmojiItems () {
+    boolean needItems = TD.hasCustomEmoji(editedChatFolder.name.text);
+    if (adapter == null || animateEmojiVisible == needItems) {
+      return;
+    }
+    animateEmojiVisible = needItems;
+    if (needItems) {
+      adapter.addItems(animateEmojiIndex, newAnimateEmojiItems());
+    } else {
+      adapter.removeRange(animateEmojiIndex, 3);
+    }
+  }
+
+  private void toggleAnimateEmoji (View view) {
+    boolean animate = adapter.toggleView(view);
+    editedChatFolder.name = new TdApi.ChatFolderName(editedChatFolder.name.text, animate);
+    if (headerCell != null) {
+      ((HeaderEditText) headerCell.getInputView()).setDisableCustomEmojiAnimations(!animate);
+    }
+    updateDoneButton();
   }
 
   private void fillIncludedChats (TdApi.ChatFolder chatFolder, List<ListItem> outList) {
@@ -1183,6 +1232,9 @@ public class EditChatFolderController extends EditBaseController<EditChatFolderC
       } else if (item.getId() == R.id.btn_visible) {
         boolean isEnabled = tdlib.settings().isChatFolderEnabled(chatFolderId);
         view.getToggler().setRadioEnabled(isEnabled, isUpdate);
+      } else if (item.getId() == R.id.btn_vgAnimateFolderEmoji) {
+        boolean animate = editedChatFolder.name.animateCustomEmoji;
+        view.getToggler().setRadioEnabled(animate, isUpdate);
       }
 
       if (item.getId() == R.id.btn_createInviteLink) {

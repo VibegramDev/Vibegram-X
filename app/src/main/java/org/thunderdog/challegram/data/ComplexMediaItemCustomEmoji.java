@@ -39,8 +39,14 @@ public class ComplexMediaItemCustomEmoji implements ComplexMediaItem {
   public final ImageFile miniThumbnail, thumbnail;
   public final ImageFile imageFile;
   public final GifFile gifFile;
+  private final boolean disableAnimations;
 
   public ComplexMediaItemCustomEmoji (Tdlib tdlib, TdApi.Sticker sticker, int size) {
+    this(tdlib, sticker, size, false);
+  }
+
+  public ComplexMediaItemCustomEmoji (Tdlib tdlib, TdApi.Sticker sticker, int size,
+    boolean disableAnimations) {
     this.tdlib = tdlib;
     this.sticker = sticker;
     this.size = size;
@@ -57,9 +63,24 @@ public class ComplexMediaItemCustomEmoji implements ComplexMediaItem {
       thumbnail.setNoBlur();
     }
 
+    boolean isAnimatedFormat =
+      sticker.format.getConstructor() == TdApi.StickerFormatTgs.CONSTRUCTOR ||
+      sticker.format.getConstructor() == TdApi.StickerFormatWebm.CONSTRUCTOR;
+    ImageFile staticFile = disableAnimations && isAnimatedFormat ?
+      TD.toImageFile(tdlib, sticker.thumbnail) : null;
+    this.disableAnimations = staticFile != null;
     switch (sticker.format.getConstructor()) {
       case TdApi.StickerFormatTgs.CONSTRUCTOR:
       case TdApi.StickerFormatWebm.CONSTRUCTOR: {
+        if (staticFile != null) {
+          // Animations are disabled: the static preview instead of the sticker, as in TextMedia.
+          staticFile.setSize(size);
+          staticFile.setScaleType(ImageFile.FIT_CENTER);
+          staticFile.setNoBlur();
+          this.imageFile = staticFile;
+          this.gifFile = null;
+          break;
+        }
         this.gifFile = new GifFile(tdlib, sticker);
         this.gifFile.setScaleType(GifFile.FIT_CENTER);
         this.gifFile.setOptimizationMode(GifFile.OptimizationMode.EMOJI);
@@ -110,7 +131,7 @@ public class ComplexMediaItemCustomEmoji implements ComplexMediaItem {
 
   @Override
   public String getComplexMediaKey () {
-    return "emoji_" + Td.customEmojiId(sticker) + "_" + size;
+    return "emoji_" + Td.customEmojiId(sticker) + "_" + size + (disableAnimations ? "_static" : "");
   }
 
   @Override
