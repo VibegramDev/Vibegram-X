@@ -85,7 +85,6 @@ import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.MenuMoreWrap;
-import org.thunderdog.challegram.navigation.OptionsLayout;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.RecyclerViewProvider;
@@ -117,7 +116,6 @@ import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.PropertyId;
 import org.thunderdog.challegram.theme.Theme;
-import org.thunderdog.challegram.theme.ThemeListenerList;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
@@ -130,6 +128,7 @@ import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.unsorted.Passcode;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.unsorted.Test;
+import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.util.AppUpdater;
 import org.thunderdog.challegram.util.FeatureAvailability;
 import org.thunderdog.challegram.util.StringList;
@@ -147,7 +146,6 @@ import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.ClearButton;
 import org.thunderdog.challegram.widget.M3DockScrimView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
-import org.thunderdog.challegram.widget.M3AccountItemView;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.ShadowView;
 import org.thunderdog.challegram.widget.SnackBar;
@@ -409,7 +407,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     navigationBar.setMyUser(tdlib);
     tdlib.cache().addMyUserListener(myUserListener);
     navigationBar.setCallback(this::onNavigationItemClick);
-    navigationBar.setSettingsLongClickListener(v -> showAccountSwitcher());
+    HapticMenuHelper.OnItemClickListener menuClickListener = (view, parentView, item) -> true;
+    navigationBar.setItemMenu(MainNavigationBar.ITEM_CHATS, new HapticMenuHelper(
+      view -> createFolderMenuItems(), menuClickListener, null, null));
+    navigationBar.setItemMenu(MainNavigationBar.ITEM_SETTINGS, new HapticMenuHelper(
+      view -> createAccountMenuItems(), menuClickListener, null, null));
     navigationBar.setUnreadCount(updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), false));
     navigationCounterListener = new CounterChangeListener() {
       @Override
@@ -1067,91 +1069,71 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
    * «Добавить аккаунт» — the same actions as the «Аккаунты» group of Settings. Placed like the other options:
    * bottom sheet on compact windows, M3 menu at the touch point on wider ones.
    */
-  private boolean showAccountSwitcher () {
+  private @Nullable List<HapticMenuHelper.MenuItem> createAccountMenuItems () {
     if (isStackLocked() || context.isPasscodeShowing()) {
-      return false;
+      return null;
     }
-    final PopupLayout popupLayout = new PopupLayout(context);
-    popupLayout.setTag(this);
-    popupLayout.init(true);
-    popupLayout.setNeedFullScreen(true);
-
-    final List<M3AccountItemView> accountViews = new ArrayList<>();
-    final ThemeListenerList popupThemeListeners = newPopupThemeListeners(popupLayout);
-    // Account of each row: not in the view tag, the tablet menu keeps the item width there (MenuMoreWrap#addCustomItem).
-    final java.util.Map<View, TdlibAccount> rowAccounts = new java.util.HashMap<>();
-    View.OnClickListener onClick = v -> {
-      if (v.getId() == R.id.btn_addAccount) {
-        popupLayout.hideWindow(true);
-        tdlib.ui().addAccount(context, true, false);
-      } else if (rowAccounts.get(v) != null) {
-        TdlibAccount account = rowAccounts.get(v);
-        popupLayout.hideWindow(true);
-        long now = SystemClock.uptimeMillis();
-        if (account.context().preferredAccountId() != account.id && (lastAccountSwitchTime == 0 || now - lastAccountSwitchTime >= 720)) {
-          lastAccountSwitchTime = now;
-          account.context().changePreferredAccountId(account.id, TdlibManager.SWITCH_REASON_USER_CLICK);
-        }
-      }
-    };
-    for (TdlibAccount account : TdlibManager.instance().getActiveAccounts()) {
+    List<TdlibAccount> accounts = TdlibManager.instance().getActiveAccounts();
+    List<HapticMenuHelper.MenuItem> items = new ArrayList<>(accounts.size());
+    for (TdlibAccount account : accounts) {
       if (account.id == tdlib.id()) {
         continue;
       }
-      M3AccountItemView view = new M3AccountItemView(context, tdlib);
-      view.setId(R.id.account);
-      rowAccounts.put(view, account);
-      view.setAccount(account, false);
-      view.attach();
-      popupThemeListeners.addThemeInvalidateListener(view);
-      accountViews.add(view);
+      String name = Lang.getDebugString(account.getName(), account.isDebug());
+      TdApi.MessageSender sender = new TdApi.MessageSenderUser(account.getKnownUserId());
+      HapticMenuHelper.MenuItem item =
+        new HapticMenuHelper.MenuItem(R.id.account, name, null, 0, tdlib, sender, false);
+      item.accountId = account.id;
+      items.add(item.setOnClickListener((view, parentView, menuItem) -> {
+        long now = SystemClock.uptimeMillis();
+        if (account.context().preferredAccountId() != account.id &&
+          (lastAccountSwitchTime == 0 || now - lastAccountSwitchTime >= 720)) {
+          lastAccountSwitchTime = now;
+          account.context().changePreferredAccountId(account.id,
+            TdlibManager.SWITCH_REASON_USER_CLICK);
+        }
+        return true;
+      }));
     }
-    popupLayout.setDismissListener(popup -> {
-      for (M3AccountItemView view : accountViews) {
-        view.performDestroy();
-      }
-    });
+    HapticMenuHelper.MenuItem addAccount = new HapticMenuHelper.MenuItem(R.id.btn_addAccount,
+      Lang.getString(R.string.AddAccount), R.drawable.baseline_person_add_24);
+    items.add(addAccount.setOnClickListener((view, parentView, menuItem) -> {
+      tdlib.ui().addAccount(context, true, false);
+      return true;
+    }));
+    return items;
+  }
 
-    float[] touchPoint;
-    if (!isCompactWindow() && (touchPoint = context.getRecentTouchPoint()) != null) {
-      MenuMoreWrap menu = new MenuMoreWrap(context);
-      menu.init(popupThemeListeners, null);
-      // Avatar in the 24dp leading icon slot of the menu items.
-      float start = MenuMoreWrap.ITEM_PADDING, textStart = MenuMoreWrap.ITEM_TEXT_START;
-      for (M3AccountItemView view : accountViews) {
-        view.setMetrics(24f, start, textStart, MenuMoreWrap.ITEM_PADDING);
-        menu.addCustomItem(view, view.getDesiredWidth(), onClick);
-      }
-      if (!accountViews.isEmpty()) {
-        menu.addDivider();
-      }
-      menu.addItem(R.id.btn_addAccount, Lang.getString(R.string.AddAccount), R.drawable.baseline_person_add_24, null, onClick);
-      menu.setAnchor((int) touchPoint[0], (int) touchPoint[1], (int) touchPoint[0], (int) touchPoint[1], false);
-      menu.setAnchorPane(getValue());
-      popupLayout.showMoreView(menu);
-    } else {
-      OptionsLayout sheet = new OptionsLayout(context, this, null);
-      sheet.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
-      // Avatar in the icon slot of the sheet items (17dp start, 18dp gap): names line up with «Добавить аккаунт».
-      for (M3AccountItemView view : accountViews) {
-        view.setMetrics(24f, 17f, 17f + 24f + 18f, 17f);
-        view.setOnClickListener(onClick);
-        Views.setClickable(view);
-        RippleSupport.setTransparentSelector(view);
-        view.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(54f)));
-        sheet.addView(view);
-      }
-      if (!accountViews.isEmpty()) {
-        sheet.addDivider();
-      }
-      TextView addView = OptionsLayout.genOptionView(context, R.id.btn_addAccount, Lang.getString(R.string.AddAccount), OptionColor.NORMAL, R.drawable.baseline_person_add_24, OptionColor.NORMAL, onClick, getThemeListeners(), null);
-      RippleSupport.setTransparentSelector(addView);
-      addView.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(54f)));
-      sheet.addView(addView);
-      popupLayout.showSimplePopupView(sheet, sheet.getEstimatedHeight() + extraBottomInsetWithoutIme);
+  private @Nullable List<HapticMenuHelper.MenuItem> createFolderMenuItems () {
+    if (!hasFolders()) {
+      return null;
     }
-    onCreatePopupLayout(popupLayout);
-    return true;
+    List<HapticMenuHelper.MenuItem> items = new ArrayList<>(pagerChatLists.size());
+    for (int position = 0; position < pagerChatLists.size(); position++) {
+      TdApi.ChatList chatList = pagerChatLists.get(position);
+      int folderPosition = position;
+      items.add(new HapticMenuHelper.MenuItem(R.id.btn_folder, getFolderLabel(chatList),
+        getFolderIcon(chatList)).setOnClickListener((view, parentView, menuItem) -> {
+        openChatFolder(folderPosition);
+        return true;
+      }));
+    }
+    return items;
+  }
+
+  /** Folder picked from the menu of the chats item: back to the chat list from a section first. */
+  private void openChatFolder (int position) {
+    NavigationController nav =
+      navigationController != null ? navigationController : overlayNavigation;
+    boolean inSection = isTabletNavigationBar() ?
+      getTabletSection() != MainNavigationBar.ITEM_CHATS :
+      navigationInOverlay && nav != null && nav.getStack().getCurrent() != this;
+    if (inSection) {
+      onNavigationItemClick(MainNavigationBar.ITEM_CHATS);
+    }
+    if (getCurrentPagerItemPosition() != position) {
+      setCurrentPagerPosition(position, !inSection);
+    }
   }
 
   // Contained full-screen search (m3.material.io/components/search, ExpandedFullScreenContainedSearchBar):
@@ -3792,26 +3774,39 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       TdApi.ChatList chatList = pagerChatLists.get(position);
       ViewPagerTopView.Item item = position < pagerSections.size() ? pagerSections.get(position) : null;
       Counter counter = item != null ? item.counter : null;
-      CharSequence label;
-      int iconRes;
       // The rail always shows an icon and a label, whatever the folder style of the tabs is.
-      if (TD.isChatListMain(chatList)) {
-        label = Lang.getString(menuNeedArchive ? R.string.CategoryArchive : R.string.CategoryMainShort);
-        iconRes = menuNeedArchive ? R.drawable.baseline_archive_24 : R.drawable.baseline_forum_24;
-      } else if (TD.isChatListArchive(chatList)) {
-        label = Lang.getString(R.string.CategoryArchive);
-        iconRes = R.drawable.baseline_archive_24;
-      } else if (TD.isChatListFolder(chatList)) {
-        TdApi.ChatFolderInfo info = tdlib.chatFolderInfo(((TdApi.ChatListFolder) chatList).chatFolderId);
-        label = info != null ? Emoji.instance().replaceEmoji(TD.toCharSequence(info.name)) : "";
-        iconRes = TD.findFolderIcon(info != null ? info.icon : null, R.drawable.baseline_folder_24);
-      } else {
-        label = "";
-        iconRes = R.drawable.baseline_folder_24;
-      }
-      entries.add(new M3FolderRailView.Entry(label, iconRes, counter));
+      CharSequence label = getFolderLabel(chatList);
+      entries.add(new M3FolderRailView.Entry(label, getFolderIcon(chatList), counter));
     }
     return entries;
+  }
+
+  /** Folder label in the rail and in the menu of the chats item, whatever the style of the tabs. */
+  private CharSequence getFolderLabel (TdApi.ChatList chatList) {
+    if (TD.isChatListMain(chatList)) {
+      int labelRes = menuNeedArchive ? R.string.CategoryArchive : R.string.CategoryMainShort;
+      return Lang.getString(labelRes);
+    } else if (TD.isChatListArchive(chatList)) {
+      return Lang.getString(R.string.CategoryArchive);
+    } else if (TD.isChatListFolder(chatList)) {
+      int chatFolderId = ((TdApi.ChatListFolder) chatList).chatFolderId;
+      TdApi.ChatFolderInfo info = tdlib.chatFolderInfo(chatFolderId);
+      return info != null ? Emoji.instance().replaceEmoji(TD.toCharSequence(info.name)) : "";
+    }
+    return "";
+  }
+
+  private @DrawableRes int getFolderIcon (TdApi.ChatList chatList) {
+    if (TD.isChatListMain(chatList)) {
+      return menuNeedArchive ? R.drawable.baseline_archive_24 : R.drawable.baseline_forum_24;
+    } else if (TD.isChatListArchive(chatList)) {
+      return R.drawable.baseline_archive_24;
+    } else if (TD.isChatListFolder(chatList)) {
+      int chatFolderId = ((TdApi.ChatListFolder) chatList).chatFolderId;
+      TdApi.ChatFolderInfo info = tdlib.chatFolderInfo(chatFolderId);
+      return TD.findFolderIcon(info != null ? info.icon : null, R.drawable.baseline_folder_24);
+    }
+    return R.drawable.baseline_folder_24;
   }
 
   // Tablet: tabs below the search bar

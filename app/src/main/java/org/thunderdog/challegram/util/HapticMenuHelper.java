@@ -23,6 +23,7 @@ import androidx.annotation.Nullable;
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.navigation.MenuMoreWrap;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.theme.ThemeDelegate;
 import org.thunderdog.challegram.theme.ThemeListenerList;
@@ -70,6 +71,9 @@ public class HapticMenuHelper implements View.OnTouchListener, View.OnLongClickL
     private OnItemClickListener onClickListener;
 
     private long tutorialFlag;
+
+    /** Avatar of this account instead of the sender's one (the account's TDLib may be paused). */
+    public int accountId = TdlibAccount.NO_ID;
 
     public MenuItem (int id, CharSequence title, int iconResId) {
       this.id = id;
@@ -366,12 +370,11 @@ public class HapticMenuHelper implements View.OnTouchListener, View.OnLongClickL
 
   private void dropMenu (View view, float x, float y, boolean apply) {
     if (hapticMenu != null && !hapticMenu.isWindowHidden()) {
-      if (apply) {
-        moreWrap.onApply();
+      // Released outside of the entries: the menu stays open for a tap.
+      if (!apply || moreWrap.onApply()) {
+        hideMenu();
       }
-      hideMenu();
     }
-    // TODO handle click ? ? ?
   }
 
   private void onMenuItemClick (MenuItem item, View view, View parentView) {

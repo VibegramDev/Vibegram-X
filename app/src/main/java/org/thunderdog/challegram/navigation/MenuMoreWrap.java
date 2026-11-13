@@ -46,6 +46,7 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiver;
 import org.thunderdog.challegram.telegram.Tdlib;
+import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
@@ -420,7 +421,11 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     final AvatarReceiver receiver = (menuItem.messageSenderId != null && menuItem.iconResId == 0) ?
       complexAvatarReceiver.getAvatarReceiver(Td.getSenderId(menuItem.messageSenderId)) : null;
     if (receiver != null) {
-      receiver.requestMessageSender(tdlib, menuItem.messageSenderId, AvatarReceiver.Options.NONE);
+      if (menuItem.accountId != TdlibAccount.NO_ID) {
+        receiver.requestAccount(tdlib, menuItem.accountId, AvatarReceiver.Options.NONE);
+      } else {
+        receiver.requestMessageSender(tdlib, menuItem.messageSenderId, AvatarReceiver.Options.NONE);
+      }
     }
 
     FrameLayout.LayoutParams lp = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(ITEM_HEIGHT), Gravity.LEFT);
@@ -726,11 +731,15 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     // Log.i("HAPTIC INNER", String.format("INDEX %d", index));
   }
 
-  public void onApply () {
+  public boolean onApply () {
     if (lastSelectedIndex != -1) {
       View v = getChildAt(lastSelectedIndex);
-      if (v != null) v.callOnClick();
+      if (v != null) {
+        v.callOnClick();
+        return true;
+      }
     }
+    return false;
   }
 
   private void setSelectedIndex (int index) {
