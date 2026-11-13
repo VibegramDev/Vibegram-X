@@ -196,8 +196,9 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_search) {
-      header.addMoreButton(menu, this);
+      // The more button is the last one: with centered titles the chat avatar takes its place.
       header.addSearchButton(menu, this);
+      ChatHeaderView.bindAvatarButton(header.addMoreButton(menu, this));
     } else if (id == R.id.menu_clear) {
       // Add toggle button before clear button (left of clear)
       // baseline_chat_bubble_24 for messages mode, baseline_forum_24 for topics mode
