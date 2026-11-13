@@ -426,10 +426,10 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     }
 
     final int maxWidth = Screen.dp(250);
-    final int textRightOffset = Screen.dp(menuItem.isSelected ? ITEM_PADDING + 32 :
+    final int textRightOffset = Screen.dp(menuItem.isSelected ? ITEM_PADDING + 26 :
       menuItem.isLocked ? ITEM_PADDING + 24 : ITEM_PADDING);
     final Drawable checkIcon =
-      menuItem.isSelected ? Drawables.get(getResources(), R.drawable.baseline_check_24) : null;
+      menuItem.isSelected ? Drawables.get(getResources(), R.drawable.baseline_check_18) : null;
     final Text customTitle = menuItem.formattedTitle != null && tdlib != null ?
       buildCustomTitle(tdlib, menuItem.formattedTitle, menuItem.animateCustomEmoji,
         maxWidth - Screen.dp(ITEM_TEXT_START) - textRightOffset) :
@@ -460,7 +460,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
         }
 
         if (checkIcon != null) {
-          float x = getMeasuredWidth() - Screen.dp(ITEM_PADDING + 24);
+          float x = getMeasuredWidth() - Screen.dp(ITEM_PADDING) - checkIcon.getMinimumWidth();
           float y = (getMeasuredHeight() - checkIcon.getMinimumHeight()) / 2f;
           int color = M3.get(M3.PRIMARY, forcedTheme);
           Drawables.draw(canvas, checkIcon, x, y, Paints.getPorterDuffPaint(color));
