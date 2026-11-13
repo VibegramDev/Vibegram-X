@@ -12,4 +12,5 @@
   <string name="vg_ProfileActionDiscuss">Обсуждение</string>
   <string name="vg_ProfileActionLeave">Покинуть</string>
   <string name="vg_ProfileActionJoin">Вступить</string>
+  <string name="vg_ProfileActionOpenApp">Открыть</string>
 </resources>

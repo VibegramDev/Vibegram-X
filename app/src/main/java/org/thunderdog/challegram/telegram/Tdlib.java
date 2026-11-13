@@ -9388,14 +9388,31 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
 
   // Updates: ATTACH MENU BOTS
 
+  private volatile TdApi.AttachmentMenuBot[] attachmentMenuBots = new TdApi.AttachmentMenuBot[0];
+
   @TdlibThread
   private void updateAttachmentMenuBots (TdApi.UpdateAttachmentMenuBots update) {
-    // TODO
+    attachmentMenuBots = update.bots;
+  }
+
+  /** Bots added to the attachment or side menu, from {@code updateAttachmentMenuBots}. */
+  public TdApi.AttachmentMenuBot[] attachmentMenuBots () {
+    return attachmentMenuBots;
+  }
+
+  public @Nullable TdApi.AttachmentMenuBot attachmentMenuBot (long botUserId) {
+    for (TdApi.AttachmentMenuBot bot : attachmentMenuBots) {
+      if (bot.botUserId == botUserId) {
+        return bot;
+      }
+    }
+    return null;
   }
 
   @TdlibThread
   private void updateWebAppMessageSent (TdApi.UpdateWebAppMessageSent update) {
-    // TODO
+    runOnUiThread(() -> org.thunderdog.challegram.webapp.WebAppController.onWebAppMessageSent(this,
+      update.webAppLaunchId));
   }
 
   // Updates: NOTIFICATIONS

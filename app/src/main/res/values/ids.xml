@@ -1485,4 +1485,25 @@
   <item type="id" name="btn_playback_speed_1_2" />
   <item type="id" name="btn_playback_speed_1_5" />
   <item type="id" name="btn_playback_speed_2_0" />
+
+  <item type="id" name="controller_webApp" />
+  <item type="id" name="btn_webAppClose" />
+  <item type="id" name="btn_vgProfileOpenApp" />
+  <item type="id" name="btn_webAppStart" />
+  <item type="id" name="btn_webAppAllowWrite" />
+  <item type="id" name="btn_webAppMoreAboutBot" />
+  <item type="id" name="btn_webAppDisclaimer" />
+  <item type="id" name="btn_webAppAgree" />
+  <item type="id" name="btn_webAppMinimize" />
+  <item type="id" name="btn_webAppOpenBot" />
+  <item type="id" name="btn_webAppSettings" />
+  <item type="id" name="btn_webAppReload" />
+  <item type="id" name="btn_webAppAddToHomeScreen" />
+  <item type="id" name="btn_webAppTerms" />
+  <item type="id" name="btn_webAppReport" />
+  <item type="id" name="btn_webAppDelete" />
+  <item type="id" name="btn_webAppPopup1" />
+  <item type="id" name="btn_webAppPopup2" />
+  <item type="id" name="btn_webAppPopup3" />
+  <item type="id" name="msg_botMenuButton" />
 </resources>

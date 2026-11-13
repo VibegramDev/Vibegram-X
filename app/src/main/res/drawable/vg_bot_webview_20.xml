@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The bot menu button icon of the official Android app (first frame of bot_webview_sheet_to_cross). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="20dp"
+  android:height="20dp"
+  android:viewportWidth="24.0"
+  android:viewportHeight="24.0">
+  <path
+    android:fillColor="#00000000"
+    android:strokeColor="#FF000000"
+    android:strokeWidth="2.16"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round"
+    android:pathData="M6.491,20.580C4.795,20.580 3.420,19.186 3.420,17.465L3.420,6.535C3.420,4.814 4.795,3.420 6.491,3.420L17.509,3.420C19.205,3.420 20.580,4.814 20.580,6.535L20.580,17.465C20.580,19.186 19.205,20.580 17.509,20.580Z" />
+  <path
+    android:fillColor="#FF000000"
+    android:pathData="M4.283,3.327L19.703,3.327L19.703,8.007C19.684,7.603 19.352,7.287 18.948,7.287L5.002,7.287C4.612,7.287 4.294,7.599 4.283,7.987L4.283,8.007Z" />
+</vector>

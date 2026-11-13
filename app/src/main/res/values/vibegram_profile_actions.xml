@@ -22,4 +22,5 @@
   <string name="vg_ProfileActionDiscuss">Discuss</string>
   <string name="vg_ProfileActionLeave">Leave</string>
   <string name="vg_ProfileActionJoin">Join</string>
+  <string name="vg_ProfileActionOpenApp">Open App</string>
 </resources>

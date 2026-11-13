@@ -15,6 +15,7 @@
 package org.thunderdog.challegram.data;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.BaseActivity;
@@ -44,6 +45,13 @@ public class InlineResultButton extends InlineResult<TdApi.InlineQueryResultsBut
 
   public @NonNull String getText () {
     return data.text;
+  }
+
+  public @Nullable String webAppUrl () {
+    if (data.type.getConstructor() == TdApi.InlineQueryResultsButtonTypeWebApp.CONSTRUCTOR) {
+      return ((TdApi.InlineQueryResultsButtonTypeWebApp) data.type).url;
+    }
+    return null;
   }
 
   public String botStartParameter () {

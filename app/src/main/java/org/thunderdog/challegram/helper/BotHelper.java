@@ -174,6 +174,7 @@ public class BotHelper implements Runnable, InlineSearchContext.CommandListProvi
     }
 
     if (full.botInfo != null) {
+      this.menuButton = full.botInfo.menuButton;
       if (!StringUtils.isEmpty(full.botInfo.description) && !context.areScheduledOnly()) {
         this.botInfoMessage = new TGMessageBotInfo(context.getManager(), chatId, full.botInfo.description);
       }
@@ -185,7 +186,7 @@ public class BotHelper implements Runnable, InlineSearchContext.CommandListProvi
         }
         this.commands = commands;
         context.tdlib().uiExecute(this);
-      } else if (botInfoMessage != null) {
+      } else if (botInfoMessage != null || menuButton != null) {
         context.tdlib().uiExecute(this);
       }
     }
@@ -412,6 +413,7 @@ public class BotHelper implements Runnable, InlineSearchContext.CommandListProvi
   // Called when data's been loaded
 
   private int botsCount;
+  private @Nullable TdApi.BotMenuButton menuButton;
 
   @Override
   public void run () {
@@ -431,7 +433,11 @@ public class BotHelper implements Runnable, InlineSearchContext.CommandListProvi
       } else {
         context.getManager().checkBotStart();
       }
-      context.updateCommandButton((botsCount > 0 || type == TYPE_PRIVATE) && hasCommands());
+      TdApi.BotMenuButton menuButton = type == TYPE_PRIVATE ? this.menuButton : null;
+      context.setBotMenuButton(menuButton);
+      // With a menu button, commands are typed with "/", like in the official app.
+      boolean needCommandsButton = hasCommands() && menuButton == null;
+      context.updateCommandButton((botsCount > 0 || type == TYPE_PRIVATE) && needCommandsButton);
     }
   }
 

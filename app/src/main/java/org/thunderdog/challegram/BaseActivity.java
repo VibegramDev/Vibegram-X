@@ -141,6 +141,7 @@ import org.thunderdog.challegram.util.AppUpdater;
 import org.thunderdog.challegram.util.KonfettiBuilder;
 import org.thunderdog.challegram.util.Permissions;
 import org.thunderdog.challegram.util.StuckWatch;
+import org.thunderdog.challegram.webapp.WebAppTabs;
 import org.thunderdog.challegram.widget.BaseRootLayout;
 import org.thunderdog.challegram.widget.DragDropLayout;
 import org.thunderdog.challegram.widget.ForceTouchView;
@@ -559,6 +560,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     }
 
     rootView.addView(contentView);
+    WebAppTabs.attach(this);
 
     checkPasscode(false);
 

@@ -118,6 +118,7 @@ import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.util.text.TextWrapper;
 import org.thunderdog.challegram.v.CustomRecyclerView;
+import org.thunderdog.challegram.webapp.WebApp;
 import org.thunderdog.challegram.widget.AvatarView;
 import org.thunderdog.challegram.widget.BetterChatView;
 import org.thunderdog.challegram.widget.CircleButton;
@@ -623,10 +624,14 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       strings.append(R.string.StartEncryptedChat);
     }
 
-    // Bots: "Share" and "Block" are in the row of profile actions (getProfileActions).
+    // Bots: "Share" and "Block" are in the row of profile actions (getProfileActions),
+    // unless the "Open App" action takes the place of "Share".
     if (!isBot && TD.hasPhoneNumber(user)) {
       ids.append(R.id.more_btn_share);
       strings.append(R.string.ShareContact);
+    } else if (isBot && ((TdApi.UserTypeBot) user.type).hasMainWebApp && Td.hasUsername(user)) {
+      ids.append(R.id.more_btn_share);
+      strings.append(R.string.vg_ProfileActionShare);
     }
 
     //if (!isBot || !((TdApi.UserTypeBot) user.type).isInline) {
@@ -2735,9 +2740,15 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           actions.add(newProfileAction(R.id.btn_vgProfileShare, R.drawable.baseline_share_arrow_24, R.string.vg_ProfileActionShare));
           break;
         }
+        boolean hasMainWebApp = TD.isBot(user) && ((TdApi.UserTypeBot) user.type).hasMainWebApp;
+        if (hasMainWebApp) {
+          actions.add(newProfileAction(R.id.btn_vgProfileOpenApp, R.drawable.baseline_apps_24,
+            R.string.vg_ProfileActionOpenApp));
+        }
         addSoundProfileAction(actions);
         if (TD.isBot(user)) {
-          if (Td.hasUsername(user)) {
+          // With the app button the row has no room for sharing, which stays in the ⋮ menu.
+          if (Td.hasUsername(user) && !hasMainWebApp) {
             actions.add(newProfileAction(R.id.btn_vgProfileShare, R.drawable.baseline_share_arrow_24, R.string.vg_ProfileActionShare));
           }
           boolean isBlocked = tdlib.chatFullyBlocked(ChatId.fromUserId(user.id));
@@ -2874,6 +2885,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     final int id = action.id;
     if (id == R.id.btn_vgProfileChat) {
       openProfileChat();
+    } else if (id == R.id.btn_vgProfileOpenApp) {
+      WebApp.openMainApp(this, user.id, 0, null, null);
     } else if (id == R.id.btn_vgProfileSound) {
       // Exactly the former "Notifications" row (no long press).
       tdlib.ui().showMuteOptions(this, chat.id, true, null);

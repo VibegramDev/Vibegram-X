@@ -96,6 +96,7 @@ import org.thunderdog.challegram.ui.WaitForPremiumController;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.Crash;
 import org.thunderdog.challegram.util.StuckWatch;
+import org.thunderdog.challegram.webapp.WebApp;
 import org.thunderdog.challegram.widget.GearView;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.PopupLayout;
@@ -804,6 +805,19 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
 
     // Custom
+
+    if (action.equals(WebApp.ACTION_OPEN_WEB_APP)) {
+      int accountId = intent.getIntExtra(WebApp.EXTRA_ACCOUNT_ID, TdlibAccount.NO_ID);
+      long botUserId = intent.getLongExtra(WebApp.EXTRA_BOT_USER_ID, 0);
+      if (accountId != TdlibAccount.NO_ID && TdlibManager.instance().hasAccount(accountId)) {
+        Tdlib tdlib = TdlibManager.instanceForAccountId(accountId).account(accountId).tdlib();
+        tdlib.awaitInitialization(() -> handler.post(() -> {
+          openMainController(tdlib.id());
+          WebApp.openFromShortcut(navigation.getCurrentStackItem(), accountId, botUserId);
+        }));
+      }
+      return true;
+    }
 
     if (action.startsWith(Intents.ACTION_OPEN_MAIN)) {
       int accountId = intent.getIntExtra("account_id", TdlibAccount.NO_ID);
