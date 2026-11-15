@@ -205,7 +205,7 @@ public final class WebAppTabsView extends View implements
   private ArrayList<Card> cards = new ArrayList<>(MAX_CARDS);
   private float fromVisibility, toVisibility;
   private float fromBand, toBand;
-  private int navigationInset;
+  private int navigationInset, legacyLeftInset;
   private int appliedExtraInset;
   private boolean hasTabs, isContentCovered;
   private boolean cardsHidden;
@@ -306,7 +306,28 @@ public final class WebAppTabsView extends View implements
   @Override
   public boolean onPreDraw () {
     setContentCovered(checkContentCovered());
+    updateLeftMargin();
     return true;
+  }
+
+  /** In the tablet split the strip lies in the right pane, under the screens opened there. */
+  private int getTabletPaneLeft () {
+    NavigationController navigation = activity.navigation();
+    View parent = (View) getParent();
+    int detailLeft = navigation != null ? navigation.getTabletDetailScreenLeft() : -1;
+    if (detailLeft <= 0 || parent == null) {
+      return 0;
+    }
+    return Math.max(0, detailLeft - Views.getLocationOnScreen(parent)[0]);
+  }
+
+  private void updateLeftMargin () {
+    FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) getLayoutParams();
+    int leftMargin = Math.max(legacyLeftInset, getTabletPaneLeft());
+    if (params != null && params.leftMargin != leftMargin) {
+      params.leftMargin = leftMargin;
+      setLayoutParams(params);
+    }
   }
 
   /**
@@ -360,9 +381,10 @@ public final class WebAppTabsView extends View implements
     // The keyboard covers the strip
     boolean edgeToEdge = Settings.instance().useEdgeToEdge();
     int navigationInset = edgeToEdge ? insetsWithoutIme.bottom : 0;
+    legacyLeftInset = legacyInsets.left;
     Views.setMargins(
       params,
-      legacyInsets.left,
+      Math.max(legacyLeftInset, getTabletPaneLeft()),
       0,
       legacyInsets.right,
       edgeToEdge ? 0 : legacyInsets.bottom
