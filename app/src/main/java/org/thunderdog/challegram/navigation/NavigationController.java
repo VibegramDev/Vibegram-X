@@ -2340,9 +2340,11 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       }
       return;
     }
-    int effectiveBottomInset = isTabletMaster(controller) ? getTabletPaneBottomInset() : bottomInset;
+    boolean isMaster = isTabletMaster(controller);
+    int effectiveBottomInset = isMaster ? getTabletPaneBottomInset() : bottomInset;
     if (controller.supportsBottomInset()) {
-      controller.setBottomInset(effectiveBottomInset, bottomInsetWithoutIme);
+      // The floating bar of the chat list is placed by the inset without the keyboard
+      controller.setBottomInset(effectiveBottomInset, isMaster ? effectiveBottomInset : bottomInsetWithoutIme);
     } else {
       View view = controller.getValue();
       Views.setPaddingBottom(view, effectiveBottomInset);
