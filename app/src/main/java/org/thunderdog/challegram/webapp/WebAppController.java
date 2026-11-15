@@ -81,6 +81,7 @@ import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
@@ -2184,27 +2185,56 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final int width = MeasureSpec.getSize(widthMeasureSpec),
         height = MeasureSpec.getSize(heightMeasureSpec);
       updatePositions(width, height);
-      final int sheetWidth = M3Sheets.width(width);
-      final int horizontalMargin = (width - sheetWidth) / 2;
+      updateSheetBounds(width);
+      final int leftMargin = sheetLeft, rightMargin = width - sheetRight;
       final int contentHeight = Math.max(0, height - bottomPadding - getContentTop() -
         buttonsView.getTargetHeight());
-      setChildFrame(contentView, horizontalMargin, getContentTop(), contentHeight);
+      setChildFrame(contentView, leftMargin, rightMargin, getContentTop(), contentHeight);
       FrameLayout.LayoutParams buttonsParams =
         (FrameLayout.LayoutParams) buttonsView.getLayoutParams();
       buttonsParams.bottomMargin = bottomPadding;
-      buttonsParams.leftMargin = buttonsParams.rightMargin = horizontalMargin;
+      buttonsParams.leftMargin = leftMargin;
+      buttonsParams.rightMargin = rightMargin;
       FrameLayout.LayoutParams headerParams =
         (FrameLayout.LayoutParams) headerView.getLayoutParams();
-      headerParams.leftMargin = horizontalMargin + (isFullscreen ? insets.left : 0);
-      headerParams.rightMargin = horizontalMargin + (isFullscreen ? insets.right : 0);
+      headerParams.leftMargin = leftMargin + (isFullscreen && leftMargin == 0 ? insets.left : 0);
+      headerParams.rightMargin = rightMargin + (isFullscreen ? insets.right : 0);
       super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
-    private void setChildFrame (View view, int horizontalMargin, int top, int height) {
+    private int sheetLeft, sheetRight;
+    private boolean isPaneSheet;
+
+    /** The sheet takes the whole right pane in the tablet split, otherwise it is centered. */
+    private void updateSheetBounds (int width) {
+      int paneLeft = getTabletPaneLeft();
+      isPaneSheet = paneLeft > 0 && paneLeft < width;
+      if (isPaneSheet) {
+        sheetLeft = paneLeft;
+        sheetRight = width;
+      } else {
+        int sheetWidth = M3Sheets.width(width);
+        sheetLeft = (width - sheetWidth) / 2;
+        sheetRight = sheetLeft + sheetWidth;
+      }
+    }
+
+    /** Left edge of the right pane of the tablet split in this view, 0 without the split. */
+    private int getTabletPaneLeft () {
+      NavigationController navigation = context().navigation();
+      int detailLeft = navigation != null ? navigation.getTabletDetailScreenLeft() : -1;
+      if (detailLeft <= 0) {
+        return 0;
+      }
+      return Math.max(0, detailLeft - Views.getLocationOnScreen(this)[0]);
+    }
+
+    private void setChildFrame (View view, int leftMargin, int rightMargin, int top, int height) {
       FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
       params.topMargin = top;
       params.height = height;
-      params.leftMargin = params.rightMargin = horizontalMargin;
+      params.leftMargin = leftMargin;
+      params.rightMargin = rightMargin;
     }
 
     @Override
@@ -2234,8 +2264,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final float handle = Screen.dp(HANDLE_AREA);
       final float fullscreen = fullscreenAnimator.getFloatValue();
       final float header = headerAnimator.getFloatValue();
-      final int sheetWidth = M3Sheets.width(width);
-      final float left = (width - sheetWidth) / 2f, right = left + sheetWidth;
+      final float left = sheetLeft, right = sheetRight;
+      final int sheetWidth = sheetRight - sheetLeft;
 
       float openFactor = 1f;
       if (sheetTop > compactTop && hiddenTop > compactTop) {
@@ -2259,7 +2289,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final float handleAlpha = MathUtils.clamp(1f - header * 2f) * (1f - fullscreen);
       if (handleAlpha > 0f) {
         final float handleWidth = Screen.dp(HANDLE_WIDTH) * (1f - header);
-        final float centerX = width / 2f, handleY = sheetTop + Screen.dp(HANDLE_TOP);
+        final float centerX = (left + right) / 2f, handleY = sheetTop + Screen.dp(HANDLE_TOP);
         paint.setColor(ColorUtils.alphaColor(.4f * handleAlpha, getHeaderContentColor()));
         rect.set(centerX - handleWidth / 2f, handleY - Screen.dp(HANDLE_HEIGHT) / 2f,
           centerX + handleWidth / 2f, handleY + Screen.dp(HANDLE_HEIGHT) / 2f);
@@ -2269,7 +2299,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final int navigationTop = height - bottomPadding;
       if (openFactor > 0f && getTabsHeight() == 0) {
         paint.setColor(ColorUtils.alphaColor(openFactor, bottomBarColor));
-        c.drawRect(0, navigationTop, width, height, paint);
+        c.drawRect(isPaneSheet ? left : 0, navigationTop, width, height, paint);
       }
 
       super.dispatchDraw(c);
@@ -2312,7 +2342,9 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
           isDragging = false;
           final float handle = Screen.dp(HANDLE_AREA);
           final boolean isHeaderVisible = headerAnimator.getValue();
-          isTouchingOutside = startY < sheetTop && !isHeaderVisible && !isFullscreen;
+          // Above the sheet or beside it (the left pane of the tablet split)
+          isTouchingOutside = (startY < sheetTop && !isHeaderVisible && !isFullscreen) ||
+            startX < sheetLeft || startX >= sheetRight;
           isTouchingContent = startY >= sheetTop + handle &&
             startY < getMeasuredHeight() - bottomPadding - buttonsView.getVisibleHeight();
           obtainVelocityTracker(e);
