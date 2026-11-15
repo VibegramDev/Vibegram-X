@@ -60,6 +60,7 @@ import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSet;
 import org.thunderdog.challegram.widget.RootFrameLayout;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -85,13 +86,10 @@ public final class WebAppTabsView extends View implements
   Lang.Listener,
   ViewTreeObserver.OnPreDrawListener {
 
+  /** Corner radius of the cards in the overlay of all tabs. */
   static final float CARD_RADIUS = 18f;
-  static final float CLOSE_SIZE = 50f;
+  static final float CLOSE_SIZE = 48f;
 
-  private static final float CARD_HEIGHT = 50f;
-  private static final float CARD_MARGIN = 4f;
-  private static final float STACK_SHIFT = 8f;
-  private static final float CORNER_RADIUS = 10f;
   private static final int MAX_CARDS = 4;
   private static final long ANIMATION_DURATION = 320L;
 
@@ -124,7 +122,8 @@ public final class WebAppTabsView extends View implements
 
   /** Close icon, bot name and expand icon of a tab card; the overlay of all tabs draws the same header. */
   static final class CardHeader {
-    private static final float CLOSE_ICON_X = 24f;
+    /** Icons are centered at the pill's ends, like the buttons of the composer. */
+    private static final float CLOSE_ICON_X = 28f;
     private static final float EXPAND_ICON_X = 28f;
     private static final float TITLE_X = 60f;
     /** Room for the icons on both sides of the title. */
@@ -158,13 +157,14 @@ public final class WebAppTabsView extends View implements
     }
 
     static boolean isInsideClose (RectF card, float x) {
-      int size = Screen.dp(CLOSE_SIZE);
+      int size = Screen.dp(CLOSE_ICON_X * 2f);
       return Lang.rtl() ? x > card.right - size : x < card.left + size;
     }
 
     static void getCloseBounds (RectF card, float centerY, Rect out) {
       int size = Screen.dp(CLOSE_SIZE);
-      int left = Lang.rtl() ? (int) card.right - size : (int) card.left;
+      int centerX = Lang.rtl() ? (int) card.right - Screen.dp(CLOSE_ICON_X) : (int) card.left + Screen.dp(CLOSE_ICON_X);
+      int left = centerX - size / 2;
       out.set(left, (int) (centerY - size / 2f), left + size, (int) (centerY + size / 2f));
     }
 
@@ -241,7 +241,7 @@ public final class WebAppTabsView extends View implements
   }
 
   private int getLayoutHeight () {
-    return Screen.dp(CORNER_RADIUS) + Screen.dp(WebAppTabs.STRIP_HEIGHT_STACK) + navigationInset;
+    return WebAppTabs.getStripHeight(true) + navigationInset;
   }
 
   // Lifecycle
@@ -513,7 +513,7 @@ public final class WebAppTabsView extends View implements
   }
 
   private float getCardWidth () {
-    return getWidth() - Screen.dp(CARD_MARGIN) * 2;
+    return getWidth() - MainNavigationBar.getBarMargin() * 2;
   }
 
   private void setCardTitle (Card card, String title) {
@@ -574,7 +574,7 @@ public final class WebAppTabsView extends View implements
     float factor = positionAnimator.getFactor();
     float visibility = MathUtils.fromTo(fromVisibility, toVisibility, factor);
     float band = MathUtils.fromTo(fromBand, toBand, factor);
-    setTranslationY((1f - visibility) * (band + Screen.dp(CORNER_RADIUS) + navigationInset));
+    setTranslationY((1f - visibility) * (band + navigationInset));
   }
 
   /** The overlay of all tabs replaces the cards while it is shown. */
@@ -596,11 +596,12 @@ public final class WebAppTabsView extends View implements
 
   private void getCardBounds (RectF out, float position, float bottom) {
     float width = getCardWidth();
-    float height = Screen.dp(CARD_HEIGHT);
+    // Same shape, size and margins as the floating composer above it
+    float height = MainNavigationBar.getBarHeight();
     float scale = MathUtils.fromTo(1f, .95f, Math.abs(position));
     float centerX = getWidth() / 2f;
-    float centerY = bottom - Screen.dp(CARD_MARGIN) - height / 2f
-      - position * Screen.dp(STACK_SHIFT);
+    float centerY = bottom - MainNavigationBar.getBarBottomMargin() - height / 2f
+      - position * Screen.dp(WebAppTabs.STACK_SHIFT);
     out.set(
       centerX - width / 2f * scale,
       centerY - height / 2f * scale,
@@ -609,15 +610,9 @@ public final class WebAppTabsView extends View implements
     );
   }
 
-  static int getCardColor (int backgroundColor) {
-    boolean isDark = M3.contrast(backgroundColor) == Color.WHITE;
-    int overlay = ColorUtils.alphaColor(isDark ? .08f : .75f, Color.WHITE);
-    return ColorUtils.compositeColor(backgroundColor, overlay);
-  }
-
-  static int getStripColor () {
-    // The color the activity gives to the system navigation bar
-    return Theme.backgroundColor() | 0xff000000;
+  /** The color of the floating composer. */
+  static int getCardColor () {
+    return M3.surfaceContainer();
   }
 
   // Drawing
@@ -628,15 +623,14 @@ public final class WebAppTabsView extends View implements
     final float factor = positionAnimator.getFactor();
     // No background band: the cards float over the screen content like the message composer
     final float cardsBottom = height - navigationInset;
-    final int backgroundColor = getStripColor();
 
     if (cardsHidden) {
       return;
     }
 
-    final int cardColor = getCardColor(backgroundColor);
+    final int cardColor = getCardColor();
     final int contentColor = M3.contrast(cardColor);
-    final float radius = Screen.dp(CARD_RADIUS);
+    final float radius = MainNavigationBar.getBarRadius();
     for (int i = 0; i < cards.size(); i++) {
       Card card = cards.get(i);
       float position = card.position(factor);

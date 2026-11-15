@@ -431,7 +431,7 @@ public final class WebAppTabsOverlay extends View implements
   }
 
   private float getPaddingBottomOffset () {
-    return Screen.dp(WebAppTabs.STRIP_HEIGHT_STACK) + activity.getRootView().getSystemInsetsWithoutIme().bottom;
+    return WebAppTabs.getStripHeight(true) + activity.getRootView().getSystemInsetsWithoutIme().bottom;
   }
 
   private float getCardWidth () {
@@ -478,7 +478,7 @@ public final class WebAppTabsOverlay extends View implements
       0f;
     final float expand = fade ? 1f : open * (1f - pull);
     final float alpha = fade ? open : 1f;
-    final int stripCardColor = WebAppTabsView.getCardColor(WebAppTabsView.getStripColor());
+    final int stripCardColor = WebAppTabsView.getCardColor();
 
     for (int i = cards.size() - 1; i >= 0; i--) {
       Card card = cards.get(i);
