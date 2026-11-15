@@ -138,7 +138,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   public static final int TYPE_ATTACHMENT_MENU = 3, TYPE_APP_LINK = 4, TYPE_MAIN_APP = 5;
   public static final int TYPE_SIDE_MENU = 6, TYPE_INLINE_SWITCH = 7;
 
-  public static final int MODE_COMPACT = 0, MODE_FULL_SIZE = 1, MODE_FULLSCREEN = 2;
+  public static final int MODE_FULL_SIZE = 1, MODE_FULLSCREEN = 2;
 
   public static final class Args {
     public final int type;
@@ -148,7 +148,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     public @Nullable TdApi.InputMessageReplyTo replyTo;
     public @Nullable String url, buttonText, startParameter, webAppShortName;
     public boolean allowWriteAccess, needsContext;
-    public int mode = MODE_COMPACT;
+    public int mode = MODE_FULL_SIZE;
 
     public Args (int type, long botUserId, long chatId) {
       this.type = type;
@@ -655,7 +655,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         return hiddenTop;
       case POSITION_COMPACT:
       default:
-        return getArgumentsStrict().mode == MODE_COMPACT ? compactTop : expandedTop;
+        return expandedTop;
     }
   }
 
@@ -2420,16 +2420,11 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         duration > LONG_DRAG_DURATION;
       final boolean isLandscape = getMeasuredWidth() > getMeasuredHeight();
       final float sticky = Screen.dp(isLandscape ? STICKY_RANGE_LANDSCAPE : STICKY_RANGE);
-      final boolean isFullSize = getArgumentsStrict().mode != MODE_COMPACT;
       final float restTop = getPositionTop(isFullscreen ? POSITION_FULLSCREEN : POSITION_COMPACT);
       final float offset = sheetTop - restTop;
       isDragging = false;
       if (velocity >= Screen.dp(FLING_DOWN_VELOCITY) && isLongGesture) {
-        if (isFullscreen || isFullSize || offset > sticky) {
-          minimize();
-        } else {
-          animatePosition(POSITION_COMPACT);
-        }
+        minimize();
         return;
       }
       if (velocity <= -FLING_UP_VELOCITY && !isFullscreen) {
@@ -2444,10 +2439,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         }
         return;
       }
-      if (offset <= -sticky) {
+      if (offset <= sticky) {
         animatePosition(POSITION_EXPANDED);
-      } else if (offset <= sticky) {
-        animatePosition(isFullSize ? POSITION_EXPANDED : POSITION_COMPACT);
       } else if (isLongGesture) {
         minimize();
       } else {

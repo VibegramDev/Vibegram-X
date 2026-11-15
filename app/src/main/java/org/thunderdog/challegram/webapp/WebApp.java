@@ -140,7 +140,7 @@ public final class WebApp {
     args.url = url;
     args.topicId = message.topicId;
     args.replyTo = new TdApi.InputMessageReplyToMessage(message.id, null, 0, null);
-    args.mode = parseModeFromUrl(url, WebAppController.MODE_COMPACT);
+    args.mode = parseModeFromUrl(url, WebAppController.MODE_FULL_SIZE);
     launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
@@ -160,7 +160,7 @@ public final class WebApp {
       chatId);
     args.url = url;
     args.buttonText = buttonText;
-    args.mode = parseModeFromUrl(url, WebAppController.MODE_COMPACT);
+    args.mode = parseModeFromUrl(url, WebAppController.MODE_FULL_SIZE);
     launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
@@ -182,7 +182,7 @@ public final class WebApp {
       ChatId.fromUserId(botUserId));
     args.url = button.url;
     args.needsContext = true;
-    args.mode = parseModeFromUrl(button.url, WebAppController.MODE_COMPACT);
+    args.mode = parseModeFromUrl(button.url, WebAppController.MODE_FULL_SIZE);
     launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
@@ -201,7 +201,7 @@ public final class WebApp {
       chatId);
     args.url = url;
     args.needsContext = true;
-    args.mode = parseModeFromUrl(url, WebAppController.MODE_COMPACT);
+    args.mode = parseModeFromUrl(url, WebAppController.MODE_FULL_SIZE);
     launch(context, args, LAUNCH_ALERT_UNLESS_CONFIRMED);
   }
 
@@ -680,11 +680,8 @@ public final class WebApp {
         openMode = new TdApi.WebAppOpenModeFullScreen();
         break;
       case WebAppController.MODE_FULL_SIZE:
-        openMode = new TdApi.WebAppOpenModeFullSize();
-        break;
-      case WebAppController.MODE_COMPACT:
       default:
-        openMode = new TdApi.WebAppOpenModeCompact();
+        openMode = new TdApi.WebAppOpenModeFullSize();
         break;
     }
     return new TdApi.WebAppOpenParameters(buildThemeParameters(), APPLICATION_NAME, openMode);
@@ -696,10 +693,10 @@ public final class WebApp {
       case TdApi.WebAppOpenModeFullScreen.CONSTRUCTOR:
         return WebAppController.MODE_FULLSCREEN;
       case TdApi.WebAppOpenModeFullSize.CONSTRUCTOR:
-        return WebAppController.MODE_FULL_SIZE;
       case TdApi.WebAppOpenModeCompact.CONSTRUCTOR:
       default:
-        return WebAppController.MODE_COMPACT;
+        // Vibegram: compact (half-height) apps open at full height too.
+        return WebAppController.MODE_FULL_SIZE;
     }
   }
 
@@ -713,9 +710,6 @@ public final class WebApp {
     String mode = uri.isHierarchical() ? uri.getQueryParameter("mode") : null;
     if ("fullscreen".equals(mode)) {
       return WebAppController.MODE_FULLSCREEN;
-    }
-    if ("compact".equals(mode)) {
-      return WebAppController.MODE_COMPACT;
     }
     return defaultMode;
   }
