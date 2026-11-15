@@ -19,6 +19,7 @@ import android.util.LongSparseArray;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
@@ -52,6 +53,7 @@ import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.util.text.TextEntityMessage;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.TopicSideTabsView;
 
 import java.util.ArrayList;
@@ -198,18 +200,44 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     column.setLayoutParams(FrameLayoutFix.newParams(width, ViewGroup.LayoutParams.MATCH_PARENT, Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT));
     ViewSupport.setThemedBackground(column, ColorId.filling, owner);
 
-    FrameLayoutFix wrap = new FrameLayoutFix(context);
+    // The chat keeps the full width: only its messages move aside, the composer spans the whole chat
+    // and the column ends above it (it follows the composer: reply bar, keyboard, more lines).
+    FrameLayoutFix wrap = new FrameLayoutFix(context) {
+      private final ViewTreeObserver.OnPreDrawListener columnBottomListener = () -> {
+        updateColumnBottom(this, column);
+        return true;
+      };
+
+      @Override
+      protected void onAttachedToWindow () {
+        super.onAttachedToWindow();
+        getViewTreeObserver().addOnPreDrawListener(columnBottomListener);
+      }
+
+      @Override
+      protected void onDetachedFromWindow () {
+        getViewTreeObserver().removeOnPreDrawListener(columnBottomListener);
+        super.onDetachedFromWindow();
+      }
+    };
     wrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-    if (Lang.rtl()) {
-      params.rightMargin = width;
-    } else {
-      params.leftMargin = width;
-    }
-    content.setLayoutParams(params);
+    content.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    owner.setSideTabsWidth(width);
     wrap.addView(content);
     wrap.addView(column);
     return wrap;
+  }
+
+  /** The column of tabs ends a composer margin above the floating composer (or the button in its place). */
+  private void updateColumnBottom (View wrap, View column) {
+    int composerTop = owner.getFloatingComposerTop(wrap);
+    int bottomMargin = composerTop >= 0 && wrap.getHeight() > 0 ?
+      Math.max(0, wrap.getHeight() - composerTop + MainNavigationBar.getBarMargin()) : 0;
+    FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) column.getLayoutParams();
+    if (params.bottomMargin != bottomMargin) {
+      params.bottomMargin = bottomMargin;
+      column.setLayoutParams(params);
+    }
   }
 
   private int selectedPosition () {

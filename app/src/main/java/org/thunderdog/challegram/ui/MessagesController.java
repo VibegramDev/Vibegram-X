@@ -686,6 +686,25 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return Math.round(inputTop - getReplyOffset()) - viewTop;
   }
 
+  /**
+   * Vibegram: topic tabs beside the chat ({@link ForumTopicTabs#wrapContent}). The chat keeps its full width so the
+   * floating composer spans it like in any chat; the messages and the bars above them move aside of the tabs.
+   */
+  public void setSideTabsWidth (int width) {
+    for (View view : new View[] {messagesView, topBar}) {
+      if (view == null) {
+        continue;
+      }
+      ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
+      if (Lang.rtl()) {
+        params.rightMargin = width;
+      } else {
+        params.leftMargin = width;
+      }
+      view.setLayoutParams(params);
+    }
+  }
+
   /** Top edge of the bottom button floating in place of the composer, -1 when there is none or it is collapsed. */
   private int getBottomBarTop (View view) {
     if (!composerFloating || bottomBar == null || bottomBar.getVisibility() != View.VISIBLE || scrollToBottomVisible.getFloatValue() > 0f) {
