@@ -690,7 +690,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
    * Vibegram: topic tabs beside the chat ({@link ForumTopicTabs#wrapContent}). The chat keeps its full width so the
    * floating composer spans it like in any chat; the messages and the bars above them move aside of the tabs.
    */
-  public void setSideTabsWidth (int width) {
+  public void addSideTabsColumn (View column, int width) {
+    // Above the messages, under the fade and the floating composer
+    RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT);
+    params.addRule(Lang.rtl() ? RelativeLayout.ALIGN_PARENT_RIGHT : RelativeLayout.ALIGN_PARENT_LEFT);
+    column.setLayoutParams(params);
+    contentView.addView(column, contentView.indexOfChild(messagesView) + 1);
+    setSideTabsWidth(width);
+  }
+
+  private void setSideTabsWidth (int width) {
     for (View view : new View[] {messagesView, topBar}) {
       if (view == null) {
         continue;

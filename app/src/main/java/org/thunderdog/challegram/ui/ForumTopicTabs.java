@@ -16,13 +16,13 @@ import android.content.Context;
 import android.graphics.Color;
 import android.text.TextPaint;
 import android.util.LongSparseArray;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.drinkless.tdlib.TdApi;
@@ -196,47 +196,38 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     topButton.setOnClickListener(v -> switchTabsLayout(TdlibSettingsManager.FORUM_VIEW_TABS));
 
     FrameLayoutFix column = TopicSideTabsView.wrap(context, sideTabs, topButton);
-    int width = Screen.dp(TopicSideTabsView.WIDTH);
-    column.setLayoutParams(FrameLayoutFix.newParams(width, ViewGroup.LayoutParams.MATCH_PARENT, Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT));
     ViewSupport.setThemedBackground(column, ColorId.filling, owner);
 
-    // The chat keeps the full width: only its messages move aside, the composer spans the whole chat
-    // and the column ends above it (it follows the composer: reply bar, keyboard, more lines).
-    FrameLayoutFix wrap = new FrameLayoutFix(context) {
-      private final ViewTreeObserver.OnPreDrawListener columnBottomListener = () -> {
-        updateColumnBottom(this, column);
-        return true;
-      };
-
-      @Override
-      protected void onAttachedToWindow () {
-        super.onAttachedToWindow();
-        getViewTreeObserver().addOnPreDrawListener(columnBottomListener);
-      }
-
-      @Override
-      protected void onDetachedFromWindow () {
-        getViewTreeObserver().removeOnPreDrawListener(columnBottomListener);
-        super.onDetachedFromWindow();
-      }
+    // The chat keeps the full width: only its messages move aside and the composer spans the whole chat.
+    // The column lies under the floating composer and the bottom panels, like the messages: the tabs scroll
+    // under them and the last one ends above them (the padding follows the composer: reply bar, keyboard, more lines).
+    sideTabs.setClipToPadding(false);
+    ViewTreeObserver.OnPreDrawListener columnBottomListener = () -> {
+      updateColumnBottom(column);
+      return true;
     };
-    wrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    content.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    owner.setSideTabsWidth(width);
-    wrap.addView(content);
-    wrap.addView(column);
-    return wrap;
+    column.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+      @Override
+      public void onViewAttachedToWindow (@NonNull View v) {
+        v.getViewTreeObserver().addOnPreDrawListener(columnBottomListener);
+      }
+
+      @Override
+      public void onViewDetachedFromWindow (@NonNull View v) {
+        v.getViewTreeObserver().removeOnPreDrawListener(columnBottomListener);
+      }
+    });
+    owner.addSideTabsColumn(column, Screen.dp(TopicSideTabsView.WIDTH));
+    return content;
   }
 
-  /** The column of tabs ends a composer margin above the floating composer (or the button in its place). */
-  private void updateColumnBottom (View wrap, View column) {
-    int composerTop = owner.getFloatingComposerTop(wrap);
-    int bottomMargin = composerTop >= 0 && wrap.getHeight() > 0 ?
-      Math.max(0, wrap.getHeight() - composerTop + MainNavigationBar.getBarMargin()) : 0;
-    FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) column.getLayoutParams();
-    if (params.bottomMargin != bottomMargin) {
-      params.bottomMargin = bottomMargin;
-      column.setLayoutParams(params);
+  /** The last tab scrolls up to a composer margin above the floating composer (or the button in its place). */
+  private void updateColumnBottom (View column) {
+    int composerTop = owner.getFloatingComposerTop(column);
+    int bottomPadding = composerTop >= 0 && column.getHeight() > 0 ?
+      Math.max(0, column.getHeight() - composerTop + MainNavigationBar.getBarMargin()) : 0;
+    if (sideTabs != null && sideTabs.getPaddingBottom() != bottomPadding) {
+      sideTabs.setPadding(sideTabs.getPaddingLeft(), sideTabs.getPaddingTop(), sideTabs.getPaddingRight(), bottomPadding);
     }
   }
 
