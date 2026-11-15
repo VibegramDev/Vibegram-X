@@ -82,6 +82,7 @@ import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.NavigationController;
+import org.thunderdog.challegram.navigation.NavigationStack;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
@@ -292,6 +293,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     popupLayout.init(true);
     popupLayout.setNeedRootInsets();
     openControllers.add(this);
+    setPaneScreenListener(true);
     popupLayout.showAnimatedPopupView(getValue(), this);
   }
 
@@ -755,9 +757,52 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   @Override
   public boolean shouldTouchOutside (float x, float y) {
+    if (sheetLayout == null) {
+      return false;
+    }
+    // Tablet split: the left pane stays usable beside the app in the right pane.
+    if (sheetLayout.isPaneSheet && x < sheetLayout.sheetLeft) {
+      return true;
+    }
     // Touches on the strip of other minimized apps reach it.
-    return sheetLayout != null && getTabsHeight() > 0 &&
+    return getTabsHeight() > 0 &&
       y >= sheetLayout.getMeasuredHeight() - insetsWithoutIme.bottom - getTabsHeight();
+  }
+
+  private @Nullable ViewController<?> paneScreen;
+  private final NavigationStack.ChangeListener paneScreenListener = stack -> checkPaneScreen();
+
+  private void setPaneScreenListener (boolean listen) {
+    NavigationController navigation = context().navigation();
+    if (navigation == null) {
+      return;
+    }
+    navigation.getStack().removeChangeListener(paneScreenListener);
+    if (listen) {
+      paneScreen = navigation.getCurrentStackItem();
+      navigation.getStack().addChangeListener(paneScreenListener);
+    } else {
+      paneScreen = null;
+    }
+  }
+
+  /** A screen opened in the right pane from the left one comes in place of the app: the app is minimized. */
+  private void checkPaneScreen () {
+    NavigationController navigation = context().navigation();
+    if (isMinimized || isClosing || navigation == null) {
+      return;
+    }
+    ViewController<?> c = navigation.getCurrentStackItem();
+    if (c == null || c == paneScreen || navigation.isTabletMaster(c) || navigation.isTabletSection(c)) {
+      return;
+    }
+    paneScreen = c;
+    // The chat with the bot is opened under the app by the app itself (restoring with the context of the chat)
+    boolean isBotChat = c instanceof MessagesController &&
+      ((MessagesController) c).getChatId() == ChatId.fromUserId(getArgumentsStrict().botUserId);
+    if (!isBotChat && sheetLayout != null && sheetLayout.isPaneSheet) {
+      minimize();
+    }
   }
 
   @Override
@@ -1713,6 +1758,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
     WebAppTabs.remove(this);
     isMinimized = false;
+    paneScreen = context().navigation() != null ? context().navigation().getCurrentStackItem() : null;
     if (isOrientationLocked) {
       setOrientationLockFlag(true);
     }
@@ -1793,6 +1839,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   public void destroy () {
     super.destroy();
     openControllers.remove(this);
+    setPaneScreenListener(false);
     WebAppTabs.remove(this);
     ThemeManager.instance().removeThemeListener(this);
     isClosing = true;
@@ -2275,7 +2322,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final int dimBottom = height - (insetsWithoutIme.bottom + getTabsHeight());
       if (dimAlpha > 0) {
         paint.setColor(Color.argb(dimAlpha, 0, 0, 0));
-        c.drawRect(0, 0, width, dimBottom, paint);
+        // Not over the left pane of the tablet split: it stays usable
+        c.drawRect(isPaneSheet ? left : 0, 0, width, dimBottom, paint);
       }
 
       final float radius = M3Sheets.radius() * (1f - header);
@@ -2342,9 +2390,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
           isDragging = false;
           final float handle = Screen.dp(HANDLE_AREA);
           final boolean isHeaderVisible = headerAnimator.getValue();
-          // Above the sheet or beside it (the left pane of the tablet split)
-          isTouchingOutside = (startY < sheetTop && !isHeaderVisible && !isFullscreen) ||
-            startX < sheetLeft || startX >= sheetRight;
+          isTouchingOutside = startY < sheetTop && !isHeaderVisible && !isFullscreen;
           isTouchingContent = startY >= sheetTop + handle &&
             startY < getMeasuredHeight() - bottomPadding - buttonsView.getVisibleHeight();
           obtainVelocityTracker(e);
