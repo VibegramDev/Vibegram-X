@@ -21,7 +21,6 @@ import android.annotation.SuppressLint;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
@@ -72,9 +71,9 @@ import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 
 /**
- * Minimized mini apps of the current account: a strip at the very bottom of the app, above the
- * system navigation bar and under every screen. The screens end above it through
- * {@link NavigationController#setExtraBottomInset}.
+ * Minimized mini apps of the current account: cards floating at the very bottom of the app, above
+ * the system navigation bar, over the screen content (like the message composer). Bottom-anchored
+ * controls of the screens move above them through {@link NavigationController#setExtraBottomInset}.
  */
 @SuppressLint("ViewConstructor")
 public final class WebAppTabsView extends View implements
@@ -197,9 +196,7 @@ public final class WebAppTabsView extends View implements
   private final FactorAnimator positionAnimator;
   private final CardHeader header;
 
-  private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint cardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Path cornerPath = new Path();
   private final RectF rect = new RectF();
   private final Rect closeBounds = new Rect();
   private final Drawable closeRipple;
@@ -225,22 +222,11 @@ public final class WebAppTabsView extends View implements
       1f
     );
     this.header = new CardHeader(this);
-    backgroundPaint.setStyle(Paint.Style.FILL);
     cardPaint.setStyle(Paint.Style.FILL);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       // Hardware rendering draws shadows of shapes only since Android 9
       cardPaint.setShadowLayer(Screen.dp(2.33f), 0, Screen.dp(1f), 0x10000000);
     }
-
-    // Inverse rounded corner at the left top edge of the strip: the content above it looks
-    // clipped with rounded bottom corners
-    float radius = Screen.dp(CORNER_RADIUS);
-    cornerPath.moveTo(0, -radius);
-    cornerPath.lineTo(0, 0);
-    cornerPath.lineTo(radius, 0);
-    rect.set(0, -radius * 2f, radius * 2f, 0);
-    cornerPath.arcTo(rect, 90f, 90f);
-    cornerPath.close();
 
     closeRipple = Theme.transparentRoundSelector(Screen.dp(CLOSE_SIZE / 2f));
     closeRipple.setCallback(this);
@@ -638,23 +624,11 @@ public final class WebAppTabsView extends View implements
 
   @Override
   protected void onDraw (Canvas c) {
-    final int width = getWidth();
     final int height = getHeight();
     final float factor = positionAnimator.getFactor();
-    final float band = MathUtils.fromTo(fromBand, toBand, factor);
+    // No background band: the cards float over the screen content like the message composer
     final float cardsBottom = height - navigationInset;
-    final float stripTop = cardsBottom - band;
     final int backgroundColor = getStripColor();
-
-    backgroundPaint.setColor(backgroundColor);
-    c.drawRect(0, stripTop, width, height, backgroundPaint);
-    int saveCount = c.save();
-    c.translate(0, stripTop);
-    c.drawPath(cornerPath, backgroundPaint);
-    c.translate(width, 0);
-    c.scale(-1f, 1f);
-    c.drawPath(cornerPath, backgroundPaint);
-    c.restoreToCount(saveCount);
 
     if (cardsHidden) {
       return;
