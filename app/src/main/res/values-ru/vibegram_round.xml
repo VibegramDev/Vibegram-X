@@ -90,4 +90,5 @@
   <string name="vg_RoundDiagLensSize">модули не дают нужный размер кадра</string>
   <string name="vg_RoundDiagLensFailed">телефон не смог писать с отдельного модуля</string>
   <string name="vg_RoundDiagLensCrop">цифровой зум модуля до %1$s×</string>
+  <string name="vg_RoundSendWithoutSound">Отправить без звука</string>
 </resources>
