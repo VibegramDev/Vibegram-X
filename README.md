@@ -19,7 +19,7 @@
 - On-device transcription of voice, round and video messages, dictation
 - Forum topics, channel direct messages, checklists, rich messages
 - Bot mini apps, Telegram Stars, paid messages, Log in with Telegram
-- Round videos on Camera2 with zoom and quality settings
+- Round videos in the best quality Telegram and your device allow: up to 640×640 at 60 fps, with zoom
 - Custom emoji in folder names, «Delete my messages» in groups
 
 Everything else is Telegram X: same speed, same code style.
