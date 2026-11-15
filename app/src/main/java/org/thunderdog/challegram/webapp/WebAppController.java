@@ -459,6 +459,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     titleGroup = new LinearLayout(context);
     titleGroup.setOrientation(LinearLayout.HORIZONTAL);
     titleGroup.setBackground(titlePill);
+    // The inset pill would also pad the buttons to its height and clip their round containers
+    titleGroup.setPadding(0, 0, 0, 0);
     titleGroup.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT));
     headerView.addView(titleGroup);
@@ -482,6 +484,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     buttonsGroup = new LinearLayout(context);
     buttonsGroup.setOrientation(LinearLayout.HORIZONTAL);
     buttonsGroup.setBackground(buttonsPill);
+    buttonsGroup.setPadding(0, 0, 0, 0);
     buttonsGroup.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT,
       ViewGroup.LayoutParams.MATCH_PARENT, Gravity.RIGHT));
     minimizeButton = newHeaderButton(context, R.id.btn_webAppMinimize,
