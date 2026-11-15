@@ -122,5 +122,4 @@
   <item type="id" name="btn_vgRoundLockLensSeparator" />
   <item type="id" name="btn_vgRoundLockLensDescription" />
   <string name="vg_RoundDiagLensCrop">digital zoom of the lens up to %1$s×</string>
-  <string name="vg_RoundSendWithoutSound">Send without sound</string>
 </resources>

@@ -126,7 +126,6 @@ public class RecordAudioVideoController implements
   private RecordControllerButton torchButtonWrap;
   private RoundZoomBar zoomBar;
   private RecordDisposableSwitchButton disposableSwitchButton;
-  private RecordSoundSwitchButton soundSwitchButton;
   private RecordDurationView durationView;
   private FrameLayoutFix inputOverlayView;
   private TextView slideHintView;
@@ -195,7 +194,6 @@ public class RecordAudioVideoController implements
     this.torchButtonWrap.invalidate();
     this.zoomBar.invalidate();
     this.disposableSwitchButton.invalidate();
-    this.soundSwitchButton.invalidate();
     this.videoTimelineView.invalidate();
     this.durationView.invalidate();
     this.lockView.invalidate();
@@ -525,23 +523,6 @@ public class RecordAudioVideoController implements
       this.disposableSwitchButton.setOnClickListener(v -> disposableSwitchButton.toggleActive(true));
       this.rootLayout.addView(disposableSwitchButton);
 
-      // Vibegram: preview only, sends the round without its audio track
-      this.soundSwitchButton = new RecordSoundSwitchButton(context) {
-        @Override
-        public boolean onTouchEvent (MotionEvent event) {
-          return recordMode == RECORD_MODE_VIDEO_EDIT && getAlpha() > 0f && super.onTouchEvent(event);
-        }
-      };
-      this.soundSwitchButton.init(null);
-      this.soundSwitchButton.setContentDescription(Lang.getString(R.string.vg_RoundSendWithoutSound));
-      this.soundSwitchButton.setOnClickListener(v -> {
-        soundSwitchButton.toggleActive(true);
-        if (soundSwitchButton.isActive()) {
-          videoPreviewView.setMuted(true);
-        }
-      });
-      this.rootLayout.addView(soundSwitchButton);
-
       this.lockView = new RecordLockView(context);
       Views.setSimpleStateListAnimator(lockView);
       rootLayout.addView(lockView);
@@ -585,7 +566,8 @@ public class RecordAudioVideoController implements
         }
       };
       this.videoLayout.setOnClickListener(v -> {
-        if (recordMode == RECORD_MODE_VIDEO_EDIT && !soundSwitchButton.isActive()) {
+        if (recordMode == RECORD_MODE_VIDEO_EDIT) {
+          // Vibegram: the mute badge on the round is a send option, the round goes out without sound
           videoPreviewView.toggleMuted();
         }
       });
@@ -724,7 +706,7 @@ public class RecordAudioVideoController implements
       this.inputOverlayView.addView(audioPreviewView);
 
       this.videoPreviewView = new SimpleVideoPlayer(context);
-      this.videoPreviewView.setMuted(true);
+      this.videoPreviewView.setMuted(false);
       this.videoPreviewView.setPlaying(true);
       this.videoPreviewView.setLooping(true);
       this.videoPreviewView.setDelegate(new SimpleVideoPlayer.Delegate() {
@@ -858,7 +840,6 @@ public class RecordAudioVideoController implements
     switchCameraButtonWrap.setTranslationX(cx - switchCameraButtonWrap.getMeasuredWidth() / 2f);
     torchButtonWrap.setTranslationX(cx - torchButtonWrap.getMeasuredWidth() / 2f);
     disposableSwitchButton.setTranslationX(cx - disposableSwitchButton.getMeasuredWidth() / 2f);
-    soundSwitchButton.setTranslationX(cx - soundSwitchButton.getMeasuredWidth() / 2f);
     updateLockY();
 
     if (closeFactor * recordFactor == 1f) {
@@ -881,8 +862,6 @@ public class RecordAudioVideoController implements
     zoomBar.setScaleY(scale);
     disposableSwitchButton.setScaleX(scale);
     disposableSwitchButton.setScaleY(scale);
-    soundSwitchButton.setScaleX(scale);
-    soundSwitchButton.setScaleY(scale);
 
     recordBackground.setExpand(recordFactor);
   }
@@ -954,9 +933,6 @@ public class RecordAudioVideoController implements
         y -= torchButtonWrap.getMeasuredHeight();
       }
     }
-
-    soundSwitchButton.setTranslationY(y);
-    y -= soundSwitchButton.getMeasuredHeight() * soundSwitchButton.getAlpha();
 
     disposableSwitchButton.setTranslationY(y);
     if (Views.isValid(disposableSwitchButton)) {
@@ -1102,12 +1078,11 @@ public class RecordAudioVideoController implements
     lockView.setCollapseFactor(0f);
     disposableSwitchButton.setActive(false, false);
     disposableSwitchButton.setVisibility(canSendSelfDestructMessages() ? View.VISIBLE : View.GONE);
-    soundSwitchButton.setActive(false, false);
     recordBackground.setVolume(0f, false);
     editAnimator.setValue(false, false);
     videoPreviewView.performDestroy();
     videoTimelineView.performDestroy();
-    videoPreviewView.setMuted(true);
+    videoPreviewView.setMuted(false);
     videoPreviewView.setPlaying(true);
     sendButton.destroySlowModeCounterController();
     audioPreviewView.clearData();
@@ -1376,8 +1351,8 @@ public class RecordAudioVideoController implements
   private final BoolAnimator renderAnimator = new BoolAnimator(ANIMATOR_RENDER, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
 
   private static final int ANIMATOR_MUTE = 6;
-  private float muteFactor = 1f;
-  private final BoolAnimator muteAnimator = new BoolAnimator(ANIMATOR_MUTE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l, true);
+  private float muteFactor;
+  private final BoolAnimator muteAnimator = new BoolAnimator(ANIMATOR_MUTE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l, false);
 
   private void updateMuteAlpha () {
     float factor = editFactor * (1f - recordFactor) * muteFactor;
@@ -1783,7 +1758,6 @@ public class RecordAudioVideoController implements
     zoomBar.setAlpha(recordingVideo && recordMode != RECORD_MODE_VIDEO_EDIT ? editRange : 0);
     zoomBar.setTouchEnabled(recordMode == RECORD_MODE_VIDEO && ownedCamera != null);
     disposableSwitchButton.setAlpha(editRange);
-    soundSwitchButton.setAlpha(recordingVideo && recordMode == RECORD_MODE_VIDEO_EDIT ? editRange : 0);
 
     updateMuteAlpha();
 
@@ -1954,7 +1928,6 @@ public class RecordAudioVideoController implements
       prevVideoTrimEnd = videoPreviewView.getEndTime();
 
       videoPreviewView.performDestroy();
-      videoPreviewView.setMuted(true);
       videoPreviewView.setPlaying(true);
       resetRoundState();
       isCameraReady = false;
@@ -2280,14 +2253,14 @@ public class RecordAudioVideoController implements
     return fallbackMs;
   }
 
-  /** Sends the whole recorded round: as is when it fits Telegram's 10 MB and keeps its sound, re-encoded otherwise. */
+  /** Sends the whole recorded round: as is when it fits Telegram's 10 MB and is not muted, re-encoded otherwise. */
   private void sendRecordedRound (TdApi.MessageSendOptions initialSendOptions) {
     String path = !StringUtils.isEmpty(roundFile.local.path) ? roundFile.local.path : roundOutputPath;
     long size = !StringUtils.isEmpty(path) ? new File(path).length() : 0;
     if (size <= 0) {
       size = Math.max(roundFile.size, roundFile.local.downloadedSize);
     }
-    final boolean mute = soundSwitchButton.isActive();
+    final boolean mute = videoPreviewView.isMuted();
     if (size <= ROUND_SEND_AS_IS_BYTES && !mute) {
       // Uploaded during recording: send that file. Otherwise it is not a video note file in TDLib, send it by path.
       TdApi.InputFile inputFile = roundUploadWhileRecording || StringUtils.isEmpty(path) ? new TdApi.InputFileId(roundFile.id) : new TdApi.InputFileLocal(path);
@@ -2551,7 +2524,7 @@ public class RecordAudioVideoController implements
         String conversion = VideoGenerationInfo.makeRoundConversion(roundFile.id,
           (long) (startTimeSeconds * 1_000_000), (long) (endTimeSeconds * 1_000_000),
           (long) ((endTimeSeconds - startTimeSeconds) * 1000), RoundVideoQuality.getRecorded(roundKey),
-          soundSwitchButton.isActive()
+          videoPreviewView.isMuted()
         );
         TdApi.InputFileGenerated trimmedFile = new TdApi.InputFileGenerated(roundFile.local.path, conversion, 0);
         sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(trimmedFile, null, (int) Math.round(endTimeSeconds - startTimeSeconds), getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, null);

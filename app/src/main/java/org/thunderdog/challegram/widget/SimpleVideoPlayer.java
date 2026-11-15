@@ -161,6 +161,10 @@ public class SimpleVideoPlayer extends TextureView implements Destroyable, Playe
     }
   }
 
+  public boolean isMuted () {
+    return isMuted;
+  }
+
   public void toggleMuted () {
     setMuted(!isMuted);
   }
