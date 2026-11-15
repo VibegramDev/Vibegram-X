@@ -1487,6 +1487,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     appliedTabletNavigation = isTablet;
     // Folders move between the bottom bar (phone) and the rail / strip below the app bar (tablet).
     checkFoldersPlacement();
+    if (modeChanged) {
+      checkPagerMargins();
+    }
     if (folderRail != null) {
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
@@ -1781,7 +1784,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private void checkPagerMargins () {
     if (pagerWrap != null) {
-      Views.setTopMargin(pagerWrap, displayTabsBelowSearch() ? getTopTabsBarHeight() : 0);
+      // Tablet: the chat list starts 8dp below the search bar, which fills the whole app bar.
+      int topMargin = displayTabsBelowSearch() ? getTopTabsBarHeight() : isTabletNavigationBar() ? Screen.dp(8f) : 0;
+      Views.setTopMargin(pagerWrap, topMargin);
     }
     if (!Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL && displayTabsAtBottom()) {
       Views.setBottomMargin(getViewPager(), getHeaderHeight());
