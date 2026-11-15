@@ -111,7 +111,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
   private boolean showOngoingBar;
   private int ongoingSections;
 
-  private Drawable hangIcon, micIcon, forwardIcon;
+  private Drawable hangIcon, micIcon;
   private final BoolAnimator speedIsActive;
   private final @Nullable Counter speedCounter;
 
@@ -146,7 +146,6 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
 
     this.micIcon = Drawables.get(parent.getResources(), R.drawable.baseline_mic_24);
     this.hangIcon = Drawables.get(parent.getResources(), R.drawable.baseline_call_end_24);
-    this.forwardIcon = Drawables.get(parent.getResources(), R.drawable.baseline_fast_forward_24);
     this.speedIsActive = new BoolAnimator(0, (a, b, c, d) -> invalidate(), AnimatorUtils.DECELERATE_INTERPOLATOR, 180L);
 
     this.textLeft = Screen.dp(72f);
@@ -659,7 +658,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
       subtitle = fileName.trim();
     }
 
-    setText(StringUtils.isEmpty(title) ? null : title, StringUtils.isEmpty(subtitle) ? null : subtitle, Screen.dp(67 + (SIZE + GAP) * 3 + OFFSET));
+    setText(StringUtils.isEmpty(title) ? null : title, StringUtils.isEmpty(subtitle) ? null : subtitle, Screen.dp(67 + (SIZE + GAP) * (SPEED_INDEX + 1) + OFFSET));
   }
 
   private void drawOngoingAudio (Canvas c, int playerTop, float rectWidth, int playerBottom) {
@@ -675,13 +674,11 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
     }
 
     if (speedCounter != null) {
-      speedCounter.draw(c, getRightButtonCenter(width, 2), (playerBottom + playerTop) / 2f, Gravity.CENTER, 1f);
+      speedCounter.draw(c, getRightButtonCenter(width, SPEED_INDEX), (playerBottom + playerTop) / 2f, Gravity.CENTER, 1f);
     }
 
     TdApi.File file = TD.getFile(playingMessage);
     DrawAlgorithms.drawPlayPause(c, getRightButtonCenter(width, 0), playerBottom - Size.getHeaderPlayerSize() / 2, Screen.dp(12f), playPausePath, playPauseDrawFactor, playPauseDrawFactor = playPauseFactor, file != null ? TD.getFileProgress(file) : 1f, ColorUtils.alphaColor(dropShadowAlpha, Theme.iconColor()));
-
-    Drawables.draw(c, forwardIcon, getRightButtonLeft(width, 1), playerBottom - Size.getHeaderPlayerSize() / 2 - forwardIcon.getMinimumHeight() / 2, dropShadowAlpha == 1f ? Paints.getIconGrayPorterDuffPaint() : Paints.getPorterDuffPaint(ColorUtils.alphaColor(dropShadowAlpha, Theme.iconColor())));
     drawCloseIcon(c, playerTop, width, playerBottom, false);
 
     drawOngoingText(c, playerTop, rectWidth, playerBottom, Screen.dp(67f), null, 1f, 1f);
@@ -1265,7 +1262,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
     }
     if (BitwiseUtils.hasFlag(ongoingSections, SECTION_AUDIO)) {
       int rIndex = getRightButtonIndex(width, x);
-      return rIndex == 2;
+      return rIndex == SPEED_INDEX;
     }
     return false;
   }
@@ -1309,7 +1306,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
     if (!isAudio && x <= width && x >= width - buttonSize - Screen.dp(24f)) {
       int index = x >= width - buttonSize ? 0 : (int) (width - x - buttonSize) / Screen.dp(24f) + 1;
       onRightClick(index);
-    } else if (isAudio && x <= width && rIndex <= 2) {
+    } else if (isAudio && x <= width && rIndex <= SPEED_INDEX) {
       onRightClick(rIndex);
     } else if (x >= 0 && x <= buttonSize) {
       onLeftClick();
@@ -1349,17 +1346,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
         }
         return true;
       }
-      case 1: {
-        if (BitwiseUtils.hasFlag(ongoingSections, SECTION_CALL)) {
-          return false;
-        }
-        if (BitwiseUtils.hasFlag(ongoingSections, SECTION_AUDIO)) {
-          TdlibManager.instance().player().playNextMessageInQueue();
-          return true;
-        }
-        break;
-      }
-      case 2: {
+      case SPEED_INDEX: {
         if (BitwiseUtils.hasFlag(ongoingSections, SECTION_CALL)) {
           return false;
         }
@@ -1424,6 +1411,8 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
   private static final int SIZE = 24;
   private static final int OFFSET = 12;
   private static final int GAP = 8;
+  // Vibegram: audio bar buttons from the right are play/pause and speed, the "play next" button is removed
+  private static final int SPEED_INDEX = 1;
 
   private static int getRightButtonIndex (int width, float x) {
     return Math.max(0, ((int) (width - x - Screen.dp(OFFSET - GAP / 2f))) / Screen.dp(SIZE + GAP));
@@ -1480,7 +1469,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
       .builder(headerView)
       .locate((targetView, outRect) -> {
         final int width = targetView.getMeasuredWidth();
-        outRect.set(getRightButtonLeft(width, 2), 0, getRightButtonRight(width, 2), playerBottom);
+        outRect.set(getRightButtonLeft(width, SPEED_INDEX), 0, getRightButtonRight(width, SPEED_INDEX), playerBottom);
       })
       .maxWidth(300)
       .show(null, text).hideDelayed(3000, TimeUnit.MILLISECONDS);
@@ -1503,7 +1492,7 @@ public class HeaderFilling extends Drawable implements TGLegacyAudioManager.Play
       }
     }, TdlibManager.instance().player().getSpeed());
     playbackSpeedLayout.setTranslationY((playerTop + playerBottom) / 2f - Screen.dp(24 + 8));
-    playbackSpeedLayout.setTranslationX(getRightButtonCenter(0, 2) + Screen.dp( 24 + 8));
+    playbackSpeedLayout.setTranslationX(getRightButtonCenter(0, SPEED_INDEX) + Screen.dp( 24 + 8));
     playbackSpeedLayout.processTouchEvent(MotionEvent.ACTION_DOWN, touchX, touchY, playbackOffsetY, true);
 
     playbackSpeedPopup.init(true);
