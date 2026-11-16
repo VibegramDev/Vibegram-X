@@ -1847,7 +1847,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
     }
 
-    if (topicTabs != null && topicTabs.isSideTabs()) {
+    if (topicTabs instanceof ForumTopicTabs && topicTabs.isSideTabs()) {
+      // The title stays in the header, so it ends before the button that creates topics too
+      headerCell.setInnerRightMargin(((ForumTopicTabs) topicTabs).getMenuButtonsWidth());
       return topicTabs.wrapContent(contentView);
     }
     return contentView;
@@ -4187,6 +4189,10 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (id == R.id.menu_more) {
       if (topicTabs != null) {
         topicTabs.fillMenuItems(header, menu, getHeaderIconColorId());
+        if (topicTabs.isSideTabs() && !inPreviewMode) {
+          // Side tabs keep the chat header: its avatar takes the place of the more button.
+          ChatHeaderView.bindAvatarButton(menu.findViewById(R.id.menu_btn_more));
+        }
         return;
       }
       HeaderButton moreButton = header.addMoreButton(menu, this);
@@ -4206,6 +4212,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
       btn.setVisibility(tdlib.chatHasScheduled(getChatId()) ? View.VISIBLE : View.GONE);
       checkAvatarAsMoreButton(header.addMoreButton(menu, this));
     } else if (id == R.id.menu_secretChat) {
+      // The centered title stays clear of the timer too, not only of the more button.
+      headerCell.setInnerRightMargin(Screen.dp(49f) * 2);
       StopwatchHeaderButton headerButton = header.addStopwatchButton(menu, this);
       headerButton.forceValue(tdlib.ui().getTTLShort(getChatId()), isSecretChat() && tdlib.canChangeMessageAutoDeleteTime(chat.id));
       checkAvatarAsMoreButton(header.addMoreButton(menu, this));
@@ -4260,9 +4268,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
    * stays (transparent) and opens the same menu.
    */
   private void checkAvatarAsMoreButton (HeaderButton moreButton) {
-    if (moreButton != null && Settings.instance().needCenterTitles() && !Lang.rtl() && !inPreviewMode) {
-      moreButton.setImageResource(0);
-      moreButton.setContentDescription(Lang.getString(R.string.MoreChatOptions));
+    if (!inPreviewMode) {
+      ChatHeaderView.bindAvatarButton(moreButton);
     }
   }
 

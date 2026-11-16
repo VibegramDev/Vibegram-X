@@ -17,11 +17,14 @@ package org.thunderdog.challegram.component.chat;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.view.MotionEvent;
+import android.view.View;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TopicIcon;
 import org.thunderdog.challegram.data.AvatarPlaceholder;
 import org.thunderdog.challegram.data.TD;
@@ -32,6 +35,7 @@ import org.thunderdog.challegram.loader.ImageFile;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.loader.gif.GifFile;
 import org.thunderdog.challegram.navigation.ComplexHeaderView;
+import org.thunderdog.challegram.navigation.HeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.ConnectionState;
@@ -119,6 +123,17 @@ public class ChatHeaderView extends ComplexHeaderView {
 
   public void setCallback (Callback callback) {
     this.callback = callback;
+  }
+
+  /**
+   * Centered titles (iOS-like header): the avatar is drawn in place of the icon of the "more"
+   * button, which has to be the last button of the menu; the transparent button keeps opening it.
+   */
+  public static void bindAvatarButton (@Nullable View moreButton) {
+    if (moreButton instanceof HeaderButton && HeaderView.needCenterTitle()) {
+      ((HeaderButton) moreButton).setImageResource(0);
+      moreButton.setContentDescription(Lang.getString(R.string.MoreChatOptions));
+    }
   }
 
   @Override

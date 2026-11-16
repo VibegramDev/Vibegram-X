@@ -17,6 +17,7 @@
  */
 package org.thunderdog.challegram.widget;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
@@ -32,6 +33,8 @@ import android.os.Build;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
@@ -56,6 +59,7 @@ import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
+import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.util.text.Counter;
 import org.thunderdog.challegram.util.text.TextColorSet;
 
@@ -104,7 +108,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private final AvatarView avatarView;
   private final Counter unreadCounter;
   private @Nullable Callback callback;
-  private @Nullable View.OnLongClickListener settingsLongClickListener;
   private boolean isBar;
   private int selectedItem = ITEM_CHATS;
 
@@ -193,17 +196,31 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     for (ItemView item : items) {
       M3Tooltip.bind(item, M3Tooltip.PLACEMENT_ABOVE, barBounds, tooltipText);
     }
-    // Settings (avatar), tap and hold: account switcher in both layouts, instead of the tooltip.
-    items[ITEM_SETTINGS].setOnLongClickListener(v -> {
-      M3Tooltip.hideCurrent(true);
-      return settingsLongClickListener != null && settingsLongClickListener.onLongClick(v);
-    });
+    // Tap and hold an item with a menu (chats: folders, settings: accounts), then slide to an entry
+    // and release, as the tab bar of Telegram for iOS. Other items keep the tooltip of the dock.
+    View.OnLongClickListener longClickListener = v -> {
+      ItemView item = (ItemView) v;
+      if (item.menu != null && item.menu.openMenu(v)) {
+        M3Tooltip.hideCurrent(true);
+        // The finger keeps moving over the screen to pick an entry: no swipe back or scrolling.
+        v.getParent().requestDisallowInterceptTouchEvent(true);
+      } else if (isNavBar || !M3Tooltip.show(v, M3Tooltip.PLACEMENT_ABOVE, barBounds, item.label)) {
+        return false;
+      }
+      v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+      return true;
+    };
+    for (ItemView item : items) {
+      item.setOnLongClickListener(longClickListener);
+    }
     // Screen readers: the sections are tabs of a single-selection collection (as MDC NavigationBarMenuView).
     ViewCompat.setAccessibilityDelegate(this, new AccessibilityDelegateCompat() {
       @Override
       public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
         super.onInitializeAccessibilityNodeInfo(host, info);
-        info.setCollectionInfo(AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(1, items.length, false, AccessibilityNodeInfoCompat.CollectionInfoCompat.SELECTION_MODE_SINGLE));
+        info.setCollectionInfo(AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(1,
+          visibleItemCount(), false,
+          AccessibilityNodeInfoCompat.CollectionInfoCompat.SELECTION_MODE_SINGLE));
       }
     });
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -225,8 +242,47 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     this.callback = callback;
   }
 
-  public void setSettingsLongClickListener (@Nullable View.OnLongClickListener listener) {
-    this.settingsLongClickListener = listener;
+  /** Menu opened by holding the item; the finger then selects an entry without lifting. */
+  public void setItemMenu (int item, @Nullable HapticMenuHelper menu) {
+    items[item].menu = menu;
+    updateLongClickable(items[item]);
+  }
+
+  /** Hidden sections (contacts by default) leave their room to the other items. */
+  public void setItemVisible (int item, boolean isVisible) {
+    int visibility = isVisible ? View.VISIBLE : View.GONE;
+    if (items[item].getVisibility() != visibility) {
+      items[item].setVisibility(visibility);
+      requestLayout();
+    }
+  }
+
+  private int visibleItemCount () {
+    int count = 0;
+    for (ItemView item : items) {
+      if (item.getVisibility() != View.GONE) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private int visibleIndexOf (ItemView view) {
+    int index = 0;
+    for (ItemView item : items) {
+      if (item == view) {
+        break;
+      }
+      if (item.getVisibility() != View.GONE) {
+        index++;
+      }
+    }
+    return index;
+  }
+
+  private void updateLongClickable (ItemView item) {
+    // Navigation bar: labels are visible, no tooltips.
+    item.setLongClickable(!isNavBar || item.menu != null);
   }
 
   public Counter getUnreadCounter () {
@@ -400,7 +456,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
 
   /** Width of the compact floating bar: 74dp per item and 2dp padding at the ends. */
   public int getCompactBarWidth () {
-    return Screen.dp(COMPACT_ITEM_WIDTH) * items.length + Screen.dp(COMPACT_PADDING) * 2;
+    return Screen.dp(COMPACT_ITEM_WIDTH) * visibleItemCount() + Screen.dp(COMPACT_PADDING) * 2;
   }
 
   /**
@@ -434,8 +490,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     }
     setLayoutParams(params);
     for (ItemView item : items) {
-      // Navigation bar: labels are visible, no tooltips (settings keeps the account switcher).
-      item.setLongClickable(!isNavBar || item.id == ITEM_SETTINGS);
+      updateLongClickable(item);
     }
     for (int i = 0; i < items.length; i++) {
       FrameLayoutFix.LayoutParams itemParams = FrameLayoutFix.newParams(0, isNavBar ? getNavBarHeight() : getBarHeight(), Gravity.TOP | Gravity.LEFT);
@@ -471,11 +526,16 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     {
       // Navigation bar: "Vertical navigation items dynamically change width to equally fit the container".
       int width = MeasureSpec.getSize(widthMeasureSpec) - getPaddingLeft() - getPaddingRight();
-      int itemWidth = width / items.length;
-      for (int i = 0; i < items.length; i++) {
+      int count = visibleItemCount();
+      int itemWidth = width / count;
+      for (int i = 0, index = 0; i < items.length; i++) {
+        if (items[i].getVisibility() == View.GONE) {
+          continue;
+        }
         FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) items[i].getLayoutParams();
-        int left = itemWidth * (Lang.rtl() ? items.length - 1 - i : i);
-        int right = i == items.length - 1 && !Lang.rtl() ? width : left + itemWidth;
+        int left = itemWidth * (Lang.rtl() ? count - 1 - index : index);
+        int right = index == count - 1 && !Lang.rtl() ? width : left + itemWidth;
+        index++;
         if (params.width != right - left || params.leftMargin != left) {
           params.width = right - left;
           params.leftMargin = left;
@@ -554,6 +614,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     private final String label;
     private final FactorAnimator selectAnimator, colorAnimator;
     private float selectFactor, colorFactor;
+    private @Nullable HapticMenuHelper menu;
 
     public ItemView (Context context, int id, @DrawableRes int iconRes, @DrawableRes int selectedIconRes, int labelRes) {
       super(context);
@@ -574,10 +635,19 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
           super.onInitializeAccessibilityNodeInfo(host, info);
           // Tab, "N of M", selected (MDC NavigationBarItemView).
           info.setRoleDescription(getResources().getString(R.string.vg_TabRole));
-          int index = ItemView.this.id - ITEM_CHATS;
+          int index = visibleIndexOf(ItemView.this);
           info.setCollectionItemInfo(AccessibilityNodeInfoCompat.CollectionItemInfoCompat.obtain(0, 1, index, 1, false, isSelected()));
         }
       });
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    public boolean onTouchEvent (MotionEvent e) {
+      if (menu != null) {
+        menu.onTouch(this, e);
+      }
+      return super.onTouchEvent(e);
     }
 
     void updateDescription () {

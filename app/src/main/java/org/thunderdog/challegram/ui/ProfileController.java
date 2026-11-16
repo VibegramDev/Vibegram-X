@@ -1623,6 +1623,9 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       headerCell.setInnerRightMarginStart(Screen.dp(49f));
       headerCell.setInnerMargins(Screen.dp(56f), calculateMenuWidth());
       headerCell.setAllowEmptyClick();
+      // Centered titles: the layout of the chat header, the avatar grows out of the center.
+      headerCell.setAllowCenterContent(true);
+      headerCell.setCenteredAvatarCollapses(true);
       headerCell.initWithController(this, false);
       setHeaderCellTextColors(0f);
       // The expanded avatar is 96dp: show the full photo there, not only in the photo viewer
