@@ -38,10 +38,11 @@ import org.thunderdog.challegram.tool.Screen;
 import me.vkryl.core.ColorUtils;
 
 /**
- * Backdrop of a floating bottom container (tablet dock, tablet message composer): content scrolled under the
- * container fades into {@code surface} above it and stays faintly visible below its top edge (the fade of the
- * phone dock), and the container casts a soft
- * shadow. Both floating containers use this view, so their fade and shadow are identical.
+ * Backdrop of a floating bottom container (dock, message composer): a fade and a soft shadow, as in the official
+ * Android app. The fade lies only inside the band the content keeps free for the container (its bottom padding:
+ * the margin above the container, the container and the system inset below it), from transparent at the top of the
+ * band. Content resting above the band (the last message or chat) is never dimmed; content scrolled into the band
+ * washes out behind the container.
  */
 public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   public interface ShapeProvider {
@@ -49,21 +50,24 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     boolean getShape (@NonNull M3BottomScrimView view, @NonNull RectF out);
   }
 
-  /**
-   * Height of the fade above the floating container: as the fade of the phone dock (from a little above the folder
-   * chips to the top edge of the dock).
-   */
-  public static int getFadeHeight () {
-    return Screen.dp(80f);
+  public interface FadeTopProvider {
+    /** Top of the band kept free for the container in the coordinates of this view (where resting content ends). */
+    float getFadeTop (@NonNull M3BottomScrimView view, @NonNull RectF shape);
   }
 
-  /** Opacity of the surface at the top edge of the container and at the bottom of the view (as the phone dock). */
-  private static final int ALPHA_AT_CONTAINER = 0xB3, ALPHA_AT_BOTTOM = 0xEB;
+  /** Height of the fade from the top of the band (the official app: 48dp above the composer, 60dp above the tabs). */
+  public static int getFadeHeight () {
+    return Screen.dp(48f);
+  }
+
+  /** Opacity of the surface at the end of the fade and below it (the official app: 0xE8). */
+  private static final int ALPHA_MAX = 0xE8;
 
   private final Fade fade = new Fade();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF shape = new RectF();
   private @Nullable ShapeProvider provider;
+  private @Nullable FadeTopProvider fadeTopProvider;
   private float radius;
   private boolean shadowOnly;
 
@@ -85,6 +89,12 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     invalidate();
   }
 
+  /** Without a provider the band starts at the top of this view (the view is as tall as the band). */
+  public void setFadeTopProvider (@Nullable FadeTopProvider fadeTopProvider) {
+    this.fadeTopProvider = fadeTopProvider;
+    invalidate();
+  }
+
   @Override
   public void onThemeInvalidate (boolean isTempUpdate) {
     invalidate();
@@ -96,84 +106,55 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
       return;
     }
     if (!shadowOnly) {
-      fade.draw(c, getWidth(), shape.top, getHeight(), getFadeHeight(), 1f);
+      float fadeTop = fadeTopProvider != null ? fadeTopProvider.getFadeTop(this, shape) : 0f;
+      fade.draw(c, getWidth(), fadeTop, getHeight(), 1f);
     }
     drawShadow(c, shadowPaint, shape, radius, 1f);
   }
 
-  /** The fade of this view, for views that draw their floating container themselves (strip of mini app tabs). */
+  /** The fade of this view, for views that draw their floating container themselves (dock, strip of mini app tabs). */
   public static final class Fade {
-    // Two eased gradients of unit height (above / below the top edge of the container), stretched by a local matrix:
-    // the container moves on every frame of its animations, the shaders are created once per color.
-    // No anti-aliasing, so the two rects meet without a seam.
-    private final Paint abovePaint = new Paint(), belowPaint = new Paint();
-    private final Matrix aboveMatrix = new Matrix(), belowMatrix = new Matrix();
+    // An eased gradient of unit height stretched by a local matrix (the band moves on every frame of the keyboard and
+    // tab animations, the shader is created once per color), then the flat surface down to the bottom.
+    private final Paint fadePaint = new Paint(), solidPaint = new Paint();
+    private final Matrix matrix = new Matrix();
     private int color;
-    private boolean shadersReady, aboveVisible;
+    private boolean shaderReady;
 
     /**
-     * From {@code top - fadeHeight} to {@code bottom}: transparent -> 70% surface at the top edge of the container
-     * ({@code top}) -> 92% at {@code bottom} (the content stays faintly visible below the container, as under the
-     * phone dock).
+     * From {@code top} (the top of the band kept free for the container) to {@code bottom}: transparent at {@code top},
+     * eased to {@link #ALPHA_MAX} of the surface over {@link #getFadeHeight()}, flat below. Nothing above {@code top}.
      */
-    public void draw (Canvas c, float width, float top, float bottom, int fadeHeight, float alpha) {
-      if (alpha <= 0f) {
+    public void draw (Canvas c, float width, float top, float bottom, float alpha) {
+      if (alpha <= 0f || bottom <= top) {
         return;
       }
       final int surface = M3.surface();
-      final boolean fadeAbove = fadeHeight > 0;
-      if (!shadersReady || color != surface || aboveVisible != fadeAbove) {
-        shadersReady = true;
+      if (!shaderReady || color != surface) {
+        shaderReady = true;
         color = surface;
-        aboveVisible = fadeAbove;
-        // No fade above the container: the surface starts from zero at its top edge.
-        int alphaAtContainer = fadeAbove ? ALPHA_AT_CONTAINER : 0;
-        abovePaint.setShader(newEasedFade(surface, 0, alphaAtContainer));
-        belowPaint.setShader(newEasedFade(surface, alphaAtContainer, ALPHA_AT_BOTTOM));
+        fadePaint.setShader(newEasedFade(surface, 0, ALPHA_MAX));
       }
       final int paintAlpha = Math.round(255 * Math.min(1f, alpha));
-      if (fadeAbove) {
-        aboveMatrix.setScale(1f, fadeHeight);
-        aboveMatrix.postTranslate(0, top - fadeHeight);
-        abovePaint.getShader().setLocalMatrix(aboveMatrix);
-        abovePaint.setAlpha(paintAlpha);
-        c.drawRect(0, top - fadeHeight, width, top, abovePaint);
+      final float fadeBottom = Math.min(bottom, top + getFadeHeight());
+      matrix.setScale(1f, getFadeHeight());
+      matrix.postTranslate(0, top);
+      fadePaint.getShader().setLocalMatrix(matrix);
+      fadePaint.setAlpha(paintAlpha);
+      c.drawRect(0, top, width, fadeBottom, fadePaint);
+      if (fadeBottom < bottom) {
+        solidPaint.setColor(ColorUtils.alphaColor(alpha, (ALPHA_MAX << 24) | (surface & 0x00FFFFFF)));
+        c.drawRect(0, fadeBottom, width, bottom, solidPaint);
       }
-      final float below = Math.max(1f, bottom - top);
-      belowMatrix.setScale(1f, below);
-      belowMatrix.postTranslate(0, top);
-      belowPaint.getShader().setLocalMatrix(belowMatrix);
-      belowPaint.setAlpha(paintAlpha);
-      c.drawRect(0, top, width, top + below, belowPaint);
     }
   }
 
   private static final int SMOOTH_FADE_STEPS = 12;
 
   /**
-   * Vertical fade of {@code color} from transparent at 0 to {@code alphaAtContainer} at {@code containerFraction} of
-   * {@code height} and on to {@code alphaAtBottom} at {@code height}. Both parts ease in and out (smoothstep), so the
-   * opacity changes without a jump in its rate: a linear ramp shows a visible line where it starts and where its slope
-   * changes, at the top of the fade and beside the floating container.
+   * {@code color} from {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1, eased in and out (smoothstep): a linear
+   * ramp shows a visible line where it starts.
    */
-  public static Shader newSmoothFade (float height, int color, float containerFraction, int alphaAtContainer, int alphaAtBottom) {
-    final int rgb = color & 0x00FFFFFF;
-    final float split = Math.max(0f, Math.min(1f, containerFraction));
-    final int steps = SMOOTH_FADE_STEPS;
-    final int[] colors = new int[steps * 2 + 1];
-    final float[] positions = new float[steps * 2 + 1];
-    for (int i = 0; i <= steps * 2; i++) {
-      boolean upper = i <= steps;
-      float t = upper ? (float) i / steps : (float) (i - steps) / steps;
-      float eased = t * t * (3f - 2f * t);
-      float alpha = upper ? alphaAtContainer * eased : alphaAtContainer + (alphaAtBottom - alphaAtContainer) * eased;
-      colors[i] = (Math.round(alpha) << 24) | rgb;
-      positions[i] = upper ? split * t : split + (1f - split) * t;
-    }
-    return new LinearGradient(0, 0, 0, height, colors, positions, Shader.TileMode.CLAMP);
-  }
-
-  /** One eased part of {@link #newSmoothFade}: {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1. */
   private static Shader newEasedFade (int color, int alphaFrom, int alphaTo) {
     final int rgb = color & 0x00FFFFFF;
     final int steps = SMOOTH_FADE_STEPS;

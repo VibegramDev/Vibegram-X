@@ -748,6 +748,21 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   /**
+   * Top of the band the message list keeps free for the composer (its bottom padding, see updateMessagesViewInset) in
+   * the coordinates of the scrim: the last message rests above it and is never dimmed.
+   */
+  private float getComposerFadeTop (M3BottomScrimView view, RectF shape) {
+    if (bottomWrap != null && bottomWrap.getVisibility() == View.VISIBLE) {
+      return bottomWrap.getTop() + bottomWrap.getTranslationY() - view.getTop();
+    }
+    if (messagesView != null) {
+      // The bottom button floats in place of the composer.
+      return messagesView.getBottom() + messagesView.getTranslationY() - view.getTop() - Views.getAppliedBottomInset(messagesView);
+    }
+    return shape.top;
+  }
+
+  /**
    * The action shown instead of the composer (join button or status container) sits on the same fade and casts the
    * same shadow as the composer: its bounds in the coordinates of the scrim.
    */
@@ -1740,6 +1755,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       contentView.addView(messagesView);
       // Same fade and shadow as the dock of the chat list
       composerScrim = new M3BottomScrimView(context);
+      composerScrim.setFadeTopProvider(this::getComposerFadeTop);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);
