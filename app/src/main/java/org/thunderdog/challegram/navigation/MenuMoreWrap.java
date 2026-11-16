@@ -79,9 +79,10 @@ import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.Destroyable;
 import tgx.td.Td;
 
-public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, RootFrameLayout.MarginModifier {
+public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, RootFrameLayout.MarginModifier, Destroyable {
   public static final int ITEM_HEIGHT = 48;
   /** Transparent margin around the container (room for the shadow; anchoring math relies on it). */
   public static final int PADDING = 8;
@@ -1001,6 +1002,15 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     complexAvatarReceiver.detach();
     if (textMediaReceiver != null) {
       textMediaReceiver.detach();
+    }
+  }
+  /** Called by the popup when the menu is dismissed: releases avatars and custom emoji of the entries. */
+  @Override
+  public void performDestroy () {
+    complexAvatarReceiver.performDestroy();
+    if (textMediaReceiver != null) {
+      textMediaReceiver.performDestroy();
+      textMediaReceiver = null;
     }
   }
 }
