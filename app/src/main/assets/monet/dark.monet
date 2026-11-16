@@ -2,6 +2,9 @@
 
 include: base
 
+# Links: Google blue, tone 80 (see textLink in base.monet)
+$link: #A8C7FA
+
 # Surfaces: lists, app bars, settings pages and the chat are the M3 surface role; floating layers are
 # surfaceContainerHigh. Pressed = onSurface state layer, opaque.
 filling: surface

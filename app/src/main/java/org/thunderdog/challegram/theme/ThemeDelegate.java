@@ -57,9 +57,6 @@ public interface ThemeDelegate {
         return getRoleColor(M3.SECONDARY_CONTAINER);
       case ColorId.circleButtonChatIcon:
         return getRoleColor(M3.ON_SECONDARY_CONTAINER);
-      case ColorId.textLink:
-        // Links in descriptions and info rows on surface: primary (the raw Monet link color gave 4.3:1, «4.5:1 for small text»).
-        return getRoleColor(M3.PRIMARY);
     }
     return getRawColor(colorId);
   }
