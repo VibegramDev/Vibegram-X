@@ -88,6 +88,7 @@ import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.util.text.TextWrapper;
 import org.thunderdog.challegram.widget.EmojiTextView;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.M3SettingsProfileView;
 
 import java.lang.annotation.Retention;
@@ -345,6 +346,11 @@ public class SettingsController extends ViewController<Void> implements
   @Override
   public boolean supportsBottomInset () {
     return true;
+  }
+
+  @Override
+  public float getBottomScrolledUnderFactor (float distance) {
+    return M3BottomScrimView.getScrolledUnderFactor(contentView, distance);
   }
 
   @Override

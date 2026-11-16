@@ -124,6 +124,7 @@ import org.thunderdog.challegram.widget.BetterChatView;
 import org.thunderdog.challegram.widget.CircleButton;
 import org.thunderdog.challegram.widget.DoneButton;
 import org.thunderdog.challegram.widget.EmptySmartView;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
 import org.thunderdog.challegram.widget.ProfileActionsView;
 import org.thunderdog.challegram.widget.ProfileChannelCardView;
@@ -931,6 +932,18 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   @Override
   public boolean supportsBottomInset () {
     return true;
+  }
+
+  /** The header and the info scroll in the base list, the shared media below them in the list of the current tab. */
+  @Override
+  public float getBottomScrolledUnderFactor (float distance) {
+    float factor = M3BottomScrimView.getScrolledUnderFactor(baseRecyclerView, distance);
+    ViewController<?> c = pagerAdapter != null && pager != null ? findCurrentCachedController() : null;
+    RecyclerView mediaList = c instanceof SharedBaseController<?> ? ((SharedBaseController<?>) c).getRecyclerView() : null;
+    if (mediaList != null) {
+      factor = Math.max(factor, M3BottomScrimView.getScrolledUnderFactor(mediaList, distance));
+    }
+    return factor;
   }
 
   @Override

@@ -8,8 +8,11 @@ package org.thunderdog.challegram.widget;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.view.View;
+
+import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.ThemeInvalidateListener;
@@ -23,9 +26,16 @@ public class M3DockScrimView extends View implements ThemeInvalidateListener {
   private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private int dockTopOffset;
   private int shaderColor, shaderHeight, shaderDockTop;
+  private final Matrix shaderMatrix = new Matrix();
+  private final M3BottomScrimView.ScrolledUnder scrolledUnder = new M3BottomScrimView.ScrolledUnder(this);
 
   public M3DockScrimView (Context context) {
     super(context);
+  }
+
+  /** The chat list: the fade above the dock appears as its content scrolls under the dock. */
+  public void setScrolledUnderProvider (@Nullable M3BottomScrimView.ScrolledUnderProvider provider) {
+    scrolledUnder.setProvider(provider);
   }
 
   /**
@@ -59,6 +69,9 @@ public class M3DockScrimView extends View implements ThemeInvalidateListener {
       // Eased, not linear: no visible line where the fade starts (see M3BottomScrimView.newSmoothFade).
       paint.setShader(M3BottomScrimView.newSmoothFade(height, surface, dockFraction, ALPHA_AT_DOCK, ALPHA_AT_BOTTOM));
     }
+    // Nothing scrolled under the dock: the fade moves down behind it, the last chat above it is not dimmed.
+    shaderMatrix.setTranslate(0, (1f - scrolledUnder.get()) * dockTop);
+    paint.getShader().setLocalMatrix(shaderMatrix);
     c.drawRect(0, 0, getWidth(), height, paint);
   }
 }

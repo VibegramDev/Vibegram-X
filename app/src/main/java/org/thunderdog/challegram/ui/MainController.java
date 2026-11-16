@@ -401,6 +401,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     pagerWrap.addView(pager);
     // Above the chat lists, below the folder chips (added later) and the dock (another parent, above everything).
     dockScrim = new M3DockScrimView(context);
+    dockScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
     dockScrim.setVisibility(View.GONE);
     pagerWrap.addView(dockScrim);
     addThemeInvalidateListener(dockScrim);
@@ -438,6 +439,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     UI.setSoftInputMode(UI.getContext(context), Config.DEFAULT_WINDOW_PARAMS);
 
     navigationScrim = new M3BottomScrimView(context);
+    navigationScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
     navigationScrim.setShapeProvider((view, out) -> {
       if (navigationBar == null || !navigationBar.isBar() || navigationBar.getWidth() == 0) {
         return false;
@@ -1012,6 +1014,13 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
    * fade out with the search transform, so that they don't cover any search results. Not over another section:
    * there the bar belongs to that section.
    */
+  /** The list of the current page (chats of the folder, calls...). */
+  @Override
+  public float getBottomScrolledUnderFactor (float distance) {
+    ViewController<?> page = getCurrentPagerItem();
+    return page != null ? page.getBottomScrolledUnderFactor(distance) : 1f;
+  }
+
   @Override
   public boolean hasBottomScrim () {
     return navigationScrim != null && navigationScrim.getVisibility() == View.VISIBLE && navigationScrim.getAlpha() > 0f;
