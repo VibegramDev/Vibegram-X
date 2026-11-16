@@ -193,6 +193,14 @@ public class CustomEmojiSpanImpl extends EmojiSpanImpl implements TdlibEmojiMana
 
   private ComplexMediaItem mediaItem;
 
+  /** The surface switched animations: the media is rebuilt on the next draw. */
+  public void invalidateMedia () {
+    if (mediaItem != null) {
+      prepareCustomEmoji(0);
+      surfaceProvider.onInvalidateSpan(this, false);
+    }
+  }
+
   private void prepareCustomEmoji (int size) {
     if (customEmojiSize == size) {
       return;
@@ -208,7 +216,8 @@ public class CustomEmojiSpanImpl extends EmojiSpanImpl implements TdlibEmojiMana
         requestCustomEmoji();
       } else if (!customEmoji.isNotFound()) {
         customEmojiSize = size;
-        mediaItem = new ComplexMediaItemCustomEmoji(tdlib, customEmoji.value, size);
+        mediaItem = new ComplexMediaItemCustomEmoji(tdlib, customEmoji.value, size,
+          surfaceProvider.disableCustomEmojiAnimations());
         attachedToMediaKey = surfaceProvider.attachToReceivers(this, mediaItem);
       }
     }

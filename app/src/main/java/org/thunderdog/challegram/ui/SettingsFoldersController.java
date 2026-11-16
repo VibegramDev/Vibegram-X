@@ -156,6 +156,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
     items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_appBadge, 0, R.string.BadgeCounter));
     items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
     items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_archiveAsFolder, 0, R.string.ArchiveAsFolder));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+    items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgFolderSlideOffFilters, 0,
+      R.string.vg_FolderSlideOffFilters));
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.ChatFolders));
@@ -346,6 +349,10 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
         } else if (item.getId() == R.id.btn_archiveAsFolder) {
           boolean showArchiveAsFolder = tdlib.settings().isChatListEnabled(ChatPosition.CHAT_LIST_ARCHIVE);
           view.getToggler().setRadioEnabled(showArchiveAsFolder, isUpdate);
+        } else if (item.getId() == R.id.btn_vgFolderSlideOffFilters) {
+          boolean isEnabled =
+            Settings.instance().getNewSetting(Settings.SETTING_FLAG_FOLDER_SLIDE_OFF_FILTERS);
+          view.getToggler().setRadioEnabled(isEnabled, isUpdate);
         }
       }
     };
@@ -428,6 +435,21 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
   }
 
   @Override
+  public void onArchiveChatListNameChanged (Tdlib tdlib) {
+    runOnUiThreadOptional(() -> {
+      int startIndex = indexOfFirstChatFolder();
+      if (startIndex == RecyclerView.NO_POSITION) {
+        return;
+      }
+      int index = adapter.indexOfView(this::isArchiveChatFolder, startIndex, false);
+      if (index != RecyclerView.NO_POSITION) {
+        setArchiveName(adapter.getItem(index));
+        adapter.notifyItemChanged(index);
+      }
+    });
+  }
+
+  @Override
   public void onClick (View v) {
     if (v.getId() == R.id.btn_createNewFolder) {
       if (tdlib.canCreateChatFolder()) {
@@ -437,7 +459,11 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
       }
     } else if (v.getId() == R.id.chatFolder) {
       ListItem item = (ListItem) v.getTag();
-      if (isMainChatFolder(item) || isArchiveChatFolder(item)) {
+      if (isArchiveChatFolder(item)) {
+        navigateTo(EditChatFolderController.editArchiveName(context, tdlib));
+        return;
+      }
+      if (isMainChatFolder(item)) {
         showTooltip(v, Lang.getString(R.string.HoldAndDragToReorder), View::getDrawingRect);
         return;
       }
@@ -521,6 +547,9 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
       boolean showArchiveAsFolder = adapter.toggleView(v);
       tdlib.settings().setChatListEnabled(ChatPosition.CHAT_LIST_ARCHIVE, showArchiveAsFolder);
       updateChatFolders();
+    } else if (v.getId() == R.id.btn_vgFolderSlideOffFilters) {
+      Settings.instance().setNewSetting(Settings.SETTING_FLAG_FOLDER_SLIDE_OFF_FILTERS,
+        adapter.toggleView(v));
     }
   }
 
@@ -777,11 +806,20 @@ public class SettingsFoldersController extends RecyclerViewController<Void> impl
 
   private ListItem archiveChatFolderItem () {
     ListItem item = new ListItem(ListItem.TYPE_CUSTOM - TYPE_CHAT_FOLDER, R.id.chatFolder);
-    item.setString(R.string.CategoryArchive);
+    setArchiveName(item);
     item.setLongId(ARCHIVE_CHAT_FOLDER_ID);
     item.setIconRes(R.drawable.baseline_archive_24);
     item.setStringValue(Lang.getString(R.string.LocalFolder));
     return item;
+  }
+
+  private void setArchiveName (ListItem item) {
+    TdApi.ChatFolderName name = tdlib.settings().archiveChatListName();
+    if (name != null) {
+      item.setString(TD.toCharSequence(name));
+    } else {
+      item.setString(R.string.CategoryArchive);
+    }
   }
 
   private ListItem chatFolderItem (TdApi.ChatFolderInfo chatFolderInfo) {

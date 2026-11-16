@@ -705,7 +705,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
                 ChangeFlags.ITEM_MOVED
             )) {
               runOnUiThreadOptional(() -> {
-                adapter.setNeedArchive(chatList.totalCount() > 0);
+                adapter.setNeedArchive(needArchiveRow());
                 scheduleArchiveUpdate(ChatsAdapter.ArchiveUpdate.ALL);
               });
             }
@@ -734,8 +734,18 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
             );
           }
         };
-        adapter.setNeedArchive(archiveList.totalCount() > 0);
+        adapter.setNeedArchive(needArchiveRow());
         archiveList.subscribeToUpdates(archiveListListener);
+        archiveFolderListener = new TdlibSettingsManager.ChatListPositionListener() {
+          @Override
+          public void onChatListStateChanged (Tdlib tdlib, TdApi.ChatList chatList,
+            boolean isEnabled) {
+            if (TD.isChatListArchive(chatList)) {
+              runOnUiThreadOptional(() -> adapter.setNeedArchive(needArchiveRow()));
+            }
+          }
+        };
+        tdlib.settings().addChatListPositionListener(archiveFolderListener);
         archiveList.loadAtLeast(null, 3, null);
         tdlib.settings().addUserPreferenceChangeListener(this);
       }
@@ -818,6 +828,13 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
   private boolean hideArchive, archiveCollapsed;
   private TdlibChatList archiveList;
   private ChatListListener archiveListListener;
+  private TdlibSettingsManager.ChatListPositionListener archiveFolderListener;
+
+  /** Archive shown as a folder: no archive row on top of the main list. */
+  private boolean needArchiveRow () {
+    return archiveList.totalCount() > 0 &&
+      !tdlib.settings().isChatListEnabled(ChatPosition.CHAT_LIST_ARCHIVE);
+  }
 
   private int chatScrollState = RecyclerView.SCROLL_STATE_IDLE;
 
@@ -2766,6 +2783,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
     }
     if (archiveList != null) {
       archiveList.unsubscribeFromUpdates(archiveListListener);
+      tdlib.settings().removeChatListPositionListener(archiveFolderListener);
     }
     if (adapter != null) {
       List<TGChat> chats = adapter.getChats();

@@ -3626,6 +3626,8 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     final HashMap<Integer, Long> topics = new HashMap<>();
     /** Topics with partially read messages, waiting for their exact unread count. */
     final HashSet<Integer> refreshingTopics = new HashSet<>(), pendingRefreshTopics = new HashSet<>();
+    /** Unread messages of the same topics, by topic id: the counter of bot forums. */
+    final SparseIntArray unreadMessageCounts = new SparseIntArray();
     boolean isLoaded;
   }
 
@@ -3653,6 +3655,21 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     }
   }
 
+  /** Unread messages of the unread topics of a bot forum, or -1 while they are unknown. */
+  private int botForumUnreadMessageCount (long chatId) {
+    synchronized (dataLock) {
+      ForumUnreadTopics unreadTopics = forumUnreadTopics.get(chatId);
+      if (unreadTopics == null || !unreadTopics.isLoaded) {
+        return -1;
+      }
+      int count = 0;
+      for (int i = 0; i < unreadTopics.unreadMessageCounts.size(); i++) {
+        count += unreadTopics.unreadMessageCounts.valueAt(i);
+      }
+      return count;
+    }
+  }
+
   /** Counter of a chat in chat lists: unread topics for forums, unread messages for other chats. */
   public int chatListUnreadCount (TdApi.Chat chat) {
     int unreadCount = chat.unreadCount;
@@ -3662,6 +3679,12 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         return chat.unreadCount > 0 || chat.isMarkedAsUnread ? CHAT_MARKED_AS_UNREAD : 0;
       }
       unreadCount = unreadTopicCount;
+    } else if (isBotForum(chat.id)) {
+      // TDLib doesn't lower the unread count of the chat when a single topic is read
+      int topicsUnreadCount = botForumUnreadMessageCount(chat.id);
+      if (topicsUnreadCount != -1) {
+        unreadCount = Math.min(unreadCount, topicsUnreadCount);
+      }
     }
     return unreadCount > 0 ? unreadCount : chat.isMarkedAsUnread ? CHAT_MARKED_AS_UNREAD : 0;
   }
@@ -3671,7 +3694,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
    * Forums are loaded one by one: chat lists ask for all visible ones at once.
    */
   public void loadForumUnreadTopicCount (long chatId) {
-    if (!isForum(chatId)) {
+    if (!isForum(chatId) && !isBotForum(chatId)) {
       return;
     }
     synchronized (dataLock) {
@@ -3708,9 +3731,11 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         } else if (unreadTopics != null) {
           unreadTopics.isLoaded = true;
           unreadTopics.topics.clear();
+          unreadTopics.unreadMessageCounts.clear();
           for (TdApi.ForumTopic topic : forumTopics.topics) {
             if (topic.unreadCount > 0 && !topic.info.isHidden) {
               unreadTopics.topics.put(topic.info.forumTopicId, topic.lastMessage != null ? topic.lastMessage.id : Long.MAX_VALUE);
+              unreadTopics.unreadMessageCounts.put(topic.info.forumTopicId, topic.unreadCount);
             }
           }
         }
@@ -3757,8 +3782,10 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
           TdApi.ForumTopic topic = (TdApi.ForumTopic) result;
           if (topic.unreadCount > 0 && !topic.info.isHidden) {
             unreadTopics.topics.put(topicId, topic.lastMessage != null ? topic.lastMessage.id : Long.MAX_VALUE);
+            unreadTopics.unreadMessageCounts.put(topicId, topic.unreadCount);
           } else {
             unreadTopics.topics.remove(topicId);
+            unreadTopics.unreadMessageCounts.delete(topicId);
           }
         }
       }
@@ -3779,6 +3806,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     if (entry != null && entry.value != null && entry.value.info.isHidden) {
       return;
     }
+    final boolean isBotForum = isBotForum(message.chatId);
     synchronized (dataLock) {
       ForumUnreadTopics unreadTopics = forumUnreadTopics.get(message.chatId);
       if (unreadTopics == null || !unreadTopics.isLoaded) {
@@ -3789,7 +3817,10 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         return;
       }
       unreadTopics.topics.put(topicId, message.id);
-      if (lastUnreadMessageId != null) {
+      SparseIntArray unreadMessageCounts = unreadTopics.unreadMessageCounts;
+      unreadMessageCounts.put(topicId, unreadMessageCounts.get(topicId) + 1);
+      // Forums count unread topics, bot forums count unread messages
+      if (lastUnreadMessageId != null && !isBotForum) {
         return;
       }
     }
@@ -3807,6 +3838,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         needRefresh = readChanged;
       } else {
         unreadTopics.topics.remove(update.forumTopicId);
+        unreadTopics.unreadMessageCounts.delete(update.forumTopicId);
         needRefresh = false;
         needNotify = true;
       }
@@ -3826,6 +3858,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
         return;
       }
       unreadTopics.topics.clear();
+      unreadTopics.unreadMessageCounts.clear();
     }
     notifyForumUnreadTopicCount(chatId);
   }

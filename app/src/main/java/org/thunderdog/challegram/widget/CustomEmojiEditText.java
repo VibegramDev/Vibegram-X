@@ -16,6 +16,7 @@ package org.thunderdog.challegram.widget;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.text.Editable;
 import android.text.Layout;
 
 import androidx.annotation.Nullable;
@@ -23,6 +24,7 @@ import androidx.annotation.Nullable;
 import org.thunderdog.challegram.config.Config;
 import org.thunderdog.challegram.data.ComplexMediaHolder;
 import org.thunderdog.challegram.data.ComplexMediaItem;
+import org.thunderdog.challegram.emoji.CustomEmojiSpanImpl;
 import org.thunderdog.challegram.emoji.CustomEmojiSurfaceProvider;
 import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.emoji.EmojiInfo;
@@ -77,6 +79,27 @@ public class CustomEmojiEditText extends EmojiEditText implements CustomEmojiSur
 
   public void setTdlib (@Nullable Tdlib tdlib) {
     this.tdlib = tdlib;
+  }
+
+  private boolean disableCustomEmojiAnimations;
+
+  public void setDisableCustomEmojiAnimations (boolean disableAnimations) {
+    if (this.disableCustomEmojiAnimations != disableAnimations) {
+      this.disableCustomEmojiAnimations = disableAnimations;
+      Editable text = getText();
+      if (text != null) {
+        CustomEmojiSpanImpl[] spans =
+          text.getSpans(0, text.length(), CustomEmojiSpanImpl.class);
+        for (CustomEmojiSpanImpl span : spans) {
+          span.invalidateMedia();
+        }
+      }
+    }
+  }
+
+  @Override
+  public boolean disableCustomEmojiAnimations () {
+    return disableCustomEmojiAnimations;
   }
 
   public @Nullable Tdlib tdlib () {

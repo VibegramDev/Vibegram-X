@@ -2405,7 +2405,8 @@ public class TdlibUi extends Handler {
     final MessagesController.Arguments arguments;
     if (params != null && !StringUtils.isEmpty(params.searchQuery) && params.foundMessage != null) {
       arguments = new MessagesController.Arguments(chatList, chat, messageThread, messageTopicId, highlightMessageId, highlightMode, filter, params.foundMessage, params.searchQuery);
-    } else if (highlightMessageId != null) {
+    } else if (highlightMessageId != null || (params != null && params.highlightSet)) {
+      // A highlight set without a message opens at the newest messages, not at the saved position
       arguments = new MessagesController.Arguments(chatList, chat, messageThread, messageTopicId, highlightMessageId, highlightMode, filter);
     } else {
       arguments = new MessagesController.Arguments(tdlib, chatList, chat, messageThread, messageTopicId, filter);
