@@ -401,6 +401,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     pagerWrap.addView(pager);
     // Above the chat lists, below the folder chips (added later) and the dock (another parent, above everything).
     dockScrim = new M3DockScrimView(context);
+    dockScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
     dockScrim.setVisibility(View.GONE);
     pagerWrap.addView(dockScrim);
     addThemeInvalidateListener(dockScrim);
@@ -438,6 +439,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     UI.setSoftInputMode(UI.getContext(context), Config.DEFAULT_WINDOW_PARAMS);
 
     navigationScrim = new M3BottomScrimView(context);
+    navigationScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
     navigationScrim.setShapeProvider((view, out) -> {
       if (navigationBar == null || !navigationBar.isBar() || navigationBar.getWidth() == 0) {
         return false;
@@ -1012,6 +1014,18 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
    * fade out with the search transform, so that they don't cover any search results. Not over another section:
    * there the bar belongs to that section.
    */
+  /** The list of the current page (chats of the folder, calls...). */
+  @Override
+  public float getBottomScrolledUnderFactor (float distance) {
+    ViewController<?> page = getCurrentPagerItem();
+    return page != null ? page.getBottomScrolledUnderFactor(distance) : 1f;
+  }
+
+  @Override
+  public boolean hasBottomScrim () {
+    return navigationScrim != null && navigationScrim.getVisibility() == View.VISIBLE && navigationScrim.getAlpha() > 0f;
+  }
+
   private void updateNavigationBarSearchVisibility () {
     if (navigationBar == null) {
       return;
@@ -1496,6 +1510,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     appliedTabletNavigation = isTablet;
     // Folders move between the bottom bar (phone) and the rail / strip below the app bar (tablet).
     checkFoldersPlacement();
+    if (modeChanged) {
+      checkPagerMargins();
+    }
     if (folderRail != null) {
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
@@ -1792,7 +1809,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
   private void checkPagerMargins () {
     if (pagerWrap != null) {
-      Views.setTopMargin(pagerWrap, displayTabsBelowSearch() ? getTopTabsBarHeight() : 0);
+      // Tablet: the chat list starts 8dp below the search bar, which fills the whole app bar.
+      int topMargin = displayTabsBelowSearch() ? getTopTabsBarHeight() : isTabletNavigationBar() ? Screen.dp(8f) : 0;
+      Views.setTopMargin(pagerWrap, topMargin);
     }
     if (!Config.CHAT_FOLDERS_HIDE_BOTTOM_BAR_ON_SCROLL && displayTabsAtBottom()) {
       Views.setBottomMargin(getViewPager(), getHeaderHeight());

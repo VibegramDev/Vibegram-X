@@ -686,6 +686,34 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return Math.round(inputTop - getReplyOffset()) - viewTop;
   }
 
+  /**
+   * Vibegram: topic tabs beside the chat ({@link ForumTopicTabs#wrapContent}). The chat keeps its full width so the
+   * floating composer spans it like in any chat; the messages and the bars above them move aside of the tabs.
+   */
+  public void addSideTabsColumn (View column, int width) {
+    // Above the messages, under the fade and the floating composer
+    RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT);
+    params.addRule(Lang.rtl() ? RelativeLayout.ALIGN_PARENT_RIGHT : RelativeLayout.ALIGN_PARENT_LEFT);
+    column.setLayoutParams(params);
+    contentView.addView(column, contentView.indexOfChild(messagesView) + 1);
+    setSideTabsWidth(width);
+  }
+
+  private void setSideTabsWidth (int width) {
+    for (View view : new View[] {messagesView, topBar}) {
+      if (view == null) {
+        continue;
+      }
+      ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) view.getLayoutParams();
+      if (Lang.rtl()) {
+        params.rightMargin = width;
+      } else {
+        params.leftMargin = width;
+      }
+      view.setLayoutParams(params);
+    }
+  }
+
   /** Top edge of the bottom button floating in place of the composer, -1 when there is none or it is collapsed. */
   private int getBottomBarTop (View view) {
     if (!composerFloating || bottomBar == null || bottomBar.getVisibility() != View.VISIBLE || scrollToBottomVisible.getFloatValue() > 0f) {
@@ -1710,10 +1738,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (previewMode == PREVIEW_MODE_NONE && inputView != null) {
       // Messages under the composer: they scroll under the floating composer and fade out.
       contentView.addView(messagesView);
+      // Same fade and shadow as the dock of the chat list
       composerScrim = new M3BottomScrimView(context);
-      // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed, and
-      // eases in from zero there, so there is no line beside the composer where it starts.
-      composerScrim.setFadeHeight(0);
+      composerScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);
@@ -6943,6 +6970,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       invalidateComposerScrim();
     }
+  }
+
+  @Override
+  public float getBottomScrolledUnderFactor (float distance) {
+    return M3BottomScrimView.getScrolledUnderFactor(messagesView, distance);
+  }
+
+  @Override
+  public boolean hasBottomScrim () {
+    return composerScrim != null && composerScrim.getVisibility() == View.VISIBLE && composerScrim.getAlpha() > 0f;
   }
 
   private static final int ANIMATOR_BOTTOM_BUTTON = 12;

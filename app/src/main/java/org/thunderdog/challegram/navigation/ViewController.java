@@ -115,6 +115,7 @@ import org.thunderdog.challegram.widget.CustomTextView;
 import org.thunderdog.challegram.widget.EmojiTextView;
 import org.thunderdog.challegram.widget.ForceTouchView;
 import org.thunderdog.challegram.widget.InfiniteRecyclerView;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.MaterialEditText;
 import org.thunderdog.challegram.widget.MaterialEditTextGroup;
 import org.thunderdog.challegram.widget.M3StateLayerDrawable;
@@ -1242,6 +1243,22 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
 
   public boolean supportsBottomInset () {
     return false;
+  }
+
+  /**
+   * The screen fades its content into the surface under a floating container at its bottom (message composer, dock),
+   * down to the bottom edge: the strip of mini app tabs below that container then draws only its shadow.
+   */
+  public boolean hasBottomScrim () {
+    return false;
+  }
+
+  /**
+   * How much of the content is scrolled under the floating containers at the bottom of the screen (composer, dock,
+   * mini app tabs), see {@link M3BottomScrimView#getScrolledUnderFactor}: their fade appears as it goes under them.
+   */
+  public float getBottomScrolledUnderFactor (float distance) {
+    return M3BottomScrimView.getScrolledUnderFactor(this instanceof RecyclerViewProvider ? ((RecyclerViewProvider) this).provideRecyclerView() : null, distance);
   }
 
   protected void onBottomInsetChanged (int extraBottomInset, int extraBottomInsetWithoutIme, boolean isImeInset) {

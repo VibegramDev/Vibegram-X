@@ -16,12 +16,13 @@ import android.content.Context;
 import android.graphics.Color;
 import android.text.TextPaint;
 import android.util.LongSparseArray;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.drinkless.tdlib.TdApi;
@@ -52,6 +53,7 @@ import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSets;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.util.text.TextEntityMessage;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.TopicSideTabsView;
 
 import java.util.ArrayList;
@@ -194,22 +196,39 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     topButton.setOnClickListener(v -> switchTabsLayout(TdlibSettingsManager.FORUM_VIEW_TABS));
 
     FrameLayoutFix column = TopicSideTabsView.wrap(context, sideTabs, topButton);
-    int width = Screen.dp(TopicSideTabsView.WIDTH);
-    column.setLayoutParams(FrameLayoutFix.newParams(width, ViewGroup.LayoutParams.MATCH_PARENT, Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT));
     ViewSupport.setThemedBackground(column, ColorId.filling, owner);
 
-    FrameLayoutFix wrap = new FrameLayoutFix(context);
-    wrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    FrameLayoutFix.LayoutParams params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-    if (Lang.rtl()) {
-      params.rightMargin = width;
-    } else {
-      params.leftMargin = width;
+    // The chat keeps the full width: only its messages move aside and the composer spans the whole chat.
+    // The column lies under the floating composer and the bottom panels, like the messages: the tabs scroll
+    // under them and the last one ends above them (the padding follows the composer: reply bar, keyboard, more lines).
+    sideTabs.setClipToPadding(false);
+    ViewTreeObserver.OnPreDrawListener columnBottomListener = () -> {
+      updateColumnBottom(column);
+      return true;
+    };
+    column.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+      @Override
+      public void onViewAttachedToWindow (@NonNull View v) {
+        v.getViewTreeObserver().addOnPreDrawListener(columnBottomListener);
+      }
+
+      @Override
+      public void onViewDetachedFromWindow (@NonNull View v) {
+        v.getViewTreeObserver().removeOnPreDrawListener(columnBottomListener);
+      }
+    });
+    owner.addSideTabsColumn(column, Screen.dp(TopicSideTabsView.WIDTH));
+    return content;
+  }
+
+  /** The last tab scrolls up to a composer margin above the floating composer (or the button in its place). */
+  private void updateColumnBottom (View column) {
+    int composerTop = owner.getFloatingComposerTop(column);
+    int bottomPadding = composerTop >= 0 && column.getHeight() > 0 ?
+      Math.max(0, column.getHeight() - composerTop + MainNavigationBar.getBarMargin()) : 0;
+    if (sideTabs != null && sideTabs.getPaddingBottom() != bottomPadding) {
+      sideTabs.setPadding(sideTabs.getPaddingLeft(), sideTabs.getPaddingTop(), sideTabs.getPaddingRight(), bottomPadding);
     }
-    content.setLayoutParams(params);
-    wrap.addView(content);
-    wrap.addView(column);
-    return wrap;
   }
 
   private int selectedPosition () {

@@ -21,7 +21,6 @@ import android.annotation.SuppressLint;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
@@ -45,6 +44,7 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.DrawerController;
 import org.thunderdog.challegram.navigation.NavigationController;
+import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibManager;
@@ -60,21 +60,24 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSet;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.RootFrameLayout;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 
 /**
- * Minimized mini apps of the current account: a strip at the very bottom of the app, above the
- * system navigation bar and under every screen. The screens end above it through
- * {@link NavigationController#setExtraBottomInset}.
+ * Minimized mini apps of the current account: cards floating at the very bottom of the app, above
+ * the system navigation bar, over the screen content (like the message composer). Bottom-anchored
+ * controls of the screens move above them through {@link NavigationController#setExtraBottomInset}.
  */
 @SuppressLint("ViewConstructor")
 public final class WebAppTabsView extends View implements
@@ -86,13 +89,10 @@ public final class WebAppTabsView extends View implements
   Lang.Listener,
   ViewTreeObserver.OnPreDrawListener {
 
+  /** Corner radius of the cards in the overlay of all tabs. */
   static final float CARD_RADIUS = 18f;
-  static final float CLOSE_SIZE = 50f;
+  static final float CLOSE_SIZE = 48f;
 
-  private static final float CARD_HEIGHT = 50f;
-  private static final float CARD_MARGIN = 4f;
-  private static final float STACK_SHIFT = 8f;
-  private static final float CORNER_RADIUS = 10f;
   private static final int MAX_CARDS = 4;
   private static final long ANIMATION_DURATION = 320L;
 
@@ -125,7 +125,8 @@ public final class WebAppTabsView extends View implements
 
   /** Close icon, bot name and expand icon of a tab card; the overlay of all tabs draws the same header. */
   static final class CardHeader {
-    private static final float CLOSE_ICON_X = 24f;
+    /** Icons are centered at the pill's ends, like the buttons of the composer. */
+    private static final float CLOSE_ICON_X = 28f;
     private static final float EXPAND_ICON_X = 28f;
     private static final float TITLE_X = 60f;
     /** Room for the icons on both sides of the title. */
@@ -159,13 +160,14 @@ public final class WebAppTabsView extends View implements
     }
 
     static boolean isInsideClose (RectF card, float x) {
-      int size = Screen.dp(CLOSE_SIZE);
+      int size = Screen.dp(CLOSE_ICON_X * 2f);
       return Lang.rtl() ? x > card.right - size : x < card.left + size;
     }
 
     static void getCloseBounds (RectF card, float centerY, Rect out) {
       int size = Screen.dp(CLOSE_SIZE);
-      int left = Lang.rtl() ? (int) card.right - size : (int) card.left;
+      int centerX = Lang.rtl() ? (int) card.right - Screen.dp(CLOSE_ICON_X) : (int) card.left + Screen.dp(CLOSE_ICON_X);
+      int left = centerX - size / 2;
       out.set(left, (int) (centerY - size / 2f), left + size, (int) (centerY + size / 2f));
     }
 
@@ -197,9 +199,12 @@ public final class WebAppTabsView extends View implements
   private final FactorAnimator positionAnimator;
   private final CardHeader header;
 
-  private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final Paint cardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private final Path cornerPath = new Path();
+  // Fade and shadow of the dock and the floating composer
+  private final M3BottomScrimView.Fade fade = new M3BottomScrimView.Fade();
+  private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private float scrolledUnder = 1f;
+  private final BoolAnimator screenHasFade = new BoolAnimator(this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180L);
   private final RectF rect = new RectF();
   private final Rect closeBounds = new Rect();
   private final Drawable closeRipple;
@@ -208,7 +213,7 @@ public final class WebAppTabsView extends View implements
   private ArrayList<Card> cards = new ArrayList<>(MAX_CARDS);
   private float fromVisibility, toVisibility;
   private float fromBand, toBand;
-  private int navigationInset;
+  private int navigationInset, legacyLeftInset;
   private int appliedExtraInset;
   private boolean hasTabs, isContentCovered;
   private boolean cardsHidden;
@@ -225,22 +230,7 @@ public final class WebAppTabsView extends View implements
       1f
     );
     this.header = new CardHeader(this);
-    backgroundPaint.setStyle(Paint.Style.FILL);
     cardPaint.setStyle(Paint.Style.FILL);
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-      // Hardware rendering draws shadows of shapes only since Android 9
-      cardPaint.setShadowLayer(Screen.dp(2.33f), 0, Screen.dp(1f), 0x10000000);
-    }
-
-    // Inverse rounded corner at the left top edge of the strip: the content above it looks
-    // clipped with rounded bottom corners
-    float radius = Screen.dp(CORNER_RADIUS);
-    cornerPath.moveTo(0, -radius);
-    cornerPath.lineTo(0, 0);
-    cornerPath.lineTo(radius, 0);
-    rect.set(0, -radius * 2f, radius * 2f, 0);
-    cornerPath.arcTo(rect, 90f, 90f);
-    cornerPath.close();
 
     closeRipple = Theme.transparentRoundSelector(Screen.dp(CLOSE_SIZE / 2f));
     closeRipple.setCallback(this);
@@ -254,8 +244,9 @@ public final class WebAppTabsView extends View implements
     ));
   }
 
+  /** The cards with the fade above them. */
   private int getLayoutHeight () {
-    return Screen.dp(CORNER_RADIUS) + Screen.dp(WebAppTabs.STRIP_HEIGHT_STACK) + navigationInset;
+    return M3BottomScrimView.getFadeHeight() + WebAppTabs.getStripHeight(true) + navigationInset;
   }
 
   // Lifecycle
@@ -320,7 +311,46 @@ public final class WebAppTabsView extends View implements
   @Override
   public boolean onPreDraw () {
     setContentCovered(checkContentCovered());
+    updateLeftMargin();
+    screenHasFade.setValue(checkScreenHasFade(), getVisibility() == View.VISIBLE);
+    if (getVisibility() == View.VISIBLE) {
+      NavigationController navigation = activity.navigation();
+      ViewController<?> screen = navigation != null ? navigation.getCurrentStackItem() : null;
+      float scrolledUnder = screen != null ? screen.getBottomScrolledUnderFactor(M3BottomScrimView.getFadeHeight()) : 1f;
+      if (this.scrolledUnder != scrolledUnder) {
+        this.scrolledUnder = scrolledUnder;
+        invalidate();
+      }
+    }
     return true;
+  }
+
+  /** The screen under the strip already fades its content under its composer or dock, which stands above the strip. */
+  private boolean checkScreenHasFade () {
+    NavigationController navigation = activity.navigation();
+    ViewController<?> screen = navigation != null ? navigation.getCurrentStackItem() : null;
+    // Tablet split: the chat list in the left pane does not fade the right one
+    return screen != null && screen.hasBottomScrim() && !(getTabletPaneLeft() > 0 && navigation.isTabletMaster(screen));
+  }
+
+  /** In the tablet split the strip lies in the right pane, under the screens opened there. */
+  private int getTabletPaneLeft () {
+    NavigationController navigation = activity.navigation();
+    View parent = (View) getParent();
+    int detailLeft = navigation != null ? navigation.getTabletDetailScreenLeft() : -1;
+    if (detailLeft <= 0 || parent == null) {
+      return 0;
+    }
+    return Math.max(0, detailLeft - Views.getLocationOnScreen(parent)[0]);
+  }
+
+  private void updateLeftMargin () {
+    FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) getLayoutParams();
+    int leftMargin = Math.max(legacyLeftInset, getTabletPaneLeft());
+    if (params != null && params.leftMargin != leftMargin) {
+      params.leftMargin = leftMargin;
+      setLayoutParams(params);
+    }
   }
 
   /**
@@ -374,9 +404,10 @@ public final class WebAppTabsView extends View implements
     // The keyboard covers the strip
     boolean edgeToEdge = Settings.instance().useEdgeToEdge();
     int navigationInset = edgeToEdge ? insetsWithoutIme.bottom : 0;
+    legacyLeftInset = legacyInsets.left;
     Views.setMargins(
       params,
-      legacyInsets.left,
+      Math.max(legacyLeftInset, getTabletPaneLeft()),
       0,
       legacyInsets.right,
       edgeToEdge ? 0 : legacyInsets.bottom
@@ -527,7 +558,7 @@ public final class WebAppTabsView extends View implements
   }
 
   private float getCardWidth () {
-    return getWidth() - Screen.dp(CARD_MARGIN) * 2;
+    return getWidth() - MainNavigationBar.getBarMargin() * 2;
   }
 
   private void setCardTitle (Card card, String title) {
@@ -588,7 +619,7 @@ public final class WebAppTabsView extends View implements
     float factor = positionAnimator.getFactor();
     float visibility = MathUtils.fromTo(fromVisibility, toVisibility, factor);
     float band = MathUtils.fromTo(fromBand, toBand, factor);
-    setTranslationY((1f - visibility) * (band + Screen.dp(CORNER_RADIUS) + navigationInset));
+    setTranslationY((1f - visibility) * (band + navigationInset));
   }
 
   /** The overlay of all tabs replaces the cards while it is shown. */
@@ -610,11 +641,12 @@ public final class WebAppTabsView extends View implements
 
   private void getCardBounds (RectF out, float position, float bottom) {
     float width = getCardWidth();
-    float height = Screen.dp(CARD_HEIGHT);
+    // Same shape, size and margins as the floating composer above it
+    float height = MainNavigationBar.getBarHeight();
     float scale = MathUtils.fromTo(1f, .95f, Math.abs(position));
     float centerX = getWidth() / 2f;
-    float centerY = bottom - Screen.dp(CARD_MARGIN) - height / 2f
-      - position * Screen.dp(STACK_SHIFT);
+    float centerY = bottom - MainNavigationBar.getBarBottomMargin() - height / 2f
+      - position * Screen.dp(WebAppTabs.STACK_SHIFT);
     out.set(
       centerX - width / 2f * scale,
       centerY - height / 2f * scale,
@@ -623,46 +655,40 @@ public final class WebAppTabsView extends View implements
     );
   }
 
-  static int getCardColor (int backgroundColor) {
-    boolean isDark = M3.contrast(backgroundColor) == Color.WHITE;
-    int overlay = ColorUtils.alphaColor(isDark ? .08f : .75f, Color.WHITE);
-    return ColorUtils.compositeColor(backgroundColor, overlay);
-  }
-
-  static int getStripColor () {
-    // The color the activity gives to the system navigation bar
-    return Theme.backgroundColor() | 0xff000000;
+  /** The color of the floating composer. */
+  static int getCardColor () {
+    return M3.surfaceContainer();
   }
 
   // Drawing
 
   @Override
   protected void onDraw (Canvas c) {
-    final int width = getWidth();
     final int height = getHeight();
     final float factor = positionAnimator.getFactor();
-    final float band = MathUtils.fromTo(fromBand, toBand, factor);
+    // No background band: the cards float over the screen content like the message composer
     final float cardsBottom = height - navigationInset;
-    final float stripTop = cardsBottom - band;
-    final int backgroundColor = getStripColor();
-
-    backgroundPaint.setColor(backgroundColor);
-    c.drawRect(0, stripTop, width, height, backgroundPaint);
-    int saveCount = c.save();
-    c.translate(0, stripTop);
-    c.drawPath(cornerPath, backgroundPaint);
-    c.translate(width, 0);
-    c.scale(-1f, 1f);
-    c.drawPath(cornerPath, backgroundPaint);
-    c.restoreToCount(saveCount);
 
     if (cardsHidden) {
       return;
     }
 
-    final int cardColor = getCardColor(backgroundColor);
+    // The content fades out from above the top card to the bottom edge, as under the dock
+    float cardsTop = cardsBottom;
+    for (int i = 0; i < cards.size(); i++) {
+      Card card = cards.get(i);
+      float position = card.position(factor);
+      if (card.alpha(factor) > 0f && position <= 1.99f) {
+        getCardBounds(rect, position, cardsBottom);
+        cardsTop = Math.min(cardsTop, rect.top);
+      }
+    }
+    float visibility = MathUtils.fromTo(fromVisibility, toVisibility, factor);
+    fade.draw(c, getWidth(), cardsTop, height, M3BottomScrimView.getFadeHeight(), visibility * (1f - screenHasFade.getFloatValue()), scrolledUnder);
+
+    final int cardColor = getCardColor();
     final int contentColor = M3.contrast(cardColor);
-    final float radius = Screen.dp(CARD_RADIUS);
+    final float radius = MainNavigationBar.getBarRadius();
     for (int i = 0; i < cards.size(); i++) {
       Card card = cards.get(i);
       float position = card.position(factor);
@@ -671,6 +697,7 @@ public final class WebAppTabsView extends View implements
         continue;
       }
       getCardBounds(rect, position, cardsBottom);
+      M3BottomScrimView.drawShadow(c, shadowPaint, rect, radius, alpha);
       cardPaint.setColor(ColorUtils.alphaColor(alpha, cardColor));
       c.drawRoundRect(rect, radius, radius, cardPaint);
 

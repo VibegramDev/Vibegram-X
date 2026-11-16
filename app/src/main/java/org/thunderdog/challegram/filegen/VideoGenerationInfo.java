@@ -174,14 +174,15 @@ public class VideoGenerationInfo extends GenerationInfo implements AbstractVideo
    *
    * @param quality what the round was recorded with, null = what the current settings resolve to
    * @param durationMs length of the result
+   * @param mute drop the audio track
    */
-  public static String makeRoundConversion (int sourceFileId, long startTimeUs, long endTimeUs, long durationMs, @Nullable RoundVideoQuality quality) {
+  public static String makeRoundConversion (int sourceFileId, long startTimeUs, long endTimeUs, long durationMs, @Nullable RoundVideoQuality quality, boolean mute) {
     if (quality == null) {
       quality = RoundVideoQuality.resolve(Settings.instance());
     }
     int bitrate = Math.min(quality.videoBitrate, RoundVideoQuality.getFitVideoBitrate(durationMs, quality.audioBitrate));
     Settings.VideoLimit videoLimit = new Settings.VideoLimit(new Settings.VideoSize(quality.side), quality.fps, bitrate);
-    String conversion = makeConversion(sourceFileId, false, videoLimit, 0, startTimeUs, endTimeUs, true, null, 0);
+    String conversion = makeConversion(sourceFileId, mute, videoLimit, 0, startTimeUs, endTimeUs, true, null, 0);
     return conversion + "," + PREFIX_ROUND;
   }
 

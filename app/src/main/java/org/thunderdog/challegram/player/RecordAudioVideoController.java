@@ -567,6 +567,7 @@ public class RecordAudioVideoController implements
       };
       this.videoLayout.setOnClickListener(v -> {
         if (recordMode == RECORD_MODE_VIDEO_EDIT) {
+          // Vibegram: the mute badge on the round is a send option, the round goes out without sound
           videoPreviewView.toggleMuted();
         }
       });
@@ -705,7 +706,7 @@ public class RecordAudioVideoController implements
       this.inputOverlayView.addView(audioPreviewView);
 
       this.videoPreviewView = new SimpleVideoPlayer(context);
-      this.videoPreviewView.setMuted(true);
+      this.videoPreviewView.setMuted(false);
       this.videoPreviewView.setPlaying(true);
       this.videoPreviewView.setLooping(true);
       this.videoPreviewView.setDelegate(new SimpleVideoPlayer.Delegate() {
@@ -1081,7 +1082,7 @@ public class RecordAudioVideoController implements
     editAnimator.setValue(false, false);
     videoPreviewView.performDestroy();
     videoTimelineView.performDestroy();
-    videoPreviewView.setMuted(true);
+    videoPreviewView.setMuted(false);
     videoPreviewView.setPlaying(true);
     sendButton.destroySlowModeCounterController();
     audioPreviewView.clearData();
@@ -1350,8 +1351,8 @@ public class RecordAudioVideoController implements
   private final BoolAnimator renderAnimator = new BoolAnimator(ANIMATOR_RENDER, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
 
   private static final int ANIMATOR_MUTE = 6;
-  private float muteFactor = 1f;
-  private final BoolAnimator muteAnimator = new BoolAnimator(ANIMATOR_MUTE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l, true);
+  private float muteFactor;
+  private final BoolAnimator muteAnimator = new BoolAnimator(ANIMATOR_MUTE, this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l, false);
 
   private void updateMuteAlpha () {
     float factor = editFactor * (1f - recordFactor) * muteFactor;
@@ -1927,7 +1928,6 @@ public class RecordAudioVideoController implements
       prevVideoTrimEnd = videoPreviewView.getEndTime();
 
       videoPreviewView.performDestroy();
-      videoPreviewView.setMuted(true);
       videoPreviewView.setPlaying(true);
       resetRoundState();
       isCameraReady = false;
@@ -2253,14 +2253,15 @@ public class RecordAudioVideoController implements
     return fallbackMs;
   }
 
-  /** Sends the whole recorded round: as is when it fits Telegram's 10 MB, re-encoded to fit otherwise. */
+  /** Sends the whole recorded round: as is when it fits Telegram's 10 MB and is not muted, re-encoded otherwise. */
   private void sendRecordedRound (TdApi.MessageSendOptions initialSendOptions) {
     String path = !StringUtils.isEmpty(roundFile.local.path) ? roundFile.local.path : roundOutputPath;
     long size = !StringUtils.isEmpty(path) ? new File(path).length() : 0;
     if (size <= 0) {
       size = Math.max(roundFile.size, roundFile.local.downloadedSize);
     }
-    if (size <= ROUND_SEND_AS_IS_BYTES) {
+    final boolean mute = videoPreviewView.isMuted();
+    if (size <= ROUND_SEND_AS_IS_BYTES && !mute) {
       // Uploaded during recording: send that file. Otherwise it is not a video note file in TDLib, send it by path.
       TdApi.InputFile inputFile = roundUploadWhileRecording || StringUtils.isEmpty(path) ? new TdApi.InputFileId(roundFile.id) : new TdApi.InputFileLocal(path);
       sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(inputFile, null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, roundFile);
@@ -2268,8 +2269,8 @@ public class RecordAudioVideoController implements
     }
     tdlib.send(new TdApi.CancelPreliminaryUploadFile(roundFile.id), tdlib.typedOkHandler());
     long durationMs = getVideoDurationMs(path, (savedRoundDurationSeconds + 1) * 1000L);
-    String conversion = VideoGenerationInfo.makeRoundConversion(roundFile.id, -1, -1, durationMs, RoundVideoQuality.getRecorded(roundKey));
-    Log.i(Log.TAG_ROUND, "Round video is %d bytes, %d ms: re-encoding to fit, %s", size, durationMs, conversion);
+    String conversion = VideoGenerationInfo.makeRoundConversion(roundFile.id, -1, -1, durationMs, RoundVideoQuality.getRecorded(roundKey), mute);
+    Log.i(Log.TAG_ROUND, "Round video is %d bytes, %d ms, mute: %b: re-encoding, %s", size, durationMs, mute, conversion);
     TdApi.InputFileGenerated fittedFile = new TdApi.InputFileGenerated(path, conversion, 0);
     sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(fittedFile, null, savedRoundDurationSeconds, getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, null);
   }
@@ -2522,7 +2523,8 @@ public class RecordAudioVideoController implements
         // Vibegram: trim with the round's own size/fps/bitrate, not the general video quality setting.
         String conversion = VideoGenerationInfo.makeRoundConversion(roundFile.id,
           (long) (startTimeSeconds * 1_000_000), (long) (endTimeSeconds * 1_000_000),
-          (long) ((endTimeSeconds - startTimeSeconds) * 1000), RoundVideoQuality.getRecorded(roundKey)
+          (long) ((endTimeSeconds - startTimeSeconds) * 1000), RoundVideoQuality.getRecorded(roundKey),
+          videoPreviewView.isMuted()
         );
         TdApi.InputFileGenerated trimmedFile = new TdApi.InputFileGenerated(roundFile.local.path, conversion, 0);
         sendVideoNote(new TdApi.InputMessageVideoNote(new TdApi.InputVideoNote(trimmedFile, null, (int) Math.round(endTimeSeconds - startTimeSeconds), getVideoNoteLength()), obtainSelfDestructType()), initialSendOptions, null);

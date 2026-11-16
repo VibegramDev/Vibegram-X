@@ -26,14 +26,20 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.os.Build;
 import android.view.View;
+import android.view.ViewTreeObserver;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeInvalidateListener;
 import org.thunderdog.challegram.tool.Screen;
+
+import me.vkryl.core.ColorUtils;
+import me.vkryl.core.MathUtils;
 
 /**
  * Backdrop of a floating bottom container (tablet dock, tablet message composer): content scrolled under the
@@ -58,32 +64,106 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   /** Opacity of the surface at the top edge of the container and at the bottom of the view (as the phone dock). */
   private static final int ALPHA_AT_CONTAINER = 0xB3, ALPHA_AT_BOTTOM = 0xEB;
 
-  // The fade is two eased gradients of unit height (above / below the top edge of the container), stretched by a
-  // local matrix: the container moves on every frame of its animations, the shaders are created once per color.
-  // No anti-aliasing, so the two rects meet without a seam.
-  private final Paint fadeAbovePaint = new Paint(), fadeBelowPaint = new Paint();
-  private final Matrix fadeAboveMatrix = new Matrix(), fadeBelowMatrix = new Matrix();
+  private final Fade fade = new Fade();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF shape = new RectF();
   private @Nullable ShapeProvider provider;
   private float radius;
-  private int fadeColor;
-  private boolean fadeShadersReady, fadeAboveVisible;
   private boolean shadowOnly;
-  private int fadeHeightOverride = -1;
+  private final ScrolledUnder scrolledUnder = new ScrolledUnder(this);
 
   public M3BottomScrimView (Context context) {
     super(context);
   }
 
+  /** The content that scrolls under the container: the fade above the container appears as it goes under it. */
+  public void setScrolledUnderProvider (@Nullable ScrolledUnderProvider provider) {
+    scrolledUnder.setProvider(provider);
+  }
+
+  public interface ScrolledUnderProvider {
+    /** {@link #getScrolledUnderFactor} of the content scrolled under the container. */
+    float getScrolledUnderFactor (float distance);
+  }
+
   /**
-   * Height of the fade above the container for this view (message composer: short, so the last message right above
-   * the composer stays undimmed), -1 for {@link #getFadeHeight()}.
+   * How much of the content of {@code list} is scrolled under a floating container at its bottom, 0..1 over
+   * {@code distance}: 0 when its last item rests above the container (the bottom padding of the list), so the last
+   * message or chat is never dimmed; 1 when the list has no info about it.
    */
-  public void setFadeHeight (int fadeHeight) {
-    if (this.fadeHeightOverride != fadeHeight) {
-      this.fadeHeightOverride = fadeHeight;
-      invalidate();
+  public static float getScrolledUnderFactor (@Nullable RecyclerView list, float distance) {
+    if (list == null || list.getHeight() == 0 || distance <= 0f) {
+      return 1f;
+    }
+    View bottomChild = null;
+    float bottom = 0f;
+    for (int i = 0; i < list.getChildCount(); i++) {
+      View child = list.getChildAt(i);
+      float childBottom = child.getBottom() + child.getTranslationY();
+      if (bottomChild == null || childBottom > bottom) {
+        bottomChild = child;
+        bottom = childBottom;
+      }
+    }
+    if (bottomChild == null) {
+      return 0f;
+    }
+    RecyclerView.LayoutManager manager = list.getLayoutManager();
+    RecyclerView.Adapter<?> adapter = list.getAdapter();
+    if (manager instanceof LinearLayoutManager && adapter != null) {
+      int position = list.getChildAdapterPosition(bottomChild);
+      int lastPosition = ((LinearLayoutManager) manager).getReverseLayout() ? 0 : adapter.getItemCount() - 1;
+      if (position != RecyclerView.NO_POSITION && position != lastPosition) {
+        // More content below the visible part
+        return 1f;
+      }
+    } else if (list.canScrollVertically(1)) {
+      return 1f;
+    }
+    float overflow = bottom - (list.getHeight() - list.getPaddingBottom());
+    return MathUtils.clamp(overflow / distance);
+  }
+
+  /** Keeps {@link #getScrolledUnderFactor} of the list for a view that draws the fade, redraws it as it changes. */
+  static final class ScrolledUnder implements ViewTreeObserver.OnPreDrawListener, View.OnAttachStateChangeListener {
+    private final View view;
+    private @Nullable ScrolledUnderProvider provider;
+    private float factor = 1f;
+
+    ScrolledUnder (View view) {
+      this.view = view;
+      view.addOnAttachStateChangeListener(this);
+    }
+
+    void setProvider (@Nullable ScrolledUnderProvider provider) {
+      this.provider = provider;
+      onPreDraw();
+    }
+
+    float get () {
+      return provider != null ? factor : 1f;
+    }
+
+    @Override
+    public boolean onPreDraw () {
+      if (provider != null && view.getVisibility() == View.VISIBLE) {
+        float factor = provider.getScrolledUnderFactor(getFadeHeight());
+        if (this.factor != factor) {
+          this.factor = factor;
+          view.invalidate();
+        }
+      }
+      return true;
+    }
+
+    @Override
+    public void onViewAttachedToWindow (@NonNull View v) {
+      v.getViewTreeObserver().addOnPreDrawListener(this);
+    }
+
+    @Override
+    public void onViewDetachedFromWindow (@NonNull View v) {
+      v.getViewTreeObserver().removeOnPreDrawListener(this);
     }
   }
 
@@ -111,38 +191,59 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     if (provider == null || !provider.getShape(this, shape)) {
       return;
     }
-    if (shadowOnly) {
-      drawShadow(c, shape, radius);
-      return;
+    if (!shadowOnly) {
+      fade.draw(c, getWidth(), shape.top, getHeight(), getFadeHeight(), 1f, scrolledUnder.get());
     }
-    final int surface = M3.surface();
-    final int fade = fadeHeightOverride >= 0 ? fadeHeightOverride : getFadeHeight();
-    final int width = getWidth();
-    final float top = shape.top;
-    final boolean fadeAbove = fade > 0;
-    // From the top of the fade to the bottom of the view: transparent -> 70% surface at the top edge of the container
-    // -> 92% at the bottom (the content stays faintly visible below the container, as under the phone dock).
-    if (!fadeShadersReady || fadeColor != surface || fadeAboveVisible != fadeAbove) {
-      fadeShadersReady = true;
-      fadeColor = surface;
-      fadeAboveVisible = fadeAbove;
-      // No fade above the container (message composer): the surface starts from zero at its top edge.
-      int alphaAtContainer = fadeAbove ? ALPHA_AT_CONTAINER : 0;
-      fadeAbovePaint.setShader(newEasedFade(surface, 0, alphaAtContainer));
-      fadeBelowPaint.setShader(newEasedFade(surface, alphaAtContainer, ALPHA_AT_BOTTOM));
+    drawShadow(c, shadowPaint, shape, radius, 1f);
+  }
+
+  /** The fade of this view, for views that draw their floating container themselves (strip of mini app tabs). */
+  public static final class Fade {
+    // Two eased gradients of unit height (above / below the top edge of the container), stretched by a local matrix:
+    // the container moves on every frame of its animations, the shaders are created once per color.
+    // No anti-aliasing, so the two rects meet without a seam.
+    private final Paint abovePaint = new Paint(), belowPaint = new Paint();
+    private final Matrix aboveMatrix = new Matrix(), belowMatrix = new Matrix();
+    private int color;
+    private boolean shadersReady, aboveVisible;
+
+    /**
+     * From {@code top - fadeHeight} to {@code bottom}: transparent -> 70% surface at the top edge of the container
+     * ({@code top}) -> 92% at {@code bottom} (the content stays faintly visible below the container, as under the
+     * phone dock). With {@code scrolledUnder} below 1 the fade moves down, behind the container: nothing above the
+     * container is dimmed while no content is scrolled under it ({@link #getScrolledUnderFactor}).
+     */
+    public void draw (Canvas c, float width, float top, float bottom, int fadeHeight, float alpha, float scrolledUnder) {
+      if (alpha <= 0f) {
+        return;
+      }
+      top += (1f - MathUtils.clamp(scrolledUnder)) * fadeHeight;
+      final int surface = M3.surface();
+      final boolean fadeAbove = fadeHeight > 0;
+      if (!shadersReady || color != surface || aboveVisible != fadeAbove) {
+        shadersReady = true;
+        color = surface;
+        aboveVisible = fadeAbove;
+        // No fade above the container: the surface starts from zero at its top edge.
+        int alphaAtContainer = fadeAbove ? ALPHA_AT_CONTAINER : 0;
+        abovePaint.setShader(newEasedFade(surface, 0, alphaAtContainer));
+        belowPaint.setShader(newEasedFade(surface, alphaAtContainer, ALPHA_AT_BOTTOM));
+      }
+      final int paintAlpha = Math.round(255 * Math.min(1f, alpha));
+      if (fadeAbove) {
+        aboveMatrix.setScale(1f, fadeHeight);
+        aboveMatrix.postTranslate(0, top - fadeHeight);
+        abovePaint.getShader().setLocalMatrix(aboveMatrix);
+        abovePaint.setAlpha(paintAlpha);
+        c.drawRect(0, top - fadeHeight, width, top, abovePaint);
+      }
+      final float below = Math.max(1f, bottom - top);
+      belowMatrix.setScale(1f, below);
+      belowMatrix.postTranslate(0, top);
+      belowPaint.getShader().setLocalMatrix(belowMatrix);
+      belowPaint.setAlpha(paintAlpha);
+      c.drawRect(0, top, width, top + below, belowPaint);
     }
-    if (fadeAbove) {
-      fadeAboveMatrix.setScale(1f, fade);
-      fadeAboveMatrix.postTranslate(0, top - fade);
-      fadeAbovePaint.getShader().setLocalMatrix(fadeAboveMatrix);
-      c.drawRect(0, top - fade, width, top, fadeAbovePaint);
-    }
-    final float below = Math.max(1f, getHeight() - top);
-    fadeBelowMatrix.setScale(1f, below);
-    fadeBelowMatrix.postTranslate(0, top);
-    fadeBelowPaint.getShader().setLocalMatrix(fadeBelowMatrix);
-    c.drawRect(0, top, width, top + below, fadeBelowPaint);
-    drawShadow(c, shape, radius);
   }
 
   private static final int SMOOTH_FADE_STEPS = 12;
@@ -185,17 +286,20 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     return new LinearGradient(0, 0, 0, 1, colors, positions, Shader.TileMode.CLAMP);
   }
 
-  /** Soft elevation shadow (M3 level 2 look): a wide faint key shadow below and a tight ambient one around. */
-  private void drawShadow (Canvas c, RectF rect, float radius) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+  /**
+   * Soft elevation shadow (M3 level 2 look): a wide faint key shadow below and a tight ambient one around, cast by a
+   * container of {@code surfaceContainer} color ({@code alpha} for a container that fades in or out).
+   */
+  public static void drawShadow (Canvas c, Paint paint, RectF rect, float radius, float alpha) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || alpha <= 0f) {
       // Hardware accelerated shadow layers for shapes are supported since Android 9.
       return;
     }
     final boolean dark = Theme.isDark();
-    shadowPaint.setColor(M3.surfaceContainer());
-    shadowPaint.setShadowLayer(Screen.dp(6f), 0, Screen.dp(2f), dark ? 0x66000000 : 0x1F000000);
-    c.drawRoundRect(rect, radius, radius, shadowPaint);
-    shadowPaint.setShadowLayer(Screen.dp(1.5f), 0, Screen.dp(.5f), dark ? 0x4D000000 : 0x14000000);
-    c.drawRoundRect(rect, radius, radius, shadowPaint);
+    paint.setColor(ColorUtils.alphaColor(alpha, M3.surfaceContainer()));
+    paint.setShadowLayer(Screen.dp(6f), 0, Screen.dp(2f), ColorUtils.alphaColor(alpha, dark ? 0x66000000 : 0x1F000000));
+    c.drawRoundRect(rect, radius, radius, paint);
+    paint.setShadowLayer(Screen.dp(1.5f), 0, Screen.dp(.5f), ColorUtils.alphaColor(alpha, dark ? 0x4D000000 : 0x14000000));
+    c.drawRoundRect(rect, radius, radius, paint);
   }
 }

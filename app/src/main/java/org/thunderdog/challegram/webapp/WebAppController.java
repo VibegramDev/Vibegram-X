@@ -81,6 +81,8 @@ import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.navigation.AlertPopup;
 import org.thunderdog.challegram.navigation.BackHeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
+import org.thunderdog.challegram.navigation.NavigationController;
+import org.thunderdog.challegram.navigation.NavigationStack;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
@@ -138,7 +140,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   public static final int TYPE_ATTACHMENT_MENU = 3, TYPE_APP_LINK = 4, TYPE_MAIN_APP = 5;
   public static final int TYPE_SIDE_MENU = 6, TYPE_INLINE_SWITCH = 7;
 
-  public static final int MODE_COMPACT = 0, MODE_FULL_SIZE = 1, MODE_FULLSCREEN = 2;
+  public static final int MODE_FULL_SIZE = 1, MODE_FULLSCREEN = 2;
 
   public static final class Args {
     public final int type;
@@ -148,7 +150,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     public @Nullable TdApi.InputMessageReplyTo replyTo;
     public @Nullable String url, buttonText, startParameter, webAppShortName;
     public boolean allowWriteAccess, needsContext;
-    public int mode = MODE_COMPACT;
+    public int mode = MODE_FULL_SIZE;
 
     public Args (int type, long botUserId, long chatId) {
       this.type = type;
@@ -291,6 +293,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     popupLayout.init(true);
     popupLayout.setNeedRootInsets();
     openControllers.add(this);
+    setPaneScreenListener(true);
     popupLayout.showAnimatedPopupView(getValue(), this);
   }
 
@@ -459,6 +462,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     titleGroup = new LinearLayout(context);
     titleGroup.setOrientation(LinearLayout.HORIZONTAL);
     titleGroup.setBackground(titlePill);
+    // The inset pill would also pad the buttons to its height and clip their round containers
+    titleGroup.setPadding(0, 0, 0, 0);
     titleGroup.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.MATCH_PARENT, Gravity.LEFT));
     headerView.addView(titleGroup);
@@ -482,6 +487,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     buttonsGroup = new LinearLayout(context);
     buttonsGroup.setOrientation(LinearLayout.HORIZONTAL);
     buttonsGroup.setBackground(buttonsPill);
+    buttonsGroup.setPadding(0, 0, 0, 0);
     buttonsGroup.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT,
       ViewGroup.LayoutParams.MATCH_PARENT, Gravity.RIGHT));
     minimizeButton = newHeaderButton(context, R.id.btn_webAppMinimize,
@@ -655,7 +661,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         return hiddenTop;
       case POSITION_COMPACT:
       default:
-        return getArgumentsStrict().mode == MODE_COMPACT ? compactTop : expandedTop;
+        return expandedTop;
     }
   }
 
@@ -751,9 +757,52 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   @Override
   public boolean shouldTouchOutside (float x, float y) {
+    if (sheetLayout == null) {
+      return false;
+    }
+    // Tablet split: the left pane stays usable beside the app in the right pane.
+    if (sheetLayout.isPaneSheet && x < sheetLayout.sheetLeft) {
+      return true;
+    }
     // Touches on the strip of other minimized apps reach it.
-    return sheetLayout != null && getTabsHeight() > 0 &&
+    return getTabsHeight() > 0 &&
       y >= sheetLayout.getMeasuredHeight() - insetsWithoutIme.bottom - getTabsHeight();
+  }
+
+  private @Nullable ViewController<?> paneScreen;
+  private final NavigationStack.ChangeListener paneScreenListener = stack -> checkPaneScreen();
+
+  private void setPaneScreenListener (boolean listen) {
+    NavigationController navigation = context().navigation();
+    if (navigation == null) {
+      return;
+    }
+    navigation.getStack().removeChangeListener(paneScreenListener);
+    if (listen) {
+      paneScreen = navigation.getCurrentStackItem();
+      navigation.getStack().addChangeListener(paneScreenListener);
+    } else {
+      paneScreen = null;
+    }
+  }
+
+  /** A screen opened in the right pane from the left one comes in place of the app: the app is minimized. */
+  private void checkPaneScreen () {
+    NavigationController navigation = context().navigation();
+    if (isMinimized || isClosing || navigation == null) {
+      return;
+    }
+    ViewController<?> c = navigation.getCurrentStackItem();
+    if (c == null || c == paneScreen || navigation.isTabletMaster(c) || navigation.isTabletSection(c)) {
+      return;
+    }
+    paneScreen = c;
+    // The chat with the bot is opened under the app by the app itself (restoring with the context of the chat)
+    boolean isBotChat = c instanceof MessagesController &&
+      ((MessagesController) c).getChatId() == ChatId.fromUserId(getArgumentsStrict().botUserId);
+    if (!isBotChat && sheetLayout != null && sheetLayout.isPaneSheet) {
+      minimize();
+    }
   }
 
   @Override
@@ -1709,6 +1758,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
     WebAppTabs.remove(this);
     isMinimized = false;
+    paneScreen = context().navigation() != null ? context().navigation().getCurrentStackItem() : null;
     if (isOrientationLocked) {
       setOrientationLockFlag(true);
     }
@@ -1789,6 +1839,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   public void destroy () {
     super.destroy();
     openControllers.remove(this);
+    setPaneScreenListener(false);
     WebAppTabs.remove(this);
     ThemeManager.instance().removeThemeListener(this);
     isClosing = true;
@@ -2181,27 +2232,56 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final int width = MeasureSpec.getSize(widthMeasureSpec),
         height = MeasureSpec.getSize(heightMeasureSpec);
       updatePositions(width, height);
-      final int sheetWidth = M3Sheets.width(width);
-      final int horizontalMargin = (width - sheetWidth) / 2;
+      updateSheetBounds(width);
+      final int leftMargin = sheetLeft, rightMargin = width - sheetRight;
       final int contentHeight = Math.max(0, height - bottomPadding - getContentTop() -
         buttonsView.getTargetHeight());
-      setChildFrame(contentView, horizontalMargin, getContentTop(), contentHeight);
+      setChildFrame(contentView, leftMargin, rightMargin, getContentTop(), contentHeight);
       FrameLayout.LayoutParams buttonsParams =
         (FrameLayout.LayoutParams) buttonsView.getLayoutParams();
       buttonsParams.bottomMargin = bottomPadding;
-      buttonsParams.leftMargin = buttonsParams.rightMargin = horizontalMargin;
+      buttonsParams.leftMargin = leftMargin;
+      buttonsParams.rightMargin = rightMargin;
       FrameLayout.LayoutParams headerParams =
         (FrameLayout.LayoutParams) headerView.getLayoutParams();
-      headerParams.leftMargin = horizontalMargin + (isFullscreen ? insets.left : 0);
-      headerParams.rightMargin = horizontalMargin + (isFullscreen ? insets.right : 0);
+      headerParams.leftMargin = leftMargin + (isFullscreen && leftMargin == 0 ? insets.left : 0);
+      headerParams.rightMargin = rightMargin + (isFullscreen ? insets.right : 0);
       super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
-    private void setChildFrame (View view, int horizontalMargin, int top, int height) {
+    private int sheetLeft, sheetRight;
+    private boolean isPaneSheet;
+
+    /** The sheet takes the whole right pane in the tablet split, otherwise it is centered. */
+    private void updateSheetBounds (int width) {
+      int paneLeft = getTabletPaneLeft();
+      isPaneSheet = paneLeft > 0 && paneLeft < width;
+      if (isPaneSheet) {
+        sheetLeft = paneLeft;
+        sheetRight = width;
+      } else {
+        int sheetWidth = M3Sheets.width(width);
+        sheetLeft = (width - sheetWidth) / 2;
+        sheetRight = sheetLeft + sheetWidth;
+      }
+    }
+
+    /** Left edge of the right pane of the tablet split in this view, 0 without the split. */
+    private int getTabletPaneLeft () {
+      NavigationController navigation = context().navigation();
+      int detailLeft = navigation != null ? navigation.getTabletDetailScreenLeft() : -1;
+      if (detailLeft <= 0) {
+        return 0;
+      }
+      return Math.max(0, detailLeft - Views.getLocationOnScreen(this)[0]);
+    }
+
+    private void setChildFrame (View view, int leftMargin, int rightMargin, int top, int height) {
       FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
       params.topMargin = top;
       params.height = height;
-      params.leftMargin = params.rightMargin = horizontalMargin;
+      params.leftMargin = leftMargin;
+      params.rightMargin = rightMargin;
     }
 
     @Override
@@ -2231,8 +2311,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final float handle = Screen.dp(HANDLE_AREA);
       final float fullscreen = fullscreenAnimator.getFloatValue();
       final float header = headerAnimator.getFloatValue();
-      final int sheetWidth = M3Sheets.width(width);
-      final float left = (width - sheetWidth) / 2f, right = left + sheetWidth;
+      final float left = sheetLeft, right = sheetRight;
+      final int sheetWidth = sheetRight - sheetLeft;
 
       float openFactor = 1f;
       if (sheetTop > compactTop && hiddenTop > compactTop) {
@@ -2242,7 +2322,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final int dimBottom = height - (insetsWithoutIme.bottom + getTabsHeight());
       if (dimAlpha > 0) {
         paint.setColor(Color.argb(dimAlpha, 0, 0, 0));
-        c.drawRect(0, 0, width, dimBottom, paint);
+        // Not over the left pane of the tablet split: it stays usable
+        c.drawRect(isPaneSheet ? left : 0, 0, width, dimBottom, paint);
       }
 
       final float radius = M3Sheets.radius() * (1f - header);
@@ -2256,7 +2337,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final float handleAlpha = MathUtils.clamp(1f - header * 2f) * (1f - fullscreen);
       if (handleAlpha > 0f) {
         final float handleWidth = Screen.dp(HANDLE_WIDTH) * (1f - header);
-        final float centerX = width / 2f, handleY = sheetTop + Screen.dp(HANDLE_TOP);
+        final float centerX = (left + right) / 2f, handleY = sheetTop + Screen.dp(HANDLE_TOP);
         paint.setColor(ColorUtils.alphaColor(.4f * handleAlpha, getHeaderContentColor()));
         rect.set(centerX - handleWidth / 2f, handleY - Screen.dp(HANDLE_HEIGHT) / 2f,
           centerX + handleWidth / 2f, handleY + Screen.dp(HANDLE_HEIGHT) / 2f);
@@ -2266,7 +2347,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       final int navigationTop = height - bottomPadding;
       if (openFactor > 0f && getTabsHeight() == 0) {
         paint.setColor(ColorUtils.alphaColor(openFactor, bottomBarColor));
-        c.drawRect(0, navigationTop, width, height, paint);
+        c.drawRect(isPaneSheet ? left : 0, navigationTop, width, height, paint);
       }
 
       super.dispatchDraw(c);
@@ -2420,16 +2501,11 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         duration > LONG_DRAG_DURATION;
       final boolean isLandscape = getMeasuredWidth() > getMeasuredHeight();
       final float sticky = Screen.dp(isLandscape ? STICKY_RANGE_LANDSCAPE : STICKY_RANGE);
-      final boolean isFullSize = getArgumentsStrict().mode != MODE_COMPACT;
       final float restTop = getPositionTop(isFullscreen ? POSITION_FULLSCREEN : POSITION_COMPACT);
       final float offset = sheetTop - restTop;
       isDragging = false;
       if (velocity >= Screen.dp(FLING_DOWN_VELOCITY) && isLongGesture) {
-        if (isFullscreen || isFullSize || offset > sticky) {
-          minimize();
-        } else {
-          animatePosition(POSITION_COMPACT);
-        }
+        minimize();
         return;
       }
       if (velocity <= -FLING_UP_VELOCITY && !isFullscreen) {
@@ -2444,10 +2520,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
         }
         return;
       }
-      if (offset <= -sticky) {
+      if (offset <= sticky) {
         animatePosition(POSITION_EXPANDED);
-      } else if (offset <= sticky) {
-        animatePosition(isFullSize ? POSITION_EXPANDED : POSITION_COMPACT);
       } else if (isLongGesture) {
         minimize();
       } else {

@@ -386,6 +386,8 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         if (previous == getCurrentStackItem()) {
           contentWrapper.addView(previous.getValue());
           previous.attachNavigationController(this);
+          applyPlayerOffsetTo(previous);
+          applyBottomInset(previous);
           headerView.setTitle(previous);
           // Its app bar title (the app name on the phone) may be left hidden by the last single-pane transition.
           headerView.resetTitleTransition(previous);
@@ -399,6 +401,8 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
         addChildWrapper(target, 0);
       }
       tabletLayout.setMain(target);
+      applyPlayerOffsetTo(target);
+      applyBottomInset(target);
       ViewController<?> section = getStack().size() > 1 ? getStack().get(1) : null;
       if (section != null && section.isTopLevelDestination() && !section.isDestroyed()) {
         // Opened from the dock in the single pane layout: moves to the left pane.
@@ -406,6 +410,8 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
           contentWrapper.removeView(section.getValue());
         }
         tabletLayout.setSection(section, false);
+        applyPlayerOffsetTo(section);
+        applyBottomInset(section);
         if (section != getCurrentStackItem() && !section.isFocused()) {
           section.onFocus();
         }
@@ -600,7 +606,7 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     }
     childWrappers.add(controller);
 
-    controller.applyPlayerOffset(currentPlayerFactor, currentPlayerOffset);
+    applyPlayerOffsetTo(controller);
     if (controller.usePopupMode()) {
       if (controller.preventRootInteractions()) {
         rootView.addView(controller.getValue(), 0);
@@ -1148,13 +1154,22 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   private float currentPlayerFactor;
   private float currentPlayerOffset;
 
+  /** The audio bar is in the right pane's app bar: the left pane screens are not moved under it. */
+  private void applyPlayerOffsetTo (ViewController<?> c) {
+    if (isTabletPane(c)) {
+      c.applyPlayerOffset(0f, 0f);
+    } else {
+      c.applyPlayerOffset(currentPlayerFactor, currentPlayerOffset);
+    }
+  }
+
   protected boolean applyPlayerOffset (float factor, float top) {
     if (currentPlayerFactor != factor) {
       currentPlayerFactor = factor;
       currentPlayerOffset = top;
       if (childWrappers != null) {
         for (ViewController<?> c : childWrappers) {
-          c.applyPlayerOffset(factor, top);
+          applyPlayerOffsetTo(c);
         }
       }
       return true;
@@ -1227,13 +1242,13 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     contentWrapper.setFadeThroughBackdrop(m3FadeThrough || m3Horizontal);
 
     if (forward) {
-      right.applyPlayerOffset(currentPlayerFactor, currentPlayerOffset);
+      applyPlayerOffsetTo(right);
       addChildWrapper(right);
       if (left.usePopupMode()) {
         preventPopupMode(left);
       }
     } else {
-      left.applyPlayerOffset(currentPlayerFactor, currentPlayerOffset);
+      applyPlayerOffsetTo(left);
       addChildWrapper(left, 0);
     }
 
@@ -2299,10 +2314,15 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     setBottomInset(Math.max(systemBottomInset, insetWithoutIme), insetWithoutIme);
   }
 
+  /** The strip of minimized mini apps lies in the right pane of the tablet split: the left pane is not moved above it. */
+  private int getTabletPaneBottomInset () {
+    return bottomInsetWithoutIme - extraBottomInset;
+  }
+
   public void applyBottomInset (ViewController<?> controller) {
     if (isTabletSection(controller) && tabletLayout.getMain() != null) {
       // Left pane: the list scrolls under the floating bar of the chat list screen.
-      int inset = bottomInsetWithoutIme + tabletLayout.getMain().getTabletSectionNavigationInset();
+      int inset = getTabletPaneBottomInset() + tabletLayout.getMain().getTabletSectionNavigationInset();
       if (controller.supportsBottomInset()) {
         controller.setBottomInset(inset, inset);
       } else {
@@ -2320,9 +2340,11 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
       }
       return;
     }
-    int effectiveBottomInset = isTabletMaster(controller) ? bottomInsetWithoutIme : bottomInset;
+    boolean isMaster = isTabletMaster(controller);
+    int effectiveBottomInset = isMaster ? getTabletPaneBottomInset() : bottomInset;
     if (controller.supportsBottomInset()) {
-      controller.setBottomInset(effectiveBottomInset, bottomInsetWithoutIme);
+      // The floating bar of the chat list is placed by the inset without the keyboard
+      controller.setBottomInset(effectiveBottomInset, isMaster ? effectiveBottomInset : bottomInsetWithoutIme);
     } else {
       View view = controller.getValue();
       Views.setPaddingBottom(view, effectiveBottomInset);

@@ -32,6 +32,7 @@ import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibManager;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.widget.RootFrameLayout;
+import org.thunderdog.challegram.widget.MainNavigationBar;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -52,7 +53,8 @@ public final class WebAppTabs {
   private static final int MAX_TABS = 5;
 
   /** Height of the strip with one tab and with a stack of tabs. */
-  static final float STRIP_HEIGHT_SINGLE = 60f, STRIP_HEIGHT_STACK = 68f;
+  /** The tab under the newest one peeks out above it by this much. */
+  static final float STACK_SHIFT = 8f;
 
   private static final SparseArrayCompat<ArrayList<WebAppTab>> tabs = new SparseArrayCompat<>();
   // Without the cached iterator: a listener may change the tabs while they are being notified
@@ -167,7 +169,12 @@ public final class WebAppTabs {
     if (count == 0) {
       return 0;
     }
-    return Screen.dp(count == 1 ? STRIP_HEIGHT_SINGLE : STRIP_HEIGHT_STACK);
+    return getStripHeight(count > 1);
+  }
+
+  /** The tab card has the height and the margins of the floating composer (and of the main screen bar). */
+  static int getStripHeight (boolean stack) {
+    return MainNavigationBar.getBarHeight() + MainNavigationBar.getBarBottomMargin() + (stack ? Screen.dp(STACK_SHIFT) : 0);
   }
 
   /**
