@@ -44,6 +44,7 @@ import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.DrawerController;
 import org.thunderdog.challegram.navigation.NavigationController;
+import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibManager;
@@ -59,6 +60,7 @@ import org.thunderdog.challegram.tool.Views;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextColorSet;
+import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 
@@ -66,6 +68,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import me.vkryl.android.AnimatorUtils;
+import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
@@ -197,6 +200,10 @@ public final class WebAppTabsView extends View implements
   private final CardHeader header;
 
   private final Paint cardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  // Fade and shadow of the dock and the floating composer
+  private final M3BottomScrimView.Fade fade = new M3BottomScrimView.Fade();
+  private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final BoolAnimator screenHasFade = new BoolAnimator(this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180L);
   private final RectF rect = new RectF();
   private final Rect closeBounds = new Rect();
   private final Drawable closeRipple;
@@ -223,10 +230,6 @@ public final class WebAppTabsView extends View implements
     );
     this.header = new CardHeader(this);
     cardPaint.setStyle(Paint.Style.FILL);
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-      // Hardware rendering draws shadows of shapes only since Android 9
-      cardPaint.setShadowLayer(Screen.dp(2.33f), 0, Screen.dp(1f), 0x10000000);
-    }
 
     closeRipple = Theme.transparentRoundSelector(Screen.dp(CLOSE_SIZE / 2f));
     closeRipple.setCallback(this);
@@ -240,8 +243,9 @@ public final class WebAppTabsView extends View implements
     ));
   }
 
+  /** The cards with the fade above them. */
   private int getLayoutHeight () {
-    return WebAppTabs.getStripHeight(true) + navigationInset;
+    return M3BottomScrimView.getFadeHeight() + WebAppTabs.getStripHeight(true) + navigationInset;
   }
 
   // Lifecycle
@@ -307,7 +311,16 @@ public final class WebAppTabsView extends View implements
   public boolean onPreDraw () {
     setContentCovered(checkContentCovered());
     updateLeftMargin();
+    screenHasFade.setValue(checkScreenHasFade(), getVisibility() == View.VISIBLE);
     return true;
+  }
+
+  /** The screen under the strip already fades its content under its composer or dock, which stands above the strip. */
+  private boolean checkScreenHasFade () {
+    NavigationController navigation = activity.navigation();
+    ViewController<?> screen = navigation != null ? navigation.getCurrentStackItem() : null;
+    // Tablet split: the chat list in the left pane does not fade the right one
+    return screen != null && screen.hasBottomScrim() && !(getTabletPaneLeft() > 0 && navigation.isTabletMaster(screen));
   }
 
   /** In the tablet split the strip lies in the right pane, under the screens opened there. */
@@ -650,6 +663,19 @@ public final class WebAppTabsView extends View implements
       return;
     }
 
+    // The content fades out from above the top card to the bottom edge, as under the dock
+    float cardsTop = cardsBottom;
+    for (int i = 0; i < cards.size(); i++) {
+      Card card = cards.get(i);
+      float position = card.position(factor);
+      if (card.alpha(factor) > 0f && position <= 1.99f) {
+        getCardBounds(rect, position, cardsBottom);
+        cardsTop = Math.min(cardsTop, rect.top);
+      }
+    }
+    float visibility = MathUtils.fromTo(fromVisibility, toVisibility, factor);
+    fade.draw(c, getWidth(), cardsTop, height, M3BottomScrimView.getFadeHeight(), visibility * (1f - screenHasFade.getFloatValue()));
+
     final int cardColor = getCardColor();
     final int contentColor = M3.contrast(cardColor);
     final float radius = MainNavigationBar.getBarRadius();
@@ -661,6 +687,7 @@ public final class WebAppTabsView extends View implements
         continue;
       }
       getCardBounds(rect, position, cardsBottom);
+      M3BottomScrimView.drawShadow(c, shadowPaint, rect, radius, alpha);
       cardPaint.setColor(ColorUtils.alphaColor(alpha, cardColor));
       c.drawRoundRect(rect, radius, radius, cardPaint);
 

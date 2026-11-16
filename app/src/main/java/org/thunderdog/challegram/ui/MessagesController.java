@@ -1738,10 +1738,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (previewMode == PREVIEW_MODE_NONE && inputView != null) {
       // Messages under the composer: they scroll under the floating composer and fade out.
       contentView.addView(messagesView);
+      // Same fade and shadow as the dock of the chat list
       composerScrim = new M3BottomScrimView(context);
-      // The last message sits right above the composer: the fade starts at its top edge, so it is not dimmed, and
-      // eases in from zero there, so there is no line beside the composer where it starts.
-      composerScrim.setFadeHeight(0);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);
@@ -6971,6 +6969,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       invalidateComposerScrim();
     }
+  }
+
+  @Override
+  public boolean hasBottomScrim () {
+    return composerScrim != null && composerScrim.getVisibility() == View.VISIBLE && composerScrim.getAlpha() > 0f;
   }
 
   private static final int ANIMATOR_BOTTOM_BUTTON = 12;

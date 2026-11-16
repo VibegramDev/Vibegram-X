@@ -35,6 +35,8 @@ import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeInvalidateListener;
 import org.thunderdog.challegram.tool.Screen;
 
+import me.vkryl.core.ColorUtils;
+
 /**
  * Backdrop of a floating bottom container (tablet dock, tablet message composer): content scrolled under the
  * container fades into {@code surface} above it and stays faintly visible below its top edge (the fade of the
@@ -58,33 +60,15 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   /** Opacity of the surface at the top edge of the container and at the bottom of the view (as the phone dock). */
   private static final int ALPHA_AT_CONTAINER = 0xB3, ALPHA_AT_BOTTOM = 0xEB;
 
-  // The fade is two eased gradients of unit height (above / below the top edge of the container), stretched by a
-  // local matrix: the container moves on every frame of its animations, the shaders are created once per color.
-  // No anti-aliasing, so the two rects meet without a seam.
-  private final Paint fadeAbovePaint = new Paint(), fadeBelowPaint = new Paint();
-  private final Matrix fadeAboveMatrix = new Matrix(), fadeBelowMatrix = new Matrix();
+  private final Fade fade = new Fade();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF shape = new RectF();
   private @Nullable ShapeProvider provider;
   private float radius;
-  private int fadeColor;
-  private boolean fadeShadersReady, fadeAboveVisible;
   private boolean shadowOnly;
-  private int fadeHeightOverride = -1;
 
   public M3BottomScrimView (Context context) {
     super(context);
-  }
-
-  /**
-   * Height of the fade above the container for this view (message composer: short, so the last message right above
-   * the composer stays undimmed), -1 for {@link #getFadeHeight()}.
-   */
-  public void setFadeHeight (int fadeHeight) {
-    if (this.fadeHeightOverride != fadeHeight) {
-      this.fadeHeightOverride = fadeHeight;
-      invalidate();
-    }
   }
 
   /** Draws only the shadow of the floating container: the content behind it is washed out by another view. */
@@ -111,38 +95,57 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     if (provider == null || !provider.getShape(this, shape)) {
       return;
     }
-    if (shadowOnly) {
-      drawShadow(c, shape, radius);
-      return;
+    if (!shadowOnly) {
+      fade.draw(c, getWidth(), shape.top, getHeight(), getFadeHeight(), 1f);
     }
-    final int surface = M3.surface();
-    final int fade = fadeHeightOverride >= 0 ? fadeHeightOverride : getFadeHeight();
-    final int width = getWidth();
-    final float top = shape.top;
-    final boolean fadeAbove = fade > 0;
-    // From the top of the fade to the bottom of the view: transparent -> 70% surface at the top edge of the container
-    // -> 92% at the bottom (the content stays faintly visible below the container, as under the phone dock).
-    if (!fadeShadersReady || fadeColor != surface || fadeAboveVisible != fadeAbove) {
-      fadeShadersReady = true;
-      fadeColor = surface;
-      fadeAboveVisible = fadeAbove;
-      // No fade above the container (message composer): the surface starts from zero at its top edge.
-      int alphaAtContainer = fadeAbove ? ALPHA_AT_CONTAINER : 0;
-      fadeAbovePaint.setShader(newEasedFade(surface, 0, alphaAtContainer));
-      fadeBelowPaint.setShader(newEasedFade(surface, alphaAtContainer, ALPHA_AT_BOTTOM));
+    drawShadow(c, shadowPaint, shape, radius, 1f);
+  }
+
+  /** The fade of this view, for views that draw their floating container themselves (strip of mini app tabs). */
+  public static final class Fade {
+    // Two eased gradients of unit height (above / below the top edge of the container), stretched by a local matrix:
+    // the container moves on every frame of its animations, the shaders are created once per color.
+    // No anti-aliasing, so the two rects meet without a seam.
+    private final Paint abovePaint = new Paint(), belowPaint = new Paint();
+    private final Matrix aboveMatrix = new Matrix(), belowMatrix = new Matrix();
+    private int color;
+    private boolean shadersReady, aboveVisible;
+
+    /**
+     * From {@code top - fadeHeight} to {@code bottom}: transparent -> 70% surface at the top edge of the container
+     * ({@code top}) -> 92% at {@code bottom} (the content stays faintly visible below the container, as under the
+     * phone dock).
+     */
+    public void draw (Canvas c, float width, float top, float bottom, int fadeHeight, float alpha) {
+      if (alpha <= 0f) {
+        return;
+      }
+      final int surface = M3.surface();
+      final boolean fadeAbove = fadeHeight > 0;
+      if (!shadersReady || color != surface || aboveVisible != fadeAbove) {
+        shadersReady = true;
+        color = surface;
+        aboveVisible = fadeAbove;
+        // No fade above the container: the surface starts from zero at its top edge.
+        int alphaAtContainer = fadeAbove ? ALPHA_AT_CONTAINER : 0;
+        abovePaint.setShader(newEasedFade(surface, 0, alphaAtContainer));
+        belowPaint.setShader(newEasedFade(surface, alphaAtContainer, ALPHA_AT_BOTTOM));
+      }
+      final int paintAlpha = Math.round(255 * Math.min(1f, alpha));
+      if (fadeAbove) {
+        aboveMatrix.setScale(1f, fadeHeight);
+        aboveMatrix.postTranslate(0, top - fadeHeight);
+        abovePaint.getShader().setLocalMatrix(aboveMatrix);
+        abovePaint.setAlpha(paintAlpha);
+        c.drawRect(0, top - fadeHeight, width, top, abovePaint);
+      }
+      final float below = Math.max(1f, bottom - top);
+      belowMatrix.setScale(1f, below);
+      belowMatrix.postTranslate(0, top);
+      belowPaint.getShader().setLocalMatrix(belowMatrix);
+      belowPaint.setAlpha(paintAlpha);
+      c.drawRect(0, top, width, top + below, belowPaint);
     }
-    if (fadeAbove) {
-      fadeAboveMatrix.setScale(1f, fade);
-      fadeAboveMatrix.postTranslate(0, top - fade);
-      fadeAbovePaint.getShader().setLocalMatrix(fadeAboveMatrix);
-      c.drawRect(0, top - fade, width, top, fadeAbovePaint);
-    }
-    final float below = Math.max(1f, getHeight() - top);
-    fadeBelowMatrix.setScale(1f, below);
-    fadeBelowMatrix.postTranslate(0, top);
-    fadeBelowPaint.getShader().setLocalMatrix(fadeBelowMatrix);
-    c.drawRect(0, top, width, top + below, fadeBelowPaint);
-    drawShadow(c, shape, radius);
   }
 
   private static final int SMOOTH_FADE_STEPS = 12;
@@ -185,17 +188,20 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     return new LinearGradient(0, 0, 0, 1, colors, positions, Shader.TileMode.CLAMP);
   }
 
-  /** Soft elevation shadow (M3 level 2 look): a wide faint key shadow below and a tight ambient one around. */
-  private void drawShadow (Canvas c, RectF rect, float radius) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+  /**
+   * Soft elevation shadow (M3 level 2 look): a wide faint key shadow below and a tight ambient one around, cast by a
+   * container of {@code surfaceContainer} color ({@code alpha} for a container that fades in or out).
+   */
+  public static void drawShadow (Canvas c, Paint paint, RectF rect, float radius, float alpha) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || alpha <= 0f) {
       // Hardware accelerated shadow layers for shapes are supported since Android 9.
       return;
     }
     final boolean dark = Theme.isDark();
-    shadowPaint.setColor(M3.surfaceContainer());
-    shadowPaint.setShadowLayer(Screen.dp(6f), 0, Screen.dp(2f), dark ? 0x66000000 : 0x1F000000);
-    c.drawRoundRect(rect, radius, radius, shadowPaint);
-    shadowPaint.setShadowLayer(Screen.dp(1.5f), 0, Screen.dp(.5f), dark ? 0x4D000000 : 0x14000000);
-    c.drawRoundRect(rect, radius, radius, shadowPaint);
+    paint.setColor(ColorUtils.alphaColor(alpha, M3.surfaceContainer()));
+    paint.setShadowLayer(Screen.dp(6f), 0, Screen.dp(2f), ColorUtils.alphaColor(alpha, dark ? 0x66000000 : 0x1F000000));
+    c.drawRoundRect(rect, radius, radius, paint);
+    paint.setShadowLayer(Screen.dp(1.5f), 0, Screen.dp(.5f), ColorUtils.alphaColor(alpha, dark ? 0x4D000000 : 0x14000000));
+    c.drawRoundRect(rect, radius, radius, paint);
   }
 }

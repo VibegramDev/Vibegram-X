@@ -1012,6 +1012,11 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
    * fade out with the search transform, so that they don't cover any search results. Not over another section:
    * there the bar belongs to that section.
    */
+  @Override
+  public boolean hasBottomScrim () {
+    return navigationScrim != null && navigationScrim.getVisibility() == View.VISIBLE && navigationScrim.getAlpha() > 0f;
+  }
+
   private void updateNavigationBarSearchVisibility () {
     if (navigationBar == null) {
       return;

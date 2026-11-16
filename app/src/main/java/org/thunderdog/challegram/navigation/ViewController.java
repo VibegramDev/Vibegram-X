@@ -1244,6 +1244,14 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     return false;
   }
 
+  /**
+   * The screen fades its content into the surface under a floating container at its bottom (message composer, dock),
+   * down to the bottom edge: the strip of mini app tabs below that container then draws only its shadow.
+   */
+  public boolean hasBottomScrim () {
+    return false;
+  }
+
   protected void onBottomInsetChanged (int extraBottomInset, int extraBottomInsetWithoutIme, boolean isImeInset) {
     // override in children
   }
