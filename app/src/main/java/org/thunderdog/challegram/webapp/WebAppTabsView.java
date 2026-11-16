@@ -203,7 +203,6 @@ public final class WebAppTabsView extends View implements
   // Fade and shadow of the dock and the floating composer
   private final M3BottomScrimView.Fade fade = new M3BottomScrimView.Fade();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-  private float scrolledUnder = 1f;
   private final BoolAnimator screenHasFade = new BoolAnimator(this, AnimatorUtils.DECELERATE_INTERPOLATOR, 180L);
   private final RectF rect = new RectF();
   private final Rect closeBounds = new Rect();
@@ -313,15 +312,6 @@ public final class WebAppTabsView extends View implements
     setContentCovered(checkContentCovered());
     updateLeftMargin();
     screenHasFade.setValue(checkScreenHasFade(), getVisibility() == View.VISIBLE);
-    if (getVisibility() == View.VISIBLE) {
-      NavigationController navigation = activity.navigation();
-      ViewController<?> screen = navigation != null ? navigation.getCurrentStackItem() : null;
-      float scrolledUnder = screen != null ? screen.getBottomScrolledUnderFactor(M3BottomScrimView.getFadeHeight()) : 1f;
-      if (this.scrolledUnder != scrolledUnder) {
-        this.scrolledUnder = scrolledUnder;
-        invalidate();
-      }
-    }
     return true;
   }
 
@@ -684,7 +674,7 @@ public final class WebAppTabsView extends View implements
       }
     }
     float visibility = MathUtils.fromTo(fromVisibility, toVisibility, factor);
-    fade.draw(c, getWidth(), cardsTop, height, M3BottomScrimView.getFadeHeight(), visibility * (1f - screenHasFade.getFloatValue()), scrolledUnder);
+    fade.draw(c, getWidth(), cardsTop, height, M3BottomScrimView.getFadeHeight(), visibility * (1f - screenHasFade.getFloatValue()));
 
     final int cardColor = getCardColor();
     final int contentColor = M3.contrast(cardColor);

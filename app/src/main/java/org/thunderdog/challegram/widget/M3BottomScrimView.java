@@ -26,12 +26,9 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.os.Build;
 import android.view.View;
-import android.view.ViewTreeObserver;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
@@ -39,7 +36,6 @@ import org.thunderdog.challegram.theme.ThemeInvalidateListener;
 import org.thunderdog.challegram.tool.Screen;
 
 import me.vkryl.core.ColorUtils;
-import me.vkryl.core.MathUtils;
 
 /**
  * Backdrop of a floating bottom container (tablet dock, tablet message composer): content scrolled under the
@@ -70,101 +66,9 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   private @Nullable ShapeProvider provider;
   private float radius;
   private boolean shadowOnly;
-  private final ScrolledUnder scrolledUnder = new ScrolledUnder(this);
 
   public M3BottomScrimView (Context context) {
     super(context);
-  }
-
-  /** The content that scrolls under the container: the fade above the container appears as it goes under it. */
-  public void setScrolledUnderProvider (@Nullable ScrolledUnderProvider provider) {
-    scrolledUnder.setProvider(provider);
-  }
-
-  public interface ScrolledUnderProvider {
-    /** {@link #getScrolledUnderFactor} of the content scrolled under the container. */
-    float getScrolledUnderFactor (float distance);
-  }
-
-  /**
-   * How much of the content of {@code list} is scrolled under a floating container at its bottom, 0..1 over
-   * {@code distance}: 0 when its last item rests above the container (the bottom padding of the list), so the last
-   * message or chat is never dimmed; 1 when the list has no info about it.
-   */
-  public static float getScrolledUnderFactor (@Nullable RecyclerView list, float distance) {
-    if (list == null || list.getHeight() == 0 || distance <= 0f) {
-      return 1f;
-    }
-    View bottomChild = null;
-    float bottom = 0f;
-    for (int i = 0; i < list.getChildCount(); i++) {
-      View child = list.getChildAt(i);
-      float childBottom = child.getBottom() + child.getTranslationY();
-      if (bottomChild == null || childBottom > bottom) {
-        bottomChild = child;
-        bottom = childBottom;
-      }
-    }
-    if (bottomChild == null) {
-      return 0f;
-    }
-    RecyclerView.LayoutManager manager = list.getLayoutManager();
-    RecyclerView.Adapter<?> adapter = list.getAdapter();
-    if (manager instanceof LinearLayoutManager && adapter != null) {
-      int position = list.getChildAdapterPosition(bottomChild);
-      int lastPosition = ((LinearLayoutManager) manager).getReverseLayout() ? 0 : adapter.getItemCount() - 1;
-      if (position != RecyclerView.NO_POSITION && position != lastPosition) {
-        // More content below the visible part
-        return 1f;
-      }
-    } else if (list.canScrollVertically(1)) {
-      return 1f;
-    }
-    float overflow = bottom - (list.getHeight() - list.getPaddingBottom());
-    return MathUtils.clamp(overflow / distance);
-  }
-
-  /** Keeps {@link #getScrolledUnderFactor} of the list for a view that draws the fade, redraws it as it changes. */
-  static final class ScrolledUnder implements ViewTreeObserver.OnPreDrawListener, View.OnAttachStateChangeListener {
-    private final View view;
-    private @Nullable ScrolledUnderProvider provider;
-    private float factor = 1f;
-
-    ScrolledUnder (View view) {
-      this.view = view;
-      view.addOnAttachStateChangeListener(this);
-    }
-
-    void setProvider (@Nullable ScrolledUnderProvider provider) {
-      this.provider = provider;
-      onPreDraw();
-    }
-
-    float get () {
-      return provider != null ? factor : 1f;
-    }
-
-    @Override
-    public boolean onPreDraw () {
-      if (provider != null && view.getVisibility() == View.VISIBLE) {
-        float factor = provider.getScrolledUnderFactor(getFadeHeight());
-        if (this.factor != factor) {
-          this.factor = factor;
-          view.invalidate();
-        }
-      }
-      return true;
-    }
-
-    @Override
-    public void onViewAttachedToWindow (@NonNull View v) {
-      v.getViewTreeObserver().addOnPreDrawListener(this);
-    }
-
-    @Override
-    public void onViewDetachedFromWindow (@NonNull View v) {
-      v.getViewTreeObserver().removeOnPreDrawListener(this);
-    }
   }
 
   /** Draws only the shadow of the floating container: the content behind it is washed out by another view. */
@@ -192,7 +96,7 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
       return;
     }
     if (!shadowOnly) {
-      fade.draw(c, getWidth(), shape.top, getHeight(), getFadeHeight(), 1f, scrolledUnder.get());
+      fade.draw(c, getWidth(), shape.top, getHeight(), getFadeHeight(), 1f);
     }
     drawShadow(c, shadowPaint, shape, radius, 1f);
   }
@@ -210,14 +114,12 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     /**
      * From {@code top - fadeHeight} to {@code bottom}: transparent -> 70% surface at the top edge of the container
      * ({@code top}) -> 92% at {@code bottom} (the content stays faintly visible below the container, as under the
-     * phone dock). With {@code scrolledUnder} below 1 the fade moves down, behind the container: nothing above the
-     * container is dimmed while no content is scrolled under it ({@link #getScrolledUnderFactor}).
+     * phone dock).
      */
-    public void draw (Canvas c, float width, float top, float bottom, int fadeHeight, float alpha, float scrolledUnder) {
+    public void draw (Canvas c, float width, float top, float bottom, int fadeHeight, float alpha) {
       if (alpha <= 0f) {
         return;
       }
-      top += (1f - MathUtils.clamp(scrolledUnder)) * fadeHeight;
       final int surface = M3.surface();
       final boolean fadeAbove = fadeHeight > 0;
       if (!shadersReady || color != surface || aboveVisible != fadeAbove) {

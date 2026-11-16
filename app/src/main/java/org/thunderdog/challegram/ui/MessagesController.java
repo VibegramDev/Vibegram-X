@@ -1740,7 +1740,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
       contentView.addView(messagesView);
       // Same fade and shadow as the dock of the chat list
       composerScrim = new M3BottomScrimView(context);
-      composerScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);
@@ -6970,11 +6969,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
       invalidateComposerScrim();
     }
-  }
-
-  @Override
-  public float getBottomScrolledUnderFactor (float distance) {
-    return M3BottomScrimView.getScrolledUnderFactor(messagesView, distance);
   }
 
   @Override
