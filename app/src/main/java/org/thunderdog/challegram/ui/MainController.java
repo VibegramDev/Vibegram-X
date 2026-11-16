@@ -287,19 +287,16 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (dockScrim == null) {
       return;
     }
-    // Dock style: the list washes out towards the bottom of the screen behind the floating bar and the folder chips
-    // (the same fade as the former dock: 70% surface at the top of the bar, 92% at the bottom of the screen).
+    // Dock style: the list washes out behind the floating bar and the folder chips, only inside the band the list
+    // keeps free for them (its bottom padding), so the last chat resting above them is never dimmed.
     boolean visible = navigationBar != null && isDockStyle();
     dockScrim.setVisibility(visible ? View.VISIBLE : View.GONE);
     if (visible) {
-      int barTop = extraBottomInsetWithoutIme + MainNavigationBar.getBarTotalHeight();
-      // From a little above the folder chips (the same distance without folders) to the bottom of the screen.
-      int height = extraBottomInsetWithoutIme + getDockChipsBottom() + getHeaderHeight() + Screen.dp(16f);
+      int height = extraBottomInsetWithoutIme + getChatListNavigationInset();
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) dockScrim.getLayoutParams();
       if (params == null || params.height != height || params.gravity != Gravity.BOTTOM) {
         dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.BOTTOM));
       }
-      dockScrim.setDockTopOffset(barTop);
     }
   }
 
@@ -401,7 +398,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     pagerWrap.addView(pager);
     // Above the chat lists, below the folder chips (added later) and the dock (another parent, above everything).
     dockScrim = new M3DockScrimView(context);
-    dockScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
     dockScrim.setVisibility(View.GONE);
     pagerWrap.addView(dockScrim);
     addThemeInvalidateListener(dockScrim);
@@ -439,7 +435,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     UI.setSoftInputMode(UI.getContext(context), Config.DEFAULT_WINDOW_PARAMS);
 
     navigationScrim = new M3BottomScrimView(context);
-    navigationScrim.setScrolledUnderProvider(this::getBottomScrolledUnderFactor);
     navigationScrim.setShapeProvider((view, out) -> {
       if (navigationBar == null || !navigationBar.isBar() || navigationBar.getWidth() == 0) {
         return false;
@@ -1014,13 +1009,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
    * fade out with the search transform, so that they don't cover any search results. Not over another section:
    * there the bar belongs to that section.
    */
-  /** The list of the current page (chats of the folder, calls...). */
-  @Override
-  public float getBottomScrolledUnderFactor (float distance) {
-    ViewController<?> page = getCurrentPagerItem();
-    return page != null ? page.getBottomScrolledUnderFactor(distance) : 1f;
-  }
-
   @Override
   public boolean hasBottomScrim () {
     return navigationScrim != null && navigationScrim.getVisibility() == View.VISIBLE && navigationScrim.getAlpha() > 0f;
@@ -1525,8 +1513,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     int barInset = navigationInOverlay && overlayNavigation != null ? overlayNavigation.getBottomInsetWithoutIme() : extraBottomInsetWithoutIme;
     navigationBar.setLayoutMode(isBar, isNavBarStyle(), barInset);
     if (navigationScrim != null) {
-      // Covers the bar, its margins and the fade above it.
-      int scrimHeight = M3BottomScrimView.getFadeHeight() + MainNavigationBar.getBarTotalHeight() + barInset;
+      // The band the lists keep free for the bar (getChatListNavigationInset, getSectionNavigationInset): the fade starts
+      // at its top, nothing above it is dimmed.
+      int scrimHeight = MainNavigationBar.getBarTotalHeight() + Screen.dp(8f) + barInset;
       navigationScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, scrimHeight, Gravity.BOTTOM));
       navigationScrim.setVisibility(isBar ? View.VISIBLE : View.GONE);
       // Phone dock style: only the shadow of the bar, the fade is drawn by the dock scrim.

@@ -52,8 +52,12 @@ text: onSurface
 textLight: onSurfaceVariant
 textPlaceholder: onSurfaceVariant
 textSelectionHighlight: primary@30
-textLink: primary
-textLinkPressHighlight: primary@20
+# Links are blue in every scheme (owner: a gray or tinted primary does not read as a link): Google blue, tone 40
+# in light ($link of dark.monet: tone 80), moved to the nearest tone of that hue that keeps 4.5:1 on the surface
+# the link is drawn on.
+$link: #0B57D0
+textLink: contrast($link, surface, 4.5)
+textLinkPressHighlight: contrast($link, surface, 4.5)@20
 textSearchQueryHighlight: primary
 textNeutral: primary
 textSecure: tertiary
@@ -278,8 +282,8 @@ bubble_messageCheckOutlineNoWallpaper: outline
 bubbleIn_time: onSurfaceVariant
 bubbleIn_progress: primary
 bubbleIn_text: onSurface
-bubbleIn_textLink: primary
-bubbleIn_textLinkPressHighlight: primary@20
+bubbleIn_textLink: contrast($link, surfaceContainerHigh, 4.5)
+bubbleIn_textLinkPressHighlight: contrast($link, surfaceContainerHigh, 4.5)@20
 bubbleIn_outline: outlineVariant
 bubbleIn_separator: outlineVariant
 bubbleIn_pressed: onSurface@10
@@ -300,8 +304,8 @@ bubbleOut_background: primaryContainer
 bubbleOut_text: onPrimaryContainer
 bubbleOut_time: onPrimaryContainer@85
 bubbleOut_progress: onPrimaryContainer@85
-bubbleOut_textLink: $outAccent
-bubbleOut_textLinkPressHighlight: $outAccent@20
+bubbleOut_textLink: contrast($link, primaryContainer, 4.5)
+bubbleOut_textLinkPressHighlight: contrast($link, primaryContainer, 4.5)@20
 bubbleOut_outline: $outAccent@30
 bubbleOut_separator: onPrimaryContainer@30
 bubbleOut_pressed: onPrimaryContainer@10
@@ -359,8 +363,8 @@ iv_text: onSurface
 iv_header: onSurface
 iv_icon: onSurfaceVariant
 iv_separator: outlineVariant
-iv_textLink: primary
-iv_textLinkPressHighlight: primary@20
+iv_textLink: contrast($link, surface, 4.5)
+iv_textLinkPressHighlight: contrast($link, surface, 4.5)@20
 iv_textCode: tertiary
 iv_textCodeBackground: surfaceContainerHigh
 iv_textCodeBackgroundPressed: surfaceContainerHighest

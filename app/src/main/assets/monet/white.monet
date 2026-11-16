@@ -9,6 +9,7 @@ overlayFilling: surfaceContainerLowest
 fillingPressed: mix(surfaceContainerLowest,onSurface,10)
 background: surfaceContainer
 
-# Chat: plain (monochrome) background, incoming bubbles are white rows on it
-chatBackground: surfaceContainer
-bubbleIn_background: surfaceContainerLowest
+# Chat: the background is surface (tone 98, as every page: ThemeDelegate); incoming bubbles are surfaceContainerHigh
+# (tone 92), a step darker, as in Google Messages: white bubbles (tone 100) on it merged with the background.
+chatBackground: surface
+bubbleIn_background: surfaceContainerHigh

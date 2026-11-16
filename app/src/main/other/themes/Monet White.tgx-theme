@@ -27,8 +27,8 @@ text: #1B1B1F
 textLight: #44474F
 textPlaceholder: #44474F
 textSelectionHighlight: #435E914C
-textLink: #435E91
-textLinkPressHighlight: #435E9133
+textLink: #0B57D0
+textLinkPressHighlight: #0B57D033
 textSearchQueryHighlight: #435E91
 textNeutral: #435E91
 textSecure: #715574
@@ -224,8 +224,8 @@ bubble_messageCheckOutlineNoWallpaper: #74777F
 bubbleIn_time: #44474F
 bubbleIn_progress: #435E91
 bubbleIn_text: #1B1B1F
-bubbleIn_textLink: #435E91
-bubbleIn_textLinkPressHighlight: #435E9133
+bubbleIn_textLink: #0B57D0
+bubbleIn_textLinkPressHighlight: #0B57D033
 bubbleIn_outline: #C4C6D0
 bubbleIn_separator: #C4C6D0
 bubbleIn_pressed: #1B1B1F1A
@@ -239,8 +239,8 @@ bubbleOut_background: #D8E2FF
 bubbleOut_text: #2A4678
 bubbleOut_time: #2A4678D9
 bubbleOut_progress: #2A4678D9
-bubbleOut_textLink: #435E91
-bubbleOut_textLinkPressHighlight: #435E9133
+bubbleOut_textLink: #0B57D0
+bubbleOut_textLinkPressHighlight: #0B57D033
 bubbleOut_outline: #435E914C
 bubbleOut_separator: #2A46784C
 bubbleOut_pressed: #2A46781A
@@ -290,8 +290,8 @@ iv_text: #1B1B1F
 iv_header: #1B1B1F
 iv_icon: #44474F
 iv_separator: #C4C6D0
-iv_textLink: #435E91
-iv_textLinkPressHighlight: #435E9133
+iv_textLink: #0B57D0
+iv_textLinkPressHighlight: #0B57D033
 iv_textCode: #715574
 iv_textCodeBackground: #E9E7EB
 iv_textCodeBackgroundPressed: #E3E2E6
@@ -319,5 +319,5 @@ filling: #FFFFFF
 overlayFilling: #FFFFFF
 fillingPressed: #E8E8E9
 background: #EFEDF1
-chatBackground: #EFEDF1
-bubbleIn_background: #FFFFFF
+chatBackground: #FBF8FC
+bubbleIn_background: #E9E7EB
