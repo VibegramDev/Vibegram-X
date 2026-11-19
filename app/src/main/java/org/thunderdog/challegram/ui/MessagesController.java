@@ -2424,6 +2424,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
   public void viewMessagesFromSender (TdApi.MessageSender sender, boolean animated) {
     if (headerView != null) {
       headerView.openSearchMode(animated, false);
+      if (!inSearchMode()) {
+        // The header did not switch this screen to search (it is busy with another mode or an animation, or this
+        // screen is not the current one of its stack): the search manager does not exist yet, searching would crash.
+        // Show the messages on their own screen instead, as from the list of members.
+        foundMessageId = null;
+        searchFromUserMessageId = null;
+        if (!inPreviewMode && chat != null) {
+          HashtagChatController c = new HashtagChatController(context, tdlib);
+          c.setArguments(new HashtagChatController.Arguments(null, chat.id, null, sender, tdlib.isChannel(Td.getSenderId(sender))));
+          navigateTo(c);
+        }
+        return;
+      }
       onSetSearchMessagesSenderId(sender);
       onSetSearchFilteredShowMode(true);
       searchChatMessages(getLastMessageSearchQuery());
