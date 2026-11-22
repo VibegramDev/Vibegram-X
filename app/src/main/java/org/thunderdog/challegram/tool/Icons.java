@@ -175,6 +175,26 @@ public class Icons {
     return bounds;
   }
 
+  /** Vibegram: gap between the time and the glyph of either tick (chat list, bubbles, plain messages). */
+  public static final float TICK_TIME_GAP = 4f;
+
+  /** Vibegram: left edge of the tick glyph inside its drawable drawn at the intrinsic size, px. */
+  public static float getTickGlyphLeft (boolean unread) {
+    @DrawableRes int res = unread ? R.drawable.deproko_baseline_check_single_24 : R.drawable.deproko_baseline_check_double_24;
+    return getTickGlyphBounds(res).left * Drawables.get(res).getMinimumWidth();
+  }
+
+  /** Vibegram: right edge of the tick glyph inside its drawable drawn at the intrinsic size, px. */
+  public static float getTickGlyphRight (boolean unread) {
+    @DrawableRes int res = unread ? R.drawable.deproko_baseline_check_single_24 : R.drawable.deproko_baseline_check_double_24;
+    return getTickGlyphBounds(res).right * Drawables.get(res).getMinimumWidth();
+  }
+
+  /** Vibegram: visible width of the tick glyph drawn at the intrinsic size, px. */
+  public static int getTickGlyphWidth (boolean unread) {
+    return (int) Math.ceil(getTickGlyphRight(unread) - getTickGlyphLeft(unread));
+  }
+
   public static Drawable getDoubleTick (@ColorId int colorId) {
     return getSparseDrawable(R.drawable.deproko_baseline_check_double_24, colorId);
   }

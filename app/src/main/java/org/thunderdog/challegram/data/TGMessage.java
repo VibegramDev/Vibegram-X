@@ -2251,7 +2251,17 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
         // TODO failure icon
       } else if (shouldShowTicks() && getViewCountMode() != VIEW_COUNT_MAIN) {
         boolean unread = isUnread() && !noUnread();
-        Drawables.draw(c, unread ? Icons.getSingleTick(ColorId.ticks) : Icons.getDoubleTick(ColorId.ticksRead), viewsX, pTicksTop - Screen.dp(Icons.TICKS_SHIFT_Y), unread ? Paints.getTicksPaint() : Paints.getTicksReadPaint());
+        // Vibegram: by the glyph, not the padded box: either tick ends the same gap before the time (as in the chat
+        // list); without the time (header disabled) both end where the double tick did
+        float tickRight;
+        if (needMetadata) {
+          // pTicksLeft = pTimeLeft - 3dp, shifted with viewsX by the channel counter
+          int ticksLeft = viewsX + Icons.getSingleTickWidth() + Screen.dp(Icons.TICKS_SHIFT_X);
+          tickRight = ticksLeft + Screen.dp(3f) - Screen.dp(Icons.TICK_TIME_GAP);
+        } else {
+          tickRight = viewsX + Icons.getTickGlyphRight(false);
+        }
+        Drawables.draw(c, unread ? Icons.getSingleTick(ColorId.ticks) : Icons.getDoubleTick(ColorId.ticksRead), tickRight - Icons.getTickGlyphRight(unread), pTicksTop - Screen.dp(Icons.TICKS_SHIFT_Y), unread ? Paints.getTicksPaint() : Paints.getTicksReadPaint());
       }
 
       int right = pTicksLeft - (shouldShowTicks() ? Icons.getSingleTickWidth() + Screen.dp(2.5f) : 0); //needMetadata ? pTimeLeft - Screen.dp(4f) : pTicksLeft;
@@ -4149,7 +4159,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       iconPaint = ticksPaint = ticksReadPaint = Paints.getBubbleOverlayTimePaint(textColor);
     }
 
-    int innerWidth = computeBubbleTimePartWidth(false);
+    int innerWidth = computeBubbleTimePartWidth(false) - getBubbleTicksPartShrink();
     int startX;
 
     final boolean isSending = isSending();
@@ -4240,6 +4250,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
 
     if (isOutgoingBubble() || (isSending && getViewCountMode() != VIEW_COUNT_MAIN)) {
       int top;
+      final int timeEnd = startX;
 
       startX += Screen.dp(3.5f);
 
@@ -4256,10 +4267,29 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
         Drawables.draw(c, Icons.getClockIcon(iconColorId), startX - Screen.dp(Icons.CLOCK_SHIFT_X), top - Screen.dp(Icons.CLOCK_SHIFT_Y), iconPaint);
       } else {
         boolean unread = isUnread() && !noUnread();
-        Drawables.draw(c, unread ? Icons.getSingleTick(iconColorId) : Icons.getDoubleTick(iconColorId), startX - Screen.dp(Icons.TICKS_SHIFT_X), top - Screen.dp(Icons.TICKS_SHIFT_Y), unread ? ticksPaint : ticksReadPaint);
+        // Vibegram: by the glyph, not the padded box: either tick starts the same gap after the time
+        Drawables.draw(c, unread ? Icons.getSingleTick(iconColorId) : Icons.getDoubleTick(iconColorId), timeEnd + Screen.dp(Icons.TICK_TIME_GAP) - Icons.getTickGlyphLeft(unread), top - Screen.dp(Icons.TICKS_SHIFT_Y), unread ? ticksPaint : ticksReadPaint);
       }
-      startX += Icons.getSingleTickWidth();
+      startX = timeEnd + getBubbleTicksPartWidth();
     }
+  }
+
+  /**
+   * Vibegram: space of the sent / read mark after the time: the gap plus the glyph. Layout always reserves the wider
+   * double tick ({@link #computeBubbleTimePartWidth}); the single tick is drawn in a part narrower by the difference,
+   * so both ticks keep the same gap to the time and the same padding to the bubble or the time pill edge (the time
+   * moves by the difference when the message is read).
+   */
+  private int getBubbleTicksPartWidth () {
+    // + 1dp: the glyph has no side bearing, unlike the digits that start the time, so the time pill stays symmetric
+    return Screen.dp(Icons.TICK_TIME_GAP) + Icons.getTickGlyphWidth(false) + Screen.dp(1f);
+  }
+
+  private int getBubbleTicksPartShrink () {
+    if (isFailed() || isSending() || !isOutgoingBubble() || !isUnread() || noUnread()) {
+      return 0;
+    }
+    return Icons.getTickGlyphWidth(false) - Icons.getTickGlyphWidth(true);
   }
 
   protected final int computeBubbleTimePartWidth (boolean includePadding) {
@@ -4316,7 +4346,7 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
       width += reactionsCounter.getScaledOrTargetWidth(Screen.dp(COUNTER_ICON_MARGIN + COUNTER_ADD_MARGIN), isTarget);
     }
     if (!isFailed() && (isOutgoingBubble() || (isSending && getViewCountMode() != VIEW_COUNT_MAIN))) {
-      width += /*Screen.dp(3.5f) +*/ Icons.getSingleTickWidth() /*- Screen.dp(3.5f)*/; // singleTick bitmap contains padding
+      width += getBubbleTicksPartWidth();
     }
     if (includePadding) {
       width += Screen.dp(8f);

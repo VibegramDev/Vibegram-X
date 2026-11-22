@@ -367,7 +367,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     RectF glyph = Icons.getTickGlyphBounds(res);
     RectF pair = Icons.getTickGlyphBounds(R.drawable.deproko_baseline_check_double_24);
     float box = getTimeDigitHeight() / (pair.bottom - pair.top);
-    float left = chat.getTimeLeft() - Screen.dp(4f) - glyph.right * box;
+    float left = chat.getTimeLeft() - Screen.dp(Icons.TICK_TIME_GAP) - glyph.right * box;
     float top = getTitleTop(getChatListMode()) - pair.bottom * box;
     if (rtl) {
       left = viewWidth - left - box;
