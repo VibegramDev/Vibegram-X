@@ -3530,7 +3530,10 @@ public class ShareController extends TelegramViewController<ShareController.Args
       }
       TdApi.MessageSendOptions sendOptions = ChatId.isSecret(chatId) ? secretSendOptions : cloudSendOptions;
       boolean messageReplyIncluded = false;
-      if (hasComment) {
+      // Vibegram: shared media and files get the comment as their caption (as in Telegram), not a message of its own.
+      final boolean commentAsCaption = hasComment && (mode == MODE_CUSTOM || mode == MODE_FILES || mode == MODE_TELEGRAM_FILES);
+      final int chatFunctionsStart = functions.size();
+      if (hasComment && !commentAsCaption) {
         TdApi.InputMessageReplyToMessage replyTo = null;
         if (Config.FORCE_REPLY_WHEN_FORWARDING_WITH_COMMENT && !args.disallowReply && !ChatId.isSecret(chatId) && mode == MODE_MESSAGES && !(needHideAuthor || needRemoveCaptions) && args.messages[0].chatId != chatId) {
           messageReplyIncluded = true;
@@ -3629,6 +3632,9 @@ public class ShareController extends TelegramViewController<ShareController.Args
         default:
           return;
       }
+      if (commentAsCaption && !attachCommentAsCaption(functions.subList(chatFunctionsStart, functions.size()), comment)) {
+        functions.addAll(chatFunctionsStart, TD.sendMessageText(chatId, null, null, sendOptions, new TdApi.InputMessageText(comment, null, false), tdlib.maxMessageTextLength()));
+      }
     }
 
     // Chats that charge Stars for messages: the payment is confirmed on the screen below this sheet first.
@@ -3668,6 +3674,109 @@ public class ShareController extends TelegramViewController<ShareController.Args
     }
 
     popupLayout.hideWindow(true);
+  }
+
+  /**
+   * Puts {@code comment} into the caption of the first media message among {@code functions} (of the first item of an
+   * album, of the last one of an album of files, which shows the caption under the group), before the caption it
+   * already has. The content is replaced by a copy: the same contents may be sent to several chats.
+   *
+   * @return false when there is nothing to caption or the caption would be too long: the comment goes on its own then.
+   */
+  private boolean attachCommentAsCaption (List<TdApi.Function<?>> functions, TdApi.FormattedText comment) {
+    for (TdApi.Function<?> function : functions) {
+      TdApi.InputMessageContent[] contents;
+      int index;
+      if (function.getConstructor() == TdApi.SendMessage.CONSTRUCTOR) {
+        contents = new TdApi.InputMessageContent[] {((TdApi.SendMessage) function).inputMessageContent};
+        index = 0;
+      } else if (function.getConstructor() == TdApi.SendMessageAlbum.CONSTRUCTOR) {
+        contents = ((TdApi.SendMessageAlbum) function).inputMessageContents;
+        index = -1;
+        for (int i = 0; i < contents.length; i++) {
+          if (!Td.isEmpty(getCaption(contents[i]))) {
+            index = i; // Already has the shared text.
+            break;
+          }
+        }
+        if (index == -1) {
+          int combineMode = TD.getCombineMode(contents[0]);
+          index = combineMode == TD.COMBINE_MODE_FILES || combineMode == TD.COMBINE_MODE_AUDIO ? contents.length - 1 : 0;
+        }
+      } else {
+        continue;
+      }
+      TdApi.InputMessageContent content = contents[index];
+      if (!canHaveCaption(content)) {
+        continue;
+      }
+      TdApi.FormattedText caption = getCaption(content);
+      //noinspection UnsafeOptInUsageError
+      TdApi.FormattedText text = Td.isEmpty(caption) ? comment : Td.concat(comment, new TdApi.FormattedText("\n\n", new TdApi.TextEntity[0]), caption);
+      if (text == null || text.text.codePointCount(0, text.text.length()) > tdlib.maxCaptionLength()) {
+        return false;
+      }
+      TdApi.InputMessageContent captioned = withCaption(content, text);
+      if (function.getConstructor() == TdApi.SendMessage.CONSTRUCTOR) {
+        ((TdApi.SendMessage) function).inputMessageContent = captioned;
+      } else {
+        TdApi.InputMessageContent[] copy = contents.clone();
+        copy[index] = captioned;
+        ((TdApi.SendMessageAlbum) function).inputMessageContents = copy;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private static boolean canHaveCaption (TdApi.InputMessageContent content) {
+    switch (content.getConstructor()) {
+      case TdApi.InputMessagePhoto.CONSTRUCTOR:
+      case TdApi.InputMessageVideo.CONSTRUCTOR:
+      case TdApi.InputMessageAnimation.CONSTRUCTOR:
+      case TdApi.InputMessageDocument.CONSTRUCTOR:
+      case TdApi.InputMessageAudio.CONSTRUCTOR:
+        return true;
+    }
+    return false;
+  }
+
+  @Nullable
+  private static TdApi.FormattedText getCaption (TdApi.InputMessageContent content) {
+    switch (content.getConstructor()) {
+      case TdApi.InputMessagePhoto.CONSTRUCTOR: return ((TdApi.InputMessagePhoto) content).caption;
+      case TdApi.InputMessageVideo.CONSTRUCTOR: return ((TdApi.InputMessageVideo) content).caption;
+      case TdApi.InputMessageAnimation.CONSTRUCTOR: return ((TdApi.InputMessageAnimation) content).caption;
+      case TdApi.InputMessageDocument.CONSTRUCTOR: return ((TdApi.InputMessageDocument) content).caption;
+      case TdApi.InputMessageAudio.CONSTRUCTOR: return ((TdApi.InputMessageAudio) content).caption;
+    }
+    return null;
+  }
+
+  private static TdApi.InputMessageContent withCaption (TdApi.InputMessageContent content, TdApi.FormattedText caption) {
+    switch (content.getConstructor()) {
+      case TdApi.InputMessagePhoto.CONSTRUCTOR: {
+        TdApi.InputMessagePhoto c = (TdApi.InputMessagePhoto) content;
+        return new TdApi.InputMessagePhoto(c.photo, caption, c.showCaptionAboveMedia, c.selfDestructType, c.hasSpoiler);
+      }
+      case TdApi.InputMessageVideo.CONSTRUCTOR: {
+        TdApi.InputMessageVideo c = (TdApi.InputMessageVideo) content;
+        return new TdApi.InputMessageVideo(c.video, caption, c.showCaptionAboveMedia, c.selfDestructType, c.hasSpoiler);
+      }
+      case TdApi.InputMessageAnimation.CONSTRUCTOR: {
+        TdApi.InputMessageAnimation c = (TdApi.InputMessageAnimation) content;
+        return new TdApi.InputMessageAnimation(c.animation, caption, c.showCaptionAboveMedia, c.hasSpoiler);
+      }
+      case TdApi.InputMessageDocument.CONSTRUCTOR: {
+        TdApi.InputMessageDocument c = (TdApi.InputMessageDocument) content;
+        return new TdApi.InputMessageDocument(c.document, caption);
+      }
+      case TdApi.InputMessageAudio.CONSTRUCTOR: {
+        TdApi.InputMessageAudio c = (TdApi.InputMessageAudio) content;
+        return new TdApi.InputMessageAudio(c.audio, caption);
+      }
+    }
+    throw new IllegalArgumentException(content.toString());
   }
 
   private void onSent () {
