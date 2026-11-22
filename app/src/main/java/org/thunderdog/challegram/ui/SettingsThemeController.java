@@ -168,6 +168,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
           v.setData(R.string.IconsBuiltIn);
         } else if (itemId == R.id.btn_reduceMotion) {
           v.getToggler().setRadioEnabled(Settings.instance().needReduceMotion(), isUpdate);
+        } else if (itemId == R.id.btn_vgShowPeerIds) {
+          v.getToggler().setRadioEnabled(Settings.instance().needShowPeerIds(), isUpdate);
         } else if (itemId == R.id.btn_autoplayGIFs) {
           v.getToggler().setRadioEnabled(Settings.instance().needAutoplayGIFs(), isUpdate);
         } else if (itemId == R.id.btn_saveToGallery) {
@@ -665,7 +667,10 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       }
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_audioCompression, 0, R.string.CompressAudio));
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgShowPeerIds, 0, R.string.vg_ShowPeerIds));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_ShowPeerIdsDesc));
 
       tdlib.getTesterLevel(testerLevel -> runOnUiThreadOptional(() -> {
         boolean needBatman = testerLevel >= Tdlib.TesterLevel.MIN_LEVEL_FOR_BATMAN_EFFECT || Settings.instance().getNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS);
@@ -987,6 +992,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
     if (viewId == R.id.btn_reduceMotion) {
       Settings.instance().toggleReduceMotion();
       adapter.updateValuedSettingById(R.id.btn_reduceMotion);
+    } else if (viewId == R.id.btn_vgShowPeerIds) {
+      Settings.instance().setShowPeerIds(adapter.toggleView(v));
     } else if (viewId == R.id.btn_icon) {
       SettingsCloudIconController c = new SettingsCloudIconController(context, tdlib);
       c.setArguments(new SettingsCloudController.Args<>(this));
