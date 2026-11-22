@@ -37,6 +37,8 @@ import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.RecyclerViewProvider;
 import org.thunderdog.challegram.navigation.TelegramViewController;
+import org.thunderdog.challegram.navigation.NavigationController;
+import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.navigation.ViewPagerController;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
@@ -123,7 +125,10 @@ public abstract class RecyclerViewController<T> extends TelegramViewController<T
 
   /** Dock sections (phone): the button stands above the bottom navigation shown over them. */
   private int getDoneButtonExtraOffset () {
-    return isTopLevelDestination() && navigationController != null ? navigationController.getPersistentBarFabOffset() : 0;
+    // A tab of a dock section (ContactsCallsController) stands above the bar as well; its navigation is the section's.
+    ViewController<?> section = getParentOrSelf();
+    NavigationController navigation = section.navigationController();
+    return section.isTopLevelDestination() && navigation != null ? navigation.getPersistentBarFabOffset() : 0;
   }
 
   protected FrameLayout createFrameLayout (Context context) {
