@@ -227,11 +227,17 @@ public class MessageReactionsBar extends FrameLayoutFix implements ViewTreeObser
       setPivotX(MathUtils.clamp(touch - left, 0, getWidth()));
       setPivotY(getHeight());
     }
-    // Appears and disappears with the menu (the setters ignore unchanged values).
-    setAlpha(MathUtils.clamp(menu.getAlpha()));
+    // Appears and disappears with the menu (the setters ignore unchanged values); fades out while a page of the
+    // menu is shown (as Telegram does with the viewers list).
+    setAlpha(MathUtils.clamp(menu.getAlpha()) * (1f - menu.getPageFactor()));
     setScaleX(menu.getScaleX());
     setScaleY(menu.getScaleY());
     return true;
+  }
+
+  @Override
+  public boolean onInterceptTouchEvent (MotionEvent e) {
+    return menu.getPageFactor() > 0f || super.onInterceptTouchEvent(e); // Hidden with a page of the menu.
   }
 
   @Override
