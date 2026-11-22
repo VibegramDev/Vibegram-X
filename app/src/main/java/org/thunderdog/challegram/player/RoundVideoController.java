@@ -96,7 +96,12 @@ public class RoundVideoController extends BasePlaybackController implements
   public RoundVideoController (BaseActivity context) {
     this.context = context;
     this.handler = new VideoHandler(this);
+    // Vibegram: addTrackChangeListener immediately replays the current track. A round that is already playing belongs
+    // to the controller of another activity: taking it here started a second player of the same round (echo), or
+    // crashed in addToNavigation, because this activity has no navigation yet (BaseActivity.onCreate).
+    isAttaching = true;
     TdlibManager.instance().player().addTrackChangeListener(this);
+    isAttaching = false;
     // Vibegram: temporary diagnostics of the round video echo (one controller per activity, each with its own player)
     RoundEchoWatch.onControllerCreated(this, context);
   }
@@ -117,9 +122,15 @@ public class RoundVideoController extends BasePlaybackController implements
    * Entry section. At this point we receive triggers to process some video, or destroy it.
    * */
 
+  private boolean isAttaching;
+
   @Override
   protected boolean isSupported (TdApi.Message message) {
-    return Td.isVideoNote(message.content);
+    // Vibegram: every activity has its own controller and all of them follow the single global track. With two live
+    // activities (e.g. a second window of the app, ManageSpaceActivity) each of them played the round with its own
+    // player: the same sound twice, the second a bit later. Only the activity the user is in (UI context) plays it;
+    // the controller of a background activity lets the round go on the next track change.
+    return Td.isVideoNote(message.content) && !isAttaching && UI.getUiContext() == context;
   }
 
   @Override
