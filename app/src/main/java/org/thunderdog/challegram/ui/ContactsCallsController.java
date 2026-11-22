@@ -5,9 +5,7 @@ package org.thunderdog.challegram.ui;
 
 import android.content.Context;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.TextView;
 import android.widget.LinearLayout;
 
 import org.thunderdog.challegram.R;
@@ -18,7 +16,6 @@ import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.navigation.ViewPagerController;
 import org.thunderdog.challegram.navigation.ViewPagerHeaderViewCompact;
-import org.thunderdog.challegram.navigation.ViewPagerTopView;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.widget.ViewPager;
@@ -59,7 +56,8 @@ public class ContactsCallsController extends ViewPagerController<Void> {
 
   @Override
   protected int getTitleStyle () {
-    return TITLE_STYLE_COMPACT_BIG;
+    // Tabs right in the top bar instead of a "Contacts" title above a "Contacts" tab.
+    return TITLE_STYLE_COMPACT;
   }
 
   @Override
@@ -90,13 +88,7 @@ public class ContactsCallsController extends ViewPagerController<Void> {
     pager.setOffscreenPageLimit(1);
     ViewPagerHeaderViewCompact header = (ViewPagerHeaderViewCompact) getCustomHeaderCell();
     if (header != null) {
-      // M3 fixed tabs filling the width; the title where a top-level destination has it (no navigation icon).
-      ViewPagerTopView topView = header.getTopView();
-      ViewGroup.LayoutParams params = topView.getLayoutParams();
-      params.width = ViewGroup.LayoutParams.MATCH_PARENT; // measured by the parent's width, not by the labels
-      topView.setLayoutParams(params);
-      topView.setFillsParentWidth(true); // M3 fixed tabs: two halves of the width
-      fixTitleMargin(header);
+      layoutTabs(header);
     }
     // The same search as in the contacts list before: contacts, then global results.
     generateChatSearchView(contentView);
@@ -106,21 +98,22 @@ public class ContactsCallsController extends ViewPagerController<Void> {
     prepareControllerForPosition(startPosition, this::executeScheduledAnimation);
   }
 
-  private void fixTitleMargin (ViewPagerHeaderViewCompact header) {
-    TextView title = header.findViewById(R.id.text_title);
-    if (title != null && getBackButton() == BackHeaderButton.TYPE_NONE) {
-      FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) title.getLayoutParams();
-      params.leftMargin = Lang.rtl() ? 0 : Screen.dp(18f);
-      params.rightMargin = Lang.rtl() ? Screen.dp(18f) : 0;
-      title.setLayoutParams(params);
-    }
+  /** Tabs where the title of a top-level destination is (18dp from the edge), clear of the header buttons. */
+  private void layoutTabs (ViewPagerHeaderViewCompact header) {
+    FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) header.getRecyclerView().getLayoutParams();
+    int start = Screen.dp(18f) - Screen.dp(12f); // the item padding of ViewPagerTopView is 12dp
+    int end = Screen.dp(49f) * 2; // "New contact" and search
+    params.leftMargin = Lang.rtl() ? end : start;
+    params.rightMargin = Lang.rtl() ? start : end;
+    header.getRecyclerView().setLayoutParams(params);
+    header.getTopView().setItemPadding(Screen.dp(12f));
   }
 
   @Override
   protected void handleLanguageDirectionChange () {
     super.handleLanguageDirectionChange();
     if (getCustomHeaderCell() instanceof ViewPagerHeaderViewCompact) {
-      fixTitleMargin((ViewPagerHeaderViewCompact) getCustomHeaderCell());
+      layoutTabs((ViewPagerHeaderViewCompact) getCustomHeaderCell());
     }
   }
 
