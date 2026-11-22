@@ -2496,6 +2496,29 @@ public class Lang {
     }
   }
 
+  /**
+   * Date of a read receipt in the list of message viewers, as Telegram for Android shows it
+   * (LocaleController.formatSeenDate): "today at 9:34", "yesterday at 9:34", otherwise "20 Nov at 9:34"
+   * (with the year when it is more than a year ago); no weekdays or durations.
+   */
+  public static String getSeenDate (long unixTime, TimeUnit unit, long nowMs) {
+    Calendar c = DateUtils.calendarInstance(nowMs);
+    DateUtils.resetToStartOfDay(c);
+    long todayStartMs = c.getTimeInMillis();
+    c = DateUtils.calendarInstance(unit.toMillis(unixTime));
+    long dayStartMs = DateUtils.getStartOfDay(c);
+    final String time = time(unixTime, unit);
+    int days = (int) TimeUnit.MILLISECONDS.toDays(todayStartMs - dayStartMs);
+    if (days == 0) {
+      return getString(R.string.timestamp_today, time);
+    }
+    if (days == 1) {
+      return getString(R.string.timestamp_yesterday, time);
+    }
+    String date = Math.abs(nowMs - unit.toMillis(unixTime)) < TimeUnit.DAYS.toMillis(365) ? dateShort(c) : dateYearShort(c);
+    return getString(R.string.timestamp_date, date, time);
+  }
+
   public static boolean isRelativeDateFormatted (
     long unixTime,
     TimeUnit unit,

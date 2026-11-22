@@ -180,6 +180,7 @@ import org.thunderdog.challegram.navigation.HeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.MenuMoreWrap;
+import org.thunderdog.challegram.navigation.MessageSeenMenu;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.NavigationStack;
@@ -5562,30 +5563,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
 
       if (withMetadata && message.canGetViewers() && !(message.isUnread() && !message.noUnread())) {
-        TextView viewersItem = menu.addItem(R.id.more_btn_openReadReceipts, Lang.getString(R.string.LoadingMessageSeen), R.drawable.baseline_visibility_24, null, null);
-        tdlib.client().send(new TdApi.GetMessageViewers(message.getChatId(), message.getId()), (obj) -> {
-          if (obj.getConstructor() != TdApi.MessageViewers.CONSTRUCTOR) return;
-          runOnUiThreadOptional(() -> {
-            TdApi.MessageViewers viewers = (TdApi.MessageViewers) obj;
-            if (viewers.viewers.length > 1) {
-              viewersItem.setText(MessageSeenController.getViewString(message, viewers.viewers.length).toString());
-            } else if (viewers.viewers.length == 1) {
-              TdApi.MessageViewer viewer = viewers.viewers[0];
-              String name = tdlib.senderName(new TdApi.MessageSenderUser(viewer.userId));
-              viewersItem.setText(viewer.viewDate != 0 ? name + ", " + TGUser.getActionDateStatus(tdlib, viewer.viewDate, message.getMessage()) : name);
-            } else {
-              viewersItem.setText(MessageSeenController.getNobodyString(message));
-            }
-            viewersItem.setOnClickListener((v) -> {
-              popupRef[0].hideWindow(true);
-              if (viewers.viewers.length > 1) {
-                ModernActionedLayout.showMessageSeen(this, message, viewers);
-              } else if (viewers.viewers.length == 1) {
-                tdlib.ui().openPrivateProfile(this, viewers.viewers[0].userId, new TdlibUi.UrlOpenParameters().tooltip(context().tooltipManager().builder(v)));
-              }
-            });
-          });
-        });
+        // As in Telegram for Android: double check, "N views" and the viewers' avatars; a tap lists them in the menu.
+        MessageSeenMenu.add(menu, this, message, () -> popupRef[0].hideWindow(true));
       }
 
       int reactionsCount = message.getMessageReactions().getTotalCount();

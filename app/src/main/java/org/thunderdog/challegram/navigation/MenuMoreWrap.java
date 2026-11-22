@@ -69,6 +69,8 @@ import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 import org.thunderdog.challegram.widget.SimplestCheckBox;
 
+import java.util.ArrayList;
+
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.ViewUtils;
 import me.vkryl.android.animator.Animated;
@@ -362,6 +364,11 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
    * Takes no space while no visible row is above it (a header that is hidden until its data loads).
    */
   public void addDivider () {
+    itemsLayout.addView(createDivider());
+  }
+
+  /** Divider as {@link #addDivider}, not added to the menu yet. */
+  public View createDivider () {
     View divider = new View(getContext()) {
       @Override
       protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
@@ -380,7 +387,8 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     if (themeListeners != null && forcedTheme == null) {
       themeListeners.addThemeInvalidateListener(divider);
     }
-    itemsLayout.addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(17f)));
+    divider.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(17f)));
+    return divider;
   }
 
   @Override
@@ -604,6 +612,13 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   }
 
   public TextView addItem (int id, CharSequence title, int iconRes, Drawable icon, OnClickListener listener) {
+    TextView menuItem = createItem(id, title, iconRes, icon, listener);
+    itemsLayout.addView(menuItem);
+    return menuItem;
+  }
+
+  /** Item as {@link #addItem}, not added to the menu yet (a row of a page, see {@link #openPage}). */
+  public TextView createItem (int id, CharSequence title, int iconRes, Drawable icon, OnClickListener listener) {
     TextView menuItem = new NoScrollTextView(getContext());
     menuItem.setId(id);
     menuItem.setTypeface(Fonts.getRobotoRegular());
@@ -633,7 +648,6 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     }
     Views.setClickable(menuItem);
     setItemStateLayer(menuItem);
-    itemsLayout.addView(menuItem);
     menuItem.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
     menuItem.setTag(menuItem.getMeasuredWidth());
     return menuItem;
@@ -641,12 +655,142 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
 
   /** Interactive item drawn by the caller (e.g. an account row with an avatar): 48dp row with the menu state layer. */
   public void addCustomItem (View item, int desiredWidth, OnClickListener listener) {
+    prepareCustomItem(item, desiredWidth, listener);
+    itemsLayout.addView(item);
+  }
+
+  /** Interactive row as {@link #addCustomItem}, not added to the menu (e.g. a row of a list on a page). */
+  public void prepareCustomItem (View item, int desiredWidth, OnClickListener listener) {
     item.setOnClickListener(listener);
     item.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(ITEM_HEIGHT)));
     Views.setClickable(item);
     setItemStateLayer(item);
     item.setTag(Math.min(desiredWidth, Screen.dp(MAX_WIDTH)));
-    itemsLayout.addView(item);
+  }
+
+  /** Desired width of a row (its tag) changed after it was added, e.g. when its data has loaded. */
+  public void updateRowWidth (View row, int desiredWidth) {
+    row.setTag(Math.min(desiredWidth, Screen.dp(MAX_WIDTH)));
+    requestLayout();
+  }
+
+  // Pages: rows shown in place of the items, with a back row (Telegram for Android: the popup "swipe back"
+  // foreground, e.g. the list of message viewers). The container morphs to the size of the page while its
+  // rows slide in; the items come back the same way.
+
+  private static final long PAGE_DURATION = 220L;
+  private @Nullable View[] pageViews;
+  private final ArrayList<View> pageHiddenItems = new ArrayList<>();
+  private View[] pageIncoming;
+  private int pageFromWidth, pageFromHeight, pageDirection;
+  private final FactorAnimator pageAnimator = new FactorAnimator(0, new FactorAnimator.Target() {
+    @Override
+    public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
+      updatePageViews(factor);
+      requestLayout();
+    }
+
+    @Override
+    public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) {
+      if (finalFactor == 1f) {
+        updatePageViews(1f);
+        pageIncoming = null;
+        requestLayout();
+      }
+    }
+  }, AnimatorUtils.DECELERATE_INTERPOLATOR, PAGE_DURATION);
+
+  public boolean isPageOpen () {
+    return pageViews != null;
+  }
+
+  public void openPage (View... views) {
+    if (pageViews != null) {
+      return;
+    }
+    beginPageTransition(1);
+    for (int i = 0; i < itemsLayout.getChildCount(); i++) {
+      View v = itemsLayout.getChildAt(i);
+      if (v.getVisibility() != View.GONE) {
+        pageHiddenItems.add(v);
+        v.setVisibility(View.GONE);
+      }
+    }
+    pageViews = views;
+    for (View v : views) {
+      itemsLayout.addView(v);
+    }
+    startPageTransition(views);
+  }
+
+  public boolean closePage () {
+    if (pageViews == null) {
+      return false;
+    }
+    beginPageTransition(-1);
+    for (View v : pageViews) {
+      itemsLayout.removeView(v);
+    }
+    pageViews = null;
+    View[] items = pageHiddenItems.toArray(new View[0]);
+    pageHiddenItems.clear();
+    for (View v : items) {
+      v.setVisibility(View.VISIBLE);
+    }
+    startPageTransition(items);
+    return true;
+  }
+
+  private void beginPageTransition (int direction) {
+    pageFromWidth = getMeasuredWidth();
+    pageFromHeight = getMeasuredHeight();
+    pageDirection = direction;
+    setSelectedIndex(-1);
+    if (itemsLayout != this && itemsLayout.getParent() instanceof ScrollView) {
+      ((ScrollView) itemsLayout.getParent()).scrollTo(0, 0);
+    }
+  }
+
+  private void startPageTransition (View[] incoming) {
+    // forceFactor reports the previous transition as finished: the incoming rows are set after it.
+    pageAnimator.forceFactor(0f);
+    pageIncoming = incoming;
+    updatePageViews(0f);
+    pageAnimator.animateTo(1f);
+    requestLayout();
+  }
+
+  private void updatePageViews (float factor) {
+    if (pageIncoming == null) {
+      return;
+    }
+    float dx = Screen.dp(48f) * pageDirection * (Lang.rtl() ? -1 : 1) * (1f - factor);
+    for (View v : pageIncoming) {
+      v.setAlpha(factor);
+      v.setTranslationX(dx);
+    }
+  }
+
+  private int availableItemsHeight;
+
+  /** Height the rows may take (between the system bars, minus the container padding), known after the menu was measured. */
+  public int getAvailableItemsHeight () {
+    return availableItemsHeight;
+  }
+
+  private final ArrayList<Destroyable> destroyables = new ArrayList<>();
+
+  /** Released with the menu (rows that own avatars or custom emoji). */
+  public void addDestroyable (Destroyable destroyable) {
+    destroyables.add(destroyable);
+  }
+
+  @Nullable ThemeDelegate getForcedTheme () {
+    return forcedTheme;
+  }
+
+  @Nullable ThemeListenerList getThemeListeners () {
+    return forcedTheme == null ? themeListeners : null;
   }
 
   @Override
@@ -656,12 +800,23 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
       // Stays between the system bars; a scrollable menu scrolls when it is taller than that.
       heightMeasureSpec = MeasureSpec.makeMeasureSpec(Math.max(0, parentHeight - anchorInsets.top - anchorInsets.bottom - reservedTop), MeasureSpec.AT_MOST);
     }
+    if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
+      availableItemsHeight = MeasureSpec.getSize(heightMeasureSpec) - Screen.dp(PADDING + INSET) * 2;
+    }
     super.onMeasure(MeasureSpec.makeMeasureSpec(getItemsWidth(), MeasureSpec.EXACTLY), heightMeasureSpec);
     if (anchorMode == ANCHOR_MODE_RECT && droppableHeader != null && droppableHeader.getVisibility() == View.VISIBLE && getParent() instanceof View && MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
       if (findAnchorTop((View) getParent(), parentHeight, getMeasuredHeight(), false) == Integer.MIN_VALUE) {
         droppableHeader.setVisibility(View.GONE);
         super.onMeasure(MeasureSpec.makeMeasureSpec(getItemsWidth(), MeasureSpec.EXACTLY), heightMeasureSpec);
       }
+    }
+    if (pageIncoming != null && pageFromWidth > 0 && pageFromHeight > 0) {
+      // Page transition: the container goes from its previous size to the new one (rows are laid out at the new size, clipped).
+      float factor = pageAnimator.getFactor();
+      setMeasuredDimension(
+        Math.round(MathUtils.fromTo(pageFromWidth, getMeasuredWidth(), factor)),
+        Math.round(MathUtils.fromTo(pageFromHeight, getMeasuredHeight(), factor))
+      );
     }
   }
 
@@ -1007,6 +1162,11 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   /** Called by the popup when the menu is dismissed: releases avatars and custom emoji of the entries. */
   @Override
   public void performDestroy () {
+    pageAnimator.cancel();
+    for (Destroyable destroyable : destroyables) {
+      destroyable.performDestroy();
+    }
+    destroyables.clear();
     complexAvatarReceiver.performDestroy();
     if (textMediaReceiver != null) {
       textMediaReceiver.performDestroy();
