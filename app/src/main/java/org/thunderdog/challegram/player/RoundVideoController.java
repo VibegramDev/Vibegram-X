@@ -75,6 +75,7 @@ import org.thunderdog.challegram.v.MessagesRecyclerView;
 import org.thunderdog.challegram.widget.CircleFrameLayout;
 import org.thunderdog.challegram.widget.ImageReceiverView;
 import org.thunderdog.challegram.widget.RectFrameLayout;
+import org.thunderdog.challegram.util.RoundEchoWatch;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
@@ -96,6 +97,20 @@ public class RoundVideoController extends BasePlaybackController implements
     this.context = context;
     this.handler = new VideoHandler(this);
     TdlibManager.instance().player().addTrackChangeListener(this);
+    // Vibegram: temporary diagnostics of the round video echo (one controller per activity, each with its own player)
+    RoundEchoWatch.onControllerCreated(this, context);
+  }
+
+  /** Vibegram: state line for {@link RoundEchoWatch}. */
+  public String describeForDiagnostics () {
+    return "activity=" + context.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(context)) +
+      " activityState=" + context.getActivityState() +
+      " activityDestroyed=" + (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && context.isDestroyed()) +
+      " finishing=" + context.isFinishing() +
+      " controllerDestroyed=" + isControllerDestroyed() +
+      " message=" + (object != null ? object.chatId + "/" + object.id : "none") +
+      " isPlaying=" + isPlaying +
+      " player=" + (exoPlayer != null ? Integer.toHexString(System.identityHashCode(exoPlayer)) : "none");
   }
 
   /**
@@ -121,6 +136,8 @@ public class RoundVideoController extends BasePlaybackController implements
       invalidatePlaceholders();
       currentProgress = visualProgress;
     }
+
+    RoundEchoWatch.onRoundStarted(this, message);
 
     // Before we start, detach main texture
     setTargetView(null, false, false);
@@ -1463,6 +1480,7 @@ public class RoundVideoController extends BasePlaybackController implements
 
   @Override
   public void onActivityDestroy () {
+    RoundEchoWatch.onControllerDestroyed(this);
     destroy();
   }
 
