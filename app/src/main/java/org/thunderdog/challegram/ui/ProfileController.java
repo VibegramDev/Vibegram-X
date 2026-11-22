@@ -946,25 +946,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     return BackHeaderButton.TYPE_BACK;
   }
 
-  @Override
-  protected int getFloatingButtonId () {
-    // Users, bots and the own profile: "Chat" is the first button of the row of profile actions.
-    return isEditing() || mode == Mode.USER || mode == Mode.SECRET ? 0 : R.drawable.baseline_chat_bubble_24;
-  }
-
-  @Override
-  protected void onFloatingButtonPressed () {
-    if (mode == Mode.CHANNEL && FeatureToggles.CHANNEL_PROFILE_FLOATING_BUTTON_OPENS_DISCUSSION_GROUP && !hasProfileAction(R.id.btn_vgProfileDiscuss)) {
-      if (supergroup != null && supergroup.isChannel && supergroup.hasLinkedChat) {
-        long linkedChatId = supergroupFull != null ? supergroupFull.linkedChatId : 0;
-        if (linkedChatId != 0) {
-          tdlib.ui().openLinkedChat(this, supergroup.id, false, new TdlibUi.ChatOpenParameters().keepStack().removeDuplicates());
-          return;
-        }
-      }
-    }
-    openProfileChat();
-  }
+  // No floating button: "Chat" is the first button of the row of profile actions in every profile.
 
   /** Block / unblock the user or stop / restart the bot (⋮ "Block" of users, "Stop" / "Start" button of bots). */
   private void toggleUserBlocked () {
@@ -2698,7 +2680,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   }
 
   // Row of profile actions under the name (ProfileActionsView), as the buttons of the official profile. Only actions
-  // this screen already had: the chat (floating button), notifications, the call (app bar), share, edit, stop bot,
+  // this screen already had: the chat (floating button, gone now), notifications, the call (app bar), share, edit, stop bot,
   // discussion (floating button of channels), leave / join (⋮ menu). They are not repeated in the app bar, the
   // floating button and the ⋮ menu.
 
@@ -2769,6 +2751,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       case Mode.CHANNEL:
       case Mode.SUPERGROUP:
       case Mode.GROUP: {
+        // As in the profiles of users: "Chat" left of "Mute" instead of the floating button.
+        actions.add(newProfileAction(R.id.btn_vgProfileChat, R.drawable.baseline_chat_bubble_24, R.string.vg_ProfileActionChat));
         addSoundProfileAction(actions);
         if (mode == Mode.CHANNEL && supergroup != null && supergroup.hasLinkedChat) {
           actions.add(newProfileAction(R.id.btn_vgProfileDiscuss, R.drawable.baseline_forum_24, R.string.vg_ProfileActionDiscuss));
