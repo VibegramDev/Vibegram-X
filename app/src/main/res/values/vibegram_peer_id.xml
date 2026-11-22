@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: Settings → Interface → IDs in profiles. -->
+<resources>
+  <string name="vg_ShowPeerIds">Show IDs in profiles</string>
+  <string name="vg_ShowPeerIdsDesc">A user\'s, group\'s or channel\'s page shows its ID. Tap it to copy.</string>
+</resources>

@@ -7632,8 +7632,19 @@ public class Settings {
     return FeatureAvailability.Released.CHAT_FOLDERS;
   }
 
+  // Vibegram: Settings → Interface → "Show IDs in profiles" (the same rows as the testers' experiment).
+  private static final String KEY_SHOW_PEER_IDS = "vg_show_peer_ids";
+
   public boolean showPeerIds () {
-    return isExperimentEnabled(EXPERIMENT_FLAG_SHOW_PEER_IDS);
+    return getBoolean(KEY_SHOW_PEER_IDS, false) || isExperimentEnabled(EXPERIMENT_FLAG_SHOW_PEER_IDS);
+  }
+
+  public boolean needShowPeerIds () {
+    return getBoolean(KEY_SHOW_PEER_IDS, false);
+  }
+
+  public void setShowPeerIds (boolean show) {
+    putBoolean(KEY_SHOW_PEER_IDS, show);
   }
 
   @Nullable
