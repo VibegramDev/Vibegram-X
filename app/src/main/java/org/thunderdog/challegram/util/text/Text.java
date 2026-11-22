@@ -20,6 +20,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Region;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
@@ -80,7 +81,6 @@ import java.util.Map;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.ViewUtils;
-import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.animator.ListAnimator;
 import me.vkryl.android.util.SingleViewProvider;
@@ -176,27 +176,20 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     }
   }
 
-  private class Spoiler implements Destroyable {
+  private class Spoiler {
     private final int startPartIndex;
     private int partsCount;
     private int offset = -1, length;
-    private final Path path = new Path();
-
-    private final BoolAnimator isRevealed = new BoolAnimator(0, new FactorAnimator.Target() {
-      @Override
-      public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
-        if (viewProvider != null) {
-          viewProvider.invalidate();
-        }
-      }
-    }, AnimatorUtils.DECELERATE_INTERPOLATOR, 180l);
+    // Vibegram: one plain rect per line (as in the official app), filled with particles
+    private final ArrayList<RectF> lineRects = new ArrayList<>();
+    private int lastLineIndex = -1;
 
     public Spoiler (int startPartIndex) {
       this.startPartIndex = startPartIndex;
     }
 
     public boolean isClickable () {
-      return willDraw();
+      return spoilerRevealFactor == 0f && !spoilerRevealAnimator.isAnimating();
     }
 
     public void addPart (TextPart part, int startX, int endX, int endXBottomPadding, boolean center) {
@@ -210,9 +203,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
         this.length = (spoiler.offset + spoiler.length) - offset;
       }
 
-      // TODO build proper particles
       int bound = Screen.dp(1f);
-      final int radius = Screen.dp(3f);
       final TextPaint paint = getTextPaint(part.getEntity());
       final Paint.FontMetricsInt fm = getFontMetrics(paint.getTextSize());
 
@@ -227,40 +218,123 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       int y = part.getY();
       float width = part.getWidth();
 
-      RectF highlightRect = Paints.getRectF();
-      highlightRect.left = x - bound;
-      highlightRect.top = y - bound;
-      highlightRect.right = highlightRect.left + width + bound + bound;
-      highlightRect.bottom = y + (part.getHeight() == -1 ? fm.descent - fm.ascent : part.getHeight()) + bound;
-      highlightRect.offset(0, paint.baselineShift + getPartVerticalOffset(part));
-      path.addRoundRect(highlightRect, radius, radius, Path.Direction.CW);
+      float left = x - bound;
+      float top = y - bound + paint.baselineShift + getPartVerticalOffset(part);
+      float right = left + width + bound + bound;
+      float bottom = y + (part.getHeight() == -1 ? fm.descent - fm.ascent : part.getHeight()) + bound + paint.baselineShift + getPartVerticalOffset(part);
+      if (part.getLineIndex() == lastLineIndex && !lineRects.isEmpty()) {
+        lineRects.get(lineRects.size() - 1).union(left, top, right, bottom);
+      } else {
+        lineRects.add(new RectF(left, top, right, bottom));
+        lastLineIndex = part.getLineIndex();
+      }
     }
 
     public boolean willDraw () {
-      return isRevealed.getFloatValue() != 1f;
+      return spoilerRevealFactor < 1f;
     }
 
     public void build () {
       // all parts have been added
-      // TODO finish building proper particles
     }
 
-    public void setPressed (boolean isPressed, boolean animated) {
-      // TODO move particles faster when pressed
+    public void unionBounds (RectF out) {
+      for (RectF rect : lineRects) {
+        if (out.isEmpty()) {
+          out.set(rect);
+        } else {
+          out.union(rect);
+        }
+      }
     }
 
-    public void draw (Canvas c, int iconColor) {
-      // TODO proper particles
-      c.drawPath(path, Paints.fillingPaint(ColorUtils.alphaColor(1f - getContentAlpha(), iconColor)));
+    public void draw (Canvas c, int color) {
+      float factor = spoilerRevealFactor;
+      boolean revealing = factor > 0f;
+      int saveCount = -1;
+      if (revealing) {
+        // Particles stay only outside the growing circle and fade out
+        saveCount = Views.save(c);
+        Path path = buildRevealPath(0);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          c.clipOutPath(path);
+        } else {
+          c.clipPath(path, Region.Op.DIFFERENCE);
+        }
+      }
+      SpoilerParticles particles = SpoilerParticles.instance();
+      for (RectF rect : lineRects) {
+        particles.draw(c, rect, color, 1f - factor, revealing ? null : viewProvider);
+      }
+      if (saveCount != -1) {
+        Views.restore(c, saveCount);
+      }
     }
+  }
 
-    public float getContentAlpha () {
-      return isRevealed.getFloatValue();
-    }
-
+  // Vibegram: reveal state is shared by all spoilers of this text: a tap reveals them all at once
+  // with a circle growing from the touch point (official app behaviour) and they stay revealed
+  // when the text is laid out again.
+  private float spoilerRevealFactor;
+  private float spoilerRevealX, spoilerRevealY, spoilerRevealRadius;
+  private final Path spoilerRevealPath = new Path();
+  private final FactorAnimator spoilerRevealAnimator = new FactorAnimator(0, new FactorAnimator.Target() {
     @Override
-    public void performDestroy () {
-      isRevealed.cancel();
+    public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
+      spoilerRevealFactor = factor;
+      if (viewProvider != null) {
+        viewProvider.invalidate();
+      }
+    }
+  }, AnimatorUtils.ACCELERATE_INTERPOLATOR, 250L);
+  private @Nullable SpoilerRevealListener spoilerRevealListener;
+
+  public interface SpoilerRevealListener {
+    void onSpoilersRevealed (Text text);
+  }
+
+  public void setSpoilerRevealListener (@Nullable SpoilerRevealListener listener) {
+    this.spoilerRevealListener = listener;
+  }
+
+  public boolean areSpoilersRevealed () {
+    return spoilerRevealFactor == 1f || (spoilerRevealAnimator.isAnimating() && spoilerRevealAnimator.getToFactor() == 1f);
+  }
+
+  /** Shows hidden text right away (e.g. it was already revealed in another layout of the same message). */
+  public void revealSpoilersImmediately () {
+    if (spoilerRevealFactor != 1f) {
+      spoilerRevealAnimator.forceFactor(1f);
+      spoilerRevealFactor = 1f;
+      if (viewProvider != null) {
+        viewProvider.invalidate();
+      }
+    }
+  }
+
+  private Path buildRevealPath (int offsetY) {
+    spoilerRevealPath.rewind();
+    spoilerRevealPath.addCircle(spoilerRevealX, spoilerRevealY + offsetY, Math.max(0f, spoilerRevealRadius * spoilerRevealFactor), Path.Direction.CW);
+    return spoilerRevealPath;
+  }
+
+  private void startSpoilerReveal (float x, float y) {
+    RectF bounds = Paints.getRectF();
+    bounds.setEmpty();
+    if (spoilers != null) {
+      for (int i = 0; i < spoilers.size(); i++) {
+        spoilers.valueAt(i).unionBounds(bounds);
+      }
+    }
+    // As in the official app: radius = diagonal of all hidden parts, 250..550ms, ease-in
+    float radius = (float) Math.hypot(bounds.width(), bounds.height());
+    spoilerRevealX = x;
+    spoilerRevealY = y;
+    spoilerRevealRadius = Math.max(radius, Screen.dp(8f)) * 1.05f;
+    spoilerRevealAnimator.setDuration((long) MathUtils.clamp(radius * .3f, 250f, 550f));
+    spoilerRevealAnimator.animateTo(1f);
+    if (spoilerRevealListener != null) {
+      spoilerRevealListener.onSpoilersRevealed(this);
     }
   }
 
@@ -290,10 +364,10 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     return spoiler != null && spoiler.isClickable();
   }
 
-  private void revealSpoiler (TextPart part) {
+  private void revealSpoiler (TextPart part, float x, float y) {
     Spoiler spoiler = findSpoiler(part.getSpoiler());
     if (spoiler != null) {
-      spoiler.isRevealed.setValue(true, true);
+      startSpoilerReveal(x, y);
     }
   }
 
@@ -869,12 +943,6 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
 
   private void clearSpoilers () {
     if (this.spoilers != null) {
-      for (int i = spoilers.size() - 1; i >= 0; i--) {
-        Spoiler spoiler = spoilers.valueAt(i);
-        if (spoiler != null) {
-          spoiler.performDestroy();
-        }
-      }
       spoilers.clear();
       spoilers = null;
     }
@@ -943,6 +1011,10 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       textFlags &= ~FLAG_FAKE_BOLD;
     }
 
+    if (originalText != null && !originalText.equals(in)) {
+      spoilerRevealAnimator.forceFactor(0f);
+      spoilerRevealFactor = 0f;
+    }
     originalText = in;
 
     if (maxWidth <= 0) {
@@ -2322,11 +2394,19 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       }
     }
 
+    final int textTop = y;
     y += getPartVerticalOffset(part);
 
     Spoiler spoiler = findSpoiler(part.getSpoiler());
-    if (spoiler != null) {
-      alpha *= spoiler.getContentAlpha();
+    int revealSaveCount = -1;
+    if (spoiler != null && spoilerRevealFactor < 1f) {
+      if (spoilerRevealFactor <= 0f) {
+        alpha = 0f;
+      } else {
+        // Vibegram: hidden text appears inside the growing reveal circle
+        revealSaveCount = Views.save(c);
+        c.clipPath(buildRevealPath(textTop));
+      }
     }
     if (alpha > 0f) {
       if (count > 1) {
@@ -2334,6 +2414,9 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       } else {
         part.draw(partIndex, c, cx - width / 2, cx + width / 2, 0, y, alpha, defaultTheme, receiver);
       }
+    }
+    if (revealSaveCount != -1) {
+      Views.restore(c, revealSaveCount);
     }
     return count;
   }
@@ -2422,11 +2505,19 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       }
     }
 
+    final int textTop = y;
     y += getPartVerticalOffset(part);
 
     Spoiler spoiler = findSpoiler(part.getSpoiler());
-    if (spoiler != null) {
-      alpha *= spoiler.getContentAlpha();
+    int revealSaveCount = -1;
+    if (spoiler != null && spoilerRevealFactor < 1f) {
+      if (spoilerRevealFactor <= 0f) {
+        alpha = 0f;
+      } else {
+        // Vibegram: hidden text appears inside the growing reveal circle
+        revealSaveCount = Views.save(c);
+        c.clipPath(buildRevealPath(textTop));
+      }
     }
     if (alpha > 0f) {
       if (count > 1) {
@@ -2434,6 +2525,9 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
       } else {
         part.draw(partIndex, c, startX, endX, endXBottomPadding, y, alpha, defaultTheme, receiver);
       }
+    }
+    if (revealSaveCount != -1) {
+      Views.restore(c, revealSaveCount);
     }
     return count;
   }
@@ -2713,7 +2807,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
               c.translate(0, startY);
             }
             TextColorSet theme = pickTheme(defaultTheme, parts.get(spoiler.startPartIndex).getEntity());
-            spoiler.draw(c, theme.iconColor());
+            spoiler.draw(c, ColorUtils.alphaColor(alpha, theme.spoilerColor()));
           }
         }
         if (saved) {
@@ -2923,9 +3017,6 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
     }
 
     if (pressHighlight != null) {
-      if (pressHighlight.spoiler != null) {
-        pressHighlight.spoiler.setPressed(false, true);
-      }
       pressHighlight = null;
       canceled = true;
     }
@@ -3057,9 +3148,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
         }
 
         this.pressHighlight = new PressHighlight(causeIndex, startIndex, endIndex, needRevealSpoiler ? spoiler : null);
-        if (this.pressHighlight.isSpoilerReveal()) {
-          this.pressHighlight.spoiler.setPressed(true, true);
-        } else {
+        if (!this.pressHighlight.isSpoilerReveal()) {
           if (highlightPart(causeIndex, clickListener == null)) {
             if ((textFlags & FLAG_CUSTOM_LONG_PRESS) != 0) {
               scheduleLongPress(view, callback);
@@ -3102,7 +3191,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
         } else if (pressHighlight != null) {
           TextPart part = parts.get(pressHighlight.causePartIndex);
           if (pressHighlight.isSpoilerReveal()) {
-            revealSpoiler(part);
+            revealSpoiler(part, touchX, touchY - lastStartY);
             ViewUtils.onClick(view);
             return true;
           }
@@ -3257,6 +3346,7 @@ public class Text implements Runnable, Emoji.CountLimiter, CounterTextPart, List
   @Override
   public void performDestroy () {
     textFlags |= FLAG_DESTROYED;
+    spoilerRevealAnimator.cancel();
     reset();
   }
 
