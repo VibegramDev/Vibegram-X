@@ -367,11 +367,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   private final Settings.NavigationStyleListener navigationStyleListener =
     newStyle -> onNavigationLayoutChanged();
 
-  private final Settings.SettingsChangeListener dockSettingsListener = (newFlags, oldFlags) -> {
-    if (BitwiseUtils.hasFlag(newFlags ^ oldFlags, Settings.SETTING_FLAG_DOCK_CONTACTS)) {
-      onNavigationLayoutChanged();
-    }
-  };
 
   private void onNavigationLayoutChanged () {
     if (isDestroyed()) {
@@ -418,6 +413,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       view -> createFolderMenuItems(), menuClickListener, null, null));
     navigationBar.setItemMenu(MainNavigationBar.ITEM_SETTINGS, new HapticMenuHelper(
       view -> createAccountMenuItems(), menuClickListener, null, null));
+    navigationBar.setItemMenu(MainNavigationBar.ITEM_CONTACTS, new HapticMenuHelper(
+      view -> createContactsMenuItems(), menuClickListener, null, null));
     navigationBar.setUnreadCount(updateCounter(ChatPosition.CHAT_LIST_MAIN, navigationBar.getUnreadCounter(), tdlib.getCounter(ChatPosition.CHAT_LIST_MAIN), false));
     navigationCounterListener = new CounterChangeListener() {
       @Override
@@ -462,7 +459,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     tdlib.context().global().addCountersListener(this);
     Settings.instance().addChatFolderSettingsListener(this);
     Settings.instance().addNavigationStyleListener(navigationStyleListener);
-    Settings.instance().addNewSettingsListener(dockSettingsListener);
     if (Settings.instance().chatFoldersEnabled()) {
       if (this.chatFolderInfos != tdlib.chatFolders()) {
         updatePagerSections(true);
@@ -1114,6 +1110,39 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     return items;
   }
 
+  /** Holding "Contacts" in the dock: "New contact" and "Recent calls", as Telegram for Android 12 (openContactsSelector). */
+  private @Nullable List<HapticMenuHelper.MenuItem> createContactsMenuItems () {
+    if (isStackLocked() || context.isPasscodeShowing()) {
+      return null;
+    }
+    List<HapticMenuHelper.MenuItem> items = new ArrayList<>(2);
+    items.add(new HapticMenuHelper.MenuItem(R.id.btn_vgNewContact, Lang.getString(R.string.vg_NewContact), R.drawable.baseline_person_add_24)
+      .setOnClickListener((view, parentView, menuItem) -> {
+        PhoneController c = new PhoneController(context, tdlib);
+        c.setMode(PhoneController.MODE_ADD_CONTACT);
+        UI.navigateTo(c);
+        return true;
+      }));
+    items.add(new HapticMenuHelper.MenuItem(R.id.btn_vgRecentCalls, Lang.getString(R.string.vg_RecentCalls), R.drawable.vg_tab_calls_24)
+      .setOnClickListener((view, parentView, menuItem) -> {
+        openContactsSection(ContactsCallsController.POSITION_CALLS);
+        return true;
+      }));
+    return items;
+  }
+
+  private void openContactsSection (int position) {
+    NavigationController nav = navigationController != null ? navigationController : overlayNavigation;
+    ViewController<?> current = nav != null ? nav.getCurrentStackItem() : null;
+    if (current instanceof ContactsCallsController) {
+      ((ContactsCallsController) current).showPage(position);
+      return;
+    }
+    tdlib.contacts().startSyncIfNeeded(context, true, () ->
+      openNavigationSection(new ContactsCallsController(context, tdlib, position))
+    );
+  }
+
   private @Nullable List<HapticMenuHelper.MenuItem> createFolderMenuItems () {
     if (!hasFolders()) {
       return null;
@@ -1504,8 +1533,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (folderRail != null) {
       folderRail.setInsets(HeaderView.getTopOffset(), extraBottomInsetWithoutIme);
     }
-    boolean showContacts = Settings.instance().getNewSetting(Settings.SETTING_FLAG_DOCK_CONTACTS);
-    navigationBar.setItemVisible(MainNavigationBar.ITEM_CONTACTS, showContacts);
+    // Owner: the dock is Chats · Contacts · Settings, the calls are a tab of Contacts (ContactsCallsController).
+    navigationBar.setItemVisible(MainNavigationBar.ITEM_CALLS, false);
+    navigationBar.setItemVisible(MainNavigationBar.ITEM_CONTACTS, true);
     navigationBar.setCompactBar(!isTablet && isDockStyle());
     // Short window with folder chips: the bar at the end, the chips in line with it.
     navigationBar.setCompactBarAtEnd(isDockChipsInline());
@@ -1589,7 +1619,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (section instanceof SettingsController) {
       return MainNavigationBar.ITEM_SETTINGS;
     }
-    if (section instanceof PeopleController) {
+    if (section instanceof PeopleController || section instanceof ContactsCallsController) {
       return MainNavigationBar.ITEM_CONTACTS;
     }
     if (section instanceof CallListController) {
@@ -1639,11 +1669,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         break;
       }
       case MainNavigationBar.ITEM_CONTACTS: {
-        tdlib.contacts().startSyncIfNeeded(context, true, () -> {
-          PeopleController c = new PeopleController(context, tdlib);
-          c.setNeedSearch();
-          openNavigationSection(c);
-        });
+        openContactsSection(ContactsCallsController.POSITION_CONTACTS);
         break;
       }
       case MainNavigationBar.ITEM_SETTINGS: {
@@ -1897,7 +1923,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     tdlib.context().global().removeCountersListener(this);
     Settings.instance().removeChatFolderSettingsListener(this);
     Settings.instance().removeNavigationStyleListener(navigationStyleListener);
-    Settings.instance().removeNewSettingsListener(dockSettingsListener);
     tdlib.listeners().unsubscribeFromChatFoldersUpdates(this);
     if (chatListUnreadCountListener != null) {
       tdlib.listeners().removeTotalChatCounterListener(chatListUnreadCountListener);

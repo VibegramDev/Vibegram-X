@@ -613,7 +613,12 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     }
   }
 
-  private boolean fitsParentWidth;
+  private boolean fitsParentWidth, fillsParentWidth;
+
+  /** Vibegram-X: M3 fixed tabs, the items share the whole width equally (the view must be match_parent). */
+  public void setFillsParentWidth (boolean fills) {
+    this.fillsParentWidth = fills;
+  }
 
   public void setFitsParentWidth (boolean fits) {
     this.fitsParentWidth = fits;
@@ -1202,6 +1207,9 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   private int commonItemWidth;
 
   private int calculateCommonItemWidth (int parentWidth) {
+    if (fillsParentWidth) {
+      return parentWidth / items.size();
+    }
     int itemWidth = Math.min(parentWidth / items.size(), maxItemWidth);
     if (parentWidth - itemWidth * items.size() < itemWidth / 2) {
       itemWidth = parentWidth / items.size();

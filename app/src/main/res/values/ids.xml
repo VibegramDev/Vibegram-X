@@ -1490,6 +1490,9 @@
   <item type="id" name="btn_webAppClose" />
   <item type="id" name="btn_vgProfileOpenApp" />
   <item type="id" name="btn_vgShowPeerIds" />
+  <item type="id" name="controller_vgContactsCalls" />
+  <item type="id" name="btn_vgNewContact" />
+  <item type="id" name="btn_vgRecentCalls" />
   <item type="id" name="btn_webAppStart" />
   <item type="id" name="btn_webAppAllowWrite" />
   <item type="id" name="btn_webAppMoreAboutBot" />
