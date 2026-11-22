@@ -1689,10 +1689,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     addThemeInvalidateListener(topView);
     topView.setItems(getPagerTitles());
     topCellView.getRecyclerView().setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    // Scrollable tabs: "the first visible tab should be offset by 52dp from the left side".
-    int offset = Screen.dp(52f);
-    topCellView.getRecyclerView().setPadding(Lang.rtl() ? 0 : offset, 0, Lang.rtl() ? offset : 0, 0);
-    topCellView.getRecyclerView().setClipToPadding(false);
+    // The label of the first tab starts at the edge of the cards above (16dp), not 52dp + 19dp in.
+    topView.setItemPadding(Screen.dp(SEGMENT_INSET));
     topView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
     topCellView.setLayoutParams(params);
     topWrap.addView(topCellView);
@@ -6118,13 +6116,15 @@ public class ProfileController extends ViewController<ProfileController.Args> im
               lastUsernames = sequence;
             }
           }
-          return lastUsernameAddHeight + Screen.dp(76f);
+          // SettingView.getCurrentHeight (72dp row since the M3 redesign)
+          return lastUsernameAddHeight + Screen.dp(72f);
         } else if (itemId == R.id.btn_description) {
           if (aboutWrapper != null) {
             aboutWrapper.get(getTextWidth(width));
-            return Math.max(aboutWrapper.getHeight() + Screen.dp(21f + 13f) - Screen.dp(13f) + Screen.dp(12f) + Screen.dp(25), Screen.dp(76f));
+            // SettingView.getCurrentHeight: pDataTop of TYPE_INFO_MULTILINE is 19 + 13dp
+            return Math.max(aboutWrapper.getHeight() + Screen.dp(19f + 13f) - Screen.dp(13f) + Screen.dp(12f) + Screen.dp(25), Screen.dp(72f));
           }
-          return Screen.dp(76f);
+          return Screen.dp(72f);
         }
         throw new UnsupportedOperationException();
       }
