@@ -14,6 +14,7 @@
  */
 package org.thunderdog.challegram.navigation;
 
+import me.vkryl.android.animator.FactorAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -484,6 +485,44 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     return Math.max(minLeft, Math.min(left, maxRight - width));
   }
 
+  // Pull-down on the profile: the expanded avatar grows with the finger, past the threshold the photo viewer opens.
+
+  /** How much bigger the expanded avatar gets at the full pull. */
+  private static final float PULL_AVATAR_GROWTH = .25f;
+
+  private float pullFactor;
+  private @Nullable FactorAnimator pullAnimator;
+
+  /** 0 = not pulled, 1 = pulled to the threshold of opening the photo (more is cut by a resistance). */
+  public void setPullFactor (float factor) {
+    if (pullAnimator != null) {
+      pullAnimator.cancel();
+      pullAnimator.forceFactor(factor);
+    }
+    applyPullFactor(factor);
+  }
+
+  /** The finger is up: the avatar returns to its size. */
+  public void releasePull () {
+    if (pullFactor == 0f) {
+      return;
+    }
+    if (pullAnimator == null) {
+      pullAnimator = new FactorAnimator(0, (id, factor, fraction, callee) -> applyPullFactor(factor), AnimatorUtils.DECELERATE_INTERPOLATOR, 220L, pullFactor);
+    } else {
+      pullAnimator.forceFactor(pullFactor);
+    }
+    pullAnimator.animateTo(0f);
+  }
+
+  private void applyPullFactor (float factor) {
+    if (this.pullFactor != factor) {
+      this.pullFactor = factor;
+      layoutReceiver();
+      invalidate();
+    }
+  }
+
   private void layoutReceiver () {
     float radius = Screen.dp(getBaseAvatarRadiusDp());
     float centerX;
@@ -503,6 +542,12 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       centerX = MathUtils.fromTo(centerX, getMeasuredWidth() / 2f, expandFactor);
       centerY = MathUtils.fromTo(centerY, currentHeaderOffset + Screen.dp(EXPANDED_AVATAR_TOP) + expandedRadius, expandFactor);
       radius = MathUtils.fromTo(radius, expandedRadius, expandFactor);
+      if (pullFactor > 0f && expandFactor == 1f) {
+        // Grows up from its bottom edge, into the free space above it, so it never covers the name.
+        float grownRadius = expandedRadius * (1f + PULL_AVATAR_GROWTH * pullFactor);
+        centerY -= grownRadius - radius;
+        radius = grownRadius;
+      }
     }
     receiver.setBounds(Math.round(centerX - radius), Math.round(centerY - radius), Math.round(centerX + radius), Math.round(centerY + radius));
   }

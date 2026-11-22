@@ -1478,6 +1478,81 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
       private float startX, startY;
 
+      // Pull-down on the expanded header opens the photos full screen (as the pull in Telegram for Android).
+      private boolean pullPossible, pulling, pullReached;
+      private float pullStartX, pullStartY;
+
+      @Override
+      public boolean dispatchTouchEvent (MotionEvent e) {
+        switch (e.getActionMasked()) {
+          case MotionEvent.ACTION_DOWN: {
+            pulling = pullReached = false;
+            pullStartX = e.getX();
+            pullStartY = e.getY();
+            pullPossible = canPullToOpenPhoto();
+            break;
+          }
+          case MotionEvent.ACTION_POINTER_DOWN: {
+            if (pulling) {
+              return true;
+            }
+            pullPossible = false;
+            break;
+          }
+          case MotionEvent.ACTION_MOVE: {
+            float dx = e.getX() - pullStartX, dy = e.getY() - pullStartY;
+            if (!pulling && pullPossible) {
+              float slop = Screen.getTouchSlop();
+              if (dy > slop && dy > Math.abs(dx) * 1.5f) {
+                pulling = true;
+                pullStartY = e.getY();
+                // Children stop here: the lists and the pager don't get this gesture.
+                MotionEvent cancel = MotionEvent.obtain(e);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+              } else if (Math.abs(dx) > slop || dy < -slop) {
+                pullPossible = false;
+              }
+            }
+            if (pulling) {
+              float factor = Math.max(0f, e.getY() - pullStartY) / Screen.dp(PULL_TO_OPEN_PHOTO_DISTANCE);
+              if (factor > 1f) {
+                factor = 1f + (factor - 1f) * .25f; // resistance past the threshold
+              }
+              boolean reached = factor >= 1f;
+              if (reached != pullReached) {
+                pullReached = reached;
+                if (reached) {
+                  UI.hapticVibrate(this, false);
+                }
+              }
+              if (headerCell != null) {
+                headerCell.setPullFactor(Math.min(factor, 1.25f));
+              }
+              return true;
+            }
+            break;
+          }
+          case MotionEvent.ACTION_UP:
+          case MotionEvent.ACTION_CANCEL: {
+            if (pulling) {
+              pulling = false;
+              if (headerCell != null) {
+                headerCell.releasePull();
+              }
+              if (pullReached && e.getActionMasked() == MotionEvent.ACTION_UP) {
+                openPhoto();
+              }
+              pullReached = false;
+              return true;
+            }
+            break;
+          }
+        }
+        return super.dispatchTouchEvent(e);
+      }
+
       private int lastHeight;
 
       @Override
@@ -5275,6 +5350,15 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     } else {
       openPhoto();
     }
+  }
+
+  /** Finger travel that opens the photo viewer from the expanded header. */
+  private static final float PULL_TO_OPEN_PHOTO_DISTANCE = 96f;
+
+  /** The pull opens the photos only from the fully expanded header, with a photo, and not while editing or selecting. */
+  private boolean canPullToOpenPhoto () {
+    return headerCell != null && chat != null && chat.photo != null && !TD.isFileEmpty(chat.photo.small) &&
+      !isEditing() && !inSelectMode && baseScrollState == RecyclerView.SCROLL_STATE_IDLE && calculateBaseScrollY() == 0;
   }
 
   private void openPhoto () {
