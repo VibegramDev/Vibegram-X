@@ -36,7 +36,7 @@ import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.lambda.Destroyable;
 
-public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.TextMediaListener, Text.QuoteExpander {
+public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.TextMediaListener, Text.QuoteExpander, Text.SpoilerRevealListener {
   private static final int PORTRAIT_INDEX = 0;
   private static final int LANDSCAPE_INDEX = 1;
 
@@ -268,6 +268,10 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
       }
       text.setViewProvider(viewProvider);
       text.setQuoteExpander(quoteToggleListener != null ? this : null);
+      text.setSpoilerRevealListener(this);
+      if (spoilersRevealed) {
+        text.revealSpoilersImmediately();
+      }
       sizes[index] = maxWidth;
       textSizes[index] = textSizePx;
       if (index == (isPortrait ? PORTRAIT_INDEX : LANDSCAPE_INDEX) &&
@@ -354,6 +358,19 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
   @Override
   public boolean isQuoteExpanded (int quoteId) {
     return expandedQuotes != null && expandedQuotes.contains(quoteId);
+  }
+
+  // Vibegram: hidden text revealed in one layout stays revealed in the others (rotation, resize)
+  private boolean spoilersRevealed;
+
+  @Override
+  public void onSpoilersRevealed (Text text) {
+    spoilersRevealed = true;
+    for (Text other : texts) {
+      if (other != null && other != text) {
+        other.revealSpoilersImmediately();
+      }
+    }
   }
 
   @Override
