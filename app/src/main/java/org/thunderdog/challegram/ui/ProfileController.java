@@ -2567,7 +2567,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   }
 
   private boolean needPhoneCell () {
-    return user.isContact || user.isMutualContact || TD.hasPhoneNumber(user);
+    // Only a known number: a contact who hides it showed a useless "Unknown" row.
+    return TD.hasPhoneNumber(user);
   }
 
   private void buildUserCells () {
@@ -6303,7 +6304,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         if (i == firstVisible) {
           View view = manager.findViewByPosition(i);
           if (view != null) {
-            recyclerBottom += view.getTop();
+            recyclerBottom += getCalculatedTop(manager, view);
           }
         }
         if (i != ignoreIndex) {
@@ -6404,6 +6405,17 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     }
   }
 
+  /**
+   * Where the row's height in {@link #calculateHeight} starts: its decorated top minus its top margin. The row of profile
+   * actions has a negative top offset (BaseItemsDecoration) and the cards have the 2dp gap as a top margin; with the
+   * plain view top the tabs moved by that overlap or gap whenever such a row became the first visible one.
+   */
+  private static int getCalculatedTop (RecyclerView.LayoutManager manager, View view) {
+    ViewGroup.LayoutParams params = view.getLayoutParams();
+    int topMargin = params instanceof ViewGroup.MarginLayoutParams ? ((ViewGroup.MarginLayoutParams) params).topMargin : 0;
+    return manager.getDecoratedTop(view) - topMargin;
+  }
+
   private int calculateBaseScrollY () {
     int width = baseRecyclerView.getMeasuredWidth();
     int maxPossibleScroll = maxItemsScrollY();
@@ -6416,10 +6428,11 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
     int scrollY = 0;
 
-    View view = baseRecyclerView.getLayoutManager().findViewByPosition(firstVisibleItemPosition);
+    RecyclerView.LayoutManager manager = baseRecyclerView.getLayoutManager();
+    View view = manager.findViewByPosition(firstVisibleItemPosition);
 
     if (view != null) {
-      scrollY -= view.getTop();
+      scrollY -= getCalculatedTop(manager, view);
     }
     for (int j = firstVisibleItemPosition - 1; j >= 0; j--) {
       scrollY += calculateHeight(j, width, baseAdapter.getItems().get(j));
