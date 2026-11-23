@@ -716,6 +716,31 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   /** Top edge of the bottom button floating in place of the composer, -1 when there is none or it is collapsed. */
+  /**
+   * Vibegram X: the round video player floats above the list. Under the floating composer (or the bottom button) the
+   * list goes on to the bottom and fades out: the player goes on too, with the same fade and the composer cut out of it.
+   * Fills {@code out} in the coordinates of {@code view} and returns the bottom of the list there, or -1 when the player
+   * stops at the composer (no fade, keyboard panels under the composer).
+   */
+  public int getRoundPlayerBottom (View view, org.thunderdog.challegram.widget.RectFrameLayout.BottomFade out) {
+    if (!composerFloating || composerScrim == null || composerScrim.getVisibility() != View.VISIBLE || composerScrim.getAlpha() <= 0f || composerScrim.getHeight() == 0 || getKeyboardOffset() > 0f || view.getWindowToken() == null || composerScrim.getWindowToken() == null) {
+      return -1;
+    }
+    RectF shape = new RectF();
+    out.hasShape = getComposerShape(composerScrim, shape);
+    // Views.getLocationInWindow returns one shared array: copy the values.
+    int[] location = Views.getLocationInWindow(composerScrim);
+    final int scrimLeft = location[0], scrimTop = location[1];
+    location = Views.getLocationInWindow(view);
+    final int dx = scrimLeft - location[0], dy = scrimTop - location[1];
+    out.fadeTop = getComposerFadeTop(composerScrim, shape) + dy;
+    out.shape.set(shape);
+    out.shape.offset(dx, dy);
+    out.radius = MainNavigationBar.getBarRadius();
+    out.alpha = composerScrim.getAlpha();
+    return composerScrim.getHeight() + dy;
+  }
+
   private int getBottomBarTop (View view) {
     if (!composerFloating || bottomBar == null || bottomBar.getVisibility() != View.VISIBLE || scrollToBottomVisible.getFloatValue() > 0f) {
       return -1;

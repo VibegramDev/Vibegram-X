@@ -121,6 +121,12 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     private int color;
     private boolean shaderReady;
 
+    /** Vibegram X: SRC_ATOP fades only what is already drawn (the round video player over the list). */
+    public void setXfermode (@Nullable android.graphics.Xfermode xfermode) {
+      fadePaint.setXfermode(xfermode);
+      solidPaint.setXfermode(xfermode);
+    }
+
     /**
      * From {@code top} (the top of the band kept free for the container) to {@code bottom}: transparent at {@code top},
      * eased to {@link #ALPHA_MAX} of the surface over {@link #getFadeHeight()}, flat below. Nothing above {@code top}.

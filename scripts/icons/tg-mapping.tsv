@@ -508,3 +508,4 @@ templarian_device_web_firefox_24	device_web_firefox	high	session browser logo
 templarian_device_web_safari_24	device_web_safari	high	session browser logo
 vg_input_gif_26	raw/smile_to_gif.json last frame	high	new: composer GIF button, rendered from Telegram Lottie (EmojiLayout.getTargetIcon)
 vg_mini_checks_16	msg_mini_checks	high	new: read-date checks before a viewer's date in the message viewers page (MessageSeenView seenDrawable); Telegram PNGs byte for byte
+vg_round_fullscreen_24	msg_maxvideo	high	new: full screen button over a playing round video (RoundVideoController); Telegram PNGs byte for byte
