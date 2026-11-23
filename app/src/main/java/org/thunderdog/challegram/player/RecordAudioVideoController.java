@@ -1077,7 +1077,8 @@ public class RecordAudioVideoController implements
     durationView.reset();
     lockView.setCollapseFactor(0f);
     disposableSwitchButton.setActive(false, false);
-    disposableSwitchButton.setVisibility(canSendSelfDestructMessages() ? View.VISIBLE : View.GONE);
+    // Dictation only types text: nothing is sent, so there is nothing to make view-once.
+    disposableSwitchButton.setVisibility(canSendSelfDestructMessages() && !dictating ? View.VISIBLE : View.GONE);
     recordBackground.setVolume(0f, false);
     editAnimator.setValue(false, false);
     videoPreviewView.performDestroy();

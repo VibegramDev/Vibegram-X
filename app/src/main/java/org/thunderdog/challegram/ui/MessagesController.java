@@ -8765,6 +8765,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private float prevButtonsY;
+  private int prevInputHeight;
 
   /**
    * Content of the composer on its surfaceContainer, as in the dock: text onSurface, placeholder and icons
@@ -8933,9 +8934,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
     messageSenderButton.setTranslationY(y);
 
+    int inputHeight = inputView != null ? inputView.getHeight() : 0;
     if (prevButtonsY != y) {
       prevButtonsY = y;
+      prevInputHeight = inputHeight;
       onMessagesFrameChanged();
+      updateRecordLayout();
+    } else if (prevInputHeight != inputHeight) {
+      // The field grew or shrank while its bottom (and the buttons) stayed: the record bar covers the field, so it is
+      // resized too (e.g. the text was cleared just before recording, and the field shrank after the bar took its height).
+      prevInputHeight = inputHeight;
       updateRecordLayout();
     }
   }
