@@ -77,6 +77,7 @@ import org.thunderdog.challegram.core.Media;
 import org.thunderdog.challegram.data.InlineResult;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.data.TGMessage;
+import org.thunderdog.challegram.data.TGMessageVideo;
 import org.thunderdog.challegram.data.TGMessageMedia;
 import org.thunderdog.challegram.data.TGMessageText;
 import org.thunderdog.challegram.data.TGWebPage;
@@ -996,6 +997,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
 
   @Override
   public boolean launchHideAnimation (PopupLayout popup, FactorAnimator ignored) {
+    continueRoundVideoIfPlaying();
     MediaViewThumbLocation location;
 
     if (forceAnimationType != -1) {
@@ -8408,6 +8410,18 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   }
 
   /** Vibegram X: a round video in full screen, alone (no other media of the chat around it). */
+  /** A round video closed while playing goes on in the chat from the same place. */
+  private void continueRoundVideoIfPlaying () {
+    final MediaItem item = stack != null ? stack.getCurrent() : null;
+    final MediaCellView cell = mediaView != null ? mediaView.getBaseCell() : null;
+    if (item == null || !item.isRoundVideo() || cell == null || !cell.isPlaying() || !(item.getSourceMessage() instanceof TGMessageVideo)) {
+      return;
+    }
+    final long position = cell.getTimeNow();
+    cell.pauseIfPlaying();
+    ((TGMessageVideo) item.getSourceMessage()).continueAfterFullscreen(Math.max(0, position));
+  }
+
   public static void openRoundVideo (TGMessage message, MediaItem item) {
     ViewController<?> context = message.controller();
     if (context.isStackLocked()) {

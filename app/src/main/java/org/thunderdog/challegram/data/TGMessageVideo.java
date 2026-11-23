@@ -807,9 +807,25 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   }
 
   private void openFullscreen () {
-    // The round stops and plays from the start as a regular video: sound, seek bar, rotation
+    // The round stops and goes on as a regular video from the same place: sound, seek bar, rotation
+    final RoundVideoController round = context().getRoundVideoController();
+    final long position = round != null ? round.getPlaybackPosition(tdlib, msg) : -1;
+    final MediaItem item = MediaItem.valueOfRoundVideo(context(), tdlib, msg);
+    if (position > 0) {
+      item.setStartPosition(position);
+    }
     tdlib.context().player().stopRoundPlayback(true);
-    MediaViewController.openRoundVideo(this, MediaItem.valueOfRoundVideo(context(), tdlib, msg));
+    MediaViewController.openRoundVideo(this, item);
+  }
+
+  /** The full screen player was closed while playing: the round goes on in the chat from the same place. */
+  public void continueAfterFullscreen (long positionMs) {
+    final RoundVideoController round = context().getRoundVideoController();
+    if (round == null || round.comparePlayingObject(tdlib, msg)) {
+      return;
+    }
+    round.setPendingStartPosition(msg, positionMs);
+    tdlib.context().player().playPauseMessage(tdlib, msg, manager);
   }
 
   @Override

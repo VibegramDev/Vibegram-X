@@ -246,9 +246,14 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     } else {
       setDataSource(source);
     }
+    final long startPosition = mediaItem.consumeStartPosition();
     if (seekToSavedPosition) {
       seekToSavedPosition = false;
       player.seekTo(savedPosition);
+    } else if (startPosition > 0) {
+      // Vibegram X: a round video opened in full screen goes on from where the round was
+      player.seekTo(startPosition);
+      lastPosition = startPosition;
     }
     if (forcePlay) {
       setPlaying(true);

@@ -149,6 +149,9 @@ public class RoundVideoController extends BasePlaybackController implements
     }
 
     RoundEchoWatch.onRoundStarted(this, message);
+    if (pendingPositionMs >= 0 && (message.chatId != pendingChatId || message.id != pendingMessageId)) {
+      pendingPositionMs = -1;
+    }
 
     // Before we start, detach main texture
     setTargetView(null, false, false);
@@ -237,6 +240,36 @@ public class RoundVideoController extends BasePlaybackController implements
     }
   }
 
+  // Vibegram X: the round goes on from the place the full screen player was at (and the other way round)
+
+  private long pendingChatId, pendingMessageId, pendingPositionMs = -1;
+
+  /** Position of the given round if it is the one this controller plays now, -1 otherwise. */
+  public long getPlaybackPosition (Tdlib tdlib, TdApi.Message message) {
+    if (exoPlayer == null || source == null || !comparePlayingObject(tdlib, message)) {
+      return -1;
+    }
+    long position = exoPlayer.getCurrentPosition();
+    return position != C.TIME_UNSET ? position : -1;
+  }
+
+  /** The next playback of the given round starts at the given position instead of the beginning. */
+  public void setPendingStartPosition (TdApi.Message message, long positionMs) {
+    this.pendingChatId = message.chatId;
+    this.pendingMessageId = message.id;
+    this.pendingPositionMs = positionMs;
+  }
+
+  private void applyPendingStartPosition () {
+    if (pendingPositionMs < 0) {
+      return;
+    }
+    if (object != null && object.chatId == pendingChatId && object.id == pendingMessageId) {
+      exoPlayer.seekTo(pendingPositionMs);
+    }
+    pendingPositionMs = -1;
+  }
+
   public void seekTo (float progress, boolean play) {
     if (exoPlayer != null) {
       final long duration = exoPlayer.getDuration();
@@ -283,6 +316,7 @@ public class RoundVideoController extends BasePlaybackController implements
     if (source != null) {
       exoPlayer.setMediaSource(source);
       exoPlayer.prepare();
+      applyPendingStartPosition();
     }
     setPlayProgress(0f, -1, -1);
   }
