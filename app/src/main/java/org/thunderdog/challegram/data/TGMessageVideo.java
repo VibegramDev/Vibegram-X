@@ -205,7 +205,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     if (StringUtils.isEmpty(durationStr) || this.duration != duration) {
       this.duration = duration;
       this.durationStr = Strings.buildDuration(duration);
-      this.durationWidth = U.measureText(durationStr, useBubbles() ? mTimeBubble() : mTime(false));
+      this.durationWidth = U.measureText(durationStr, mTimeBubble());
       if (compact && compactDurationText != null) {
         buildCompactDuration(compactDurationText.getMaxWidth());
         invalidate();
@@ -672,43 +672,42 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     int circleX;
     int contentWidth = (int) (durationWidth + Screen.dp(5f) * viewFactor);
     int textY = receiver.getBottom() - getBubbleTimePartHeight() - Screen.dp(8f);
-    boolean useBubbles = useBubbles();
-    // Vibegram X: the transcription button goes next to the round at its bottom, as in Telegram for Android
-    // (ChatMessageCell: to the right of an incoming round, to the left of an outgoing one), the duration stays in place
+    // Vibegram X: the duration always sits on a pill, as in Telegram for Android (without bubbles it had none)
+    textY -= Screen.dp(3.5f);
+    final int padding = Screen.dp(6f);
+    final RectF pill = Paints.getRectF();
+    pill.set(x - contentWidth - padding * 2, textY, x, textY + Screen.dp(21f));
+    final float pillLeft = pill.left, pillCy = pill.centerY();
+    // without bubbles there is no wallpaper: the same pill as over a bubble without a wallpaper
+    final int pillColor = useBubbles() ? getBubbleTimeColor() : Theme.getColor(ColorId.bubble_mediaTime_noWallpaper);
+    final int pillTextColor = useBubbles() ? getBubbleTimeTextColor() : Theme.getColor(ColorId.bubble_mediaTimeText_noWallpaper);
+    c.drawRoundRect(pill, Screen.dp(12f), Screen.dp(12f), Paints.fillingPaint(pillColor));
+    textY -= Screen.dp(1f);
+    c.drawText(durationStr, x - contentWidth - padding, textY + Screen.dp(15.5f), Paints.colorPaint(mTimeBubble(), pillTextColor));
+    circleX = x - Screen.dp(7f);
+
+    // Vibegram X: the transcription button sits on the same line as the duration, right at the edge of the round:
+    // to the right of an incoming round, to the left of an outgoing one (and of its duration)
     final boolean hasStt = hasStt();
     final float sttAlpha = hasStt ? (1f - unmuteFactor) : 0f;
     if (hasStt) {
       if (sttAlpha > 0f) {
         final float buttonRadius = Screen.dp(STT_ROUND_BUTTON) / 2f;
-        // the duration may stick out of the round on the left: the button of an outgoing round goes before it
-        final int durationLeft = x - contentWidth - (useBubbles ? Screen.dp(6f) * 2 : 0);
+        final float roundRadius = receiver.getWidth() / 2f;
+        final float distance = roundRadius + Screen.dp(STT_ROUND_GAP) + buttonRadius;
+        final float dy = Math.min(distance, Math.max(0f, pillCy - receiver.centerY()));
+        final float dx = (float) Math.sqrt(distance * distance - dy * dy);
         final float buttonCx = isOutgoingBubble() ?
-          Math.min(receiver.getLeft(), durationLeft) - Screen.dp(STT_ROUND_GAP) - buttonRadius :
-          receiver.getRight() + Screen.dp(STT_ROUND_GAP) + buttonRadius;
-        final float buttonCy = receiver.getBottom() - buttonRadius;
-        final int activeColor = Theme.getColor(isOutgoingBubble() ? ColorId.bubbleOut_waveformActive : ColorId.waveformActive);
-        stt.drawCircleButton(c, buttonCx, buttonCy, STT_ROUND_BUTTON,
-          useBubbles ? getBubbleTimeColor() : ColorUtils.alphaColor(.16f, activeColor), useBubbles ? getBubbleTimeTextColor() : activeColor, .75f, sttAlpha);
+          Math.min(centerX - dx, pillLeft - Screen.dp(STT_ROUND_GAP) - buttonRadius) :
+          centerX + dx;
+        stt.drawCircleButton(c, buttonCx, pillCy, STT_ROUND_BUTTON, pillColor, pillTextColor, .75f, sttAlpha);
       } else {
         stt.clearButton();
       }
     }
-    if (useBubbles) {
-      textY -= Screen.dp(3.5f);
-      RectF rectF = Paints.getRectF();
-      int padding = Screen.dp(6f);
-      rectF.set(x - contentWidth - padding * 2, textY, x, textY + Screen.dp(21f));
-      c.drawRoundRect(rectF, Screen.dp(12f), Screen.dp(12f), Paints.fillingPaint(getBubbleTimeColor()));
-      textY -= Screen.dp(1f);
-      c.drawText(durationStr, x - contentWidth - padding, textY + Screen.dp(15.5f), Paints.colorPaint(mTimeBubble(), getBubbleTimeTextColor()));
-      circleX = x - Screen.dp(7f);
-    } else {
-      c.drawText(durationStr, x - contentWidth, textY + Screen.dp(15f), mTime(true));
-      circleX = x;
-    }
 
     if (viewFactor > 0f) {
-      c.drawCircle(circleX, textY + Screen.dp(11.5f), Screen.dp(1.5f), Paints.fillingPaint(ColorUtils.alphaColor(viewFactor, useBubbles ? 0xffffffff : Theme.getColor(ColorId.online))));
+      c.drawCircle(circleX, textY + Screen.dp(11.5f), Screen.dp(1.5f), Paints.fillingPaint(ColorUtils.alphaColor(viewFactor, pillTextColor)));
     }
 
     // Vibegram X: while the round plays (big, with sound) the full screen button takes the place of the muted icon
@@ -849,7 +848,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   // small round (plays in place), waveform, duration and the button (stop / collapse), the text under them.
   // Collapsing turns it back into the round.
 
-  private static final float STT_ROUND_BUTTON = 32f, STT_ROUND_GAP = 8f;
+  private static final float STT_ROUND_BUTTON = 32f, STT_ROUND_GAP = 4f;
   private static final float STT_BUTTON_WIDTH = 34f, STT_BUTTON_HEIGHT = 28f, STT_BUTTON_GAP = 8f, STT_TEXT_GAP = 6f;
   private static final float STT_STATUS_ROW = 24f;
   private static final float COMPACT_PREVIEW_OFFSET = 12f, COMPACT_DURATION_GAP = 12f;
