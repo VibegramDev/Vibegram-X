@@ -673,31 +673,24 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     int contentWidth = (int) (durationWidth + Screen.dp(5f) * viewFactor);
     int textY = receiver.getBottom() - getBubbleTimePartHeight() - Screen.dp(8f);
     boolean useBubbles = useBubbles();
-    // The transcription button goes at the bottom left of the round, the duration right after it
+    // Vibegram X: the transcription button goes next to the round at its bottom, as in Telegram for Android
+    // (ChatMessageCell: to the right of an incoming round, to the left of an outgoing one), the duration stays in place
     final boolean hasStt = hasStt();
     final float sttAlpha = hasStt ? (1f - unmuteFactor) : 0f;
-    // Vibegram X: while the round plays (big, with sound) the transcription button gives its place to the full screen one
-    final boolean hasFullscreen = canOpenFullscreen();
-    final float fullscreenAlpha = hasFullscreen ? unmuteFactor : 0f;
-    this.fullscreenAlpha = fullscreenAlpha;
-    final int sttSpace = hasStt || hasFullscreen ? Screen.dp(STT_ROUND_BUTTON + STT_ROUND_GAP) : 0;
-    if (hasStt || hasFullscreen) {
-      int pillWidth = contentWidth + (useBubbles ? Screen.dp(6f) * 2 : 0);
-      x = Math.max(x, receiver.getLeft() + sttSpace + pillWidth);
-      int pillLeft = x - pillWidth;
-      float buttonCy = useBubbles ? textY - Screen.dp(3.5f) + Screen.dp(21f) / 2f : textY + Screen.dp(10.5f);
-      final float buttonCx = pillLeft - Screen.dp(STT_ROUND_GAP) - Screen.dp(STT_ROUND_BUTTON) / 2f;
-      if (hasStt) {
-        if (sttAlpha > 0f) {
-          // same look as the duration next to it
-          stt.drawCircleButton(c, buttonCx, buttonCy, STT_ROUND_BUTTON,
-            useBubbles ? getBubbleTimeColor() : 0x40000000, useBubbles ? getBubbleTimeTextColor() : 0xffffffff, .75f, sttAlpha);
-        } else {
-          stt.clearButton();
-        }
-      }
-      if (fullscreenAlpha > 0f) {
-        drawFullscreenButton(view, c, buttonCx, buttonCy, useBubbles ? getBubbleTimeColor() : 0x40000000, useBubbles ? getBubbleTimeTextColor() : 0xffffffff, fullscreenAlpha);
+    if (hasStt) {
+      if (sttAlpha > 0f) {
+        final float buttonRadius = Screen.dp(STT_ROUND_BUTTON) / 2f;
+        // the duration may stick out of the round on the left: the button of an outgoing round goes before it
+        final int durationLeft = x - contentWidth - (useBubbles ? Screen.dp(6f) * 2 : 0);
+        final float buttonCx = isOutgoingBubble() ?
+          Math.min(receiver.getLeft(), durationLeft) - Screen.dp(STT_ROUND_GAP) - buttonRadius :
+          receiver.getRight() + Screen.dp(STT_ROUND_GAP) + buttonRadius;
+        final float buttonCy = receiver.getBottom() - buttonRadius;
+        final int activeColor = Theme.getColor(isOutgoingBubble() ? ColorId.bubbleOut_waveformActive : ColorId.waveformActive);
+        stt.drawCircleButton(c, buttonCx, buttonCy, STT_ROUND_BUTTON,
+          useBubbles ? getBubbleTimeColor() : ColorUtils.alphaColor(.16f, activeColor), useBubbles ? getBubbleTimeTextColor() : activeColor, .75f, sttAlpha);
+      } else {
+        stt.clearButton();
       }
     }
     if (useBubbles) {
@@ -716,6 +709,16 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
 
     if (viewFactor > 0f) {
       c.drawCircle(circleX, textY + Screen.dp(11.5f), Screen.dp(1.5f), Paints.fillingPaint(ColorUtils.alphaColor(viewFactor, useBubbles ? 0xffffffff : Theme.getColor(ColorId.online))));
+    }
+
+    // Vibegram X: while the round plays (big, with sound) the full screen button takes the place of the muted icon
+    final float fullscreenAlpha = canOpenFullscreen() ? unmuteFactor : 0f;
+    this.fullscreenAlpha = fullscreenAlpha;
+    if (fullscreenAlpha > 0f) {
+      final float fullscreenRadius = Screen.dp(FULLSCREEN_BUTTON) / 2f;
+      drawFullscreenButton(view, c, centerX, receiver.getBottom() - fullscreenRadius - Screen.dp(8f), 0x40000000, 0xffffffff, fullscreenAlpha);
+    } else {
+      fullscreenRect.setEmpty();
     }
 
     final boolean drawSpoiler = TD.isSelfDestructTypeImmediately(getMessage());
@@ -755,8 +758,10 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     return !compact && Config.ROUND_VIDEOS_PLAYBACK_SUPPORTED && msg.content.getConstructor() == TdApi.MessageVideoNote.CONSTRUCTOR && !TD.isSelfDestructTypeImmediately(getMessage()) && !isSponsoredMessage() && !isEventLog();
   }
 
+  private static final float FULLSCREEN_BUTTON = 32f;
+
   private void drawFullscreenButton (MessageView view, Canvas c, float cx, float cy, int backgroundColor, int iconColor, float alpha) {
-    final float radius = Screen.dp(STT_ROUND_BUTTON) / 2f;
+    final float radius = Screen.dp(FULLSCREEN_BUTTON) / 2f;
     fullscreenRect.set(cx - radius, cy - radius, cx + radius, cy + radius);
     final float scale = .6f + .4f * alpha;
     c.drawCircle(cx, cy, radius * scale, Paints.fillingPaint(ColorUtils.alphaColor(alpha, backgroundColor)));
@@ -844,7 +849,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   // small round (plays in place), waveform, duration and the button (stop / collapse), the text under them.
   // Collapsing turns it back into the round.
 
-  private static final float STT_ROUND_BUTTON = 28f, STT_ROUND_GAP = 4f;
+  private static final float STT_ROUND_BUTTON = 32f, STT_ROUND_GAP = 8f;
   private static final float STT_BUTTON_WIDTH = 34f, STT_BUTTON_HEIGHT = 28f, STT_BUTTON_GAP = 8f, STT_TEXT_GAP = 6f;
   private static final float STT_STATUS_ROW = 24f;
   private static final float COMPACT_PREVIEW_OFFSET = 12f, COMPACT_DURATION_GAP = 12f;
