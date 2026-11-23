@@ -16,6 +16,7 @@ package org.thunderdog.challegram.data;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Color;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.MotionEvent;
@@ -44,6 +45,8 @@ import org.thunderdog.challegram.loader.ImageFileLocal;
 import org.thunderdog.challegram.loader.Receiver;
 import org.thunderdog.challegram.loader.gif.GifFile;
 import org.thunderdog.challegram.loader.gif.GifReceiver;
+import org.thunderdog.challegram.mediaview.MediaViewController;
+import org.thunderdog.challegram.mediaview.data.MediaItem;
 import org.thunderdog.challegram.mediaview.disposable.DisposableMediaViewController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.player.RoundVideoController;
@@ -67,6 +70,7 @@ import org.thunderdog.challegram.widget.FileProgressComponent;
 
 import java.io.File;
 
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
@@ -672,18 +676,28 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     // The transcription button goes at the bottom left of the round, the duration right after it
     final boolean hasStt = hasStt();
     final float sttAlpha = hasStt ? (1f - unmuteFactor) : 0f;
-    final int sttSpace = hasStt ? Screen.dp(STT_ROUND_BUTTON + STT_ROUND_GAP) : 0;
-    if (hasStt) {
+    // Vibegram X: while the round plays (big, with sound) the transcription button gives its place to the full screen one
+    final boolean hasFullscreen = canOpenFullscreen();
+    final float fullscreenAlpha = hasFullscreen ? unmuteFactor : 0f;
+    this.fullscreenAlpha = fullscreenAlpha;
+    final int sttSpace = hasStt || hasFullscreen ? Screen.dp(STT_ROUND_BUTTON + STT_ROUND_GAP) : 0;
+    if (hasStt || hasFullscreen) {
       int pillWidth = contentWidth + (useBubbles ? Screen.dp(6f) * 2 : 0);
       x = Math.max(x, receiver.getLeft() + sttSpace + pillWidth);
       int pillLeft = x - pillWidth;
       float buttonCy = useBubbles ? textY - Screen.dp(3.5f) + Screen.dp(21f) / 2f : textY + Screen.dp(10.5f);
-      if (sttAlpha > 0f) {
-        // same look as the duration next to it
-        stt.drawCircleButton(c, pillLeft - Screen.dp(STT_ROUND_GAP) - Screen.dp(STT_ROUND_BUTTON) / 2f, buttonCy, STT_ROUND_BUTTON,
-          useBubbles ? getBubbleTimeColor() : 0x40000000, useBubbles ? getBubbleTimeTextColor() : 0xffffffff, .75f, sttAlpha);
-      } else {
-        stt.clearButton();
+      final float buttonCx = pillLeft - Screen.dp(STT_ROUND_GAP) - Screen.dp(STT_ROUND_BUTTON) / 2f;
+      if (hasStt) {
+        if (sttAlpha > 0f) {
+          // same look as the duration next to it
+          stt.drawCircleButton(c, buttonCx, buttonCy, STT_ROUND_BUTTON,
+            useBubbles ? getBubbleTimeColor() : 0x40000000, useBubbles ? getBubbleTimeTextColor() : 0xffffffff, .75f, sttAlpha);
+        } else {
+          stt.clearButton();
+        }
+      }
+      if (fullscreenAlpha > 0f) {
+        drawFullscreenButton(view, c, buttonCx, buttonCy, useBubbles ? getBubbleTimeColor() : 0x40000000, useBubbles ? getBubbleTimeTextColor() : 0xffffffff, fullscreenAlpha);
       }
     }
     if (useBubbles) {
@@ -731,8 +745,74 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     }
   }
 
+  // Vibegram X: full screen button of a playing round
+
+  private float fullscreenAlpha;
+  private final RectF fullscreenRect = new RectF();
+  private boolean fullscreenPressed;
+
+  private boolean canOpenFullscreen () {
+    return !compact && Config.ROUND_VIDEOS_PLAYBACK_SUPPORTED && msg.content.getConstructor() == TdApi.MessageVideoNote.CONSTRUCTOR && !TD.isSelfDestructTypeImmediately(getMessage()) && !isSponsoredMessage() && !isEventLog();
+  }
+
+  private void drawFullscreenButton (MessageView view, Canvas c, float cx, float cy, int backgroundColor, int iconColor, float alpha) {
+    final float radius = Screen.dp(STT_ROUND_BUTTON) / 2f;
+    fullscreenRect.set(cx - radius, cy - radius, cx + radius, cy + radius);
+    final float scale = .6f + .4f * alpha;
+    c.drawCircle(cx, cy, radius * scale, Paints.fillingPaint(ColorUtils.alphaColor(alpha, backgroundColor)));
+    Drawable icon = view.getSparseDrawable(R.drawable.vg_round_fullscreen_24, 0);
+    final int saveCount = Views.save(c);
+    final float iconScale = .75f * scale;
+    c.scale(iconScale, iconScale, cx, cy);
+    Paint paint = Paints.getPorterDuffPaint(iconColor);
+    paint.setAlpha((int) (255f * alpha * (Color.alpha(iconColor) / 255f)));
+    Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, paint);
+    paint.setAlpha(255);
+    Views.restore(c, saveCount);
+  }
+
+  private boolean onFullscreenTouchEvent (MessageView view, MotionEvent e) {
+    final float slop = Screen.dp(6f);
+    final boolean inside = e.getX() >= fullscreenRect.left - slop && e.getX() < fullscreenRect.right + slop && e.getY() >= fullscreenRect.top - slop && e.getY() < fullscreenRect.bottom + slop;
+    switch (e.getAction()) {
+      case MotionEvent.ACTION_DOWN: {
+        fullscreenPressed = fullscreenAlpha >= .5f && !fullscreenRect.isEmpty() && inside && canOpenFullscreen();
+        return fullscreenPressed;
+      }
+      case MotionEvent.ACTION_MOVE: {
+        return fullscreenPressed;
+      }
+      case MotionEvent.ACTION_UP: {
+        if (fullscreenPressed) {
+          fullscreenPressed = false;
+          if (inside && fullscreenAlpha >= .5f) {
+            ViewUtils.onClick(view);
+            openFullscreen();
+          }
+          return true;
+        }
+        return false;
+      }
+      case MotionEvent.ACTION_CANCEL: {
+        boolean wasPressed = fullscreenPressed;
+        fullscreenPressed = false;
+        return wasPressed;
+      }
+    }
+    return false;
+  }
+
+  private void openFullscreen () {
+    // The round stops and plays from the start as a regular video: sound, seek bar, rotation
+    tdlib.context().player().stopRoundPlayback(true);
+    MediaViewController.openRoundVideo(this, MediaItem.valueOfRoundVideo(context(), tdlib, msg));
+  }
+
   @Override
   public boolean onTouchEvent (MessageView view, MotionEvent e) {
+    if (onFullscreenTouchEvent(view, e)) {
+      return true;
+    }
     if (onSttTouchEvent(e)) {
       return true;
     }

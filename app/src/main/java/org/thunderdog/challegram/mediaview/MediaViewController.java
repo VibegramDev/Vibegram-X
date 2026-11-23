@@ -8407,6 +8407,25 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     openWithArgs(context, args);
   }
 
+  /** Vibegram X: a round video in full screen, alone (no other media of the chat around it). */
+  public static void openRoundVideo (TGMessage message, MediaItem item) {
+    ViewController<?> context = message.controller();
+    if (context.isStackLocked()) {
+      return;
+    }
+    item.setSourceMessage(message);
+    MediaStack stack = new MediaStack(context.context(), context.tdlib());
+    stack.set(item);
+    Args args = new Args(context, MODE_MESSAGES, stack);
+    args.reverseMode = true;
+    if (context instanceof MediaCollectorDelegate) {
+      ((MediaCollectorDelegate) context).modifyMediaArguments(message, args);
+    }
+    args.noLoadMore = true;
+    args.areOnlyScheduled = message.isScheduled();
+    openWithArgs(context, args);
+  }
+
   public static void openFromMessage (TGMessage message, MediaItem item) {
     ViewController<?> context = message.controller();
     if (context.isStackLocked()) {
