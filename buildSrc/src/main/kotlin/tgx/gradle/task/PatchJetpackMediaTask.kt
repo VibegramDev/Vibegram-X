@@ -72,9 +72,24 @@ abstract class PatchJetpackMediaTask : DefaultTask() {
     }
   }
 
+  private fun patchFfmpegJni(source: String): String {
+    // FFmpeg's AAC decoder keeps the channel configuration of the last decoded frames
+    // after avcodec_flush_buffers(). If a file ends with frames that switch it to
+    // LFE+LFE2, every frame decoded after a seek back (e.g. replay) is silent.
+    // Recreate the context on reset for AAC, the same way upstream already does for TrueHD.
+    val trueHdReset = "if (codecId == AV_CODEC_ID_TRUEHD) {"
+    if (!source.contains(trueHdReset)) {
+      fatal("ffmpeg_jni.cc: TrueHD reset branch not found")
+    }
+    return source.replace(trueHdReset, "if (codecId == AV_CODEC_ID_TRUEHD || codecId == AV_CODEC_ID_AAC) {")
+  }
+
   private fun patchSourceCode(file: File): String {
     val fileName = file.nameWithoutExtension
-    return file.readText()
+    val source = file.readText().let {
+      if (fileName == "ffmpeg_jni") patchFfmpegJni(it) else it
+    }
+    return source
       .replace(Regex("^#define LOG_TAG \"[^\"]+\"\n", RegexOption.MULTILINE), "")
       .replace(Regex("(?<=^#include <)android/(?=log.h)", RegexOption.MULTILINE), "")
       .replace(Regex("^jint JNI(?=_OnLoad\\s*\\(JavaVM\\s*\\*)", RegexOption.MULTILINE), "extern \"C\" jint ${fileName}")
