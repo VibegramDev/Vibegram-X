@@ -4199,8 +4199,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
     if (getChatId() != 0) {
       if (isSelfChat()) {
-        // Centered titles: the avatar takes the end button, Search is in the "more" menu.
-        return Settings.instance().needCenterTitles() && !Lang.rtl() ? R.id.menu_more : R.id.menu_search;
+        return R.id.menu_search;
       }
       if (isSecretChat()) {
         return R.id.menu_secretChat;
@@ -4271,16 +4270,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (id == R.id.menu_more || id == R.id.menu_topicTabs || id == R.id.menu_topicTabsCreate) {
       if (topicTabs != null) {
         topicTabs.fillMenuItems(header, menu, getHeaderIconColorId());
-        if (topicTabs.isSideTabs() && !inPreviewMode) {
-          // Side tabs keep the chat header: its avatar takes the place of the more button.
-          ChatHeaderView.bindAvatarButton(menu.findViewById(R.id.menu_btn_more));
-        }
         return;
       }
-      HeaderButton moreButton = header.addMoreButton(menu, this);
-      if (previewMode == PREVIEW_MODE_NONE && getChatId() != 0) {
-        checkAvatarAsMoreButton(moreButton);
-      }
+      header.addMoreButton(menu, this);
     } else if (id == R.id.menu_gallery) {
       header.addButton(menu, R.id.menu_btn_gallery, R.drawable.baseline_image_24, getHeaderIconColorId(), this, Screen.dp(52f));
     } else if (id == R.id.menu_share) {
@@ -4292,13 +4284,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (id == R.id.menu_chat) {
       HeaderButton btn = header.addButton(menu, R.id.menu_btn_viewScheduled, R.drawable.baseline_date_range_24, getHeaderIconColorId(), this, Screen.dp(52f));
       btn.setVisibility(tdlib.chatHasScheduled(getChatId()) ? View.VISIBLE : View.GONE);
-      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
+      header.addMoreButton(menu, this);
     } else if (id == R.id.menu_secretChat) {
-      // The centered title stays clear of the timer too, not only of the more button.
+      // The title stays clear of the timer too, not only of the more button.
       headerCell.setInnerRightMargin(Screen.dp(49f) * 2);
       StopwatchHeaderButton headerButton = header.addStopwatchButton(menu, this);
       headerButton.forceValue(tdlib.ui().getTTLShort(getChatId()), isSecretChat() && tdlib.canChangeMessageAutoDeleteTime(chat.id));
-      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
+      header.addMoreButton(menu, this);
     } else if (id == R.id.menu_messageActions) {
       int iconColorId = getSelectHeaderIconColorId();
       HeaderButton selectInBetweenBtn = header.addButton(menu, R.id.menu_btn_selectInBetween, R.drawable.baseline_toc_24, iconColorId, this, Screen.dp(49f));
@@ -4342,16 +4334,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (value) totalButtonsCount++;
 
       reportButton.setVisibility(canReportSelectedMessages(totalButtonsCount) ? View.VISIBLE : View.GONE);
-    }
-  }
-
-  /**
-   * Centered titles (iOS-like header): the chat avatar is drawn by the header in place of the "more" icon, the button
-   * stays (transparent) and opens the same menu.
-   */
-  private void checkAvatarAsMoreButton (HeaderButton moreButton) {
-    if (!inPreviewMode) {
-      ChatHeaderView.bindAvatarButton(moreButton);
     }
   }
 

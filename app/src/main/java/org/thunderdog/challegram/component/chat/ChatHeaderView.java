@@ -75,7 +75,6 @@ public class ChatHeaderView extends ComplexHeaderView {
     setUseDefaultClickListener(true);
     setBackgroundResource(ThemeDeprecated.headerSelector());
     setInnerMargins(Screen.dp(56f), Screen.dp(49f));
-    setAllowCenterContent(true);
     topicIconReceiver = new ComplexReceiver(this);
   }
 
@@ -123,17 +122,6 @@ public class ChatHeaderView extends ComplexHeaderView {
 
   public void setCallback (Callback callback) {
     this.callback = callback;
-  }
-
-  /**
-   * Centered titles (iOS-like header): the avatar is drawn in place of the icon of the "more"
-   * button, which has to be the last button of the menu; the transparent button keeps opening it.
-   */
-  public static void bindAvatarButton (@Nullable View moreButton) {
-    if (moreButton instanceof HeaderButton && HeaderView.needCenterTitle()) {
-      ((HeaderButton) moreButton).setImageResource(0);
-      moreButton.setContentDescription(Lang.getString(R.string.MoreChatOptions));
-    }
   }
 
   @Override

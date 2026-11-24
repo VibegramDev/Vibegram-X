@@ -239,8 +239,6 @@ public class Settings {
   private static final String KEY_CHAT_FONT_SIZE = "settings_font_size";
   private static final String KEY_CHAT_LIST_MODE = "settings_chat_list_mode";
   private static final String KEY_COMPACT_CHATS = "settings_compact_chats";
-  private static final String KEY_CENTER_TITLES = "settings_center_titles";
-  private static final String KEY_NAVIGATION_STYLE = "settings_navigation_style";
   private static final String KEY_CHAT_TRANSLATE_MODE = "settings_chat_translate_mode";
   private static final String KEY_CHAT_DO_NOT_TRANSLATE_MODE = "settings_chat_do_not_translate_mode";
   private static final String KEY_CHAT_DO_NOT_TRANSLATE_LIST = "settings_chat_do_not_translate_list";
@@ -1315,63 +1313,6 @@ public class Settings {
       pmc.putBoolean(KEY_COMPACT_CHATS, _compactChats = compact);
       notifyChatListModeChanged();
     }
-  }
-
-  // App bar titles centered, as on iOS (chat list title, chat header)
-
-  private Boolean _centerTitles;
-
-  public boolean needCenterTitles () {
-    if (_centerTitles == null) {
-      _centerTitles = pmc.getBoolean(KEY_CENTER_TITLES, false);
-    }
-    return _centerTitles;
-  }
-
-  public void setNeedCenterTitles (boolean center) {
-    if (needCenterTitles() != center) {
-      pmc.putBoolean(KEY_CENTER_TITLES, _centerTitles = center);
-    }
-  }
-
-  // Main screen navigation style (phone)
-
-  // 0: the former floating vertical rail (removed), shown as the dock now.
-  /** Floating bar of the tablet layout at the bottom (with its shadow), folders as chips above it. Default. */
-  public static final int NAVIGATION_STYLE_DOCK = 1;
-  /** M3 navigation bar: full width at the bottom, icons with labels; folders as tabs below the app bar. */
-  public static final int NAVIGATION_STYLE_BAR = 2;
-
-  public interface NavigationStyleListener {
-    void onNavigationStyleChanged (int newStyle);
-  }
-
-  private Integer _navigationStyle;
-  private final ReferenceList<NavigationStyleListener> navigationStyleListeners = new ReferenceList<>();
-
-  public int getNavigationStyle () {
-    if (_navigationStyle == null) {
-      int style = pmc.getInt(KEY_NAVIGATION_STYLE, NAVIGATION_STYLE_DOCK);
-      _navigationStyle = style == NAVIGATION_STYLE_BAR ? style : NAVIGATION_STYLE_DOCK;
-    }
-    return _navigationStyle;
-  }
-
-  public void setNavigationStyle (int style) {
-    if (getNavigationStyle() != style) {
-      pmc.putInt(KEY_NAVIGATION_STYLE, _navigationStyle = style);
-      for (NavigationStyleListener listener : navigationStyleListeners) {
-        listener.onNavigationStyleChanged(style);
-      }
-    }
-  }
-
-  public void addNavigationStyleListener (NavigationStyleListener listener) {
-    navigationStyleListeners.add(listener);
-  }
-
-  public void removeNavigationStyleListener (NavigationStyleListener listener) {
-    navigationStyleListeners.remove(listener);
   }
 
   private void notifyChatListModeChanged () {
