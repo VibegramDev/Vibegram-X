@@ -144,7 +144,6 @@ import org.thunderdog.challegram.widget.M3SearchBarView;
 import org.thunderdog.challegram.widget.M3Tooltip;
 import org.thunderdog.challegram.widget.M3BottomScrimView;
 import org.thunderdog.challegram.widget.ClearButton;
-import org.thunderdog.challegram.widget.M3DockScrimView;
 import org.thunderdog.challegram.widget.MainNavigationBar;
 import org.thunderdog.challegram.widget.PopupLayout;
 import org.thunderdog.challegram.widget.ShadowView;
@@ -218,7 +217,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   /** Tablet: fades the chat list into surface behind the floating bar. */
   private M3BottomScrimView navigationScrim;
   /** Navigation style "dock": washes the chat list out towards the bottom, below the folder chips. */
-  private @Nullable M3DockScrimView dockScrim;
   /** Tablet layout only: M3 search app bar, the search bar in place of the app bar title. */
   private @Nullable M3SearchBarView searchBarView;
   /** Tablet layout with chat folders only: the folder tabs take the title place, search is an app bar button. */
@@ -246,7 +244,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private void updateBottomBarMargins () {
-    updateDockScrim();
     if (bottomBar != null) {
       int height = extraBottomInsetWithoutIme;
       FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) bottomBar.getLayoutParams();
@@ -280,36 +277,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         bottomBarShadow.setVisibility(isDockStyle() ? View.GONE : View.VISIBLE);
       }
     }
-  }
-
-  private void updateDockScrim () {
-    if (dockScrim == null) {
-      return;
-    }
-    // Dock style: the list washes out behind the floating bar and the folder chips, only inside the band the list
-    // keeps free for them (its bottom padding), so the last chat resting above them is never dimmed.
-    boolean visible = navigationBar != null && isDockStyle();
-    dockScrim.setVisibility(visible ? View.VISIBLE : View.GONE);
-    if (visible) {
-      int height = extraBottomInsetWithoutIme + getChatListNavigationInset();
-      FrameLayoutFix.LayoutParams params = (FrameLayoutFix.LayoutParams) dockScrim.getLayoutParams();
-      if (params == null || params.height != height || params.gravity != Gravity.BOTTOM) {
-        dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.BOTTOM));
-      }
-      updateDockScrimFadeTop();
-    }
-  }
-
-  /**
-   * Folder chips hidden on scroll: the fade goes back to the band of the dock alone (as without folders), following the
-   * chips. The list keeps its padding, only the fade moves.
-   */
-  private void updateDockScrimFadeTop () {
-    if (dockScrim == null) {
-      return;
-    }
-    int chipsBand = Math.max(0, getChatListNavigationInset() - (MainNavigationBar.getBarTotalHeight() + Screen.dp(8f)));
-    dockScrim.setFadeTop(chipsBand * (1f - isBottomBarVisible.getFloatValue()));
   }
 
   /** Dock style: distance from the bottom (above the system inset) to the bottom of the folder chips row. */
@@ -381,11 +348,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     pagerWrap = new FrameLayoutFix(context);
     pagerWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     pagerWrap.addView(pager);
-    // Above the chat lists, below the folder chips (added later) and the dock (another parent, above everything).
-    dockScrim = new M3DockScrimView(context);
-    dockScrim.setVisibility(View.GONE);
-    pagerWrap.addView(dockScrim);
-    addThemeInvalidateListener(dockScrim);
 
     mainWrap = new FrameLayoutFix(context);
     mainWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -876,7 +838,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         RippleSupport.setTransparentBlackSelector(sectionView);
         menu.addView(sectionView);
       }
-      pagerWrap.addView(menu, dockScrim != null ? pagerWrap.indexOfChild(dockScrim) + 1 : 1);
+      pagerWrap.addView(menu, 1);
       parent = pagerWrap;
     }
     if (visible) {
@@ -1474,7 +1436,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     // Owner: the dock is Chats · Contacts · Settings, the calls are a tab of Contacts (ContactsCallsController).
     navigationBar.setItemVisible(MainNavigationBar.ITEM_CALLS, false);
     navigationBar.setItemVisible(MainNavigationBar.ITEM_CONTACTS, true);
-    // Phone: search is the last button of the dock. Tablet: the search bar in the app bar.
+    // Phone: search is a dock button before settings. Tablet: the search bar in the app bar.
     navigationBar.setItemVisible(MainNavigationBar.ITEM_SEARCH, !isTablet);
     navigationBar.setCompactBar(!isTablet && isDockStyle());
     // Short window with folder chips: the bar at the end, the chips in line with it.
@@ -1488,10 +1450,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       int scrimHeight = MainNavigationBar.getBarTotalHeight() + Screen.dp(8f) + barInset;
       navigationScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, scrimHeight, Gravity.BOTTOM));
       navigationScrim.setVisibility(View.VISIBLE);
-      // Phone dock style: only the shadow of the bar, the fade is drawn by the dock scrim.
-      navigationScrim.setShadowOnly(!isTablet && isDockStyle());
     }
-    updateDockScrim();
     updateNavigationBarSearchVisibility();
     if (modeChanged && headerView != null && isFocused() && !inTransformMode() && navigationController != null && !navigationController.isAnimating()) {
       // The app bar title switches between the app name (phone) and the search bar (tablet).
@@ -3478,8 +3437,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       bottomBar.setAlpha(visible);
       bottomBar.setVisibility(visible > 0f ? View.VISIBLE : View.INVISIBLE);
       bottomBarSpace.setTranslationY(0);
-      updateDockScrimFadeTop();
-      if (navigationBar != null) {
+        if (navigationBar != null) {
         navigationBar.setTranslationY(Math.min(y, 0));
       }
       return;

@@ -396,7 +396,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   /** Attach button inside the field, at its bottom-end corner, while the send button replaces the attach buttons. */
   private ImageView inlineAttachButton;
   private static final float INLINE_ATTACH_WIDTH = 40f;
-  private InvisibleImageView cameraButton, scheduleButton;
+  private InvisibleImageView scheduleButton;
   private InvisibleImageView commandButton;
   private @Nullable SilentButton silentButton;
 
@@ -1478,15 +1478,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     mediaButton.setLayoutParams(lp);
 
 
-    lp = new LinearLayout.LayoutParams(Screen.dp(ATTACH_BUTTONS_WIDTH), Screen.dp(49f));
-    cameraButton = new CameraAccessImageView(context, this);
-    cameraButton.setId(R.id.btn_camera);
-    cameraButton.setScaleType(ImageView.ScaleType.CENTER);
-    cameraButton.setImageResource(R.drawable.deproko_baseline_camera_26);
-    cameraButton.setColorFilter(Theme.iconColor());
-    addThemeFilterListener(cameraButton, ColorId.icon);
-    cameraButton.setOnClickListener(this);
-    cameraButton.setLayoutParams(lp);
+    // Vibegram X: no camera button in the composer, the camera is in the attach menu (MediaLayout.needCameraButton).
 
     if (!areScheduled /*&& isSelfChat()*/) {
       lp = new LinearLayout.LayoutParams(Screen.dp(ATTACH_BUTTONS_WIDTH), Screen.dp(49f));
@@ -1539,9 +1531,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
     if (scheduleButton != null) {
       attachButtons.addView(scheduleButton);
-    }
-    if (cameraButton != null) {
-      attachButtons.addView(cameraButton);
     }
     attachButtons.addView(mediaButton);
     attachButtons.addView(recordButton);
@@ -1782,7 +1771,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
       contentView.addView(messagesView);
       // Same fade and shadow as the dock of the chat list
       composerScrim = new M3BottomScrimView(context);
-      composerScrim.setFadeTopProvider(this::getComposerFadeTop);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       addThemeInvalidateListener(composerScrim);
@@ -2492,11 +2480,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         scrollToUnreadOrStartMessage();
       }
     }
-    if (viewId == R.id.btn_camera) {
-      if (!showPhotoVideoRestriction(v)) {
-        openInAppCamera(new CameraOpenOptions().anchor(v).noTrace(isSecretChat()));
-      }
-    } else if (viewId == R.id.btn_viewScheduled) {
+    if (viewId == R.id.btn_viewScheduled) {
       viewScheduledMessages(false);
     } else if (viewId == R.id.msg_bottomReply) {
       if (reply != null) {
@@ -8792,7 +8776,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (emojiButton != null) {
       emojiButton.setColorFilter(content);
     }
-    for (ImageView button : new ImageView[] {mediaButton, cameraButton, scheduleButton, commandButton}) {
+    for (ImageView button : new ImageView[] {mediaButton, scheduleButton, commandButton}) {
       if (button != null) {
         button.setColorFilter(content);
       }
@@ -13807,10 +13791,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return chat != null && chat.messageSenderId != null;
   }
 
-  public boolean isCameraButtonVisibleOnAttachPanel () {
-    return !canSelectSender();
-  }
-
   public HapticMenuHelper.MenuItem createHapticSenderItem (int id, TdApi.MessageSender sender, boolean useUsername, boolean isLocked) {
     String title = useUsername ? tdlib.senderName(sender) : Lang.getString(R.string.SendAs);
     if (tdlib.isSelfSender(sender)) {
@@ -13861,11 +13841,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   // Interface
 
   private void updateSelectMessageSenderInterface (boolean animated) {
-    boolean cameraVisible = isCameraButtonVisibleOnAttachPanel();
     boolean canSetSender = canSelectSender();
-    if (cameraButton != null) {
-      cameraButton.setVisibility(cameraVisible ? View.VISIBLE : View.GONE);  //.setVisible(cameraVisible);
-    }
 
     messageSenderButton.setVisibility((canSetSender && attachButtons.getVisibility() == View.VISIBLE) ? View.VISIBLE : View.GONE);
     if (canSetSender) {

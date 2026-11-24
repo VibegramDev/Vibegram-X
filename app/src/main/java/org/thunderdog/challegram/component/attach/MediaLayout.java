@@ -2234,7 +2234,8 @@ public class MediaLayout extends FrameLayoutFix implements
   }
 
   public boolean needCameraButton () {
-    return mode == MODE_AVATAR_PICKER || (parent instanceof MessagesController) && !((MessagesController) parent).isCameraButtonVisibleOnAttachPanel();
+    // Vibegram X: in a chat the camera is always here, the composer has no camera button.
+    return mode == MODE_AVATAR_PICKER || parent instanceof MessagesController;
   }
 
   public int getCameraButtonOffset () {
