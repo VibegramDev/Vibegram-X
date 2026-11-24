@@ -701,10 +701,29 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
         final float distance = roundRadius + Screen.dp(STT_ROUND_GAP) + buttonRadius;
         final float dy = Math.min(distance, Math.max(0f, pillCy - receiver.centerY()));
         final float dx = (float) Math.sqrt(distance * distance - dy * dy);
-        final float buttonCx = isOutgoingBubble() ?
+        float buttonCx = isOutgoingBubble() ?
           Math.min(centerX - dx, pillLeft - Screen.dp(STT_ROUND_GAP) - buttonRadius) :
           centerX + dx;
-        stt.drawCircleButton(c, buttonCx, pillCy, STT_ROUND_BUTTON, pillColor, pillTextColor, .75f, sttAlpha);
+        float buttonCy = pillCy;
+        final RectF time = sttTimeRect;
+        if (!isOutgoingBubble() && getBubbleTimePillBounds(view, time)) {
+          // the time of an incoming round sits on the same line at its lower right: the button goes after it,
+          // as in Telegram (to the right of the round, the time in between), or above it when there is no room
+          final float gap = Screen.dp(STT_ROUND_GAP);
+          if (buttonCx - buttonRadius - gap < time.right && buttonCx + buttonRadius + gap > time.left &&
+              buttonCy - buttonRadius < time.bottom && buttonCy + buttonRadius > time.top) {
+            final float afterTime = time.right + gap + buttonRadius;
+            if (afterTime + buttonRadius <= view.getMeasuredWidth() - Screen.dp(4f)) {
+              buttonCx = Math.max(buttonCx, afterTime);
+              buttonCy = time.centerY();
+            } else {
+              buttonCy = time.top - gap - buttonRadius;
+              final float upDy = Math.min(distance, Math.max(0f, buttonCy - receiver.centerY()));
+              buttonCx = centerX + (float) Math.sqrt(distance * distance - upDy * upDy);
+            }
+          }
+        }
+        stt.drawCircleButton(c, buttonCx, buttonCy, STT_ROUND_BUTTON, pillColor, pillTextColor, .75f, sttAlpha);
       } else {
         stt.clearButton();
       }
@@ -915,6 +934,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   private static final float COMPACT_PREVIEW_OFFSET = 12f, COMPACT_DURATION_GAP = 12f;
 
   private @Nullable SttBlock stt;
+  private final RectF sttTimeRect = new RectF();
 
   /** Vibegram X: subtitles of the file for the full screen player, the same ones this message shows. */
   public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSttSubtitles (int fileId) {
