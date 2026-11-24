@@ -16,8 +16,6 @@ public final class SttModel {
   public static final int ENGINE_SHERPA_NEMO_TDT = 1;
   /** Sber GigaAM (RNN-T, sherpa-onnx): 64 mel features instead of 80 and chunks of at most 30 s. */
   public static final int ENGINE_SHERPA_GIGAAM = 2;
-  /** Not a recognizer: the text corrector of «Enhanced transcription» (llama.cpp). */
-  public static final int ENGINE_LLAMA_CPP = 3;
 
   public static final class FileSpec {
     public final String name, url;
@@ -130,14 +128,6 @@ public final class SttModel {
   };
 
   /**
-   * «Enhanced transcription»: the language model that corrects the text of the selected recognizer.
-   * Not in {@link #ALL}: it is never selected as a recognizer, the settings toggle downloads it.
-   * Qwen3.5-4B, 4-bit (Q4_K_M) GGUF by Unsloth.
-   */
-  public static final SttModel CORRECTOR = new SttModel("qwen35_4b_q4km", "Qwen3.5-4B", 0, 0, ENGINE_LLAMA_CPP,
-    f("model.gguf", "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf", 2740937888L, "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4"));
-
-  /**
    * Number of stars: the best model of the catalog gets them all,
    * so a full row always means "the best available here".
    */
@@ -175,13 +165,11 @@ public final class SttModel {
     new Credit("Moondream Parakeet Ultra", "https://huggingface.co/moondream/parakeet-ultra"),
     new Credit("Parakeet Ultra ONNX (Olicorne)", "https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-ultra-onnx"),
     new Credit("Sber GigaAM v3", "https://github.com/salute-developers/GigaAM"),
-    new Credit("Qwen3.5-4B", "https://huggingface.co/Qwen/Qwen3.5-4B"),
   };
 
   public static final Credit[] ENGINE_CREDITS = {
     new Credit("whisper.cpp", "https://github.com/ggml-org/whisper.cpp"),
     new Credit("sherpa-onnx", "https://github.com/k2-fsa/sherpa-onnx"),
-    new Credit("llama.cpp", "https://github.com/ggml-org/llama.cpp"),
   };
 
   /** Knows only Russian: shown separately as the best model for Russian. */

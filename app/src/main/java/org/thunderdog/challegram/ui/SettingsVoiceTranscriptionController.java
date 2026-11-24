@@ -1,7 +1,6 @@
 /*
  * Vibegram X: Settings → Voice transcription. Lists the speech recognition models with their size and quality,
- * downloads, deletes and selects them, turns on «Enhanced transcription» (a language model corrects the text)
- * and credits the authors of the models and engines.
+ * downloads, deletes and selects them, and credits the authors of the models and engines.
  */
 package org.thunderdog.challegram.ui;
 
@@ -17,7 +16,6 @@ import androidx.annotation.NonNull;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.component.base.SettingView;
 import org.thunderdog.challegram.core.Lang;
-import org.thunderdog.challegram.stt.LlmNative;
 import org.thunderdog.challegram.stt.SttManager;
 import org.thunderdog.challegram.stt.SttModel;
 import org.thunderdog.challegram.support.RippleSupport;
@@ -64,10 +62,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
           boolean selected = manager.getSelectedModel() == model && manager.isDownloaded(model);
           view.findRadioView().setChecked(selected, isUpdate);
           bindModelRow(view, model);
-        } else if (item.getId() == R.id.btn_vgSttEnhance) {
-          SttManager manager = SttManager.instance();
-          view.getToggler().setRadioEnabled(manager.isEnhancedEnabled(), isUpdate);
-          view.setData(buildEnhanceSubtitle());
         } else if (item.getId() == R.id.btn_vgSttCredit) {
           view.setData(((SttModel.Credit) item.getData()).displayUrl());
         }
@@ -80,14 +74,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     // One radio group in two sections: the Russian-only model on top, the multilingual ones below.
     addModels(items, R.string.vg_SttRussianHeader, true);
     addModels(items, R.string.vg_SttMultilingualHeader, false);
-
-    if (LlmNative.isSupported()) {
-      items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, R.string.vg_SttEnhanceHeader));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_TOGGLER, R.id.btn_vgSttEnhance, 0, R.string.vg_SttEnhance).setData(SttModel.CORRECTOR));
-      items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_SttEnhanceInfo));
-    }
 
     addCredits(items, R.string.vg_SttCreditsModels, SttModel.MODEL_CREDITS);
     addCredits(items, R.string.vg_SttCreditsEngines, SttModel.ENGINE_CREDITS);
@@ -142,47 +128,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
       return size + " · " + Lang.getString(R.string.vg_SttDownloadingProgress, Math.round(manager.getDownloadProgress(model) * 100f) + "%");
     }
     return size + " · " + Lang.getString(model.languagesRes);
-  }
-
-  /** «Qwen3.5-4B · 2.6 GB», with the download progress while it downloads. */
-  private static String buildEnhanceSubtitle () {
-    SttManager manager = SttManager.instance();
-    SttModel model = SttModel.CORRECTOR;
-    String text = model.title + " · " + model.sizeText();
-    if (manager.isDownloading(model)) {
-      text += " · " + Lang.getString(R.string.vg_SttDownloadingProgress, Math.round(manager.getDownloadProgress(model) * 100f) + "%");
-    }
-    return text;
-  }
-
-  private void onEnhanceClick () {
-    SttManager manager = SttManager.instance();
-    SttModel model = SttModel.CORRECTOR;
-    if (manager.isEnhancedEnabled()) {
-      if (!manager.isDownloaded(model) && !manager.hasPartialDownload(model)) {
-        manager.setEnhancedEnabled(false);
-        return;
-      }
-      // the model takes gigabytes: turning off asks whether to keep it for later
-      showOptions(Lang.getString(R.string.vg_SttEnhance), new int[] {R.id.btn_vgSttEnhanceOff, R.id.btn_vgSttDelete}, new String[] {Lang.getString(R.string.vg_SttEnhanceOff), Lang.getString(R.string.vg_SttEnhanceOffDelete, model.sizeText())}, new int[] {OptionColor.NORMAL, OptionColor.RED}, new int[] {R.drawable.baseline_close_24, R.drawable.baseline_delete_24}, (itemView, id) -> {
-        if (id == R.id.btn_vgSttEnhanceOff) {
-          manager.setEnhancedEnabled(false);
-        } else if (id == R.id.btn_vgSttDelete) {
-          manager.setEnhancedEnabled(false);
-          manager.delete(model);
-        }
-        return true;
-      });
-    } else if (manager.isDownloaded(model)) {
-      manager.setEnhancedEnabled(true);
-    } else {
-      showOptions(Lang.getString(R.string.vg_SttEnhance), new int[] {R.id.btn_vgSttDownload}, new String[] {Lang.getString(R.string.vg_SttDownload, model.sizeText())}, null, new int[] {R.drawable.baseline_file_download_24}, (itemView, id) -> {
-        if (id == R.id.btn_vgSttDownload) {
-          manager.setEnhancedEnabled(true);
-        }
-        return true;
-      });
-    }
   }
 
   // Model row: quality stars and an action button (download / cancel / delete) at the end
@@ -355,7 +300,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     }
     // The selection may move between models, so refresh every row.
     adapter.updateAllValuedSettingsById(R.id.btn_vgSttModel);
-    adapter.updateValuedSettingById(R.id.btn_vgSttEnhance);
   }
 
   @Override
@@ -369,10 +313,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
 
   @Override
   public void onClick (View v) {
-    if (v.getId() == R.id.btn_vgSttEnhance) {
-      onEnhanceClick();
-      return;
-    }
     if (v.getId() == R.id.btn_vgSttCredit) {
       SttModel.Credit credit = (SttModel.Credit) ((ListItem) v.getTag()).getData();
       tdlib.ui().openUrl(this, credit.url, new TdlibUi.UrlOpenParameters().disableInstantView());

@@ -9,8 +9,6 @@
   <item type="id" name="btn_vgSttDownload" />
   <item type="id" name="btn_vgSttCancel" />
   <item type="id" name="btn_vgSttDelete" />
-  <item type="id" name="btn_vgSttEnhance" />
-  <item type="id" name="btn_vgSttEnhanceOff" />
 
   <string name="vg_SttTitle">Transcription &amp; dictation</string>
   <string name="vg_SttDescription">These models transcribe voice and video messages and recognize your speech in dictation mode of the record button. Everything runs on this device, nothing is sent anywhere. Stars show the recognition quality of the models.</string>
@@ -37,10 +35,4 @@
   <string name="vg_SttPreparing">Preparing…</string>
   <string name="vg_SttVideoTooLong">Only videos up to 5 minutes can be transcribed</string>
   <string name="vg_SttCopy">Copy transcription</string>
-  <string name="vg_SttEnhanceHeader">Text improvement</string>
-  <string name="vg_SttEnhance">Enhanced transcription</string>
-  <string name="vg_SttEnhanceInfo">After the selected model, a language model reads the text and fixes misheard words by context. It works on this device and sees only the text. Transcription takes noticeably longer and needs a lot of memory.</string>
-  <string name="vg_SttEnhanceOff">Turn off</string>
-  <string name="vg_SttEnhanceOffDelete">Turn off and delete the model · %1$s</string>
-  <string name="vg_SttImproving">Improving the text… %1$d%%</string>
 </resources>

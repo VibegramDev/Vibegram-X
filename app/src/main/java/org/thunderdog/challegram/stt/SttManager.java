@@ -169,8 +169,6 @@ public final class SttManager {
     private float shownProgress;
     /** Decoding the audio and loading the model, before the recognition itself. */
     public volatile boolean preparing;
-    /** «Enhanced transcription»: the text is recognized and the language model is correcting it. */
-    public volatile boolean correcting;
 
     volatile long lastProgressTime;
     volatile long estimatedTotalMs;
@@ -227,11 +225,6 @@ public final class SttManager {
   /** The model is unloaded after this much idle time: Parakeet takes over 2 GB of RAM while loaded. */
   private static final long ENGINE_IDLE_UNLOAD_MS = 60_000;
   private @Nullable String engineModelId;
-  /**
-   * The language model of «Enhanced transcription». Never in memory together with the recognizer (Parakeet takes
-   * over 2 GB, this model about 3 GB): loading one unloads the other. Recognition thread; cancel() from any thread.
-   */
-  private volatile @Nullable SttCorrector corrector;
   private volatile @Nullable String runningKey;
   private volatile boolean recognitionBusy;
   private final Object engineLock = new Object();
@@ -297,7 +290,7 @@ public final class SttManager {
       return;
     }
     for (File dir : dirs) {
-      if (dir.isDirectory() && !dir.getName().equals("transcripts") && !dir.getName().equals(SttModel.CORRECTOR.id) && SttModel.find(dir.getName()) == null) {
+      if (dir.isDirectory() && !dir.getName().equals("transcripts") && SttModel.find(dir.getName()) == null) {
         Log.i("STT: deleting removed model %s", dir.getName());
         deleteRecursive(dir);
       }
@@ -387,36 +380,6 @@ public final class SttManager {
     forgetFinishedTranscriptions();
     // Transcriptions are kept per model: let visible messages switch to the new model's state.
     notifyTranscription(null);
-  }
-
-  // Enhanced transcription
-
-  /** Turned on in the settings; the model may still be downloading. */
-  public boolean isEnhancedEnabled () {
-    return Settings.instance().isSttEnhanced();
-  }
-
-  /** Turned on and the language model is downloaded: recognized text is corrected. Any thread. */
-  public boolean isEnhancedActive () {
-    return isEnhancedEnabled() && LlmNative.isSupported() && isDownloaded(SttModel.CORRECTOR);
-  }
-
-  /** Turning on downloads the language model; turning off stops its download but keeps a downloaded model. UI thread. */
-  public void setEnhancedEnabled (boolean enabled) {
-    Settings.instance().setSttEnhanced(enabled);
-    if (enabled) {
-      download(SttModel.CORRECTOR);
-    } else if (isDownloading(SttModel.CORRECTOR)) {
-      cancelDownload(SttModel.CORRECTOR);
-    }
-    onEnhancedModeChanged();
-  }
-
-  /** Finished results belong to the old mode: messages are recognized again in the new one. */
-  private void onEnhancedModeChanged () {
-    forgetFinishedTranscriptions();
-    notifyTranscription(null);
-    notifyModel(SttModel.CORRECTOR);
   }
 
   // Listeners
@@ -526,8 +489,7 @@ public final class SttManager {
     if (wasActive) {
       downloadProgress.remove(model.id);
     }
-    boolean isCorrector = model == SttModel.CORRECTOR;
-    if (success && !isCorrector && getSelectedModel() == null) {
+    if (success && getSelectedModel() == null) {
       setSelectedModel(model);
     }
     if (!success && wasActive && !task.cancelled) {
@@ -536,13 +498,6 @@ public final class SttManager {
       } else {
         UI.showToast(R.string.vg_SttDownloadFailed, android.widget.Toast.LENGTH_SHORT);
       }
-      if (isCorrector) {
-        // the toggle must not stay on while nothing is going to be corrected
-        Settings.instance().setSttEnhanced(false);
-      }
-    }
-    if (success && isCorrector) {
-      onEnhancedModeChanged();
     }
     if (!stoppingDownloads.containsKey(model.id)) {
       if (pendingDeletes.contains(model.id)) {
@@ -577,10 +532,6 @@ public final class SttManager {
     if (getSelectedModel() == model) {
       setSelectedModel(null);
     }
-    if (model == SttModel.CORRECTOR) {
-      Settings.instance().setSttEnhanced(false);
-      onEnhancedModeChanged();
-    }
     // a download requested before the files are gone waits for the deletion
     pendingDeletes.add(model.id);
     submitRecognitionTask(false, () -> {
@@ -590,9 +541,6 @@ public final class SttManager {
           engine = null;
           engineModelId = null;
         }
-      }
-      if (model == SttModel.CORRECTOR) {
-        releaseCorrector("deleted");
       }
       UI.post(() -> deleteFilesWhenStopped(model));
     });
@@ -818,9 +766,8 @@ public final class SttManager {
     return accountId + ":" + fileId;
   }
 
-  /** Results are kept per model and per «Enhanced transcription» mode. */
-  private String fullKey (String key, SttModel model) {
-    return key + "@" + (model != null ? model.id : "none") + (isEnhancedActive() ? "+llm" : "");
+  private static String fullKey (String key, SttModel model) {
+    return key + "@" + (model != null ? model.id : "none");
   }
 
   /** The transcription of the message with the selected model, or null when it was never started. Does not create one. */
@@ -920,11 +867,8 @@ public final class SttManager {
     t.preparing = true;
     t.lastProgressTime = t.runStartTime = SystemClock.uptimeMillis();
     t.runStartProgress = 0f;
-    t.correcting = false;
     runningKey = key;
     notifyTranscription(key);
-    // decided once per run: a mode switch in the middle drops this result anyway (forgetFinishedTranscriptions)
-    final boolean correct = isEnhancedActive();
     try {
       long startTime = SystemClock.uptimeMillis();
       float[] samples = AudioDecoder.decode(path, maxSeconds, () -> t.generation != generation);
@@ -968,7 +912,6 @@ public final class SttManager {
           notifyThrottled(t);
         }
       }).replaceAll("\\s+", " ").trim();
-      SttSubtitles subtitles = engine.takeSubtitles();
       long end = SystemClock.uptimeMillis();
       float audioSeconds = samples.length / (float) AudioDecoder.SAMPLE_RATE;
       long recognitionMs = end - t.runStartTime;
@@ -980,11 +923,7 @@ public final class SttManager {
         // cancelled while the engine was finishing its last chunk
         throw new IOException("Cancelled");
       }
-      if (correct && !text.isEmpty()) {
-        text = correctText(t, key, generation, text);
-      }
-      // Subtitles keep the recognizer's words: the corrected text has no times. They differ only in fixed words.
-      t.subtitles = subtitles;
+      t.subtitles = engine.takeSubtitles();
       t.text = text;
       t.state = STATE_DONE;
       if (onDone != null && !text.isEmpty()) {
@@ -1005,76 +944,9 @@ public final class SttManager {
     runningKey = null;
     if (t.generation == generation) {
       t.preparing = false;
-      t.correcting = false;
       notifyTranscription(key);
     }
     scheduleEngineUnload();
-  }
-
-  /**
-   * «Enhanced transcription»: the language model corrects the recognized text. The recognized text stays on screen
-   * meanwhile, the status says the text is being improved. Recognition thread.
-   */
-  private String correctText (Transcription t, String key, int generation, String text) throws IOException {
-    t.text = text;
-    t.correcting = true;
-    t.preparing = true;
-    t.progress = 0f;
-    t.shownProgress = 0f;
-    t.runStartTime = 0;
-    notifyTranscription(key);
-    long start = SystemClock.uptimeMillis();
-    SttCorrector corrector = obtainCorrector();
-    corrector.resetCancel();
-    if (t.generation != generation) {
-      throw new IOException("Cancelled");
-    }
-    long loaded = SystemClock.uptimeMillis();
-    t.preparing = false;
-    t.lastProgressTime = t.runStartTime = loaded;
-    t.runStartProgress = 0f;
-    // no speed estimate before the first tokens: the ring stays at the start while the model reads the text
-    t.estimatedTotalMs = 0;
-    notifyTranscription(key);
-    String corrected = corrector.correct(text, progress -> {
-      if (t.generation != generation) {
-        return;
-      }
-      if (progress > t.progress) {
-        t.progress = progress;
-        t.lastProgressTime = SystemClock.uptimeMillis();
-      }
-      notifyThrottled(t);
-    });
-    Log.i(Log.TAG_VOICE, "STT: correction of %d chars: load %dms, correction %dms, %s", text.length(), loaded - start, SystemClock.uptimeMillis() - loaded, corrected.equals(text) ? "unchanged" : "changed");
-    if (t.generation != generation) {
-      throw new IOException("Cancelled");
-    }
-    return corrected;
-  }
-
-  /** Recognition thread. Unloads the recognizer first: the two models do not fit in memory together. */
-  private SttCorrector obtainCorrector () throws IOException {
-    SttCorrector current = corrector;
-    if (current != null) {
-      return current;
-    }
-    releaseRecognizer("correction");
-    long start = SystemClock.uptimeMillis();
-    SttCorrector created = new SttCorrector(new File(getModelDir(SttModel.CORRECTOR), SttModel.CORRECTOR.files[0].name));
-    corrector = created;
-    Log.i("STT: loaded %s in %dms", SttModel.CORRECTOR.id, SystemClock.uptimeMillis() - start);
-    return created;
-  }
-
-  /** Recognition thread. */
-  private void releaseCorrector (String reason) {
-    SttCorrector current = corrector;
-    if (current != null) {
-      Log.i(Log.TAG_VOICE, "STT: unloading %s: %s", SttModel.CORRECTOR.id, reason);
-      corrector = null;
-      current.release();
-    }
   }
 
   // Dictation
@@ -1160,7 +1032,7 @@ public final class SttManager {
 
   /** The app went to the background or the system is low on memory: free the model unless it is in use. */
   private void unloadEngineIfIdle (String reason) {
-    if ((engine == null && corrector == null) || recognitionBusy) {
+    if (engine == null || recognitionBusy) {
       return;
     }
     submitRecognitionTask(false, () -> {
@@ -1175,14 +1047,8 @@ public final class SttManager {
     });
   }
 
-  /** Recognition thread: frees the recognizer and the language model. */
-  private void releaseEngine (String reason) {
-    releaseRecognizer(reason);
-    releaseCorrector(reason);
-  }
-
   /** Recognition thread. */
-  private void releaseRecognizer (String reason) {
+  private void releaseEngine (String reason) {
     synchronized (engineLock) {
       if (engine != null) {
         Log.i(Log.TAG_VOICE, "STT: unloading %s: %s", engineModelId, reason);
@@ -1228,10 +1094,6 @@ public final class SttManager {
       if (engine != null) {
         engine.cancel();
       }
-      SttCorrector corrector = this.corrector;
-      if (corrector != null) {
-        corrector.cancel();
-      }
     }
     // Reset right away, whether the run is queued, preparing or recognizing: the engine stops on its own time.
     t.state = STATE_NONE;
@@ -1239,7 +1101,6 @@ public final class SttManager {
     t.text = null;
     t.subtitles = null;
     t.preparing = false;
-    t.correcting = false;
     t.progress = -1f;
     notifyTranscription(key);
   }
@@ -1259,10 +1120,6 @@ public final class SttManager {
       if (engine != null && model.id.equals(engineModelId)) {
         return engine;
       }
-    }
-    // the language model of the previous message would not leave memory for the recognizer
-    releaseCorrector("recognition");
-    synchronized (engineLock) {
       if (engine != null) {
         engine.release();
         engine = null;

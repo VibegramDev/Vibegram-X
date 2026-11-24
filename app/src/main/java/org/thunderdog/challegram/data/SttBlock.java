@@ -63,8 +63,6 @@ public final class SttBlock implements SttManager.TranscriptionListener {
   private static final long FRAME_DELAY_MS = 33; // 30 frames per second are enough for the ring and leave the CPU to the recognition
   private static final long STATUS_UPDATE_MS = 500;
   private static final int STATUS_NONE = Integer.MIN_VALUE, STATUS_QUEUED = -1, STATUS_PREPARING = -2;
-  /** «Enhanced transcription»: the language model corrects the text, STATUS_IMPROVING + percent. */
-  private static final int STATUS_IMPROVING = 1000;
 
   private final TGMessage message;
   private final Host host;
@@ -268,9 +266,6 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     if (t.preparing) {
       return STATUS_PREPARING;
     }
-    if (t.correcting) {
-      return STATUS_IMPROVING + (int) (progress * 100);
-    }
     return (int) (progress * 100);
   }
 
@@ -280,9 +275,6 @@ public final class SttBlock implements SttManager.TranscriptionListener {
         return Lang.getString(R.string.vg_SttQueued);
       case STATUS_PREPARING:
         return Lang.getString(R.string.vg_SttPreparing);
-    }
-    if (code >= STATUS_IMPROVING) {
-      return Lang.getString(R.string.vg_SttImproving, code - STATUS_IMPROVING);
     }
     return Lang.getString(R.string.vg_SttProgress, code);
   }
