@@ -226,7 +226,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
    * Every app bar menu filled for this screen. The tablet split layout has its own app bar for the left pane,
    * so after folding/unfolding the visible menu may be an older one: buttons are updated in all of them.
    */
-  private final List<LinearLayout> mainMenus = new ArrayList<>();
   private @Nullable M3MainTitleView titleView;
   private CounterChangeListener navigationCounterListener;
 
@@ -1024,42 +1023,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     }
   }
 
-  // App bar search button
-
-  /** Phone: search is the app bar button. Tablet: the search bar in the app bar, the button is hidden. */
-  private void updateHeaderSearchButton () {
-    int visibility = isTabletNavigationBar() ? View.GONE : View.VISIBLE;
-    boolean changed = false;
-    for (LinearLayout menu : mainMenus) {
-      View button = menu.findViewById(R.id.menu_btn_search);
-      if (button != null && button.getVisibility() != visibility) {
-        button.setVisibility(visibility);
-        changed = true;
-      }
-    }
-    if (changed && titleView != null) {
-      // The title gives way to the actions: it measures itself against the visible menu width
-      // (a measure spec doesn't change when only the menu changes, so it must be re-measured explicitly).
-      titleView.requestLayout();
-    }
-  }
-
-  /**
-   * Plain tooltip with the label on tap and hold, below the icon button
-   * ("If the element is in an app bar, the plain tooltip appears below the element").
-   */
-  private static void bindHeaderSearchTooltip (LinearLayout menu) {
-    View button = menu.findViewById(R.id.menu_btn_search);
-    if (button != null) {
-      M3Tooltip.bind(button, M3Tooltip.PLACEMENT_BELOW, (anchor, outRect) -> {
-        // 48dp icon button centered in the app bar button.
-        int size = Math.min(anchor.getHeight(), Screen.dp(48f));
-        int top = (anchor.getHeight() - size) / 2;
-        outRect.set(0, top, anchor.getWidth(), top + size);
-      }, View::getContentDescription);
-    }
-  }
-
   private long lastAccountSwitchTime;
 
   /**
@@ -1511,6 +1474,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     // Owner: the dock is Chats · Contacts · Settings, the calls are a tab of Contacts (ContactsCallsController).
     navigationBar.setItemVisible(MainNavigationBar.ITEM_CALLS, false);
     navigationBar.setItemVisible(MainNavigationBar.ITEM_CONTACTS, true);
+    // Phone: search is the last button of the dock. Tablet: the search bar in the app bar.
+    navigationBar.setItemVisible(MainNavigationBar.ITEM_SEARCH, !isTablet);
     navigationBar.setCompactBar(!isTablet && isDockStyle());
     // Short window with folder chips: the bar at the end, the chips in line with it.
     navigationBar.setCompactBarAtEnd(isDockChipsInline());
@@ -1527,7 +1492,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       navigationScrim.setShadowOnly(!isTablet && isDockStyle());
     }
     updateDockScrim();
-    updateHeaderSearchButton();
     updateNavigationBarSearchVisibility();
     if (modeChanged && headerView != null && isFocused() && !inTransformMode() && navigationController != null && !navigationController.isAnimating()) {
       // The app bar title switches between the app name (phone) and the search bar (tablet).
@@ -1651,8 +1615,22 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
         openNavigationSection(new SettingsController(context, tdlib));
         break;
       }
+      case MainNavigationBar.ITEM_SEARCH: {
+        if (navigationInOverlay && nav.getStack().getCurrent() != this) {
+          // Phone: back from the section to the chat list, the search opens once it is on the screen.
+          openSearchOnFocus = true;
+          selectOverlayItem(MainNavigationBar.ITEM_CHATS);
+          nav.navigateBack();
+        } else {
+          openMainSearch();
+        }
+        break;
+      }
     }
   }
+
+  /** Search button of the dock pressed over a section. */
+  private boolean openSearchOnFocus;
 
   private void openNavigationSection (ViewController<?> c) {
     NavigationController nav = navigationController != null ? navigationController : overlayNavigation;
@@ -2098,6 +2076,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   public void onFocus () {
     super.onFocus();
     moveNavigationToOverlay(false);
+    if (openSearchOnFocus) {
+      openSearchOnFocus = false;
+      openMainSearch();
+    }
     // FIXME check tdlib.isUnauthorized()
     tdlib.context().changePreferredAccountId(tdlib.id(), TdlibManager.SWITCH_REASON_NAVIGATION);
     if (UI.TEST_MODE == UI.TEST_MODE_USER) {
@@ -2671,13 +2653,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_main) {
       header.addLockButton(menu);
-      // Phone: search is an app bar button; tablet: the search bar takes the title place.
-      header.addSearchButton(menu, this).setContentDescription(Lang.getString(R.string.Search));
-      bindHeaderSearchTooltip(menu);
-      if (!mainMenus.contains(menu)) {
-        mainMenus.add(menu);
-      }
-      updateHeaderSearchButton();
       header.addButton(menu, R.id.menu_btn_compose, R.drawable.baseline_create_24, 49f, this, getHeaderIconColorId())
         .setContentDescription(Lang.getString(R.string.NewChat));
     } else if (id == R.id.menu_clear) {
@@ -2694,8 +2669,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   public void onMenuItemPressed (int id, View view) {
     if (id == R.id.menu_btn_compose) {
       showComposeMenu();
-    } else if (id == R.id.menu_btn_search) {
-      openMainSearch();
     } else if (id == R.id.menu_btn_clear) {
       clearSearchInput();
     } else {
@@ -3974,7 +3947,6 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       checkTabs();
       checkMenu();
       checkMargins();
-      updateHeaderSearchButton();
       if (headerView != null && isFocused() && !inTransformMode()) {
         // The app bar switches between the title (no folders) and the folder tabs.
         headerView.setTitle(this);
