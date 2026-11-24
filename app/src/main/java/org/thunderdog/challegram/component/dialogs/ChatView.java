@@ -173,6 +173,11 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     return getTimePadding();
   }
 
+  /** Vibegram X: width of the pin of a pinned chat (Telegram's list_pin, 23dp with its inner padding). */
+  public static int getPinIconWidth () {
+    return Screen.dp(23f);
+  }
+
   public static int getTimePaddingLeft () {
     return Screen.dp(7f);
   }
@@ -793,6 +798,10 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     if (chat.showTopicClosed()) {
       Drawable lock = getSparseDrawable(R.drawable.baseline_lock_16, ColorId.NONE);
       Drawables.drawRtl(c, lock, counterRight - lock.getMinimumWidth(), counterCenterY - lock.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.iconLight), viewWidth, rtl);
+    }
+    if (chat.showPinIcon()) {
+      Drawable pin = getSparseDrawable(R.drawable.vg_list_pin, ColorId.NONE);
+      Drawables.drawRtl(c, pin, counterRight - pin.getMinimumWidth(), counterCenterY - pin.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.iconLight), viewWidth, rtl);
     }
 
     TdlibStatusManager.Helper status = chat.statusHelper();

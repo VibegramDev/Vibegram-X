@@ -5887,10 +5887,10 @@ public class TdlibUi extends Handler {
       showPinUnpinConfirm(context, chatList, chatId, source, after);
       return true;
     } else if (actionId == R.id.btn_unpinChat) {
-      tdlib.client().send(new TdApi.ToggleChatIsPinned(chatList, chatId, false), tdlib.okHandler(after));
+      tdlib.toggleChatIsPinned(chatList, chatId, false, after);
       return true;
     } else if (actionId == R.id.btn_pinChat) {
-      tdlib.client().send(new TdApi.ToggleChatIsPinned(chatList, chatId, true), tdlib.okHandler(after));
+      tdlib.toggleChatIsPinned(chatList, chatId, true, after);
       return true;
     } else if (actionId == R.id.btn_archiveUnarchiveChat) {
       showArchiveUnarchiveChat(context, chatList, chatId, source, after);

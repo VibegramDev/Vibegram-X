@@ -397,7 +397,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsViewHolder> {
     if (addedItemCount > 0) {
       int positionStart = getItemPositionByChatIndex(atIndex);
       notifyItemRangeInserted(positionStart, addedItemCount);
-      if (firstAddedItem != null && lastChat != null && lastChat.isPinnedOrSpecial() != firstAddedItem.isPinnedOrSpecial()) {
+      if (firstAddedItem != null && lastChat != null && TGChat.needGroupSplit(lastChat, firstAddedItem)) {
         notifyItemChanged(positionStart - 1);
       }
     }
@@ -597,8 +597,11 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsViewHolder> {
     promotedCount -= chatIds.size();
     int fromIndex = getChatIndexByItemPosition(fromPosition);
     int toIndex = getChatIndexByItemPosition(toPosition);
+    if (context.tdlib().localPins().isPinned(context.chatList(), fromChat.getChatId()) != context.tdlib().localPins().isPinned(context.chatList(), toChat.getChatId())) {
+      return; // Vibegram X: pins of this device stay below the server ones
+    }
     ArrayUtils.move(chatIds, fromIndex - promotedCount, toIndex - promotedCount);
-    context.tdlib().send(new TdApi.SetPinnedChats(context.chatList(), ArrayUtils.asArray(chatIds)), context.tdlib().typedOkHandler());
+    context.tdlib().reorderPinnedChats(context.chatList(), chatIds, fromChat.getChatId());
   }
 
   public void savePinnedChats () { }
@@ -659,7 +662,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsViewHolder> {
   }
 
   private boolean needShadowDecoration (TGChat a, TGChat b) {
-    return a != null && b != null && (a.isArchive() != b.isArchive() || a.isPinnedOrSpecial() != b.isPinnedOrSpecial());
+    return a != null && b != null && TGChat.needGroupSplit(a, b);
   }
 
   public int removeChatById (TdApi.Chat chat, int fromIndex, Tdlib.ChatChange changeInfo) {

@@ -590,6 +590,9 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     if (getChatId() == chatId) {
       TdApi.ChatPosition prevPosition = ChatPosition.findPosition(chat, chatList);
       if (Tdlib.updateChatPosition(chat, position) && Td.equalsTo(chatList, position.list)) {
+        if (pinStateChanged && currentWidth > 0 && lastCounterAddWidth != getCounterAddWidth()) {
+          layoutContent();
+        }
         if (sourceChanged) {
           setTime();
           setCounter(true);
@@ -611,6 +614,20 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   public boolean isPinned () {
     TdApi.ChatPosition position = getPosition();
     return position != null && position.isPinned;
+  }
+
+  /**
+   * Vibegram X: a gap with shadows splits the archive row and promoted chats (proxy sponsor, announcements) from the
+   * rest of the list. Pinned chats go on without a gap: they are marked with a pin instead ({@link #showPinIcon()}).
+   */
+  public static boolean needGroupSplit (TGChat a, TGChat b) {
+    return a.isArchive() != b.isArchive() || (a.getSource() != null) != (b.getSource() != null);
+  }
+
+  /** Vibegram X: a pinned chat without unread counters shows a pin in place of the counter, as Telegram for Android does. */
+  public boolean showPinIcon () {
+    boolean pinned = forumTopic != null ? forumTopic.isPinned : isPinned();
+    return pinned && !showTopicClosed() && getUnreadCount() == 0 && !hasUnreadMentions() && !hasUnreadReactions();
   }
 
   public boolean isPinnedOrSpecial () {
@@ -1376,7 +1393,8 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
       counter.getScaledWidth(ChatView.getTimePaddingLeft()) +
       mentionCounter.getScaledWidth(ChatView.getTimePaddingLeft()) +
       reactionsCounter.getScaledWidth(ChatView.getTimePaddingLeft())
-    ) + (showTopicClosed() ? Screen.dp(16f) + ChatView.getTimePaddingLeft() : 0);
+    ) + (showTopicClosed() ? Screen.dp(16f) + ChatView.getTimePaddingLeft() : 0)
+      + (showPinIcon() ? ChatView.getPinIconWidth() + ChatView.getTimePaddingLeft() : 0);
   }
 
   public Counter getCounter () {
