@@ -96,8 +96,8 @@ public class RectFrameLayout extends FrameLayoutFix {
 
   /**
    * Vibegram X: the list goes under the floating composer (or the bottom button) and fades out there
-   * (M3BottomScrimView). The round video floats above the list: it gets the same shadow of the composer, drawn only
-   * over what the children have drawn (no fade, as under the composer).
+   * (M3BottomScrimView). The round video floats above the list: it gets the same veil and shadow of the composer, drawn
+   * only over what the children have drawn.
    */
   public static final class BottomFade {
     /** The band of the fade: from {@code fadeTop} to {@code fadeBottom} (the bottom of the composer's scrim). */
@@ -109,6 +109,7 @@ public class RectFrameLayout extends FrameLayoutFix {
   private final BottomFade bottomFade = new BottomFade();
   private boolean hasBottomFade;
   private Paint shadowPaint;
+  private M3BottomScrimView.Fade fade;
 
   public void setBottomFade (@Nullable BottomFade value) {
     boolean has = value != null && value.alpha > 0f;
@@ -155,7 +156,13 @@ public class RectFrameLayout extends FrameLayoutFix {
       overDrawer.drawOver(this, c);
     }
     if (needFade) {
-      // No fade under the composer: only its shadow over the player.
+      // The same veil as under the composer, down to the bottom of its scrim, and its shadow.
+      if (fade == null) {
+        fade = new M3BottomScrimView.Fade(M3BottomScrimView.COMPOSER_ALPHA);
+        fade.setXfermode(SRC_ATOP);
+      }
+      final float containerTop = bottomFade.hasShape ? bottomFade.shape.top : bottomFade.fadeTop;
+      fade.drawRamp(c, getMeasuredWidth(), M3BottomScrimView.composerRampTop(bottomFade.fadeTop, containerTop), M3BottomScrimView.composerRampBottom(containerTop), Math.max(getMeasuredHeight(), bottomFade.fadeBottom), bottomFade.alpha);
       if (bottomFade.hasShape) {
         if (shadowPaint == null) {
           shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
