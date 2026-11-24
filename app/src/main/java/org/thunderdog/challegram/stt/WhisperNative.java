@@ -68,6 +68,10 @@ public final class WhisperNative {
   public static native void free (long ptr);
   public static native void cancel (long ptr);
   public static native void resetCancel (long ptr);
-  /** @return UTF-8 "language\ntext" or null when failed or cancelled */
+  /**
+   * @return UTF-8 "language\ntext", then a 0 byte and the text tokens with their times for subtitles
+   * (records described at recognizedText in vgwhisper.cpp, read by SttSubtitles.addWhisperWords);
+   * null when failed or cancelled
+   */
   public static native byte[] transcribe (long ptr, float[] samples, int threads, int beamSize, @Nullable String prompt, @Nullable ProgressListener listener);
 }

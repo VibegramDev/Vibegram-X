@@ -5,6 +5,7 @@
  *
  * The progress and the text recognized so far are reported while a long message is still processed:
  * whisper.cpp streams its segments, Parakeet gets the audio in chunks of up to a minute cut at pauses.
+ * Every engine also gives word times, which become the subtitles of a round video (SttSubtitles).
  */
 package org.thunderdog.challegram.stt;
 
@@ -38,7 +39,7 @@ public abstract class SttEngine {
 
   protected volatile boolean cancelled;
 
-  // Vibegram X: words with their times for the subtitles of a round video (engines that report token times)
+  // Vibegram X: words with their times for the subtitles of a round video
   protected final java.util.ArrayList<SttSubtitles.Word> words = new java.util.ArrayList<>();
   /** Start of the chunk being recognized in the whole message. */
   protected long chunkOffsetMs;
@@ -282,6 +283,7 @@ public abstract class SttEngine {
     @Override
     public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
       words.clear();
+      chunkOffsetMs = 0;
       final StringBuilder committed = new StringBuilder();
       String text = transcribeChunk(samples, listener == null ? null : new ChunkProgress() {
         @Override
@@ -373,13 +375,20 @@ public abstract class SttEngine {
         }
         throw new IOException("whisper.cpp failed");
       }
-      String decoded = new String(result, StandardCharsets.UTF_8);
+      // "language\ntext", then a 0 byte and the token records with times (see WhisperNative.transcribe)
+      int textLength = 0;
+      while (textLength < result.length && result[textLength] != 0) {
+        textLength++;
+      }
+      String decoded = new String(result, 0, textLength, StandardCharsets.UTF_8);
       int newLine = decoded.indexOf('\n');
       String text = (newLine >= 0 ? decoded.substring(newLine + 1) : decoded).trim();
-      if (text.equalsIgnoreCase(WHISPER_PROMPT)) {
-        // the prompt echoed back on silence
+      if (text.isEmpty() || text.equalsIgnoreCase(WHISPER_PROMPT)) {
+        // nothing recognized, or the prompt echoed back on silence: no words either
         return "";
       }
+      SttSubtitles.addWhisperWords(words, result, textLength + 1, chunkOffsetMs,
+        chunkOffsetMs + chunk.length * 1000L / AudioDecoder.SAMPLE_RATE, HALLUCINATION);
       return text;
     }
 

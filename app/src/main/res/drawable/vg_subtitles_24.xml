@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vibegram X: "subtitles" (a frame with two lines of text at the bottom) for the transcription button of videos and
+     video notes, which play with subtitles. Telegram has no such glyph: drawn in its style (1.67dp stroke, round caps). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="24"
+  android:viewportHeight="24">
+  <path
+    android:pathData="M6.5,4.5H17.5A4,4 0,0 1,21.5 8.5V15.5A4,4 0,0 1,17.5 19.5H6.5A4,4 0,0 1,2.5 15.5V8.5A4,4 0,0 1,6.5 4.5Z"
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.67"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
+  <path
+    android:pathData="M6.67,12.17H10.83M13.33,12.17H17.33M6.67,15.5H8.83M11.33,15.5H17.33"
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="1.67"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
+</vector>
