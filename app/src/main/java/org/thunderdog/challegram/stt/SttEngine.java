@@ -6,7 +6,6 @@
  * The progress and the text recognized so far are reported while a long message is still processed:
  * whisper.cpp streams its segments, Parakeet gets the audio in chunks of up to a minute cut at pauses.
  * Every engine also gives word times, which become the subtitles of a round video (SttSubtitles).
- * «Enhanced transcription» runs two of them on the same audio and merges their words (EnglishMerge).
  */
 package org.thunderdog.challegram.stt;
 
@@ -157,8 +156,6 @@ public abstract class SttEngine {
       case SttModel.ENGINE_SHERPA_GIGAAM:
         // GigaAM was trained on segments up to ~30 s and drops most of the speech in longer ones
         return new SherpaOffline(model, dir, 64, 30);
-      case SttModel.ENGINE_ENGLISH_MERGE:
-        return new EnglishMerge(model, dir.getParentFile());
     }
     throw new IOException("Unknown engine");
   }
@@ -264,15 +261,6 @@ public abstract class SttEngine {
      */
     private final Object lock = new Object();
     private volatile long ptr;
-    /**
-     * Mode of «Enhanced transcription», which only takes the Latin phrases of Whisper: the language is fixed (Russian
-     * text with English phrases is still written in Latin, and the detection pass is skipped), and the audio goes in
-     * chunks of up to 30 s with the encoder cut to the chunk length. The FUTO models are finetuned for the shorter
-     * encoder; Base then sometimes stops after the first sentence, Small did not on our 12 notes (Mac CPU:
-     * Whisper 172 s → 74 s on 278 s of audio, merged text as good or better).
-     */
-    @Nullable String fixedLanguage;
-    boolean shortWindows;
 
     WhisperCpp (SttModel model, File file) throws IOException {
       WhisperNative.load();
@@ -294,9 +282,6 @@ public abstract class SttEngine {
      */
     @Override
     public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
-      if (shortWindows) {
-        return super.transcribe(samples, listener);
-      }
       words.clear();
       chunkOffsetMs = 0;
       final StringBuilder committed = new StringBuilder();
@@ -367,9 +352,7 @@ public abstract class SttEngine {
       if (ptr == 0) {
         throw new IOException("whisper.cpp released");
       }
-      // 50 encoder frames per second plus a margin, as FUTO's voice input does
-      int audioCtx = shortWindows ? Math.min(1500, (int) Math.ceil(input.length / 320.0) + 64) : 0;
-      byte[] result = WhisperNative.transcribe(ptr, input, threadCount(), 1, WHISPER_PROMPT, fixedLanguage, audioCtx,
+      byte[] result = WhisperNative.transcribe(ptr, input, threadCount(), 1, WHISPER_PROMPT,
         progress == null ? null : new WhisperNative.ProgressListener() {
           @Override
           public void onProgress (int value) {
@@ -479,136 +462,6 @@ public abstract class SttEngine {
         released = true;
         recognizer.release();
       }
-    }
-  }
-
-  // Parakeet + Whisper Small
-
-  /**
-   * The main model's text (GigaAM or Parakeet) with the English phrases of Whisper Small in place of the words the
-   * main model wrote for them (see SttEnglishMerge). Both models stay loaded together while the entry is in use
-   * (GigaAM takes about half the memory of Parakeet on a Mac): loading each of them for every message would take longer than
-   * the recognition of a short note.
-   */
-  static final class EnglishMerge extends SttEngine {
-    /** Share of the time spent by the main model: Whisper Small is still about twice as slow with short windows. */
-    private static final float MAIN_SHARE = .35f;
-
-    private final SttEngine main, english;
-    /** GigaAM spells unknown English in Latin by sound: those words are replaced too (see SttEnglishMerge). */
-    private final boolean replaceLatin;
-
-    EnglishMerge (SttModel model, File modelsDir) throws IOException {
-      SttModel mainModel = model.parts[0], englishModel = model.parts[1];
-      replaceLatin = mainModel.isRussianOnly();
-      main = create(mainModel, new File(modelsDir, mainModel.id));
-      try {
-        english = create(englishModel, new File(modelsDir, englishModel.id));
-        if (english instanceof WhisperCpp) {
-          // only Latin runs are taken, and they come out in Latin with Russian set too (Ukrainian, Bulgarian text alike)
-          ((WhisperCpp) english).fixedLanguage = "ru";
-          ((WhisperCpp) english).shortWindows = true;
-        }
-      } catch (Throwable t) {
-        main.release();
-        throw t;
-      }
-    }
-
-    @Override
-    public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
-      words.clear();
-      // Parakeet's text is shown while Whisper is still looking for English phrases in it
-      String text = main.transcribe(samples, listener == null ? null : new Listener() {
-        @Override
-        public void onProgress (float progress) {
-          listener.onProgress(progress * MAIN_SHARE);
-        }
-
-        @Override
-        public void onPartialText (String partial) {
-          listener.onPartialText(partial);
-        }
-      });
-      java.util.List<SttSubtitles.Word> mainWords = new java.util.ArrayList<>(main.words);
-      main.words.clear();
-      if (cancelled) {
-        throw new IOException("Cancelled");
-      }
-      if (text.isEmpty() || (!replaceLatin && !hasCyrillic(text))) {
-        // no speech: Whisper would only invent something. No Cyrillic from Parakeet (English, German…): only its
-        // Cyrillic words are ever replaced, Whisper would change nothing. GigaAM writes English in Latin by sound.
-        words.addAll(mainWords);
-        return text;
-      }
-      english.transcribe(samples, listener == null ? null : new Listener() {
-        @Override
-        public void onProgress (float progress) {
-          listener.onProgress(MAIN_SHARE + progress * (1f - MAIN_SHARE));
-        }
-
-        @Override
-        public void onPartialText (String partial) { }
-      });
-      java.util.List<SttSubtitles.Word> englishWords = new java.util.ArrayList<>(english.words);
-      english.words.clear();
-      if (cancelled) {
-        throw new IOException("Cancelled");
-      }
-      java.util.List<SttSubtitles.Word> merged = SttEnglishMerge.merge(mainWords, englishWords, replaceLatin);
-      if (merged == null) {
-        words.addAll(mainWords);
-        return text;
-      }
-      words.addAll(merged);
-      StringBuilder b = new StringBuilder();
-      for (SttSubtitles.Word word : merged) {
-        if (b.length() > 0) {
-          b.append(' ');
-        }
-        b.append(word.text);
-      }
-      Log.i(Log.TAG_VOICE, "STT: English phrases taken from Whisper");
-      return restoreUnknown(b.toString());
-    }
-
-    private static boolean hasCyrillic (String text) {
-      for (int i = 0; i < text.length(); i++) {
-        if (Character.UnicodeBlock.of(text.charAt(i)) == Character.UnicodeBlock.CYRILLIC) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    @Override
-    protected int maxChunkSeconds () {
-      return 0;
-    }
-
-    @Override
-    protected String transcribeChunk (float[] chunk, @Nullable ChunkProgress progress) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void cancel () {
-      super.cancel();
-      main.cancel();
-      english.cancel();
-    }
-
-    @Override
-    public void resetCancel () {
-      super.resetCancel();
-      main.resetCancel();
-      english.resetCancel();
-    }
-
-    @Override
-    public void release () {
-      main.release();
-      english.release();
     }
   }
 

@@ -35,9 +35,4 @@
   <string name="vg_SttPreparing">Preparing…</string>
   <string name="vg_SttVideoTooLong">Only videos up to 5 minutes can be transcribed</string>
   <string name="vg_SttCopy">Copy transcription</string>
-  <string name="vg_SttEnglishMergeHeader">Enhanced transcription</string>
-  <string name="vg_SttLangGigaAmMerge">Russian + English</string>
-  <string name="vg_SttLangEnglishMerge">25 languages + English</string>
-  <string name="vg_SttEnglishMergeInfo">The main model transcribes the message, and Whisper Small finds the English phrases in it and writes them in English. Sber is for Russian, Parakeet for 25 languages: English phrases are fixed in Cyrillic text (Russian, Ukrainian, Bulgarian). Transcription takes 2–3 times longer. The files of both models are used: those already downloaded are not downloaded again.</string>
-  <string name="vg_SttDeleteModels">Delete both models · %1$s</string>
 </resources>

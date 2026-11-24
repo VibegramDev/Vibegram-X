@@ -449,7 +449,7 @@ JNIEXPORT void JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_resetCan
   }
 }
 
-JNIEXPORT jbyteArray JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_transcribe (JNIEnv * env, jclass, jlong ptr, jfloatArray samples, jint threads, jint beamSize, jstring prompt, jstring language, jint audioCtx, jobject listener) {
+JNIEXPORT jbyteArray JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_transcribe (JNIEnv * env, jclass, jlong ptr, jfloatArray samples, jint threads, jint beamSize, jstring prompt, jobject listener) {
   auto * context = (Context *) ptr;
   if (context == nullptr || context->cancelled != 0) {
     return nullptr;
@@ -457,7 +457,6 @@ JNIEXPORT jbyteArray JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_tr
   const jsize sampleCount = env->GetArrayLength(samples);
   jfloat * data = env->GetFloatArrayElements(samples, nullptr);
   const char * promptChars = prompt != nullptr ? env->GetStringUTFChars(prompt, nullptr) : nullptr;
-  const char * languageChars = language != nullptr ? env->GetStringUTFChars(language, nullptr) : nullptr;
 
   Session s {};
   s.env = env;
@@ -500,10 +499,7 @@ JNIEXPORT jbyteArray JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_tr
   params.print_realtime = false;
   params.print_timestamps = false;
   params.initial_prompt = promptChars;
-  // a known language skips the detection pass of the encoder
-  params.language = languageChars != nullptr ? languageChars : "auto";
-  // encoder length in 20 ms frames, 0 = the full 30 s window (see WhisperNative.transcribe)
-  params.audio_ctx = audioCtx;
+  params.language = "auto";
   params.detect_language = false;
   params.suppress_blank = true;
   params.suppress_nst = true;
@@ -526,9 +522,6 @@ JNIEXPORT jbyteArray JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_tr
   env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
   if (promptChars != nullptr) {
     env->ReleaseStringUTFChars(prompt, promptChars);
-  }
-  if (languageChars != nullptr) {
-    env->ReleaseStringUTFChars(language, languageChars);
   }
   free(s.live);
   if (result != 0 || context->cancelled != 0) {

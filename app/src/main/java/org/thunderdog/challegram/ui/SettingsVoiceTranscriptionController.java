@@ -71,12 +71,9 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     ArrayList<ListItem> items = new ArrayList<>();
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_SttDescription));
 
-    // One radio group in three sections: the Russian-only model on top, the multilingual ones below,
-    // then the combined entry that uses two of them.
-    addModels(items, R.string.vg_SttRussianHeader, SECTION_RUSSIAN);
-    addModels(items, R.string.vg_SttMultilingualHeader, SECTION_MULTILINGUAL);
-    addModels(items, R.string.vg_SttEnglishMergeHeader, SECTION_COMBINED);
-    items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_SttEnglishMergeInfo));
+    // One radio group in two sections: the Russian-only model on top, the multilingual ones below.
+    addModels(items, R.string.vg_SttRussianHeader, true);
+    addModels(items, R.string.vg_SttMultilingualHeader, false);
 
     addCredits(items, R.string.vg_SttCreditsModels, SttModel.MODEL_CREDITS);
     addCredits(items, R.string.vg_SttCreditsEngines, SttModel.ENGINE_CREDITS);
@@ -86,21 +83,12 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     SttManager.instance().addModelListener(this);
   }
 
-  private static final int SECTION_RUSSIAN = 0, SECTION_MULTILINGUAL = 1, SECTION_COMBINED = 2;
-
-  private static int sectionOf (SttModel model) {
-    if (model.isCombined()) {
-      return SECTION_COMBINED;
-    }
-    return model.isRussianOnly() ? SECTION_RUSSIAN : SECTION_MULTILINGUAL;
-  }
-
-  private static void addModels (ArrayList<ListItem> items, int headerRes, int section) {
+  private static void addModels (ArrayList<ListItem> items, int headerRes, boolean russianOnly) {
     items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, headerRes));
     items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
     boolean first = true;
     for (SttModel model : SttModel.ALL) {
-      if (sectionOf(model) != section) {
+      if (model.isRussianOnly() != russianOnly) {
         continue;
       }
       if (!first) {
@@ -293,13 +281,7 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
       manager.cancelDownload(model);
     } else if (canDelete(manager, model)) {
       // a partial download is deleted the same way: its .part files take space too
-      String title;
-      if (model.isCombined()) {
-        // the files are those of its models: deleting the entry deletes them
-        title = Lang.getString(R.string.vg_SttDeleteModels, model.sizeText());
-      } else {
-        title = manager.isDownloaded(model) ? Lang.getString(R.string.vg_SttDelete, model.sizeText()) : Lang.getString(R.string.vg_SttDeleteAction);
-      }
+      String title = manager.isDownloaded(model) ? Lang.getString(R.string.vg_SttDelete, model.sizeText()) : Lang.getString(R.string.vg_SttDeleteAction);
       showOptions(model.title, new int[] {R.id.btn_vgSttDelete}, new String[] {title}, new int[] {OptionColor.RED}, new int[] {R.drawable.baseline_delete_24}, (itemView, id) -> {
         if (id == R.id.btn_vgSttDelete) {
           manager.delete(model);
@@ -325,11 +307,8 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     if (adapter == null || isDestroyed()) {
       return;
     }
-    // only the percentage in this model's subtitle changed, and in the combined entries that use it
+    // only the percentage in this model's subtitle changed
     adapter.updateValuedSettingByData(model);
-    for (SttModel user : SttModel.usersOf(model)) {
-      adapter.updateValuedSettingByData(user);
-    }
   }
 
   @Override
@@ -357,7 +336,7 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
         manager.setSelectedModel(model);
       }
     } else {
-      showOptions(model.title, new int[] {R.id.btn_vgSttDownload}, new String[] {Lang.getString(R.string.vg_SttDownload, SttModel.sizeText(manager.getMissingSize(model)))}, null, new int[] {R.drawable.baseline_file_download_24}, (itemView, id) -> {
+      showOptions(model.title, new int[] {R.id.btn_vgSttDownload}, new String[] {Lang.getString(R.string.vg_SttDownload, model.sizeText())}, null, new int[] {R.drawable.baseline_file_download_24}, (itemView, id) -> {
         if (id == R.id.btn_vgSttDownload) {
           manager.download(model);
         }

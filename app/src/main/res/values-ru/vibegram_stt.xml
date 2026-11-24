@@ -25,9 +25,4 @@
   <string name="vg_SttPreparing">Подготовка…</string>
   <string name="vg_SttVideoTooLong">Расшифровать можно только видео до 5 минут</string>
   <string name="vg_SttCopy">Копировать расшифровку</string>
-  <string name="vg_SttEnglishMergeHeader">Улучшенная расшифровка</string>
-  <string name="vg_SttLangGigaAmMerge">Русский + английский</string>
-  <string name="vg_SttLangEnglishMerge">25 языков + английский</string>
-  <string name="vg_SttEnglishMergeInfo">Основная модель расшифровывает сообщение, а Whisper Small находит в нём английские фразы и пишет их по-английски. Sber — для русского, Parakeet — для 25 языков: английские фразы исправляются в тексте на кириллице (русском, украинском, болгарском). Расшифровка в 2–3 раза дольше. Используются файлы обеих моделей: уже скачанные не скачиваются повторно.</string>
-  <string name="vg_SttDeleteModels">Удалить обе модели · %1$s</string>
 </resources>
