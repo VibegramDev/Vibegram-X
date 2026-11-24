@@ -2152,9 +2152,11 @@ public class MediaCellView extends ViewGroup implements
   }
 
   @Override
-  public void onProgress (TdApi.File file, float progress) {
+  public void onBufferedProgress (float progress) {
+    // Vibegram X: the loaded part from the player (VideoPlayerView#pollBuffered) instead of the file updates, which did
+    // not come while the video was streamed
     if (callback != null) {
-      callback.onSeekSecondaryProgress(media, TD.getFileOffsetProgress(file), TD.getFilePrefixProgress(file));
+      callback.onSeekSecondaryProgress(media, 0f, progress);
     }
   }
 }

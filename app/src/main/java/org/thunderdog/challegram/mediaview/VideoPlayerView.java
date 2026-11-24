@@ -65,6 +65,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import me.vkryl.android.widget.FrameLayoutFix;
+import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.CancellableRunnable;
 import tgx.td.data.HlsVideo;
@@ -162,7 +163,11 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     if (this.currentItem == mediaItem) {
       return;
     }
+    saveCurrentPosition();
     this.currentItem = mediaItem;
+    this.playedSinceSet = false;
+    this.isHls = false;
+    UI.cancel(bufferedPoll);
     checkAudioFocus();
     if (isDetached) {
       return;
@@ -194,6 +199,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
           source = U.newMediaSource(mediaItem.tdlib().id(), targetFile, TdlibFilesManager.PRIORITY_STREAMING_VIDEO, TdlibDataSource.Flag.OPTIMIZE_CHUNKS, durationMs);
         } else {
           source = U.newMediaSource(mediaItem.tdlib().id(), hlsVideo);
+          isHls = true;
         }
         forcePlay = mediaItem.getType() == MediaItem.TYPE_GIF;
         break;
@@ -254,10 +260,54 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       // Vibegram X: a round video opened in full screen goes on from where the round was
       player.seekTo(startPosition);
       lastPosition = startPosition;
+    } else {
+      // Vibegram X: a video opened again goes on from the place it was left at
+      long savedMs = VideoPositions.get(VideoPositions.keyOf(mediaItem));
+      if (savedMs > 0) {
+        player.seekTo(savedMs);
+        lastPosition = savedMs;
+      }
     }
     if (forcePlay) {
       setPlaying(true);
     }
+    UI.post(bufferedPoll, BUFFERED_POLL_MS);
+  }
+
+  // Vibegram X: the part of the video loaded ahead of the playback, shown on the timeline like on YouTube
+
+  private static final long BUFFERED_POLL_MS = 500;
+  private boolean isHls;
+  private final Runnable bufferedPoll = this::pollBuffered;
+
+  /**
+   * End of the loaded part (0..1): the player's own buffer, or what TDLib has downloaded in a row from the playback place
+   * on (bytes are mapped to time linearly, as the official app does), whichever is further.
+   */
+  private void pollBuffered () {
+    final MediaItem item = currentItem;
+    if (player == null || item == null || isDetached || destroyed) {
+      return;
+    }
+    UI.post(bufferedPoll, BUFFERED_POLL_MS);
+    final long durationMs = player.getDuration();
+    if (callback == null || durationMs == C.TIME_UNSET || durationMs <= 0) {
+      return;
+    }
+    final float playerBuffered = MathUtils.clamp((float) player.getBufferedPosition() / (float) durationMs);
+    final TdApi.File file = item.getTargetFile();
+    if (isHls || file == null || file.expectedSize <= 0) {
+      callback.onBufferedProgress(playerBuffered);
+      return;
+    }
+    final long size = file.expectedSize;
+    final long offset = (long) ((double) size * MathUtils.clamp((float) player.getCurrentPosition() / (float) durationMs));
+    item.tdlib().send(new TdApi.GetFileDownloadedPrefixSize(file.id, offset), (result, error) -> UI.post(() -> {
+      if (currentItem == item && callback != null) {
+        float downloaded = result != null ? MathUtils.clamp((float) ((double) (offset + result.size) / (double) size)) : 0f;
+        callback.onBufferedProgress(Math.max(playerBuffered, downloaded));
+      }
+    }));
   }
 
   private final static int LONG_STREAMING_PRELOAD_DURATION = 5 * 1000;
@@ -463,6 +513,9 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     if (callback != null) {
       if (playbackState == Player.STATE_READY) {
         callback.onPlayReady();
+        // Vibegram X: the loaded part shows up as soon as the duration is known
+        UI.cancel(bufferedPoll);
+        pollBuffered();
       }
 
       callback.onBufferingStateChanged(playbackState == Player.STATE_BUFFERING);
@@ -504,6 +557,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     void onPlayPause (boolean isPlaying);
     void onPlayProgress (long totalDuration, long now);
     default void onBufferingStateChanged (boolean isBuffering) {}
+    default void onBufferedProgress (float progress) {}
     default void onPlayError() {}
   }
 
@@ -521,12 +575,28 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       lastPosition = player.getCurrentPosition();
       callback.onPlayProgress(player.getDuration(), lastPosition);
     }
+    if (isPlaying && android.os.SystemClock.uptimeMillis() - lastPositionSaveMs >= POSITION_SAVE_MS) {
+      saveCurrentPosition();
+    }
     if (isPlaying && !playNeeded && !noProgressUpdates) {
       seekHandler.sendMessageDelayed(Message.obtain(seekHandler, 0, this), SEEK_UPDATE_MS);
     }
   }
 
   private boolean isPlaying;
+
+  // Vibegram X: the place of the video is remembered while it plays, on pause and when it is closed (see VideoPositions)
+
+  private static final long POSITION_SAVE_MS = 5_000;
+  private boolean playedSinceSet;
+  private long lastPositionSaveMs;
+
+  private void saveCurrentPosition () {
+    if (player != null && currentItem != null && playedSinceSet && player.getDuration() != C.TIME_UNSET) {
+      lastPositionSaveMs = android.os.SystemClock.uptimeMillis();
+      VideoPositions.save(VideoPositions.keyOf(currentItem), player.getCurrentPosition(), player.getDuration());
+    }
+  }
 
   @Override
   public void run () {
@@ -537,9 +607,11 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     if (this.isPlaying != isPlaying) {
       this.isPlaying = isPlaying;
       if (isPlaying) {
+        playedSinceSet = true;
         updateTimes();
       } else {
         seekHandler.removeMessages(0);
+        saveCurrentPosition();
       }
       if (player != null) {
         player.setPlayWhenReady(isPlaying);
@@ -615,6 +687,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   public void setSeekProgress (float progress) {
     if (player != null) {
       player.seekTo((long) ((double) player.getDuration() * (double) progress));
+      playedSinceSet = true;
       // player.setPlayWhenReady(false);
       updateTimes();
     }
@@ -623,6 +696,10 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   public void resumeIfNeeded (float progress) {
     if (player != null) {
       player.seekTo((long) ((double) player.getDuration() * (double) progress));
+      playedSinceSet = true;
+      if (!playNeeded) {
+        saveCurrentPosition();
+      }
       if (playNeeded) {
         playNeeded = false;
         player.setPlayWhenReady(true);
