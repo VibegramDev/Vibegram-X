@@ -59,6 +59,7 @@ import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
+import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
@@ -414,6 +415,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     boolean unmuted = state != TGPlayerController.STATE_NONE;
     if (!unmuted) {
       playProgress = -1f;
+      updateSubtitle(-1);
     }
     setUnmuted(unmuted);
     checkTrackListenerAttached();
@@ -430,6 +432,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
       if (compact) {
         invalidate();
       }
+      updateSubtitle(playPosition);
     }
   }
 
@@ -720,6 +723,10 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
       fullscreenRect.setEmpty();
     }
 
+    if (unmuteFactor > 0f) {
+      drawSubtitle(c, receiver, unmuteFactor, fullscreenAlpha);
+    }
+
     final boolean drawSpoiler = TD.isSelfDestructTypeImmediately(getMessage());
     float alpha = (1f - unmuteFactor) * (1f - fileProgress.getBackgroundAlpha());
     if (alpha > 0f && !drawSpoiler) {
@@ -745,6 +752,116 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
         Views.restore(c, restoreToCount);
       }
     }
+  }
+
+  // Vibegram X: subtitles inside a playing round, from its on-device transcription (sherpa-onnx engines give word times).
+  // The phrase at the current position sits in the lower part of the circle, above the full screen button,
+  // on a dark plate; it fades in when it changes and fades out when the speaker stops.
+
+  private static final long SUBTITLE_FADE_MS = 150;
+  private static final float SUBTITLE_TEXT_SIZE = 15f, SUBTITLE_PADDING_H = 10f, SUBTITLE_PADDING_V = 4f, SUBTITLE_GAP = 8f;
+  private static android.text.TextPaint subtitlePaint;
+
+  private int subtitleIndex = -1;
+  private long subtitleChangeTime;
+  private @Nullable String subtitleText;
+  private @Nullable android.text.StaticLayout subtitleLayout;
+  private int subtitleLayoutWidth;
+
+  private static android.text.TextPaint subtitlePaint () {
+    if (subtitlePaint == null) {
+      subtitlePaint = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+      subtitlePaint.setTypeface(Fonts.getRobotoMedium());
+      subtitlePaint.setColor(0xffffffff);
+    }
+    subtitlePaint.setTextSize(Screen.dp(SUBTITLE_TEXT_SIZE));
+    return subtitlePaint;
+  }
+
+  private @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles () {
+    return !compact && stt != null ? stt.getSubtitles() : null;
+  }
+
+  /** @param positionMs position of the playing round, -1 when it does not play */
+  private void updateSubtitle (long positionMs) {
+    final org.thunderdog.challegram.stt.SttSubtitles subtitles = positionMs >= 0 ? getSubtitles() : null;
+    final int index = subtitles != null ? subtitles.indexAt(positionMs) : -1;
+    if (index == subtitleIndex) {
+      return;
+    }
+    subtitleIndex = index;
+    subtitleChangeTime = android.os.SystemClock.uptimeMillis();
+    if (index != -1) {
+      // the last phrase stays in subtitleText while it fades out
+      subtitleText = subtitles.get(index).text;
+      subtitleLayout = null;
+    }
+    invalidateOverlay();
+  }
+
+  private void drawSubtitle (Canvas c, Receiver receiver, float unmuteFactor, float fullscreenAlpha) {
+    if (subtitleText == null) {
+      return;
+    }
+    final long elapsed = android.os.SystemClock.uptimeMillis() - subtitleChangeTime;
+    float fade = Math.min(1f, elapsed / (float) SUBTITLE_FADE_MS);
+    if (subtitleIndex == -1) {
+      fade = 1f - fade;
+    }
+    if (fade < 1f && (subtitleIndex != -1 || fade > 0f)) {
+      invalidateOverlay();
+    }
+    final float alpha = fade * unmuteFactor;
+    if (alpha <= 0f) {
+      if (subtitleIndex == -1 && elapsed >= SUBTITLE_FADE_MS) {
+        subtitleText = null;
+        subtitleLayout = null;
+      }
+      return;
+    }
+    final float radius = receiver.getWidth() / 2f;
+    final float centerX = receiver.centerX(), centerY = receiver.centerY();
+    // above the full screen button while it is shown, near the bottom of the circle otherwise
+    final float buttonSpace = Screen.dp(8f + FULLSCREEN_BUTTON + SUBTITLE_GAP) * fullscreenAlpha + Screen.dp(14f) * (1f - fullscreenAlpha);
+    final float bottom = receiver.getBottom() - buttonSpace;
+    // the plate must fit into the circle at its bottom edge, the narrowest part
+    final float dy = Math.max(0f, bottom - centerY);
+    final float chord = dy < radius ? 2f * (float) Math.sqrt(radius * radius - dy * dy) : 0f;
+    final int maxWidth = (int) Math.min(chord - Screen.dp(SUBTITLE_PADDING_H * 2 + 8f), radius * 1.5f);
+    if (maxWidth <= Screen.dp(40f)) {
+      return;
+    }
+    final android.text.TextPaint paint = subtitlePaint();
+    if (subtitleLayout == null || subtitleLayoutWidth != maxWidth) {
+      subtitleLayoutWidth = maxWidth;
+      // two lines of about the same length instead of a full line and a lone word under it
+      final float fullWidth = paint.measureText(subtitleText);
+      int width = maxWidth;
+      if (fullWidth > maxWidth && fullWidth < maxWidth * 2) {
+        width = Math.min(maxWidth, (int) Math.ceil(fullWidth / 2f) + Screen.dp(24f));
+      }
+      android.text.StaticLayout layout = new android.text.StaticLayout(subtitleText, paint, width, android.text.Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
+      if (layout.getLineCount() > 2 && width < maxWidth) {
+        layout = new android.text.StaticLayout(subtitleText, paint, maxWidth, android.text.Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
+      }
+      subtitleLayout = layout;
+    }
+    final android.text.StaticLayout layout = subtitleLayout;
+    float textWidth = 0f;
+    for (int i = 0; i < layout.getLineCount(); i++) {
+      textWidth = Math.max(textWidth, layout.getLineWidth(i));
+    }
+    final float plateHeight = layout.getHeight() + Screen.dp(SUBTITLE_PADDING_V) * 2;
+    final RectF plate = Paints.getRectF();
+    plate.set(centerX - textWidth / 2f - Screen.dp(SUBTITLE_PADDING_H), bottom - plateHeight, centerX + textWidth / 2f + Screen.dp(SUBTITLE_PADDING_H), bottom);
+    final float plateRadius = Math.min(Screen.dp(12f), plateHeight / 2f);
+    c.drawRoundRect(plate, plateRadius, plateRadius, Paints.fillingPaint(ColorUtils.alphaColor(alpha, 0x99000000)));
+    final int saveCount = Views.save(c);
+    c.translate(centerX - layout.getWidth() / 2f, bottom - plateHeight + Screen.dp(SUBTITLE_PADDING_V));
+    paint.setAlpha((int) (255f * alpha));
+    layout.draw(c);
+    paint.setAlpha(255);
+    Views.restore(c, saveCount);
   }
 
   // Vibegram X: full screen button of a playing round

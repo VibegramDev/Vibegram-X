@@ -16,6 +16,7 @@ import com.k2fsa.sherpa.onnx.FeatureConfig;
 import com.k2fsa.sherpa.onnx.OfflineModelConfig;
 import com.k2fsa.sherpa.onnx.OfflineRecognizer;
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig;
+import com.k2fsa.sherpa.onnx.OfflineRecognizerResult;
 import com.k2fsa.sherpa.onnx.OfflineStream;
 import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig;
 
@@ -37,7 +38,20 @@ public abstract class SttEngine {
 
   protected volatile boolean cancelled;
 
+  // Vibegram X: words with their times for the subtitles of a round video (engines that report token times)
+  protected final java.util.ArrayList<SttSubtitles.Word> words = new java.util.ArrayList<>();
+  /** Start of the chunk being recognized in the whole message. */
+  protected long chunkOffsetMs;
+
+  /** Subtitles of the last {@link #transcribe} call, null when the engine gives no times. Recognition thread. */
+  public @Nullable SttSubtitles takeSubtitles () {
+    SttSubtitles subtitles = SttSubtitles.build(words);
+    words.clear();
+    return subtitles;
+  }
+
   public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
+    words.clear();
     // chunk boundaries only: each chunk is copied right before it is recognized, so the whole message
     // never exists twice in memory
     int[] bounds = splitOnPauses(samples, maxChunkSeconds());
@@ -50,6 +64,7 @@ public abstract class SttEngine {
       final int chunkStart = bounds[index];
       final int chunkLength = bounds[index + 1] - chunkStart;
       float[] chunk = chunkStart == 0 && chunkLength == samples.length ? samples : java.util.Arrays.copyOfRange(samples, chunkStart, chunkStart + chunkLength);
+      chunkOffsetMs = chunkStart * 1000L / AudioDecoder.SAMPLE_RATE;
       String text = transcribeChunk(chunk, listener == null ? null : progress ->
         listener.onProgress((chunkStart + chunkLength * Math.max(0f, Math.min(1f, progress))) / (float) total)
       );
@@ -266,6 +281,7 @@ public abstract class SttEngine {
      */
     @Override
     public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
+      words.clear();
       final StringBuilder committed = new StringBuilder();
       String text = transcribeChunk(samples, listener == null ? null : new ChunkProgress() {
         @Override
@@ -421,7 +437,9 @@ public abstract class SttEngine {
       try {
         stream.acceptWaveform(chunk, AudioDecoder.SAMPLE_RATE);
         recognizer.decode(stream);
-        return restoreUnknown(recognizer.getResult(stream).getText()).trim();
+        OfflineRecognizerResult result = recognizer.getResult(stream);
+        SttSubtitles.addWords(words, result.getTokens(), result.getTimestamps(), result.getDurations(), chunkOffsetMs);
+        return restoreUnknown(result.getText()).trim();
       } finally {
         stream.release();
       }
