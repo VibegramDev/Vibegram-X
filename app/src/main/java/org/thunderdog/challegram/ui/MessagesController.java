@@ -1773,6 +1773,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
       composerScrim = new M3BottomScrimView(context);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
+      composerScrim.setFadeTopProvider(this::getComposerFadeTop);
       addThemeInvalidateListener(composerScrim);
       contentView.addView(composerScrim);
       if (!inPreviewMode) {
