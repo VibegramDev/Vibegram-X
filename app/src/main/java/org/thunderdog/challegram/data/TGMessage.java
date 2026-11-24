@@ -4132,6 +4132,32 @@ public abstract class TGMessage implements InvalidateContentProvider, TdlibDeleg
   private static final float COUNTER_ICON_MARGIN = 3f;
   private static final float COUNTER_ADD_MARGIN = 3f;
 
+  /**
+   * Vibegram X: bounds of the time pill that {@link #drawBubbleTimePart} draws over a bubbleless content (a round),
+   * so the content can keep its own controls off it.
+   *
+   * @return false when no such pill is drawn
+   */
+  protected final boolean getBubbleTimePillBounds (View view, RectF out) {
+    if (!useBubbles() || !useBubbleTime() || (useBubble() && !useCircleBubble())) {
+      return false;
+    }
+    final int innerWidth = computeBubbleTimePartWidth(false) - getBubbleTicksPartShrink();
+    final int startX;
+    if (Config.MOVE_BUBBLE_TIME_RTL_TO_LEFT && moveBubbleTimePartToLeft()) {
+      startX = getActualLeftContentEdge() + Screen.dp(10f);
+    } else {
+      startX = getAbsolutelyRealRightContentEdge(view, innerWidth + Screen.dp(11f));
+    }
+    int startY = bottomContentEdge - getBubbleTimePartHeight() - getBubbleTimePartOffsetY() - Screen.dp(4f);
+    if (commentButton.isVisible() && commentButton.isInline()) {
+      startY -= commentButton.getAnimatedHeight(0, commentButton.getVisibility());
+    }
+    final int padding = Screen.dp(6f);
+    out.set(startX - padding, startY, startX + innerWidth + padding, startY + Screen.dp(21f));
+    return true;
+  }
+
   protected void drawBubbleTimePart (Canvas c, MessageView view) {
     boolean isTransparent = !useBubble() || useCircleBubble();
     boolean isWhite = isTransparent || (drawBubbleTimeOverContent() && !useForward());
