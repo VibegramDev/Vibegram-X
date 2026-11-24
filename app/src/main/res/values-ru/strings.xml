@@ -8,7 +8,6 @@
   <string name="TabletFoldersBelowSearch">Планшет: папки под поиском</string>
   <string name="CategoryMainShort">Все</string>
   <string name="CompactChats">Компактные чаты</string>
-  <string name="CenterTitles">Заголовки по центру</string>
   <string name="Attach">Прикрепить</string>
   <string name="SelectText">Выделить текст</string>
   <string name="PersonalChannel">Канал</string>
@@ -26,9 +25,6 @@
   <string name="PersonalChannelRemoved">Канал убран из профиля</string>
   <string name="DirectMessagesAll">Все</string>
   <string name="QuoteSelection">Цитировать</string>
-  <string name="NavigationStyle">Навигация</string>
-  <string name="NavigationStyleDock">Нижний док</string>
-  <string name="NavigationStyleBar">Нижняя панель</string>
 
   <string name="RichMessageDetails">Подробнее</string>
   <string name="RichMessageEmpty">Пустое сообщение</string>

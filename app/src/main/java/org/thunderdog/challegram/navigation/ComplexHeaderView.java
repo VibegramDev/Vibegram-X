@@ -442,49 +442,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   /** The title is laid out at 18sp, the expanded name is a 24sp headline. */
   private static final float EXPANDED_TITLE_SCALE = 24f / 18f;
 
-  private boolean allowCenterContent;
-  private boolean centeredAvatarCollapses;
-
-  /** Chat header: the avatar with the name can be centered in the app bar (Settings: centered titles). */
-  public void setAllowCenterContent (boolean allow) {
-    if (this.allowCenterContent != allow) {
-      this.allowCenterContent = allow;
-      buildLayout();
-    }
-  }
-
-  /**
-   * Profile header in the centered layout (as on iOS): the collapsed app bar shows only the
-   * centered name, the avatar grows out of the center of the app bar as the header expands.
-   */
-  public void setCenteredAvatarCollapses (boolean collapses) {
-    if (this.centeredAvatarCollapses != collapses) {
-      this.centeredAvatarCollapses = collapses;
-      buildLayout();
-    }
-  }
-
-  /** Width of the end button (the "more" button) whose place the avatar takes in the iOS-like layout. */
-  public static final float CENTERED_AVATAR_AREA = 49f;
-
-  /**
-   * iOS-like chat header (Settings: centered titles): the title and the subtitle are centered in
-   * the header, each line on its own, the avatar is at the end in place of the "more" button
-   * (which still opens the menu). These are the collapsed positions: while the header expands,
-   * everything moves from them to the expanded layout.
-   */
-  protected final boolean isCenteredLayout () {
-    return allowCenterContent && HeaderView.needCenterTitle();
-  }
-
-  /** Left of a centered line of the given width, kept clear of the back button and the end buttons. */
-  private float getCenteredLeft (float width) {
-    float minLeft = innerLeftMargin + Screen.dp(4f);
-    float maxRight = getMeasuredWidth() - getInnerRightMargin() - Screen.dp(4f);
-    float left = getMeasuredWidth() / 2f - width / 2f;
-    return Math.max(minLeft, Math.min(left, maxRight - width));
-  }
-
   // Pull-down on the profile: the expanded avatar grows with the finger, past the threshold the photo viewer opens.
 
   /** How much bigger the expanded avatar gets at the full pull. */
@@ -525,15 +482,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
 
   private void layoutReceiver () {
     float radius = Screen.dp(getBaseAvatarRadiusDp());
-    float centerX;
-    if (!isCenteredLayout()) {
-      centerX = innerLeftMargin + Screen.dp(4f) + radius;
-    } else if (centeredAvatarCollapses) {
-      centerX = getMeasuredWidth() / 2f;
-      radius = 0f;
-    } else {
-      centerX = getMeasuredWidth() - Screen.dp(CENTERED_AVATAR_AREA) / 2f;
-    }
+    float centerX = innerLeftMargin + Screen.dp(4f) + radius;
     float centerY = currentHeaderOffset + HeaderView.getSize(false) / 2f;
 
     float expandFactor = getExpandFactor();
@@ -604,9 +553,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
   }
 
   private int getBaseTextMaxWidth () {
-    if (isCenteredLayout()) {
-      return Math.max(0, getMeasuredWidth() - (innerLeftMargin + getInnerRightMargin()) - Screen.dp(8f));
-    }
     return Math.max(0, getMeasuredWidth() - (innerLeftMargin + getInnerRightMargin()) - Screen.dp(4f) - Screen.dp(getBaseAvatarRadiusDp()) * 2 - Screen.dp(9f));
   }
 
@@ -825,7 +771,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
     final int saveCount = Views.save(c);
     try {
       c.clipRect(0, 0, getMeasuredWidth(), calculateHeaderHeight());
-      final boolean centered = isCenteredLayout();
 
       final boolean showLock = (flags & FLAG_SHOW_LOCK) != 0;
       final boolean showMute = (flags & FLAG_SHOW_MUTE) != 0 && (flags & FLAG_IGNORE_MUTE) == 0;
@@ -852,14 +797,6 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
       float baseSubtitleTop = currentHeaderOffset + Screen.dp(30f);
 
       float titleTextLeft = baseTextLeft, subtitleTextLeft = baseTextLeft;
-      if (centered) {
-        if (trimmedTitle != null) {
-          titleTextLeft = getCenteredLeft(getTitleDrawWidth(trimmedTitle));
-        }
-        if (trimmedSubtitle != null) {
-          subtitleTextLeft = getCenteredLeft(trimmedSubtitle.getWidth() + getSubtitleLoadingShift());
-        }
-      }
 
       if (expandFactor != 0f) {
         // Large app bar: the name and the status are centered under the avatar
@@ -1008,7 +945,7 @@ public class ComplexHeaderView extends BaseView implements RtlCheckListener, Sti
           }
           // The action icon is the start margin of the first line, out of the text width.
           int statusWidth = text.getWidth() + text.getLineStartMargin(0, 0);
-          float statusLeft = centered ? getCenteredLeft(statusWidth) : baseTextLeft;
+          float statusLeft = baseTextLeft;
           float expandedLeft = (viewWidth - statusWidth) / 2f;
           statusLeft = MathUtils.fromTo(statusLeft, expandedLeft, expandFactor);
           DrawAlgorithms.drawStatus(c, state, statusLeft, top + text.getLineHeight() / 2f, ColorUtils.alphaColor(statusVisibility, statusTextColor), this, statusVisibility == 1f ? knownColorId : 0);
