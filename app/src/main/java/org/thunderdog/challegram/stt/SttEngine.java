@@ -152,10 +152,10 @@ public abstract class SttEngine {
       case SttModel.ENGINE_WHISPER_CPP:
         return new WhisperCpp(model, new File(dir, "model.bin"));
       case SttModel.ENGINE_SHERPA_NEMO_TDT:
-        return new SherpaOffline(model, dir, 80, 60, 4);
+        return new SherpaOffline(model, dir, 80, 60);
       case SttModel.ENGINE_SHERPA_GIGAAM:
         // GigaAM was trained on segments up to ~30 s and drops most of the speech in longer ones
-        return new SherpaOffline(model, dir, 64, 30, 0);
+        return new SherpaOffline(model, dir, 64, 30);
     }
     throw new IOException("Unknown engine");
   }
@@ -409,14 +409,7 @@ public abstract class SttEngine {
     private final OfflineRecognizer recognizer;
     private final int maxChunkSeconds;
 
-    /**
-     * @param beamPaths 0 for greedy search, otherwise the number of hypotheses kept by modified beam search.
-     *   Parakeet uses 4: with greedy search a short English phrase in a Russian accent comes out in Cyrillic
-     *   («Are you winning, son?» → «Арю вининг, сан?»): the first token «Ар» wins locally and the rest follows
-     *   its script, although the Latin text scores better as a whole. 4 paths find it; on our Russian test notes
-     *   the error rate is the same (8.7%), recognition is about 2.5 times slower on a Mac CPU.
-     */
-    SherpaOffline (SttModel model, File dir, int featureDim, int maxChunkSeconds, int beamPaths) {
+    SherpaOffline (SttModel model, File dir, int featureDim, int maxChunkSeconds) {
       this.maxChunkSeconds = maxChunkSeconds;
       OfflineModelConfig modelConfig = new OfflineModelConfig();
       modelConfig.setNumThreads(threadCount());
@@ -431,12 +424,7 @@ public abstract class SttEngine {
       OfflineRecognizerConfig config = new OfflineRecognizerConfig();
       config.setFeatConfig(new FeatureConfig(AudioDecoder.SAMPLE_RATE, featureDim, 0f));
       config.setModelConfig(modelConfig);
-      if (beamPaths > 0) {
-        config.setDecodingMethod("modified_beam_search");
-        config.setMaxActivePaths(beamPaths);
-      } else {
-        config.setDecodingMethod("greedy_search");
-      }
+      config.setDecodingMethod("greedy_search");
       recognizer = new OfflineRecognizer(null, config);
     }
 
