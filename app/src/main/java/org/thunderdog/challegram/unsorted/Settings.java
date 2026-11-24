@@ -1293,7 +1293,8 @@ public class Settings {
    */
   public int getChatListStyle () {
     if (_chatListMode == null) {
-      int defaultMode = CHAT_MODE_3LINE; // TODO determine based on display settings
+      // Vibegram X: two lines by default (Telegram X: three)
+      int defaultMode = CHAT_MODE_2LINE;
       _chatListMode = pmc.getInt(KEY_CHAT_LIST_MODE, defaultMode);
     }
     return _chatListMode;
