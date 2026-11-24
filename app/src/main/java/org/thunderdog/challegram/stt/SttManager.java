@@ -1151,7 +1151,9 @@ public final class SttManager {
       case "futo_244": return 400f;
       case "parakeet_ultra": return 150f;
       case "gigaam_v3_e2e": return 60f;
-      case "parakeet_whisper": return 550f;
+      // the main model plus Whisper Small with short windows (about half of its full-window time)
+      case "gigaam_whisper": return 260f;
+      case "parakeet_whisper": return 350f;
     }
     return 500f;
   }

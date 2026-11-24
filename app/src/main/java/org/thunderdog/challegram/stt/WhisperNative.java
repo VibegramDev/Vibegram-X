@@ -72,6 +72,9 @@ public final class WhisperNative {
    * @return UTF-8 "language\ntext", then a 0 byte and the text tokens with their times for subtitles
    * (records described at recognizedText in vgwhisper.cpp, read by SttSubtitles.addWhisperWords);
    * null when failed or cancelled
+   * @param language whisper language code, null to detect it (one more encoder pass)
+   * @param audioCtx encoder length in 20 ms frames for audio under 30 s, 0 for the full 30 s window
    */
-  public static native byte[] transcribe (long ptr, float[] samples, int threads, int beamSize, @Nullable String prompt, @Nullable ProgressListener listener);
+  public static native byte[] transcribe (long ptr, float[] samples, int threads, int beamSize, @Nullable String prompt,
+                                          @Nullable String language, int audioCtx, @Nullable ProgressListener listener);
 }

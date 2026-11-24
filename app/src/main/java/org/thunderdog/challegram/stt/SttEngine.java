@@ -264,6 +264,15 @@ public abstract class SttEngine {
      */
     private final Object lock = new Object();
     private volatile long ptr;
+    /**
+     * Mode of «Enhanced transcription», which only takes the Latin phrases of Whisper: the language is fixed (Russian
+     * text with English phrases is still written in Latin, and the detection pass is skipped), and the audio goes in
+     * chunks of up to 30 s with the encoder cut to the chunk length. The FUTO models are finetuned for the shorter
+     * encoder; Base then sometimes stops after the first sentence, Small did not on our 12 notes (Mac CPU:
+     * Whisper 172 s → 74 s on 278 s of audio, merged text as good or better).
+     */
+    @Nullable String fixedLanguage;
+    boolean shortWindows;
 
     WhisperCpp (SttModel model, File file) throws IOException {
       WhisperNative.load();
@@ -285,6 +294,9 @@ public abstract class SttEngine {
      */
     @Override
     public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
+      if (shortWindows) {
+        return super.transcribe(samples, listener);
+      }
       words.clear();
       chunkOffsetMs = 0;
       final StringBuilder committed = new StringBuilder();
@@ -355,7 +367,9 @@ public abstract class SttEngine {
       if (ptr == 0) {
         throw new IOException("whisper.cpp released");
       }
-      byte[] result = WhisperNative.transcribe(ptr, input, threadCount(), 1, WHISPER_PROMPT,
+      // 50 encoder frames per second plus a margin, as FUTO's voice input does
+      int audioCtx = shortWindows ? Math.min(1500, (int) Math.ceil(input.length / 320.0) + 64) : 0;
+      byte[] result = WhisperNative.transcribe(ptr, input, threadCount(), 1, WHISPER_PROMPT, fixedLanguage, audioCtx,
         progress == null ? null : new WhisperNative.ProgressListener() {
           @Override
           public void onProgress (int value) {
@@ -471,13 +485,14 @@ public abstract class SttEngine {
   // Parakeet + Whisper Small
 
   /**
-   * Parakeet's text with the English phrases of Whisper Small in place of the words Parakeet wrote for them in
-   * Cyrillic (see SttEnglishMerge). Both models stay loaded together while the entry is in use (≈1 GB of memory):
-   * loading each of them for every message would take longer than the recognition of a short note.
+   * The main model's text (GigaAM or Parakeet) with the English phrases of Whisper Small in place of the words the
+   * main model wrote for them (see SttEnglishMerge). Both models stay loaded together while the entry is in use
+   * (GigaAM takes about half the memory of Parakeet on a Mac): loading each of them for every message would take longer than
+   * the recognition of a short note.
    */
   static final class EnglishMerge extends SttEngine {
-    /** Share of the time spent by Parakeet: ~150 ms per second of audio vs ~400 for Whisper Small on a phone. */
-    private static final float MAIN_SHARE = .3f;
+    /** Share of the time spent by the main model: Whisper Small is still about twice as slow with short windows. */
+    private static final float MAIN_SHARE = .35f;
 
     private final SttEngine main, english;
     /** GigaAM spells unknown English in Latin by sound: those words are replaced too (see SttEnglishMerge). */
@@ -489,6 +504,11 @@ public abstract class SttEngine {
       main = create(mainModel, new File(modelsDir, mainModel.id));
       try {
         english = create(englishModel, new File(modelsDir, englishModel.id));
+        if (english instanceof WhisperCpp) {
+          // only Latin runs are taken, and they come out in Latin with Russian set too (Ukrainian, Bulgarian text alike)
+          ((WhisperCpp) english).fixedLanguage = "ru";
+          ((WhisperCpp) english).shortWindows = true;
+        }
       } catch (Throwable t) {
         main.release();
         throw t;
@@ -515,8 +535,10 @@ public abstract class SttEngine {
       if (cancelled) {
         throw new IOException("Cancelled");
       }
-      if (text.isEmpty()) {
-        // no speech: Whisper would only invent something
+      if (text.isEmpty() || (!replaceLatin && !hasCyrillic(text))) {
+        // no speech: Whisper would only invent something. No Cyrillic from Parakeet (English, German…): only its
+        // Cyrillic words are ever replaced, Whisper would change nothing. GigaAM writes English in Latin by sound.
+        words.addAll(mainWords);
         return text;
       }
       english.transcribe(samples, listener == null ? null : new Listener() {
@@ -548,6 +570,15 @@ public abstract class SttEngine {
       }
       Log.i(Log.TAG_VOICE, "STT: English phrases taken from Whisper");
       return restoreUnknown(b.toString());
+    }
+
+    private static boolean hasCyrillic (String text) {
+      for (int i = 0; i < text.length(); i++) {
+        if (Character.UnicodeBlock.of(text.charAt(i)) == Character.UnicodeBlock.CYRILLIC) {
+          return true;
+        }
+      }
+      return false;
     }
 
     @Override

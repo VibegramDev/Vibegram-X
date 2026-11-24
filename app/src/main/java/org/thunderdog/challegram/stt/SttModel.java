@@ -159,16 +159,19 @@ public final class SttModel {
     f("joiner.onnx", PARAKEET_ULTRA + "joiner.onnx", 25286330L, "432fad3750296cf9bccad92870625367ffbda9ec733243f6958e75f42ab63ba4"),
     f("tokens.txt", PARAKEET_ULTRA + "tokens.txt", 93939L, "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"));
 
-  // «Enhanced transcription»: the Russian Parakeet build hears accented English as Russian syllables
-  // («Ар ю вининг, Сан»), Whisper Small writes it in Latin but makes twice as many errors in Russian words.
-  // Parakeet's text with the Latin phrases of Whisper Small; about 3.5 times slower than Parakeet alone.
+  // «Enhanced transcription»: Parakeet hears accented English inside Russian speech as Russian syllables
+  // («Ар ю вининг, Сан»), GigaAM spells it in Latin by sound («Arivingson»); Whisper Small writes it as English
+  // but makes twice as many errors in Russian words. The main model's text with the Latin phrases of Whisper Small.
+  // Two entries: GigaAM for Russian (lighter: half the memory on a Mac, 226 vs 722 MB of files, 8.4 vs 8.7% WER merged on our
+  // 8 Russian notes), Parakeet for its 25 languages (phrases are replaced in Cyrillic text: Russian, Ukrainian, Bulgarian).
+  private static final SttModel GIGAAM_MERGE = new SttModel("gigaam_whisper", "Sber GigaAM + Whisper Small", R.string.vg_SttLangGigaAmMerge, GIGAAM_V3, WHISPER_SMALL);
   private static final SttModel ENGLISH_MERGE = new SttModel("parakeet_whisper", "Parakeet + Whisper Small", R.string.vg_SttLangEnglishMerge, PARAKEET_ULTRA_06B, WHISPER_SMALL);
 
   /**
    * From the lowest quality to the highest. Russian-only models and the combined ones are listed in the settings
    * in their own sections.
    */
-  public static final SttModel[] ALL = {WHISPER_BASE, WHISPER_SMALL, GIGAAM_V3, PARAKEET_ULTRA_06B, ENGLISH_MERGE};
+  public static final SttModel[] ALL = {WHISPER_BASE, WHISPER_SMALL, GIGAAM_V3, PARAKEET_ULTRA_06B, GIGAAM_MERGE, ENGLISH_MERGE};
 
   /**
    * Number of stars: the best model of the catalog gets them all,
