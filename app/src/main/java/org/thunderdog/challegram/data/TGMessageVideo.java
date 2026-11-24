@@ -916,6 +916,11 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
 
   private @Nullable SttBlock stt;
 
+  /** Vibegram X: subtitles of the file for the full screen player, the same ones this message shows. */
+  public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSttSubtitles (int fileId) {
+    return stt != null ? stt.getSubtitles(fileId) : null;
+  }
+
   @Override
   public @Nullable String getTranscriptionText () {
     return stt != null && stt.isEnabled() ? stt.getCopyText() : null;

@@ -3385,7 +3385,10 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     }
   }
 
-  /** Subtitles of the finished transcription of the item with the selected model, null when there are none. */
+  /**
+   * Subtitles of the finished transcription of the item with the selected model, null when there are none.
+   * The message it was opened from is asked first, so the player shows exactly what the chat shows.
+   */
   private static @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles (@Nullable MediaItem item) {
     if (item == null || !(item.isVideo() || item.isRoundVideo()) || !org.thunderdog.challegram.stt.SttManager.isSupported()) {
       return null;
@@ -3394,8 +3397,18 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     if (file == null) {
       return null;
     }
+    TGMessage source = item.getSourceMessage();
+    org.thunderdog.challegram.stt.SttSubtitles subtitles = null;
+    if (source instanceof org.thunderdog.challegram.data.TGMessageVideo) {
+      subtitles = ((org.thunderdog.challegram.data.TGMessageVideo) source).getSttSubtitles(file.id);
+    } else if (source instanceof org.thunderdog.challegram.data.TGMessageMedia) {
+      subtitles = ((org.thunderdog.challegram.data.TGMessageMedia) source).getSttSubtitles(file.id);
+    }
+    if (subtitles != null) {
+      return subtitles;
+    }
     org.thunderdog.challegram.stt.SttManager.Transcription t = org.thunderdog.challegram.stt.SttManager.instance().peekTranscription(
-      org.thunderdog.challegram.stt.SttManager.key(file.id, file.remote != null ? file.remote.uniqueId : null)
+      org.thunderdog.challegram.stt.SttManager.key(item.tdlib().id(), file.id)
     );
     return t != null && t.state == org.thunderdog.challegram.stt.SttManager.STATE_DONE ? t.subtitles : null;
   }
