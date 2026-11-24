@@ -3130,6 +3130,7 @@ public class Settings {
   private static final String KEY_STT_MODEL = "vg_stt_model";
   private static final String KEY_STT_SPEED_PREFIX = "vg_stt_speed_";
   private static final String KEY_STT_MIGRATED = "vg_stt_migrated";
+  private static final String KEY_STT_ENHANCED = "vg_stt_enhanced";
 
   public @Nullable String getSttModelId () {
     return pmc.getString(KEY_STT_MODEL, null);
@@ -3150,6 +3151,19 @@ public class Settings {
 
   public void setSttSpeed (String modelId, float msPerSecond) {
     pmc.putFloat(KEY_STT_SPEED_PREFIX + modelId, msPerSecond).apply();
+  }
+
+  /** «Enhanced transcription»: a language model corrects the recognized text (turned on, maybe still downloading). */
+  public boolean isSttEnhanced () {
+    return pmc.getBoolean(KEY_STT_ENHANCED, false);
+  }
+
+  public void setSttEnhanced (boolean enhanced) {
+    if (enhanced) {
+      pmc.putBoolean(KEY_STT_ENHANCED, true);
+    } else {
+      pmc.remove(KEY_STT_ENHANCED);
+    }
   }
 
   /** One-time move of the old "vg_stt" SharedPreferences: true when it still has to be done. */

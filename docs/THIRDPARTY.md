@@ -52,6 +52,10 @@ Voice messages are transcribed on the device. The native libraries are prebuilt 
   [MIT](https://github.com/ggml-org/whisper.cpp/blob/v1.9.5/LICENSE): statically linked into `libvgwhisper.so`,
   `libvgwhisper_v82.so` and `libvgwhisper_v86.so`. The JNI bridge is [our code](/app/jni/vgwhisper), built by
   [scripts/stt/build_vgwhisper.sh](/scripts/stt/build_vgwhisper.sh).
+* [llama.cpp](https://github.com/ggml-org/llama.cpp) b11960 with [ggml](https://github.com/ggml-org/ggml), licensed under
+  [MIT](https://github.com/ggml-org/llama.cpp/blob/b11960/LICENSE): statically linked into `libvgllama.so`,
+  `libvgllama_v82.so` and `libvgllama_v86.so` («Enhanced transcription»). The JNI bridge is [our code](/app/jni/vgllama),
+  built by [scripts/stt/build_vgllama.sh](/scripts/stt/build_vgllama.sh).
 * [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) v2.0.1, licensed under
   [Apache-2.0](https://github.com/k2-fsa/sherpa-onnx/blob/v2.0.1/LICENSE): `libsherpa-onnx-jni.so` from the official release
   and the Kotlin API ([source code](/app/src/main/kotlin/com/k2fsa/sherpa/onnx)).

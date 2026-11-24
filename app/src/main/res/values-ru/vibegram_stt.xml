@@ -25,4 +25,10 @@
   <string name="vg_SttPreparing">Подготовка…</string>
   <string name="vg_SttVideoTooLong">Расшифровать можно только видео до 5 минут</string>
   <string name="vg_SttCopy">Копировать расшифровку</string>
+  <string name="vg_SttEnhanceHeader">Улучшение текста</string>
+  <string name="vg_SttEnhance">Улучшенная расшифровка</string>
+  <string name="vg_SttEnhanceInfo">После выбранной модели языковая модель читает текст и по смыслу исправляет неверно расслышанные слова. Работает на устройстве и видит только текст. Расшифровка идёт заметно дольше и требует много памяти.</string>
+  <string name="vg_SttEnhanceOff">Выключить</string>
+  <string name="vg_SttEnhanceOffDelete">Выключить и удалить модель · %1$s</string>
+  <string name="vg_SttImproving">Улучшаю текст… %1$d%%</string>
 </resources>
