@@ -16,6 +16,7 @@ import android.view.View;
 import android.widget.LinearLayout;
 
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.navigation.ViewPagerHeaderViewCompact;
@@ -33,6 +34,14 @@ public interface ChatTopicTabs {
   View getHeaderView ();
   default View wrapContent (View content) {
     return content;
+  }
+  /**
+   * Header menu id. HeaderView keeps the filled menu while the next screen has the same id, so a chat
+   * with tabs must not share {@code menu_more} with plain chats, and menus with different buttons need different ids:
+   * otherwise «New topic» of a bot chat stays in the next chat (where it does nothing) or never shows up.
+   */
+  default int getMenuId () {
+    return R.id.menu_topicTabs;
   }
   void fillMenuItems (HeaderView header, LinearLayout menu, int iconColorId);
   /** Header buttons: true if handled. */

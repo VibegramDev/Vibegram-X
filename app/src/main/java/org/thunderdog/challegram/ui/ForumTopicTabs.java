@@ -666,6 +666,11 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
   }
 
   @Override
+  public int getMenuId () {
+    return canCreateBotTopics() ? R.id.menu_topicTabsCreate : R.id.menu_topicTabs;
+  }
+
+  @Override
   public void fillMenuItems (HeaderView header, LinearLayout menu, int iconColorId) {
     if (canCreateBotTopics()) {
       header.addButton(menu, R.id.btn_createTopic, R.drawable.baseline_create_24, iconColorId, owner, Screen.dp(49f));

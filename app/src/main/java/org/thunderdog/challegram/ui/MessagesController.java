@@ -4194,7 +4194,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         return R.id.menu_gallery;
     }
     if (topicTabs != null) {
-      return R.id.menu_more;
+      return topicTabs.getMenuId();
     }
     if (getChatId() != 0) {
       if (isSelfChat()) {
@@ -4267,7 +4267,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
-    if (id == R.id.menu_more) {
+    if (id == R.id.menu_more || id == R.id.menu_topicTabs || id == R.id.menu_topicTabsCreate) {
       if (topicTabs != null) {
         topicTabs.fillMenuItems(header, menu, getHeaderIconColorId());
         if (topicTabs.isSideTabs() && !inPreviewMode) {

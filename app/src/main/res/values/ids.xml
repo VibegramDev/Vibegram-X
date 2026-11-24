@@ -14,6 +14,8 @@
   <item type="id" name="menu_done" />
   <item type="id" name="menu_text" />
   <item type="id" name="menu_more" />
+  <item type="id" name="menu_topicTabs" />
+  <item type="id" name="menu_topicTabsCreate" />
   <item type="id" name="menu_more_settings" />
   <item type="id" name="menu_theme" />
   <item type="id" name="menu_gallery" />
