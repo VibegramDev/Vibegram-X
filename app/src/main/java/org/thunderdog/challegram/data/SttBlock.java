@@ -174,6 +174,12 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     return getState() == SttManager.STATE_RUNNING;
   }
 
+  /** Timed phrases of the finished transcription, null when there are none. */
+  public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles () {
+    SttManager.Transcription t = transcription;
+    return t != null && t.state == SttManager.STATE_DONE ? t.subtitles : null;
+  }
+
   public boolean isExpanded () {
     SttManager.Transcription t = transcription;
     return t != null && t.expanded;
