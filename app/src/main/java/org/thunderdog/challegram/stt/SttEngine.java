@@ -480,9 +480,12 @@ public abstract class SttEngine {
     private static final float MAIN_SHARE = .3f;
 
     private final SttEngine main, english;
+    /** GigaAM spells unknown English in Latin by sound: those words are replaced too (see SttEnglishMerge). */
+    private final boolean replaceLatin;
 
     EnglishMerge (SttModel model, File modelsDir) throws IOException {
       SttModel mainModel = model.parts[0], englishModel = model.parts[1];
+      replaceLatin = mainModel.isRussianOnly();
       main = create(mainModel, new File(modelsDir, mainModel.id));
       try {
         english = create(englishModel, new File(modelsDir, englishModel.id));
@@ -530,7 +533,7 @@ public abstract class SttEngine {
       if (cancelled) {
         throw new IOException("Cancelled");
       }
-      java.util.List<SttSubtitles.Word> merged = SttEnglishMerge.merge(mainWords, englishWords);
+      java.util.List<SttSubtitles.Word> merged = SttEnglishMerge.merge(mainWords, englishWords, replaceLatin);
       if (merged == null) {
         words.addAll(mainWords);
         return text;

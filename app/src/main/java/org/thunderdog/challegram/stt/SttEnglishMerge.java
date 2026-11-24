@@ -19,15 +19,21 @@ import java.util.List;
 final class SttEnglishMerge {
   private SttEnglishMerge () { }
 
-  /** Words further apart in time than this are never paired. */
+  /**
+   * Words further apart in time than this are never paired. The gap is between the word intervals, not their centers:
+   * the two models stretch a word over a following pause differently (Parakeet gave one word 6.5 s, Whisper 2.5 s),
+   * so centers of the same word were 3.6 s apart, while the intervals overlapped.
+   */
   private static final long MAX_TIME_GAP_MS = 2000;
   private static final float GAP_COST = .7f, FAR_COST = 2f;
 
   /**
-   * @return the Parakeet words with the English runs of Whisper in place of the words aligned with them,
-   *   or null when nothing changes (no Latin run, or Parakeet already wrote it in Latin)
+   * @param replaceLatin replace the words the main model already wrote in Latin too: GigaAM spells English it does
+   *   not know in Latin letters by sound («Arivingson»), Parakeet's Latin words are real English words
+   * @return the main words with the English runs of Whisper in place of the words aligned with them,
+   *   or null when nothing changes (no Latin run, or the main model already wrote it the same way)
    */
-  static @Nullable List<SttSubtitles.Word> merge (List<SttSubtitles.Word> main, List<SttSubtitles.Word> english) {
+  static @Nullable List<SttSubtitles.Word> merge (List<SttSubtitles.Word> main, List<SttSubtitles.Word> english, boolean replaceLatin) {
     if (main.isEmpty() || !hasLatinWord(english)) {
       return null;
     }
@@ -45,7 +51,7 @@ final class SttEnglishMerge {
         continue;
       }
       // A run: Whisper words in Latin (numbers between them stay in the run) and the Parakeet words paired with them
-      List<SttSubtitles.Word> oldWords = new ArrayList<>(), newWords = new ArrayList<>();
+      int runStart = k;
       while (k < pairs.length) {
         int m = pairs[k][0], e = pairs[k][1];
         if (e != -1) {
@@ -56,19 +62,22 @@ final class SttEnglishMerge {
         } else if (!latinFollows(pairs, english, k + 1)) {
           break;
         }
-        if (m != -1) {
-          oldWords.add(main.get(m));
-        }
-        if (e != -1) {
-          newWords.add(english.get(e));
-        }
         k++;
       }
-      // a run that ends with numbers: give them back
-      while (!newWords.isEmpty() && !isLatin(bare(newWords.get(newWords.size() - 1).text))) {
-        newWords.remove(newWords.size() - 1);
+      // a run that ends with numbers or a word only the main model heard: give them back to the main text
+      while (k > runStart + 1 && !endsRun(pairs[k - 1], main, english, replaceLatin)) {
+        k--;
       }
-      if (oldWords.isEmpty() || newWords.isEmpty() || allLatin(oldWords)) {
+      List<SttSubtitles.Word> oldWords = new ArrayList<>(), newWords = new ArrayList<>();
+      for (int r = runStart; r < k; r++) {
+        if (pairs[r][0] != -1) {
+          oldWords.add(main.get(pairs[r][0]));
+        }
+        if (pairs[r][1] != -1) {
+          newWords.add(english.get(pairs[r][1]));
+        }
+      }
+      if (oldWords.isEmpty() || (replaceLatin ? sameWords(oldWords, newWords) : allLatin(oldWords))) {
         // no speech under it in the Parakeet text (Whisper invents words on noise), or already in Latin
         out.addAll(oldWords);
         continue;
@@ -134,11 +143,10 @@ final class SttEnglishMerge {
       cur[0] = i * GAP_COST;
       back[i][0] = 1;
       SttSubtitles.Word wa = a.get(i - 1);
-      long ca = (wa.startMs + wa.endMs) / 2;
       for (int j = 1; j <= m; j++) {
         SttSubtitles.Word wb = b.get(j - 1);
-        long cb = (wb.startMs + wb.endMs) / 2;
-        float pairCost = Math.abs(ca - cb) > MAX_TIME_GAP_MS ? FAR_COST : 1f - similarity(ka[i - 1], kb[j - 1]);
+        long gap = Math.max(wa.startMs, wb.startMs) - Math.min(wa.endMs, wb.endMs);
+        float pairCost = gap > MAX_TIME_GAP_MS ? FAR_COST : 1f - similarity(ka[i - 1], kb[j - 1]);
         float best = prev[j - 1] + pairCost;
         byte dir = 0;
         if (prev[j] + GAP_COST < best) {
@@ -237,6 +245,29 @@ final class SttEnglishMerge {
       }
     }
     return false;
+  }
+
+  /**
+   * The last pair of a run: a Latin word of Whisper, or (when Latin words of the main model are replaced too)
+   * a Latin piece of the main model with no Whisper word («Spoty Fi» for «Spotify»).
+   */
+  private static boolean endsRun (int[] pair, List<SttSubtitles.Word> main, List<SttSubtitles.Word> english, boolean replaceLatin) {
+    if (pair[1] != -1) {
+      return isLatin(bare(english.get(pair[1]).text));
+    }
+    return replaceLatin && pair[0] != -1 && isLatin(bare(main.get(pair[0]).text));
+  }
+
+  private static boolean sameWords (List<SttSubtitles.Word> a, List<SttSubtitles.Word> b) {
+    if (a.size() != b.size()) {
+      return false;
+    }
+    for (int i = 0; i < a.size(); i++) {
+      if (!bare(a.get(i).text).equalsIgnoreCase(bare(b.get(i).text))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static boolean allLatin (List<SttSubtitles.Word> words) {
