@@ -173,11 +173,6 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     return getTimePadding();
   }
 
-  /** Vibegram X: width of the pin of a pinned chat (Telegram's list_pin, 23dp with its inner padding). */
-  public static int getPinIconWidth () {
-    return Screen.dp(23f);
-  }
-
   public static int getTimePaddingLeft () {
     return Screen.dp(7f);
   }
@@ -359,6 +354,36 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
   }
 
   /**
+   * Vibegram X: time of a pinned chat in a pill with a pin, as Telegram for Android draws it (DialogCell): the pill is
+   * the time colour at 27/255, 17dp high for 13sp time — 16dp here for the 11sp time; the pin is msg_pin_mini
+   * (deproko_baseline_pin_14) 4dp from the start of the pill. Unread and not muted: pin and time in the accent colour.
+   */
+  private void drawTimePin (Canvas c, int chatListMode, int viewWidth, boolean rtl) {
+    int color = chat.needAccentTimePin() ? M3.primary() : Theme.textDecentColor();
+    float baseline = getTitleTop(chatListMode);
+    float centerY = baseline - getTimeDigitHeight() / 2f;
+    float height = Screen.dp(16f);
+    float left = chat.getTimeBlockLeft();
+    float right = chat.getTimeLeft() + chat.getTimeWidth() + TGChat.getTimePinEnd();
+    if (rtl) {
+      float l = viewWidth - right;
+      right = viewWidth - left;
+      left = l;
+    }
+    RectF rect = Paints.getRectF(left, centerY - height / 2f, right, centerY + height / 2f);
+    c.drawRoundRect(rect, height / 2f, height / 2f, Paints.fillingPaint(ColorUtils.alphaColor(27f / 255f, color)));
+
+    Drawable pin = getSparseDrawable(R.drawable.deproko_baseline_pin_14, ColorId.NONE);
+    int pinLeft = chat.getTimeBlockLeft() + Screen.dp(4f);
+    Drawables.drawRtl(c, pin, pinLeft, centerY - pin.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(color), viewWidth, rtl);
+
+    int oldColor = timePaint.getColor();
+    timePaint.setColor(color);
+    c.drawText(chat.getTime(), (rtl ? viewWidth - chat.getTimeLeft() - chat.getTimeWidth() : chat.getTimeLeft()), baseline, timePaint);
+    timePaint.setColor(oldColor);
+  }
+
+  /**
    * Sent / read ticks of an outgoing last message, by the glyph rather than the padded 24dp box: the same scale for
    * both states (the double tick as tall as the time digits), the bottom on the time baseline and the right end
    * of either tick the same 4dp before the time.
@@ -372,7 +397,7 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     RectF glyph = Icons.getTickGlyphBounds(res);
     RectF pair = Icons.getTickGlyphBounds(R.drawable.deproko_baseline_check_double_24);
     float box = getTimeDigitHeight() / (pair.bottom - pair.top);
-    float left = chat.getTimeLeft() - Screen.dp(Icons.TICK_TIME_GAP) - glyph.right * box;
+    float left = chat.getTimeBlockLeft() - Screen.dp(Icons.TICK_TIME_GAP) - glyph.right * box;
     float top = getTitleTop(getChatListMode()) - pair.bottom * box;
     if (rtl) {
       left = viewWidth - left - box;
@@ -715,7 +740,11 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
       c.drawColor(ColorUtils.alphaColor(.1f * menuTargetFactor, M3.onSurface()));
     }
 
-    c.drawText(chat.getTime(), (rtl ? viewWidth - chat.getTimeLeft() - chat.getTimeWidth() : chat.getTimeLeft()), getTitleTop(chatListMode), timePaint);
+    if (chat.showTimePin()) {
+      drawTimePin(c, chatListMode, viewWidth, rtl);
+    } else {
+      c.drawText(chat.getTime(), (rtl ? viewWidth - chat.getTimeLeft() - chat.getTimeWidth() : chat.getTimeLeft()), getTitleTop(chatListMode), timePaint);
+    }
 
     Text title = chat.getTitle();
     if (title != null) {
@@ -798,10 +827,6 @@ public class ChatView extends BaseView implements TdlibSettingsManager.Preferenc
     if (chat.showTopicClosed()) {
       Drawable lock = getSparseDrawable(R.drawable.baseline_lock_16, ColorId.NONE);
       Drawables.drawRtl(c, lock, counterRight - lock.getMinimumWidth(), counterCenterY - lock.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.iconLight), viewWidth, rtl);
-    }
-    if (chat.showPinIcon()) {
-      Drawable pin = getSparseDrawable(R.drawable.vg_list_pin, ColorId.NONE);
-      Drawables.drawRtl(c, pin, counterRight - pin.getMinimumWidth(), counterCenterY - pin.getMinimumHeight() / 2f, PorterDuffPaint.get(ColorId.iconLight), viewWidth, rtl);
     }
 
     TdlibStatusManager.Helper status = chat.statusHelper();
