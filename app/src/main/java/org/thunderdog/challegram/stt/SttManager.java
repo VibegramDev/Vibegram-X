@@ -757,8 +757,13 @@ public final class SttManager {
 
   // Transcription
 
-  public static String key (int fileId, @Nullable String uniqueId) {
-    return uniqueId != null && !uniqueId.isEmpty() ? uniqueId : "file" + fileId;
+  /**
+   * A transcription is found by the account and the file id: both stay the same while the app runs, and results live
+   * only in memory. Not by remote.uniqueId: a just recorded round or voice gets it only when its upload ends, and the
+   * message (keeping the old key) and the full screen player (taking the new one) did not find the same result.
+   */
+  public static String key (int accountId, int fileId) {
+    return accountId + ":" + fileId;
   }
 
   private static String fullKey (String key, SttModel model) {

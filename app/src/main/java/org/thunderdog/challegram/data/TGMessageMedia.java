@@ -1022,6 +1022,11 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
 
   private @Nullable SttBlock stt;
 
+  /** Vibegram X: subtitles of the file for the full screen player, the same ones this message shows. */
+  public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSttSubtitles (int fileId) {
+    return stt != null ? stt.getSubtitles(fileId) : null;
+  }
+
   private @Nullable TdApi.Video getSttVideo () {
     if (mosaicWrapper == null || !mosaicWrapper.isSingular() || msg.content.getConstructor() != TdApi.MessageVideo.CONSTRUCTOR) {
       return null;

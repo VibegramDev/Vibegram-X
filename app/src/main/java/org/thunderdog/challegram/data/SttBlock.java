@@ -128,7 +128,7 @@ public final class SttBlock implements SttManager.TranscriptionListener {
    * @return true when the key changed
    */
   public boolean setFile (@Nullable TdApi.File file, int durationSeconds, int maxSeconds, @StringRes int tooLongRes, boolean marksRead) {
-    String newKey = file != null && SttManager.isSupported() ? SttManager.key(file.id, file.remote != null ? file.remote.uniqueId : null) : null;
+    String newKey = file != null && SttManager.isSupported() ? SttManager.key(message.tdlib().id(), file.id) : null;
     this.file = newKey != null ? file : null;
     this.durationSeconds = durationSeconds;
     this.maxSeconds = maxSeconds;
@@ -189,6 +189,11 @@ public final class SttBlock implements SttManager.TranscriptionListener {
 
   public boolean isRunning () {
     return getState() == SttManager.STATE_RUNNING;
+  }
+
+  /** Subtitles for a player of the file with this id: the same ones the message shows, null when there are none. */
+  public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles (int fileId) {
+    return file != null && file.id == fileId ? getSubtitles() : null;
   }
 
   /** Timed phrases of the finished transcription, null when there are none. */
