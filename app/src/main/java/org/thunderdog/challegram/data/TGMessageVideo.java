@@ -135,6 +135,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     boolean allowStt = getChatId() != 0 && !TD.isSelfDestructTypeImmediately(getMessage()) && SttManager.isSupported();
     if (allowStt && stt == null) {
       stt = new SttBlock(this, this, STT_TEXT_GAP, STT_STATUS_ROW);
+      stt.setSubtitlesMode(true);
     }
     if (stt != null) {
       stt.setFile(allowStt ? videoNote.video : null, videoNote.duration, SttManager.MAX_VOICE_SECONDS, 0, true);
@@ -977,9 +978,10 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   }
 
   // Vibegram X: on-device transcription of video messages.
-  // A button at the bottom left of the round starts it; then the message turns into a bubble like a voice message:
-  // small round (plays in place), waveform, duration and the button (stop / collapse), the text under them.
-  // Collapsing turns it back into the round.
+  // The button next to the round starts it (the ring shows the progress, a tap stops it); when it is done the round
+  // plays with subtitles, and a later tap on the button plays it again. Only when the model gives no word times
+  // (Whisper) or the run failed, the message turns into a bubble like a voice message: small round (plays in place),
+  // waveform, duration and the button (collapse), the text under them. Collapsing turns it back into the round.
 
   private static final float STT_ROUND_BUTTON = 32f, STT_ROUND_GAP = 4f;
   private static final float STT_BUTTON_WIDTH = 34f, STT_BUTTON_HEIGHT = 28f, STT_BUTTON_GAP = 8f, STT_TEXT_GAP = 6f;
@@ -1013,8 +1015,30 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     return stt != null && stt.isEnabled();
   }
 
+  /**
+   * The round turns into a bubble with the text only when the text has to be read: the model gave no word times
+   * (Whisper) or the transcription failed. Otherwise the result plays as subtitles inside the round.
+   */
   private boolean computeCompact () {
-    return hasStt() && stt.isOpen();
+    if (!hasStt() || !stt.isOpen()) {
+      return false;
+    }
+    switch (stt.getState()) {
+      case SttManager.STATE_DONE:
+        return stt.getSubtitles() == null;
+      case SttManager.STATE_FAILED:
+        return true;
+    }
+    return false;
+  }
+
+  @Override
+  public void onSttPlaySubtitles (SttBlock block) {
+    if (isDestroyed() || !isAttachedToView() || isUnmuted || !Config.ROUND_VIDEOS_PLAYBACK_SUPPORTED || TD.isSelfDestructTypeImmediately(getMessage())) {
+      // left the chat, scrolled away or already playing: the subtitles show up on the next playback
+      return;
+    }
+    tdlib.context().player().playPauseMessage(tdlib, msg, manager);
   }
 
   /**
