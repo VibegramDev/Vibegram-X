@@ -32,6 +32,9 @@ public interface ThemeDelegate {
    *   <li>the status bar gets no tint and dark icons in light themes;</li>
    *   <li>floating chat buttons (scroll down, mentions, reactions, collapsed mute bell, camera): secondaryContainer
    *   with an onSecondaryContainer icon (FAB: "Ensure the icon has a minimum 3:1 contrast ratio with the container").</li>
+   *   <li>the chat background without a wallpaper is surface too. Dark presets whose incoming bubble is the surface
+   *   color (Night Blue: TGX drew it on a darker chatBackground) get surfaceContainerHigh for it, as Monet does:
+   *   otherwise the bubbles merge with the chat.</li>
    * </ul>
    * Custom themes keep the colors set in the theme editor over these roles ({@link ThemeCustom#getColor}).
    */
@@ -57,6 +60,13 @@ public interface ThemeDelegate {
         return getRoleColor(M3.SECONDARY_CONTAINER);
       case ColorId.circleButtonChatIcon:
         return getRoleColor(M3.ON_SECONDARY_CONTAINER);
+      case ColorId.bubbleIn_background: {
+        int color = getRawColor(colorId);
+        if (isDark() && (color | 0xFF000000) == getRoleColor(M3.SURFACE)) {
+          return getRoleColor(M3.SURFACE_CONTAINER_HIGH);
+        }
+        return color;
+      }
     }
     return getRawColor(colorId);
   }

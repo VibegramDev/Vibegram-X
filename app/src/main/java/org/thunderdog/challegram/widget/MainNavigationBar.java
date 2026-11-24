@@ -70,16 +70,16 @@ import me.vkryl.core.lambda.Destroyable;
 /**
  * Main sections of the app: chats, calls, contacts and settings (shown as the user's avatar).
  * Tablet: floating bar at the bottom of the chat list (search is the search bar in the app bar there).
- * Phone: the dock, the same floating bar, compact, centered at the bottom, with the search button after settings.
+ * Phone: the dock, the same floating bar, compact, centered at the bottom, with the search button before settings.
  */
 public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   // Item ids are also indexes in the items array.
   public static final int ITEM_CHATS = 0;
   public static final int ITEM_CALLS = 1;
   public static final int ITEM_CONTACTS = 2;
-  public static final int ITEM_SETTINGS = 3;
-  /** Phone: opens the search of the chat list. An action, not a section: never selected, not one of the tabs. */
-  public static final int ITEM_SEARCH = 4;
+  /** Phone: opens the search of the chat list, before settings. An action, not a section: never selected, not one of the tabs. */
+  public static final int ITEM_SEARCH = 3;
+  public static final int ITEM_SETTINGS = 4;
   public interface Callback {
     void onNavigationItemClick (int item);
   }
@@ -158,8 +158,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       new ItemView(context, ITEM_CHATS, R.drawable.vg_tab_chats_24, R.drawable.vg_tab_chats_active_24, R.string.Chats),
       new ItemView(context, ITEM_CALLS, R.drawable.vg_tab_calls_24, R.drawable.vg_tab_calls_active_24, R.string.Calls),
       new ItemView(context, ITEM_CONTACTS, R.drawable.vg_tab_contacts_24, R.drawable.vg_tab_contacts_active_24, R.string.Contacts),
-      new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings),
-      new ItemView(context, ITEM_SEARCH, R.drawable.baseline_search_24, 0, R.string.Search)
+      new ItemView(context, ITEM_SEARCH, R.drawable.baseline_search_24, 0, R.string.Search),
+      new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings)
     };
     items[ITEM_SETTINGS].addView(avatarView);
     for (ItemView item : items) {
@@ -253,7 +253,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       if (item == view) {
         break;
       }
-      if (item.getVisibility() != View.GONE) {
+      if (item.getVisibility() != View.GONE && item.id != ITEM_SEARCH) {
         index++;
       }
     }

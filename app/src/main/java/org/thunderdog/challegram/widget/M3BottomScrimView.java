@@ -38,21 +38,14 @@ import org.thunderdog.challegram.tool.Screen;
 import me.vkryl.core.ColorUtils;
 
 /**
- * Backdrop of a floating bottom container (dock, message composer): a fade and a soft shadow, as in the official
- * Android app. The fade lies only inside the band the content keeps free for the container (its bottom padding:
- * the margin above the container, the container and the system inset below it), from transparent at the top of the
- * band. Content resting above the band (the last message or chat) is never dimmed; content scrolled into the band
- * washes out behind the container.
+ * Shadow of a floating bottom container (dock, message composer). The content behind it is not dimmed (Vibegram X:
+ * the owner removed the fade of the official app). {@link Fade} is the fade of the official app, still used under the
+ * strip of mini app tabs.
  */
 public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   public interface ShapeProvider {
     /** Fills the bounds of the floating container in the coordinates of this view, false when there is none. */
     boolean getShape (@NonNull M3BottomScrimView view, @NonNull RectF out);
-  }
-
-  public interface FadeTopProvider {
-    /** Top of the band kept free for the container in the coordinates of this view (where resting content ends). */
-    float getFadeTop (@NonNull M3BottomScrimView view, @NonNull RectF shape);
   }
 
   /** Part of the band the fade takes from its top, the surface is flat below (behind the bottom of the container). */
@@ -61,35 +54,18 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   /** Opacity of the surface at the end of the fade and below it (the official app: 0xE8). */
   private static final int ALPHA_MAX = 0xE8;
 
-  private final Fade fade = new Fade();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF shape = new RectF();
   private @Nullable ShapeProvider provider;
-  private @Nullable FadeTopProvider fadeTopProvider;
   private float radius;
-  private boolean shadowOnly;
 
   public M3BottomScrimView (Context context) {
     super(context);
   }
 
-  /** Draws only the shadow of the floating container: the content behind it is washed out by another view. */
-  public void setShadowOnly (boolean shadowOnly) {
-    if (this.shadowOnly != shadowOnly) {
-      this.shadowOnly = shadowOnly;
-      invalidate();
-    }
-  }
-
   public void setShapeProvider (@Nullable ShapeProvider provider, float radius) {
     this.provider = provider;
     this.radius = radius;
-    invalidate();
-  }
-
-  /** Without a provider the band starts at the top of this view (the view is as tall as the band). */
-  public void setFadeTopProvider (@Nullable FadeTopProvider fadeTopProvider) {
-    this.fadeTopProvider = fadeTopProvider;
     invalidate();
   }
 
@@ -103,10 +79,7 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     if (provider == null || !provider.getShape(this, shape)) {
       return;
     }
-    if (!shadowOnly) {
-      float fadeTop = fadeTopProvider != null ? fadeTopProvider.getFadeTop(this, shape) : 0f;
-      fade.draw(c, getWidth(), fadeTop, getHeight(), 1f);
-    }
+    // Vibegram X: no fade of the content behind the dock and the composer (owner's request), only the shadow.
     drawShadow(c, shadowPaint, shape, radius, 1f);
   }
 
