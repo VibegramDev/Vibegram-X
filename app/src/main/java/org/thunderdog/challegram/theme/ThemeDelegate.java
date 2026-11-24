@@ -35,6 +35,7 @@ public interface ThemeDelegate {
    *   <li>the chat background without a wallpaper is surface too. Dark presets whose incoming bubble is the surface
    *   color (Night Blue: TGX drew it on a darker chatBackground) get surfaceContainerHigh for it, as Monet does:
    *   otherwise the bubbles merge with the chat.</li>
+   *   <li>the waveform of a voice message keeps its shape readable on its bubble ({@link M3#waveformColor}).</li>
    * </ul>
    * Custom themes keep the colors set in the theme editor over these roles ({@link ThemeCustom#getColor}).
    */
@@ -67,6 +68,12 @@ public interface ThemeDelegate {
         }
         return color;
       }
+      case ColorId.waveformActive:
+      case ColorId.waveformInactive:
+        return M3.waveformColor(getColor(ColorId.bubbleIn_background), getRawColor(ColorId.waveformActive), getRawColor(ColorId.waveformInactive), colorId == ColorId.waveformActive);
+      case ColorId.bubbleOut_waveformActive:
+      case ColorId.bubbleOut_waveformInactive:
+        return M3.waveformColor(getColor(ColorId.bubbleOut_background), getRawColor(ColorId.bubbleOut_waveformActive), getRawColor(ColorId.bubbleOut_waveformInactive), colorId == ColorId.bubbleOut_waveformActive);
     }
     return getRawColor(colorId);
   }
