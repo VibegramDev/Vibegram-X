@@ -70,8 +70,7 @@ import me.vkryl.core.lambda.Destroyable;
 /**
  * Main sections of the app: chats, calls, contacts and settings (shown as the user's avatar).
  * Tablet: floating bar at the bottom of the chat list (search is the search bar in the app bar there).
- * Phone, navigation style "dock": the same floating bar, compact, centered at the bottom (search is in the app bar).
- * Phone, navigation style "bar": M3 flexible navigation bar (full width at the bottom, icons with labels).
+ * Phone: the dock, the same floating bar, compact, centered at the bottom, with the search button after settings.
  */
 public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   // Item ids are also indexes in the items array.
@@ -79,6 +78,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   public static final int ITEM_CALLS = 1;
   public static final int ITEM_CONTACTS = 2;
   public static final int ITEM_SETTINGS = 3;
+  /** Phone: opens the search of the chat list. An action, not a section: never selected, not one of the tabs. */
+  public static final int ITEM_SEARCH = 4;
   public interface Callback {
     void onNavigationItemClick (int item);
   }
@@ -157,7 +158,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       new ItemView(context, ITEM_CHATS, R.drawable.vg_tab_chats_24, R.drawable.vg_tab_chats_active_24, R.string.Chats),
       new ItemView(context, ITEM_CALLS, R.drawable.vg_tab_calls_24, R.drawable.vg_tab_calls_active_24, R.string.Calls),
       new ItemView(context, ITEM_CONTACTS, R.drawable.vg_tab_contacts_24, R.drawable.vg_tab_contacts_active_24, R.string.Contacts),
-      new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings)
+      new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings),
+      new ItemView(context, ITEM_SEARCH, R.drawable.baseline_search_24, 0, R.string.Search)
     };
     items[ITEM_SETTINGS].addView(avatarView);
     for (ItemView item : items) {
@@ -201,7 +203,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
         super.onInitializeAccessibilityNodeInfo(host, info);
         info.setCollectionInfo(AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(1,
-          visibleItemCount(), false,
+          visibleItemCount() - (items[ITEM_SEARCH].getVisibility() != View.GONE ? 1 : 0), false,
           AccessibilityNodeInfoCompat.CollectionInfoCompat.SELECTION_MODE_SINGLE));
       }
     });
@@ -558,6 +560,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
         @Override
         public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
           super.onInitializeAccessibilityNodeInfo(host, info);
+          if (id == ITEM_SEARCH) {
+            info.setClassName("android.widget.Button");
+            return;
+          }
           // Tab, "N of M", selected (MDC NavigationBarItemView).
           info.setRoleDescription(getResources().getString(R.string.vg_TabRole));
           int index = visibleIndexOf(ItemView.this);
