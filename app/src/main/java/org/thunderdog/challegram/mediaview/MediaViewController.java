@@ -1539,6 +1539,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
 
   @Override
   public void onMediaChanged (int index, int estimatedTotalSize, MediaItem currentItem, boolean itemCountChanged) {
+    updateSubtitles(currentItem, -1);
     switch (mode) {
       case MODE_GALLERY: {
         checkView.setChecked(selectDelegate != null && selectDelegate.isMediaItemSelected(index, currentItem));
@@ -2044,6 +2045,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   }
 
   private void setHeaderVisibilityFactor (float factor) {
+    invalidateSubtitles();
     updateHeaderAlpha();
     updateCaptionAlpha();
     updateSliderAlpha();
@@ -3343,6 +3345,77 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     }
   }
 
+  // Vibegram X: subtitles of a video (or a round opened in full screen) from its on-device transcription.
+  // The phrase sits above the seek bar and the caption while they are shown, near the bottom edge otherwise.
+
+  private static final float SUBTITLES_TEXT_SIZE = 18f, SUBTITLES_GAP = 16f, SUBTITLES_MAX_WIDTH = 560f;
+
+  private @Nullable SubtitlesView subtitlesView;
+  private @Nullable MediaItem subtitlesItem;
+
+  private final class SubtitlesView extends View {
+    private final org.thunderdog.challegram.widget.SubtitlePlate plate = new org.thunderdog.challegram.widget.SubtitlePlate(SUBTITLES_TEXT_SIZE);
+
+    SubtitlesView (Context context) {
+      super(context);
+    }
+
+    @Override
+    protected void onDraw (Canvas c) {
+      final float alpha = 1f - pipFactor;
+      if (plate.isEmpty() || alpha <= 0f) {
+        return;
+      }
+      final float visible = headerVisible.getFloatValue() * alpha;
+      float controls = Screen.dp(56f) * videoFactor * visible;
+      if (Views.isValid(captionWrapView) && captionWrapView.getAlpha() > 0f) {
+        controls = Math.max(controls, (Screen.dp(56f) * videoFactor + captionWrapView.getHeight()) * captionWrapView.getAlpha());
+      }
+      final float bottom = getMeasuredHeight() - getBottomWrapMargin() - controls - Screen.dp(SUBTITLES_GAP);
+      final int maxWidth = Math.min(getMeasuredWidth() - Screen.dp(32f), Screen.dp(SUBTITLES_MAX_WIDTH));
+      if (plate.draw(c, getMeasuredWidth() / 2f, bottom, maxWidth, alpha)) {
+        invalidate();
+      }
+    }
+  }
+
+  private void invalidateSubtitles () {
+    if (subtitlesView != null && !subtitlesView.plate.isEmpty()) {
+      subtitlesView.invalidate();
+    }
+  }
+
+  /** Subtitles of the finished transcription of the item with the selected model, null when there are none. */
+  private static @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles (@Nullable MediaItem item) {
+    if (item == null || !(item.isVideo() || item.isRoundVideo()) || !org.thunderdog.challegram.stt.SttManager.isSupported()) {
+      return null;
+    }
+    TdApi.File file = item.getTargetFile();
+    if (file == null) {
+      return null;
+    }
+    org.thunderdog.challegram.stt.SttManager.Transcription t = org.thunderdog.challegram.stt.SttManager.instance().peekTranscription(
+      org.thunderdog.challegram.stt.SttManager.key(file.id, file.remote != null ? file.remote.uniqueId : null)
+    );
+    return t != null && t.state == org.thunderdog.challegram.stt.SttManager.STATE_DONE ? t.subtitles : null;
+  }
+
+  /** @param positionMs position of the playing video, -1 when another item became current */
+  private void updateSubtitles (@Nullable MediaItem item, long positionMs) {
+    if (subtitlesView == null) {
+      return;
+    }
+    if (subtitlesItem != item) {
+      subtitlesItem = item;
+      subtitlesView.plate.reset();
+      subtitlesView.invalidate();
+    }
+    if (subtitlesView.plate.update(getSubtitles(item), positionMs) || !subtitlesView.plate.isEmpty()) {
+      // the controls above may move while it plays
+      subtitlesView.invalidate();
+    }
+  }
+
   @Override
   public void onPlayStarted (MediaItem item, boolean isPlaying) {
     if (videoSliderView != null && stack.getCurrent() == item) {
@@ -3386,6 +3459,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     if (this.videoFactor != factor) {
       this.videoFactor = factor;
       checkBottomComponentOffsets();
+      invalidateSubtitles();
       if (videoSliderView != null) {
         videoSliderView.setInnerAlpha(factor);
         updateBottomSpaceAlpha();
@@ -3435,6 +3509,9 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   public void onSeekProgress (MediaItem item, long nowMs, long durationMs, float progress) {
     if (stack.getCurrent() == item && videoSliderView != null) {
       videoSliderView.updateSeek(nowMs, durationMs, progress);
+    }
+    if (stack.getCurrent() == item) {
+      updateSubtitles(item, nowMs);
     }
   }
 
@@ -5334,6 +5411,15 @@ public class MediaViewController extends ViewController<MediaViewController.Args
         videoSliderView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         videoSliderView.setSlideEnabled(stack.getCurrent().canSeekVideo());
         bottomWrap.addView(videoSliderView);
+
+        subtitlesView = new SubtitlesView(context);
+        subtitlesView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !Config.DISABLE_VIEWER_ELEVATION) {
+          // above the media view (2dp), the same as the controls; no background, so no shadow
+          subtitlesView.setOutlineProvider(null);
+          subtitlesView.setElevation(Screen.dp(3f));
+        }
+        contentView.addView(subtitlesView);
 
         contentView.addView(bottomWrap);
 

@@ -1,15 +1,21 @@
 /*
  * Vibegram X: subtitles made from an on-device transcription.
- * sherpa-onnx (Parakeet, GigaAM) reports the start time of every token; tokens are joined into words,
+ * Every engine reports the times of its tokens: sherpa-onnx (Parakeet, GigaAM) the start of each one,
+ * whisper.cpp a rough start and end estimated from its timestamp tokens. Tokens are joined into words,
  * words into short phrases of one or two lines that are shown inside a playing round video.
- * Whisper reports no times here, its transcriptions have no subtitles.
  */
 package org.thunderdog.challegram.stt;
 
 import androidx.annotation.Nullable;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class SttSubtitles {
   /** A phrase is cut after a sentence, before this many characters or at a pause in the speech. */
@@ -119,6 +125,108 @@ public final class SttSubtitles {
     }
   }
 
+  /** Size of a token record header from libvgwhisper: int32 t0, int32 t1, uint16 segment, uint16 length. */
+  private static final int WHISPER_RECORD = 12;
+
+  /**
+   * Words from the token records libvgwhisper puts after the text (see recognizedText in vgwhisper.cpp).
+   * Whisper's tokens are pieces of bytes, one may end in the middle of a UTF-8 character: the bytes of a word
+   * are joined and decoded only at its end. A token that starts with a space, or a new segment, starts a new word.
+   * Words inside the phrases matched by {@code drop} are skipped: the same phrases cleanUp removes from the text.
+   *
+   * @param from index of the first record in {@code data}
+   * @param offsetMs start of the recognized audio in the message, token times are relative to it
+   * @param limitMs end of the recognized audio in the message: no word ends later (short audio is padded)
+   */
+  static void addWhisperWords (List<Word> out, byte[] data, int from, long offsetMs, long limitMs, @Nullable Pattern drop) {
+    if (data == null || from < 0 || from >= data.length) {
+      return;
+    }
+    ByteBuffer buffer = ByteBuffer.wrap(data, from, data.length - from).order(ByteOrder.LITTLE_ENDIAN);
+    List<Word> words = new ArrayList<>();
+    ByteArrayOutputStream word = new ByteArrayOutputStream();
+    int segment = -1;
+    long wordStart = -1, wordEnd = 0;
+    while (buffer.remaining() >= WHISPER_RECORD) {
+      final long t0 = buffer.getInt(), t1 = buffer.getInt();
+      final int index = buffer.getShort() & 0xffff, length = buffer.getShort() & 0xffff;
+      if (length > buffer.remaining()) {
+        break;
+      }
+      final int position = buffer.position();
+      buffer.position(position + length);
+      if (length == 0) {
+        continue;
+      }
+      if (index != segment || data[position] == ' ') {
+        addWord(words, word, wordStart, wordEnd);
+        segment = index;
+        wordStart = -1;
+        wordEnd = 0;
+      }
+      final long start = Math.max(offsetMs, Math.min(limitMs, offsetMs + t0 * 10));
+      final long end = Math.max(start, Math.min(limitMs, offsetMs + t1 * 10));
+      if (wordStart < 0 && !isBlank(data, position, length)) {
+        wordStart = start;
+      }
+      word.write(data, position, length);
+      wordEnd = Math.max(wordEnd, end);
+    }
+    addWord(words, word, wordStart, wordEnd);
+    if (words.isEmpty()) {
+      return;
+    }
+    if (drop == null) {
+      out.addAll(words);
+      return;
+    }
+    // the words joined by single spaces, as in the cleaned-up text, and where each of them starts
+    StringBuilder text = new StringBuilder();
+    int[] starts = new int[words.size()];
+    for (int i = 0; i < words.size(); i++) {
+      if (i > 0) {
+        text.append(' ');
+      }
+      starts[i] = text.length();
+      text.append(words.get(i).text);
+    }
+    boolean[] dropped = new boolean[words.size()];
+    Matcher matcher = drop.matcher(text);
+    while (matcher.find()) {
+      for (int i = 0; i < words.size(); i++) {
+        final int wordFrom = starts[i], wordTo = wordFrom + words.get(i).text.length();
+        if (wordFrom < matcher.end() && wordTo > matcher.start()) {
+          dropped[i] = true;
+        }
+      }
+    }
+    for (int i = 0; i < words.size(); i++) {
+      if (!dropped[i]) {
+        out.add(words.get(i));
+      }
+    }
+  }
+
+  private static boolean isBlank (byte[] data, int from, int length) {
+    for (int i = from; i < from + length; i++) {
+      if (data[i] != ' ' && data[i] != '\n' && data[i] != '\t') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static void addWord (List<Word> out, ByteArrayOutputStream bytes, long start, long end) {
+    if (bytes.size() == 0) {
+      return;
+    }
+    String text = new String(bytes.toByteArray(), StandardCharsets.UTF_8).trim();
+    bytes.reset();
+    if (!text.isEmpty() && start >= 0) {
+      out.add(new Word(start, Math.max(start, end), text));
+    }
+  }
+
   static @Nullable SttSubtitles build (List<Word> words) {
     if (words.isEmpty()) {
       return null;
@@ -152,6 +260,7 @@ public final class SttSubtitles {
     if (text.length() > 0) {
       addCue(cues, start, end, text);
     }
+    removeRepeats(cues);
     // each phrase stays until the next one, at most LINGER_MS after its last word
     Cue[] result = new Cue[cues.size()];
     for (int i = 0; i < result.length; i++) {
@@ -163,6 +272,23 @@ public final class SttSubtitles {
       result[i] = new Cue(cue.startMs, Math.max(cue.endMs, until), cue.text);
     }
     return result.length > 0 ? new SttSubtitles(result) : null;
+  }
+
+  /** Collapses a phrase repeated three or more times in a row (a Whisper decoder loop) into one, like SttEngine.removeRepeats. */
+  private static void removeRepeats (List<Cue> cues) {
+    int count = 0;
+    for (int i = 0; i < cues.size(); ) {
+      int j = i + 1;
+      while (j < cues.size() && cues.get(j).text.equalsIgnoreCase(cues.get(i).text)) {
+        j++;
+      }
+      final int keep = j - i >= 3 ? 1 : j - i;
+      for (int k = i; k < i + keep; k++) {
+        cues.set(count++, cues.get(k));
+      }
+      i = j;
+    }
+    cues.subList(count, cues.size()).clear();
   }
 
   /** Length of the words from {@code from} to the end of their sentence, or a big number when it is far. */

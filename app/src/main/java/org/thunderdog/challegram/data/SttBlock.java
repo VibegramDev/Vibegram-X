@@ -46,8 +46,9 @@ public final class SttBlock implements SttManager.TranscriptionListener {
   }
 
   /**
-   * Video notes: the result is shown as subtitles inside the playing round instead of a text under it.
-   * The button starts the transcription, then the round plays; a model without word times falls back to the text.
+   * Video notes and videos: the result is shown as subtitles over the playing video instead of a text under it.
+   * The button starts the transcription (only the ring on the button shows the progress), then the video plays;
+   * a failed run (or a result without word times) falls back to the text.
    */
   private boolean subtitlesMode;
 
@@ -234,9 +235,13 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     }
     switch (t.state) {
       case SttManager.STATE_RUNNING:
-        // text recognized so far; the status goes into its own row
-        return StringUtils.isEmpty(t.text) ? null : t.text;
+        // text recognized so far; the status goes into its own row. Subtitles mode: only the ring on the button
+        return subtitlesMode || StringUtils.isEmpty(t.text) ? null : t.text;
       case SttManager.STATE_DONE:
+        if (playsSubtitles()) {
+          // the video plays with them instead
+          return null;
+        }
         return StringUtils.isEmpty(t.text) ? Lang.getString(R.string.vg_SttEmpty) : t.text;
       case SttManager.STATE_FAILED:
         return Lang.getString(R.string.vg_SttFailed);
@@ -246,7 +251,7 @@ public final class SttBlock implements SttManager.TranscriptionListener {
 
   private int computeStatusCode () {
     SttManager.Transcription t = transcription;
-    if (t == null || !t.expanded || t.state != SttManager.STATE_RUNNING) {
+    if (t == null || !t.expanded || t.state != SttManager.STATE_RUNNING || subtitlesMode) {
       return STATUS_NONE;
     }
     float progress = t.getDisplayProgress();
@@ -340,9 +345,15 @@ public final class SttBlock implements SttManager.TranscriptionListener {
 
   // Button
 
-  private static Drawable sttIcon, collapseIcon;
+  private static Drawable sttIcon, subtitlesIcon, collapseIcon;
 
-  private static Drawable sttIcon () {
+  private Drawable sttIcon () {
+    if (subtitlesMode) {
+      if (subtitlesIcon == null) {
+        subtitlesIcon = Drawables.get(R.drawable.vg_subtitles_24);
+      }
+      return subtitlesIcon;
+    }
     if (sttIcon == null) {
       sttIcon = Drawables.get(R.drawable.vg_speech_to_text_24);
     }

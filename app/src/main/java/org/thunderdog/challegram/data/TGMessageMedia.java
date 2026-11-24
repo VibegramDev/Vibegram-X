@@ -1015,7 +1015,8 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
     return updated;
   }
 
-  // Vibegram X: on-device transcription of the audio of a video (the button over the video, the text under it).
+  // Vibegram X: on-device transcription of the audio of a video. The button over the video starts it, then the video
+  // opens in the player with subtitles; the text under the video is shown only for a model without word times or an error.
 
   private static final float STT_BUTTON_SIZE = 28f, STT_BUTTON_MARGIN = 8f, STT_STATUS_ROW = 20f;
 
@@ -1037,6 +1038,7 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
     }
     if (stt == null) {
       stt = new SttBlock(this, this, TEXT_MARGIN, STT_STATUS_ROW);
+      stt.setSubtitlesMode(true);
     }
     // the whole audio track is decoded into memory: longer videos are not transcribed
     return stt.setFile(video.video, video.duration, SttManager.MAX_VIDEO_SECONDS, R.string.vg_SttVideoTooLong, false);
@@ -1056,7 +1058,8 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
   }
 
   private int getSttTextWidth () {
-    return mosaicWrapper == null ? 0 : useBubbles() ? mosaicWrapper.getWidth() - xBubblePadding * 2 : mosaicWrapper.getWidth();
+    // the same width as the caption: full width posts in channels start the text after a margin
+    return mosaicWrapper == null ? 0 : useBubbles() ? mosaicWrapper.getWidth() - xBubblePadding * 2 : getRealContentMaxWidth();
   }
 
   private void buildSttText () {
@@ -1083,6 +1086,15 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
     invalidate();
   }
 
+  @Override
+  public void onSttPlaySubtitles (SttBlock block) {
+    if (isDestroyed() || !isAttachedToView() || getSttVideo() == null) {
+      // left the chat or scrolled away: the subtitles show up when the video is opened
+      return;
+    }
+    MediaViewController.openFromMessage(this, msg.id);
+  }
+
   private void drawSttText (Canvas c, int top) {
     if (!hasSttBlock()) {
       return;
@@ -1102,7 +1114,8 @@ public class TGMessageMedia extends TGMessage implements SttBlock.Host {
     }
     float radius = Screen.dp(STT_BUTTON_SIZE) / 2f;
     float cx = item.getCellLeft() + Screen.dp(STT_BUTTON_MARGIN) + radius;
-    float cy = item.getCellBottom() - Screen.dp(STT_BUTTON_MARGIN) - radius;
+    // getCellBottom() is updated only for media with rounded corners: full width posts in channels keep 0 there
+    float cy = item.getCellTop() + item.getCellHeight() - Screen.dp(STT_BUTTON_MARGIN) - radius;
     stt.drawCircleButton(c, cx, cy, STT_BUTTON_SIZE, 0x99000000, 0xffffffff, .75f, 1f);
   }
 
