@@ -297,7 +297,20 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       if (params == null || params.height != height || params.gravity != Gravity.BOTTOM) {
         dockScrim.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, height, Gravity.BOTTOM));
       }
+      updateDockScrimFadeTop();
     }
+  }
+
+  /**
+   * Folder chips hidden on scroll: the fade goes back to the band of the dock alone (as without folders), following the
+   * chips. The list keeps its padding, only the fade moves.
+   */
+  private void updateDockScrimFadeTop () {
+    if (dockScrim == null) {
+      return;
+    }
+    int chipsBand = Math.max(0, getChatListNavigationInset() - (MainNavigationBar.getBarTotalHeight() + Screen.dp(8f)));
+    dockScrim.setFadeTop(chipsBand * (1f - isBottomBarVisible.getFloatValue()));
   }
 
   /** Dock style: distance from the bottom (above the system inset) to the bottom of the folder chips row. */
@@ -3531,6 +3544,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       bottomBar.setAlpha(visible);
       bottomBar.setVisibility(visible > 0f ? View.VISIBLE : View.INVISIBLE);
       bottomBarSpace.setTranslationY(0);
+      updateDockScrimFadeTop();
       if (navigationBar != null) {
         navigationBar.setTranslationY(Math.min(y, 0));
       }

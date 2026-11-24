@@ -100,7 +100,8 @@ public class RectFrameLayout extends FrameLayoutFix {
    * composer, drawn only over what the children have drawn.
    */
   public static final class BottomFade {
-    public float fadeTop, alpha, radius;
+    /** The band of the fade: from {@code fadeTop} to {@code fadeBottom} (the bottom of the composer's scrim). */
+    public float fadeTop, fadeBottom, alpha, radius;
     public final RectF shape = new RectF();
     public boolean hasShape;
   }
@@ -115,12 +116,13 @@ public class RectFrameLayout extends FrameLayoutFix {
     if (!has && !hasBottomFade) {
       return;
     }
-    if (has && hasBottomFade && bottomFade.fadeTop == value.fadeTop && bottomFade.alpha == value.alpha && bottomFade.radius == value.radius && bottomFade.hasShape == value.hasShape && (!value.hasShape || bottomFade.shape.equals(value.shape))) {
+    if (has && hasBottomFade && bottomFade.fadeTop == value.fadeTop && bottomFade.fadeBottom == value.fadeBottom && bottomFade.alpha == value.alpha && bottomFade.radius == value.radius && bottomFade.hasShape == value.hasShape && (!value.hasShape || bottomFade.shape.equals(value.shape))) {
       return;
     }
     hasBottomFade = has;
     if (has) {
       bottomFade.fadeTop = value.fadeTop;
+      bottomFade.fadeBottom = value.fadeBottom;
       bottomFade.alpha = value.alpha;
       bottomFade.radius = value.radius;
       bottomFade.hasShape = value.hasShape;
@@ -155,7 +157,8 @@ public class RectFrameLayout extends FrameLayoutFix {
     }
     if (needFade) {
       fade.setXfermode(SRC_ATOP);
-      fade.draw(c, getMeasuredWidth(), bottomFade.fadeTop, getMeasuredHeight(), bottomFade.alpha);
+      // The same gradient as under the composer: it is spread over the whole band, down to the bottom of its scrim.
+      fade.draw(c, getMeasuredWidth(), bottomFade.fadeTop, bottomFade.fadeBottom > bottomFade.fadeTop ? bottomFade.fadeBottom : getMeasuredHeight(), getMeasuredHeight(), bottomFade.alpha);
       fade.setXfermode(null);
       if (bottomFade.hasShape) {
         if (shadowPaint == null) {
