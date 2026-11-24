@@ -467,7 +467,7 @@ deproko_baseline_stickers_24	smiles_tab_stickers	medium	emoji panel switch-to-st
 deproko_baseline_stickers_filled_24	msg2_sticker	high	settings "Stickers and Emoji" row; TG settings uses msg2_sticker
 deproko_baseline_text_add_24	msg_photo_text2	high	media editor add text; TG PreviewButtons BUTTON_TEXT
 deproko_baseline_verify_24	verified_profile	medium	verified badge in chat header; TG combined badge (alt verified_area+verified_check layers)
-deproko_baseline_verify_chat_24	verified_area	medium	verified badge in chat list; TG dialogs_verifiedDrawable + verified_check overlay
+deproko_baseline_verify_chat_24	verified_area	medium	verified badge in chat list; TG dialogs_verifiedDrawable + verified_check overlay (tick cut out by tg_verify.py after tg_apply.py)
 deproko_baseline_whatshot_16	msg_mini_fireon	high	content-preview secret media fire; TG mini fire span
 deproko_baseline_whatshot_24	filled_fire	medium	secret/hot media progress icon; TG chat_flameIcon; "Hide media" item in TG uses msg_spoiler
 deproko_logo_telegram_18	-	high	brand: Telegram logo in call screen
