@@ -399,7 +399,31 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   }
 
   public MediaViewThumbLocation getCurrentTargetLocation () {
-    return delegate != null && !UI.isNavigationAnimating() ? delegate.getTargetLocation(stack.getCurrentIndex(), stack.getCurrent()) : null;
+    MediaViewThumbLocation location = delegate != null && !UI.isNavigationAnimating() ? delegate.getTargetLocation(stack.getCurrentIndex(), stack.getCurrent()) : null;
+    if (location != null) {
+      offsetToParentPane(location);
+    }
+    return location;
+  }
+
+  /**
+   * Vibegram X: delegates give the place of the thumb within the screen that opened the viewer. On a tablet that screen
+   * lies in the right pane, so the viewer grew out of the chat list on the left: move the place by the pane's offset
+   * (zero on a phone).
+   */
+  private void offsetToParentPane (MediaViewThumbLocation location) {
+    Args args = getArguments();
+    View parentView = args != null && args.parentController != null ? args.parentController.getWrapUnchecked() : null;
+    if (parentView == null || parentView.getWindowToken() == null) {
+      return;
+    }
+    int parentX = Views.getLocationInWindow(parentView)[0];
+    View selfView = getWrapUnchecked(); // not attached yet when opening: the viewer covers the whole window
+    int selfX = selfView != null && selfView.getWindowToken() != null ? Views.getLocationInWindow(selfView)[0] : 0;
+    int dx = parentX - selfX;
+    if (dx != 0) {
+      location.set(location.left + dx, location.top, location.right + dx, location.bottom);
+    }
   }
 
   // Appear animation
