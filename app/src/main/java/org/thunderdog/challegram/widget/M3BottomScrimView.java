@@ -55,10 +55,8 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     float getFadeTop (@NonNull M3BottomScrimView view, @NonNull RectF shape);
   }
 
-  /** Height of the fade from the top of the band (the official app: 48dp above the composer, 60dp above the tabs). */
-  public static int getFadeHeight () {
-    return Screen.dp(48f);
-  }
+  /** Part of the band the fade takes from its top, the surface is flat below (behind the bottom of the container). */
+  private static final float FADE_SPREAD = .75f;
 
   /** Opacity of the surface at the end of the fade and below it (the official app: 0xE8). */
   private static final int ALPHA_MAX = 0xE8;
@@ -115,8 +113,8 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   /** The fade of this view, for views that draw their floating container themselves (dock, strip of mini app tabs). */
   public static final class Fade {
     // An eased gradient of unit height stretched by a local matrix (the band moves on every frame of the keyboard and
-    // tab animations, the shader is created once per color), then the flat surface down to the bottom.
-    private final Paint fadePaint = new Paint(), solidPaint = new Paint();
+    // tab animations, the shader is created once per color).
+    private final Paint fadePaint = new Paint();
     private final Matrix matrix = new Matrix();
     private int color;
     private boolean shaderReady;
@@ -124,14 +122,19 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     /** Vibegram X: SRC_ATOP fades only what is already drawn (the round video player over the list). */
     public void setXfermode (@Nullable android.graphics.Xfermode xfermode) {
       fadePaint.setXfermode(xfermode);
-      solidPaint.setXfermode(xfermode);
     }
 
     /**
      * From {@code top} (the top of the band kept free for the container) to {@code bottom}: transparent at {@code top},
-     * eased to {@link #ALPHA_MAX} of the surface over {@link #getFadeHeight()}, flat below. Nothing above {@code top}.
+     * eased to {@link #ALPHA_MAX} of the surface over {@link #FADE_SPREAD} of the band, flat below (the official app spreads
+     * the fade over the zone too: a short fixed ramp reads as a dark strip at its top). Nothing above {@code top}.
      */
     public void draw (Canvas c, float width, float top, float bottom, float alpha) {
+      draw(c, width, top, bottom, bottom, alpha);
+    }
+
+    /** The same, the flat end of the fade goes on from {@code bottom} down to {@code drawBottom}. */
+    public void draw (Canvas c, float width, float top, float bottom, float drawBottom, float alpha) {
       if (alpha <= 0f || bottom <= top) {
         return;
       }
@@ -141,21 +144,15 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
         color = surface;
         fadePaint.setShader(newEasedFade(surface, 0, ALPHA_MAX));
       }
-      final int paintAlpha = Math.round(255 * Math.min(1f, alpha));
-      final float fadeBottom = Math.min(bottom, top + getFadeHeight());
-      matrix.setScale(1f, getFadeHeight());
+      matrix.setScale(1f, (bottom - top) * FADE_SPREAD);
       matrix.postTranslate(0, top);
       fadePaint.getShader().setLocalMatrix(matrix);
-      fadePaint.setAlpha(paintAlpha);
-      c.drawRect(0, top, width, fadeBottom, fadePaint);
-      if (fadeBottom < bottom) {
-        solidPaint.setColor(ColorUtils.alphaColor(alpha, (ALPHA_MAX << 24) | (surface & 0x00FFFFFF)));
-        c.drawRect(0, fadeBottom, width, bottom, solidPaint);
-      }
+      fadePaint.setAlpha(Math.round(255 * Math.min(1f, alpha)));
+      c.drawRect(0, top, width, Math.max(bottom, drawBottom), fadePaint);
     }
   }
 
-  private static final int SMOOTH_FADE_STEPS = 12;
+  private static final int SMOOTH_FADE_STEPS = 24;
 
   /**
    * {@code color} from {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1, eased in and out (smoothstep): a linear

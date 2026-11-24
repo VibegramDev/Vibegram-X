@@ -738,6 +738,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     out.shape.offset(dx, dy);
     out.radius = MainNavigationBar.getBarRadius();
     out.alpha = composerScrim.getAlpha();
+    out.fadeBottom = composerScrim.getHeight() + dy;
     return composerScrim.getHeight() + dy;
   }
 
