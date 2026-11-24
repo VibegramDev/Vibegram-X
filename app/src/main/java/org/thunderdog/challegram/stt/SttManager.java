@@ -311,6 +311,14 @@ public final class SttManager {
 
   /** All files of the model are on disk. Cached: safe to call while drawing. */
   public boolean isDownloaded (SttModel model) {
+    if (model.isCombined()) {
+      for (SttModel part : model.parts) {
+        if (!isDownloaded(part)) {
+          return false;
+        }
+      }
+      return true;
+    }
     Boolean cached = downloadedCache.get(model.id);
     if (cached == null) {
       cached = checkDownloaded(model);
@@ -332,7 +340,8 @@ public final class SttManager {
 
   /** A stopped download left files of the model (finished files or .part) that take space. Cached. */
   public boolean hasPartialDownload (SttModel model) {
-    if (isDownloaded(model)) {
+    if (model.isCombined() || isDownloaded(model)) {
+      // a combined entry has no files of its own: the partial files are deleted from the rows of its models
       return false;
     }
     Boolean cached = partialCache.get(model.id);
@@ -350,10 +359,38 @@ public final class SttManager {
   }
 
   public boolean isDownloading (SttModel model) {
+    if (model.isCombined()) {
+      for (SttModel part : model.parts) {
+        if (isDownloading(part)) {
+          return true;
+        }
+      }
+      return false;
+    }
     return downloads.containsKey(model.id) || restartAfterStop.contains(model.id);
   }
 
+  /** Bytes still to download: for a combined entry, the size of its models that are not on the device yet. */
+  public long getMissingSize (SttModel model) {
+    if (!model.isCombined()) {
+      return isDownloaded(model) ? 0 : model.totalSize();
+    }
+    long size = 0;
+    for (SttModel part : model.parts) {
+      size += getMissingSize(part);
+    }
+    return size;
+  }
+
   public float getDownloadProgress (SttModel model) {
+    if (model.isCombined()) {
+      // the models already on the device count as downloaded
+      double done = 0;
+      for (SttModel part : model.parts) {
+        done += part.totalSize() * (isDownloaded(part) ? 1f : getDownloadProgress(part));
+      }
+      return (float) (done / model.totalSize());
+    }
     Float progress = downloadProgress.get(model.id);
     return progress != null ? progress : 0f;
   }
@@ -410,6 +447,10 @@ public final class SttManager {
         }
       }
     });
+    // the state of a combined entry follows its models
+    for (SttModel user : SttModel.usersOf(model)) {
+      notifyModel(user);
+    }
   }
 
   private void notifyTranscription (@Nullable String key) {
@@ -444,7 +485,21 @@ public final class SttManager {
     }
   }
 
+  /** Combined entry whose models are being downloaded for it: selected once all of them are on the device. UI thread. */
+  private @Nullable SttModel selectWhenDownloaded;
+
   public void download (SttModel model) {
+    if (model.isCombined()) {
+      if (isDownloaded(model)) {
+        return;
+      }
+      selectWhenDownloaded = model;
+      for (SttModel part : model.parts) {
+        download(part);
+      }
+      notifyModel(model);
+      return;
+    }
     if (downloads.containsKey(model.id) || isDownloaded(model)) {
       return;
     }
@@ -489,7 +544,13 @@ public final class SttManager {
     if (wasActive) {
       downloadProgress.remove(model.id);
     }
-    if (success && getSelectedModel() == null) {
+    SttModel combined = selectWhenDownloaded;
+    if (success && combined != null && combined.uses(model)) {
+      if (isDownloaded(combined)) {
+        selectWhenDownloaded = null;
+        setSelectedModel(combined);
+      }
+    } else if (success && getSelectedModel() == null) {
       setSelectedModel(model);
     }
     if (!success && wasActive && !task.cancelled) {
@@ -511,6 +572,15 @@ public final class SttManager {
   }
 
   public void cancelDownload (SttModel model) {
+    if (model.isCombined()) {
+      if (selectWhenDownloaded == model) {
+        selectWhenDownloaded = null;
+      }
+      for (SttModel part : model.parts) {
+        cancelDownload(part);
+      }
+      return;
+    }
     restartAfterStop.remove(model.id);
     DownloadTask task = downloads.remove(model.id);
     if (task != null) {
@@ -526,17 +596,29 @@ public final class SttManager {
 
   /** Deletes the model, or the files left by a stopped download. */
   public void delete (SttModel model) {
+    if (model.isCombined()) {
+      // its files are the files of its models
+      if (getSelectedModel() == model) {
+        setSelectedModel(null);
+      }
+      for (SttModel part : model.parts) {
+        delete(part);
+      }
+      return;
+    }
     cancelDownload(model);
     downloadedCache.put(model.id, false);
     partialCache.put(model.id, false);
-    if (getSelectedModel() == model) {
+    SttModel selected = getSelectedModel();
+    if (selected != null && (selected == model || selected.uses(model))) {
       setSelectedModel(null);
     }
     // a download requested before the files are gone waits for the deletion
     pendingDeletes.add(model.id);
     submitRecognitionTask(false, () -> {
       synchronized (engineLock) {
-        if (model.id.equals(engineModelId) && engine != null) {
+        SttModel loaded = SttModel.find(engineModelId);
+        if (loaded != null && (loaded == model || loaded.uses(model)) && engine != null) {
           engine.release();
           engine = null;
           engineModelId = null;
@@ -1069,6 +1151,7 @@ public final class SttManager {
       case "futo_244": return 400f;
       case "parakeet_ultra": return 150f;
       case "gigaam_v3_e2e": return 60f;
+      case "parakeet_whisper": return 550f;
     }
     return 500f;
   }

@@ -16,6 +16,11 @@ public final class SttModel {
   public static final int ENGINE_SHERPA_NEMO_TDT = 1;
   /** Sber GigaAM (RNN-T, sherpa-onnx): 64 mel features instead of 80 and chunks of at most 30 s. */
   public static final int ENGINE_SHERPA_GIGAAM = 2;
+  /**
+   * Not a model of its own: the text of {@link #parts}[0] with the English phrases of {@link #parts}[1]
+   * (see SttEnglishMerge). Uses the files of both, downloaded and deleted as those models.
+   */
+  public static final int ENGINE_ENGLISH_MERGE = 3;
 
   public static final class FileSpec {
     public final String name, url;
@@ -41,6 +46,8 @@ public final class SttModel {
   public final int quality;
   public final int engine;
   public final FileSpec[] files;
+  /** Models whose files a combined entry uses ({@link #ENGINE_ENGLISH_MERGE}), empty for a real model. */
+  public final SttModel[] parts;
 
   private SttModel (String id, String title, @StringRes int languagesRes, int quality, int engine, FileSpec... files) {
     this.id = id;
@@ -49,6 +56,31 @@ public final class SttModel {
     this.quality = quality;
     this.engine = engine;
     this.files = files;
+    this.parts = new SttModel[0];
+  }
+
+  private SttModel (String id, String title, @StringRes int languagesRes, SttModel main, SttModel english) {
+    this.id = id;
+    this.title = title;
+    this.languagesRes = languagesRes;
+    this.quality = 0;
+    this.engine = ENGINE_ENGLISH_MERGE;
+    this.files = new FileSpec[0];
+    this.parts = new SttModel[] {main, english};
+  }
+
+  public boolean isCombined () {
+    return parts.length > 0;
+  }
+
+  /** This combined entry uses the files of {@code model}. */
+  public boolean uses (SttModel model) {
+    for (SttModel part : parts) {
+      if (part == model) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public long totalSize () {
@@ -56,16 +88,19 @@ public final class SttModel {
     for (FileSpec file : files) {
       size += file.size;
     }
+    for (SttModel part : parts) {
+      size += part.totalSize();
+    }
     return size;
-  }
-
-  public int sizeMb () {
-    return (int) Math.round(totalSize() / (1024.0 * 1024.0));
   }
 
   /** «252 MB» or «2.3 GB» (1024-based, as the catalog always showed) in the app language. */
   public String sizeText () {
-    int mb = sizeMb();
+    return sizeText(totalSize());
+  }
+
+  public static String sizeText (long bytes) {
+    int mb = (int) Math.round(bytes / (1024.0 * 1024.0));
     if (mb < 1000) {
       return org.thunderdog.challegram.core.Lang.getString(R.string.fileSize_MB, String.valueOf(mb));
     }
@@ -91,41 +126,49 @@ public final class SttModel {
     return new FileSpec(name, url, size, sha256);
   }
 
-  /** From the lowest quality to the highest. Russian-only models are listed in the settings in their own section. */
-  public static final SttModel[] ALL = {
-    // OpenAI Whisper (whisper.cpp ggml q8_0) in FUTO Keyboard builds (finetuned with ACFT).
-    // The finetuning allows running the encoder on the real length of messages under 30 s, which is faster,
-    // but Base then sometimes stops after the first sentence: we always run the full 30 s window.
-    // Stars compare the multilingual models with each other, the best of them gets all five:
-    // Base 1 (often stops after the first sentence), Small 3 (19.7% WER on our 9 notes even with beam search),
-    // Parakeet 5 (Parakeet Ultra: 8.7% on our 8-note test, many times faster than Small).
-    new SttModel("futo_74", "Whisper Base (FUTO)", R.string.vg_SttLangWhisper, 1, ENGINE_WHISPER_CPP,
-      f("model.bin", FUTO + "voice-input-multilingual-74.bin", 81768602L, "e44f352c9aa2c3609dece20c733c4ad4a75c28cd9ab07d005383df55fa96efc4")),
-    new SttModel("futo_244", "Whisper Small (FUTO)", R.string.vg_SttLangWhisper, 3, ENGINE_WHISPER_CPP,
-      f("model.bin", FUTO + "voice-input-multilingual-244.bin", 264464624L, "15ef255465a6dc582ecf1ec651a4618c7ee2c18c05570bbe46493d248d465ac4")),
+  // OpenAI Whisper (whisper.cpp ggml q8_0) in FUTO Keyboard builds (finetuned with ACFT).
+  // The finetuning allows running the encoder on the real length of messages under 30 s, which is faster,
+  // but Base then sometimes stops after the first sentence: we always run the full 30 s window.
+  // Stars compare the multilingual models with each other, the best of them gets all five:
+  // Base 1 (often stops after the first sentence), Small 3 (19.7% WER on our 9 notes even with beam search),
+  // Parakeet 5 (Parakeet Ultra: 8.7% on our 8-note test, many times faster than Small).
+  private static final SttModel WHISPER_BASE = new SttModel("futo_74", "Whisper Base (FUTO)", R.string.vg_SttLangWhisper, 1, ENGINE_WHISPER_CPP,
+    f("model.bin", FUTO + "voice-input-multilingual-74.bin", 81768602L, "e44f352c9aa2c3609dece20c733c4ad4a75c28cd9ab07d005383df55fa96efc4"));
+  private static final SttModel WHISPER_SMALL = new SttModel("futo_244", "Whisper Small (FUTO)", R.string.vg_SttLangWhisper, 3, ENGINE_WHISPER_CPP,
+    f("model.bin", FUTO + "voice-input-multilingual-244.bin", 264464624L, "15ef255465a6dc582ecf1ec651a4618c7ee2c18c05570bbe46493d248d465ac4"));
 
-    // Sber GigaAM v3, end-to-end RNN-T variant: writes punctuation, capitals and numbers itself. Russian only.
-    // int8 encoder, sherpa-onnx export by Alexxerm (MIT, from istupakov/gigaam-v3-onnx).
-    // Shown on its own under «Лучший для русского языка»: on Russian speech it beats every multilingual model here
-    // (independent benchmark: 6.6–7.0% WER vs 9.3–10.8% for Parakeet), but it does not know other languages.
-    // No stars (0): the app is international, and stars on the multilingual scale would mislead for other languages.
-    new SttModel("gigaam_v3_e2e", "Sber GigaAM v3", R.string.vg_SttLangGigaAm, 0, ENGINE_SHERPA_GIGAAM,
-      f("encoder.int8.onnx", GIGAAM + "encoder.int8.onnx", 224571327L, "aa4e9bd1d8f1b30534c0b56d743970be53fd102dba639c2b1cc06e2aa898ada0"),
-      f("decoder.onnx", GIGAAM + "decoder.onnx", 1159351L, "ea08443676485385c0dd31d938233bffaed6e52d47d84844c9b568589f1c9b27"),
-      f("joiner.onnx", GIGAAM + "joiner.onnx", 687791L, "ade116563dbf66e503b0994efab6b5861412743e52bf31c39fc3fffa3783d5d1"),
-      f("tokens.txt", GIGAAM + "tokens.txt", 13354L, "39abae20e692998290c574e606f11a9edef2902a1995463fcff63d1490cf22b7")),
+  // Sber GigaAM v3, end-to-end RNN-T variant: writes punctuation, capitals and numbers itself. Russian only.
+  // int8 encoder, sherpa-onnx export by Alexxerm (MIT, from istupakov/gigaam-v3-onnx).
+  // Shown on its own under «Лучший для русского языка»: on Russian speech it beats every multilingual model here
+  // (independent benchmark: 6.6–7.0% WER vs 9.3–10.8% for Parakeet), but it does not know other languages.
+  // No stars (0): the app is international, and stars on the multilingual scale would mislead for other languages.
+  private static final SttModel GIGAAM_V3 = new SttModel("gigaam_v3_e2e", "Sber GigaAM v3", R.string.vg_SttLangGigaAm, 0, ENGINE_SHERPA_GIGAAM,
+    f("encoder.int8.onnx", GIGAAM + "encoder.int8.onnx", 224571327L, "aa4e9bd1d8f1b30534c0b56d743970be53fd102dba639c2b1cc06e2aa898ada0"),
+    f("decoder.onnx", GIGAAM + "decoder.onnx", 1159351L, "ea08443676485385c0dd31d938233bffaed6e52d47d84844c9b568589f1c9b27"),
+    f("joiner.onnx", GIGAAM + "joiner.onnx", 687791L, "ade116563dbf66e503b0994efab6b5861412743e52bf31c39fc3fffa3783d5d1"),
+    f("tokens.txt", GIGAAM + "tokens.txt", 13354L, "39abae20e692998290c574e606f11a9edef2902a1995463fcff63d1490cf22b7"));
 
-    // Parakeet Ultra (moondream): nvidia/parakeet-tdt-0.6b-v3 post-trained further, same size, tokenizer and speed.
-    // Encoder: Olicorne's ONNX export with 8-bit block-wise weights (MatMulNBits, block 64) plus the sherpa-onnx metadata;
-    // decoder and joiner: the sherpa-onnx v3 graphs with the Ultra weights (fp32). On our 8 Russian test notes
-    // 8.7% WER vs 17.1% for the previous Parakeet int8 (csukuangfj, per-tensor int8) at the same speed on a Mac CPU:
-    // most of that gap was the per-tensor quantization, the rest is Ultra's training. Its joiner never emits <unk>.
-    new SttModel("parakeet_ultra", "Parakeet Ultra 0.6B", R.string.vg_SttLangParakeet, 5, ENGINE_SHERPA_NEMO_TDT,
-      f("encoder.int8.onnx", PARAKEET_ULTRA + "encoder.int8.onnx", 649431984L, "f7716e2483661a410658239f4923955a3e98eb4a75fe61b40200bc0470a5db8a"),
-      f("decoder.onnx", PARAKEET_ULTRA + "decoder.onnx", 47233743L, "3f09873ec6ac5e17c80542496ee6dcf79490c59a92f68bbdeba2a525208bc3b1"),
-      f("joiner.onnx", PARAKEET_ULTRA + "joiner.onnx", 25286330L, "432fad3750296cf9bccad92870625367ffbda9ec733243f6958e75f42ab63ba4"),
-      f("tokens.txt", PARAKEET_ULTRA + "tokens.txt", 93939L, "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d")),
-  };
+  // Parakeet Ultra (moondream): nvidia/parakeet-tdt-0.6b-v3 post-trained further, same size, tokenizer and speed.
+  // Encoder: Olicorne's ONNX export with 8-bit block-wise weights (MatMulNBits, block 64) plus the sherpa-onnx metadata;
+  // decoder and joiner: the sherpa-onnx v3 graphs with the Ultra weights (fp32). On our 8 Russian test notes
+  // 8.7% WER vs 17.1% for the previous Parakeet int8 (csukuangfj, per-tensor int8) at the same speed on a Mac CPU:
+  // most of that gap was the per-tensor quantization, the rest is Ultra's training. Its joiner never emits <unk>.
+  private static final SttModel PARAKEET_ULTRA_06B = new SttModel("parakeet_ultra", "Parakeet Ultra 0.6B", R.string.vg_SttLangParakeet, 5, ENGINE_SHERPA_NEMO_TDT,
+    f("encoder.int8.onnx", PARAKEET_ULTRA + "encoder.int8.onnx", 649431984L, "f7716e2483661a410658239f4923955a3e98eb4a75fe61b40200bc0470a5db8a"),
+    f("decoder.onnx", PARAKEET_ULTRA + "decoder.onnx", 47233743L, "3f09873ec6ac5e17c80542496ee6dcf79490c59a92f68bbdeba2a525208bc3b1"),
+    f("joiner.onnx", PARAKEET_ULTRA + "joiner.onnx", 25286330L, "432fad3750296cf9bccad92870625367ffbda9ec733243f6958e75f42ab63ba4"),
+    f("tokens.txt", PARAKEET_ULTRA + "tokens.txt", 93939L, "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"));
+
+  // «Enhanced transcription»: the Russian Parakeet build hears accented English as Russian syllables
+  // («Ар ю вининг, Сан»), Whisper Small writes it in Latin but makes twice as many errors in Russian words.
+  // Parakeet's text with the Latin phrases of Whisper Small; about 3.5 times slower than Parakeet alone.
+  private static final SttModel ENGLISH_MERGE = new SttModel("parakeet_whisper", "Parakeet + Whisper Small", R.string.vg_SttLangEnglishMerge, PARAKEET_ULTRA_06B, WHISPER_SMALL);
+
+  /**
+   * From the lowest quality to the highest. Russian-only models and the combined ones are listed in the settings
+   * in their own sections.
+   */
+  public static final SttModel[] ALL = {WHISPER_BASE, WHISPER_SMALL, GIGAAM_V3, PARAKEET_ULTRA_06B, ENGLISH_MERGE};
 
   /**
    * Number of stars: the best model of the catalog gets them all,
@@ -175,6 +218,17 @@ public final class SttModel {
   /** Knows only Russian: shown separately as the best model for Russian. */
   public boolean isRussianOnly () {
     return engine == ENGINE_SHERPA_GIGAAM;
+  }
+
+  /** Combined entries that use the files of {@code model}. */
+  public static java.util.List<SttModel> usersOf (SttModel model) {
+    java.util.ArrayList<SttModel> result = new java.util.ArrayList<>();
+    for (SttModel m : ALL) {
+      if (m.uses(model)) {
+        result.add(m);
+      }
+    }
+    return result;
   }
 
   public static @Nullable SttModel find (@Nullable String id) {

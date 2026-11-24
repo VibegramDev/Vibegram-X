@@ -6,6 +6,7 @@
  * The progress and the text recognized so far are reported while a long message is still processed:
  * whisper.cpp streams its segments, Parakeet gets the audio in chunks of up to a minute cut at pauses.
  * Every engine also gives word times, which become the subtitles of a round video (SttSubtitles).
+ * «Enhanced transcription» runs two of them on the same audio and merges their words (EnglishMerge).
  */
 package org.thunderdog.challegram.stt;
 
@@ -156,6 +157,8 @@ public abstract class SttEngine {
       case SttModel.ENGINE_SHERPA_GIGAAM:
         // GigaAM was trained on segments up to ~30 s and drops most of the speech in longer ones
         return new SherpaOffline(model, dir, 64, 30);
+      case SttModel.ENGINE_ENGLISH_MERGE:
+        return new EnglishMerge(model, dir.getParentFile());
     }
     throw new IOException("Unknown engine");
   }
@@ -462,6 +465,116 @@ public abstract class SttEngine {
         released = true;
         recognizer.release();
       }
+    }
+  }
+
+  // Parakeet + Whisper Small
+
+  /**
+   * Parakeet's text with the English phrases of Whisper Small in place of the words Parakeet wrote for them in
+   * Cyrillic (see SttEnglishMerge). Both models stay loaded together while the entry is in use (≈1 GB of memory):
+   * loading each of them for every message would take longer than the recognition of a short note.
+   */
+  static final class EnglishMerge extends SttEngine {
+    /** Share of the time spent by Parakeet: ~150 ms per second of audio vs ~400 for Whisper Small on a phone. */
+    private static final float MAIN_SHARE = .3f;
+
+    private final SttEngine main, english;
+
+    EnglishMerge (SttModel model, File modelsDir) throws IOException {
+      SttModel mainModel = model.parts[0], englishModel = model.parts[1];
+      main = create(mainModel, new File(modelsDir, mainModel.id));
+      try {
+        english = create(englishModel, new File(modelsDir, englishModel.id));
+      } catch (Throwable t) {
+        main.release();
+        throw t;
+      }
+    }
+
+    @Override
+    public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
+      words.clear();
+      // Parakeet's text is shown while Whisper is still looking for English phrases in it
+      String text = main.transcribe(samples, listener == null ? null : new Listener() {
+        @Override
+        public void onProgress (float progress) {
+          listener.onProgress(progress * MAIN_SHARE);
+        }
+
+        @Override
+        public void onPartialText (String partial) {
+          listener.onPartialText(partial);
+        }
+      });
+      java.util.List<SttSubtitles.Word> mainWords = new java.util.ArrayList<>(main.words);
+      main.words.clear();
+      if (cancelled) {
+        throw new IOException("Cancelled");
+      }
+      if (text.isEmpty()) {
+        // no speech: Whisper would only invent something
+        return text;
+      }
+      english.transcribe(samples, listener == null ? null : new Listener() {
+        @Override
+        public void onProgress (float progress) {
+          listener.onProgress(MAIN_SHARE + progress * (1f - MAIN_SHARE));
+        }
+
+        @Override
+        public void onPartialText (String partial) { }
+      });
+      java.util.List<SttSubtitles.Word> englishWords = new java.util.ArrayList<>(english.words);
+      english.words.clear();
+      if (cancelled) {
+        throw new IOException("Cancelled");
+      }
+      java.util.List<SttSubtitles.Word> merged = SttEnglishMerge.merge(mainWords, englishWords);
+      if (merged == null) {
+        words.addAll(mainWords);
+        return text;
+      }
+      words.addAll(merged);
+      StringBuilder b = new StringBuilder();
+      for (SttSubtitles.Word word : merged) {
+        if (b.length() > 0) {
+          b.append(' ');
+        }
+        b.append(word.text);
+      }
+      Log.i(Log.TAG_VOICE, "STT: English phrases taken from Whisper");
+      return restoreUnknown(b.toString());
+    }
+
+    @Override
+    protected int maxChunkSeconds () {
+      return 0;
+    }
+
+    @Override
+    protected String transcribeChunk (float[] chunk, @Nullable ChunkProgress progress) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void cancel () {
+      super.cancel();
+      main.cancel();
+      english.cancel();
+    }
+
+    @Override
+    public void resetCancel () {
+      super.resetCancel();
+      main.resetCancel();
+      english.resetCancel();
+    }
+
+    @Override
+    public void release () {
+      main.release();
+      english.release();
     }
   }
 

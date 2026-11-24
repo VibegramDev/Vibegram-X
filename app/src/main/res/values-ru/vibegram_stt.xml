@@ -25,4 +25,8 @@
   <string name="vg_SttPreparing">Подготовка…</string>
   <string name="vg_SttVideoTooLong">Расшифровать можно только видео до 5 минут</string>
   <string name="vg_SttCopy">Копировать расшифровку</string>
+  <string name="vg_SttEnglishMergeHeader">Улучшенная расшифровка</string>
+  <string name="vg_SttLangEnglishMerge">Русский + английский</string>
+  <string name="vg_SttEnglishMergeInfo">Parakeet расшифровывает сообщение, а Whisper Small находит в нём английские фразы и пишет их латиницей, а не кириллицей. Расшифровка примерно в 3,5 раза дольше. Используются обе модели: уже скачанные не скачиваются повторно.</string>
+  <string name="vg_SttDeleteModels">Удалить обе модели · %1$s</string>
 </resources>
