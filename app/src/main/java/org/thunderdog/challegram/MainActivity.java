@@ -326,11 +326,14 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
   }
 
+  private long accountSwitchGeneration;
+
   @Override
   public void onAccountSwitched (final TdlibAccount newAccount, TdApi.User profile, @AccountSwitchReason int reason, TdlibAccount oldAccount) {
     if (this.account.id == newAccount.id) {
       return;
     }
+    accountSwitchGeneration++;
 
     updateCounter();
 
@@ -808,6 +811,37 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     onAborted.run();
   }
 
+  /** Wait for the account switch to install its navigation controller before handling a Mini App link. */
+  public void withMiniAppLinkAccount (Tdlib owner, long userId, RunnableData<ViewController<?>> callback) {
+    if (isFinishing() || navigation.isDestroyed() || isPasscodeShowing() || !hasTdlib() ||
+        userId == 0 || !owner.isAuthorized() || owner.myUserId(true) != userId) {
+      callback.runWithData(null);
+      return;
+    }
+    if (currentTdlib() == owner) {
+      awaitMiniAppLinkController(owner, userId, callback, PENDING_INTENT_MAX_ATTEMPTS);
+    } else {
+      owner.context().changePreferredAccountId(owner.id(), TdlibManager.SWITCH_REASON_NAVIGATION, switched ->
+        handler.post(() -> awaitMiniAppLinkController(owner, userId, callback, PENDING_INTENT_MAX_ATTEMPTS)));
+    }
+  }
+
+  private void awaitMiniAppLinkController (Tdlib owner, long userId, RunnableData<ViewController<?>> callback, int attempts) {
+    if (!isFinishing() && !navigation.isDestroyed() && !isPasscodeShowing() &&
+        currentTdlib() == owner && owner.isAuthorized() && owner.myUserId(true) == userId) {
+      ViewController<?> current = navigation.getCurrentStackItem();
+      if (current != null && current.tdlib() == owner && !current.isDestroyed() && !isActivityBusyWithSomething()) {
+        callback.runWithData(current);
+        return;
+      }
+      if (attempts > 0) {
+        handler.postDelayed(() -> awaitMiniAppLinkController(owner, userId, callback, attempts - 1), PENDING_INTENT_DELAY_MS);
+        return;
+      }
+    }
+    callback.runWithData(null);
+  }
+
   private boolean handleIntent (String actionRaw, final Intent intent, boolean fromCreate) {
     final String action = Intents.getCleanAction(actionRaw);
 
@@ -873,18 +907,18 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
         return false;
       }
       final Tdlib webAppTdlib = TdlibManager.instanceForAccountId(accountId).account(accountId).tdlib();
+      final long ownerUserId = webAppTdlib.myUserId(true);
       webAppTdlib.awaitInitialization(() -> {
         webAppTdlib.incrementUiReferenceCount();
-        handler.post(() -> {
-          openMainController(accountId);
-          handler.post(() -> {
-            ViewController<?> c = navigation.getCurrentStackItem();
-            if (c != null && !c.isDestroyed() && c.tdlib() != null && c.tdlib().id() == accountId) {
+        handler.post(() -> withMiniAppLinkAccount(webAppTdlib, ownerUserId, c -> {
+          try {
+            if (c != null) {
               WebApp.openFromShortcut(c, botUserId, isTrusted);
             }
+          } finally {
             webAppTdlib.decrementUiReferenceCount();
-          });
-        });
+          }
+        }));
       });
       return true;
     }
@@ -1058,10 +1092,15 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
         }
         consumer = account -> {
           Tdlib linkTdlib = account.tdlib();
+          long selectedUserId = linkTdlib.myUserId(true);
+          // The user can select an inactive account, but a later switch supersedes this launch.
+          long switchGeneration = accountSwitchGeneration;
           linkTdlib.awaitInitialization(() -> handler.post(() ->
             runIntentNavigation(() -> {
-              if (navigation.getCurrentStackItem() != null) {
-                linkTdlib.ui().openTelegramUrl(new TdlibContext(this, linkTdlib), url, null, null);
+              if (navigation.getCurrentStackItem() != null &&
+                  (selectedUserId == 0 || linkTdlib.myUserId(true) == selectedUserId)) {
+                linkTdlib.ui().openTelegramUrl(new TdlibContext(this, linkTdlib), url, null, null,
+                  () -> accountSwitchGeneration == switchGeneration);
               }
             }, () -> {}, PENDING_INTENT_MAX_ATTEMPTS)
           ));

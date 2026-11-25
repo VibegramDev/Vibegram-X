@@ -48,6 +48,7 @@ import org.thunderdog.challegram.telegram.ChatFilter;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibDelegate;
 import org.thunderdog.challegram.telegram.TdlibNotificationUtils;
+import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
@@ -226,14 +227,35 @@ public final class WebApp {
     TdApi.InternalLinkType linkType,
     @Nullable RunnableBool after
   ) {
-    final ViewController<?> c = findController(context);
-    if (c == null) {
-      if (after != null) {
-        after.runWithBool(false);
-      }
-      return;
-    }
     final Tdlib tdlib = context.tdlib();
+    final long ownerUserId = tdlib.myUserId(true);
+    final ViewController<?> source = context instanceof ViewController<?> ?
+      (ViewController<?>) context : context.context().navigation().getCurrentStackItem();
+    if (source != null && source.tdlib() == tdlib && isLaunchContextValid(source, ownerUserId)) {
+      openLink(source, ownerUserId, getCurrentChatId(source), linkType, after);
+    } else if (!(context instanceof ViewController<?>) && context.context() instanceof MainActivity) {
+      // Do not borrow a chat from the old account while the selected account's stack loads.
+      ((MainActivity) context.context()).withMiniAppLinkAccount(tdlib, ownerUserId, c -> {
+        if (c != null) {
+          openLink(c, ownerUserId, 0, linkType, after);
+        } else if (after != null) {
+          after.runWithBool(false);
+        }
+      });
+    } else if (after != null) {
+      after.runWithBool(false);
+    }
+  }
+
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+  private static void openLink (
+    ViewController<?> c,
+    long ownerUserId,
+    long currentChatId,
+    TdApi.InternalLinkType linkType,
+    @Nullable RunnableBool after
+  ) {
+    final Tdlib tdlib = c.tdlib();
     final String botUsername;
     switch (linkType.getConstructor()) {
       case TdApi.InternalLinkTypeWebApp.CONSTRUCTOR:
@@ -249,6 +271,12 @@ public final class WebApp {
         throw new IllegalArgumentException(linkType.toString());
     }
     tdlib.send(new TdApi.SearchPublicChat(botUsername), (chat, error) -> UI.post(() -> {
+      if (!isLaunchContextValid(c, ownerUserId)) {
+        if (after != null) {
+          after.runWithBool(false);
+        }
+        return;
+      }
       long botUserId = chat != null ? tdlib.chatUserId(chat.id) : 0;
       TdApi.User bot = botUserId != 0 ? tdlib.cache().user(botUserId) : null;
       boolean isBot = bot != null && bot.type.getConstructor() == TdApi.UserTypeBot.CONSTRUCTOR;
@@ -257,10 +285,9 @@ public final class WebApp {
       } else if (error != null) {
         UI.showError(error);
       }
-      if (!isBot) {
+      if (!isBot || !isLaunchContextValid(c, ownerUserId)) {
         return;
       }
-      long currentChatId = getCurrentChatId(c);
       switch (linkType.getConstructor()) {
         case TdApi.InternalLinkTypeWebApp.CONSTRUCTOR:
           openAppLink(c, bot, currentChatId, (TdApi.InternalLinkTypeWebApp) linkType);
@@ -270,14 +297,14 @@ public final class WebApp {
           if (((TdApi.UserTypeBot) bot.type).hasMainWebApp) {
             openMainAppLink(c, bot, currentChatId, link);
           } else {
-            tdlib.ui().openPrivateChat(c, bot.id, null);
+            tdlib.ui().openChat(c, chat, null);
           }
           break;
         }
         case TdApi.InternalLinkTypeAttachmentMenuBot.CONSTRUCTOR: {
           TdApi.InternalLinkTypeAttachmentMenuBot link =
             (TdApi.InternalLinkTypeAttachmentMenuBot) linkType;
-          openAttachmentMenuBotLink(c, bot.id, currentChatId, link);
+          openAttachmentMenuBotLink(c, chat, currentChatId, link);
           break;
         }
       }
@@ -292,8 +319,12 @@ public final class WebApp {
     TdApi.InternalLinkTypeWebApp link
   ) {
     final Tdlib tdlib = context.tdlib();
+    final long ownerUserId = tdlib.myUserId(true);
     tdlib.send(new TdApi.SearchWebApp(bot.id, link.webAppShortName),
       (found, error) -> UI.post(() -> {
+      if (!isLaunchContextValid(context, ownerUserId)) {
+        return;
+      }
       if (error != null) {
         UI.showError(error);
         return;
@@ -332,6 +363,7 @@ public final class WebApp {
     TdApi.InternalLinkTypeMainWebApp link
   ) {
     final Tdlib tdlib = context.tdlib();
+    final long ownerUserId = tdlib.myUserId(true);
     WebAppController.Args args = new WebAppController.Args(WebAppController.TYPE_MAIN_APP,
       bot.id, chatId);
     args.startParameter = link.startParameter;
@@ -341,6 +373,9 @@ public final class WebApp {
       return;
     }
     tdlib.send(new TdApi.GetAttachmentMenuBot(bot.id), (menuBot, error) -> UI.post(() -> {
+      if (!isLaunchContextValid(context, ownerUserId)) {
+        return;
+      }
       if (error != null) {
         UI.showError(error);
       } else if (menuBot.isAdded) {
@@ -355,12 +390,16 @@ public final class WebApp {
   @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static void openAttachmentMenuBotLink (
     ViewController<?> context,
-    long botUserId,
+    TdApi.Chat botChat,
     long currentChatId,
     TdApi.InternalLinkTypeAttachmentMenuBot link
   ) {
     final Tdlib tdlib = context.tdlib();
-    tdlib.send(new TdApi.GetAttachmentMenuBot(botUserId), (bot, error) -> UI.post(() -> {
+    final long ownerUserId = tdlib.myUserId(true);
+    tdlib.send(new TdApi.GetAttachmentMenuBot(tdlib.chatUserId(botChat.id)), (bot, error) -> UI.post(() -> {
+      if (!isLaunchContextValid(context, ownerUserId)) {
+        return;
+      }
       if (error != null) {
         UI.showError(error);
         return;
@@ -370,23 +409,23 @@ public final class WebApp {
           TdApi.TargetChatTypes types = ((TdApi.TargetChatChosen) link.targetChat).types;
           pickChat(context, chat -> isChatAllowed(tdlib, chat.id, types) &&
             getAttachmentMenuBotError(tdlib, bot, chat.id) == 0,
-            chat -> openAttachmentMenuBot(context, bot, chat.id, link.url));
+            chat -> {
+              if (isLaunchContextValid(context, ownerUserId)) {
+                openAttachmentMenuBot(context, bot, chat.id, link.url);
+              }
+            });
           break;
         }
         case TdApi.TargetChatInternalLink.CONSTRUCTOR: {
           TdApi.InternalLinkType chatLink = ((TdApi.TargetChatInternalLink) link.targetChat).link;
-          tdlib.ui().openInternalLinkType(context, null, chatLink, null, isOpened -> {
-            if (isOpened) {
-              UI.post(() -> openAttachmentMenuBotInCurrentChat(context, bot, link.url));
-            }
-          });
+          openAttachmentMenuBotTargetChat(context, ownerUserId, bot, chatLink, link.url);
           break;
         }
         case TdApi.TargetChatCurrent.CONSTRUCTOR: {
           if (currentChatId != 0) {
             openAttachmentMenuBotInChat(context, bot, currentChatId, link.url);
           } else {
-            tdlib.ui().openPrivateChat(context, botUserId, null);
+            tdlib.ui().openChat(context, botChat, null);
           }
           break;
         }
@@ -397,15 +436,51 @@ public final class WebApp {
   }
 
   @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-  private static void openAttachmentMenuBotInCurrentChat (
+  private static void openAttachmentMenuBotTargetChat (
     ViewController<?> context,
+    long ownerUserId,
     TdApi.AttachmentMenuBot bot,
+    TdApi.InternalLinkType link,
     @Nullable String url
   ) {
-    ViewController<?> current = context.context().navigation().getCurrentStackItem();
-    if (current instanceof MessagesController && !current.isDestroyed() &&
-      current.tdlib() == context.tdlib()) {
-      openAttachmentMenuBotInChat(current, bot, ((MessagesController) current).getChatId(), url);
+    Tdlib tdlib = context.tdlib();
+    Tdlib.ResultHandler<TdApi.Chat> onChat = (chat, error) -> UI.post(() -> {
+      if (!isLaunchContextValid(context, ownerUserId)) {
+        return;
+      }
+      if (error != null) {
+        UI.showError(error);
+        return;
+      }
+      // The generic internal-link callback only acknowledges routing, not chat navigation.
+      tdlib.ui().openChat(context, chat, new TdlibUi.ChatOpenParameters().keepStack().openForumChat().after(chatId -> UI.post(() -> {
+        ViewController<?> current = context.context().navigation().getCurrentStackItem();
+        if (current instanceof MessagesController && current.tdlib() == tdlib &&
+            isLaunchContextValid(current, ownerUserId) && getCurrentChatId(current) == chatId) {
+          current.addOneShotFocusListener(() -> UI.post(() -> {
+            if (isLaunchContextValid(current, ownerUserId) &&
+                current == current.context().navigation().getCurrentStackItem() && getCurrentChatId(current) == chatId) {
+              openAttachmentMenuBotInChat(current, bot, chatId, url);
+            }
+          }));
+        }
+      })));
+    });
+    // TDLib produces public-chat and phone-number targets for attachment-menu links.
+    if (link instanceof TdApi.InternalLinkTypePublicChat) {
+      tdlib.send(new TdApi.SearchPublicChat(((TdApi.InternalLinkTypePublicChat) link).chatUsername), onChat);
+    } else if (link instanceof TdApi.InternalLinkTypeUserPhoneNumber) {
+      String phoneNumber = ((TdApi.InternalLinkTypeUserPhoneNumber) link).phoneNumber;
+      tdlib.send(new TdApi.SearchUserByPhoneNumber(phoneNumber, false), (user, error) -> UI.post(() -> {
+        if (!isLaunchContextValid(context, ownerUserId)) {
+          return;
+        }
+        if (error != null) {
+          UI.showError(error);
+        } else {
+          tdlib.send(new TdApi.CreatePrivateChat(user.id, false), onChat);
+        }
+      }));
     }
   }
 
@@ -481,19 +556,26 @@ public final class WebApp {
     }
   }
 
-  private static @Nullable ViewController<?> findController (TdlibDelegate context) {
-    if (context instanceof ViewController<?>) {
-      return (ViewController<?>) context;
+  private static boolean isLaunchContextValid (ViewController<?> context, long ownerUserId) {
+    Tdlib tdlib = context.tdlib();
+    if (context.isDestroyed() || context.context().isFinishing() || context.context().isPasscodeShowing() ||
+        context.context().navigation().isDestroyed() || ownerUserId == 0 ||
+        !tdlib.isAuthorized() || tdlib.myUserId(true) != ownerUserId ||
+        !context.context().hasTdlib() || context.context().currentTdlib() != tdlib) {
+      return false;
     }
-    return context.context().navigation().getCurrentStackItem();
+    ViewController<?> current = context.context().navigation().getCurrentStackItem();
+    return current != null && !current.isDestroyed() && current.tdlib() == tdlib;
   }
 
   private static long getCurrentChatId (ViewController<?> context) {
-    if (context instanceof MessagesController) {
-      return ((MessagesController) context).getChatId();
+    ViewController<?> source = context instanceof MessagesController ? context :
+      context.context().navigation().getCurrentStackItem();
+    if (source instanceof MessagesController && !source.isDestroyed() && source.tdlib() == context.tdlib() &&
+        !((MessagesController) source).inPreviewMode()) {
+      return ((MessagesController) source).getChatId();
     }
-    ViewController<?> current = context.context().navigation().getCurrentStackItem();
-    return current instanceof MessagesController ? ((MessagesController) current).getChatId() : 0;
+    return 0;
   }
 
   @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
@@ -503,6 +585,10 @@ public final class WebApp {
     int launchAlert
   ) {
     final Tdlib tdlib = context.tdlib();
+    final long ownerUserId = tdlib.myUserId(true);
+    if (!isLaunchContextValid(context, ownerUserId)) {
+      return;
+    }
     WebAppController open = WebAppController.findOpen(tdlib, args);
     if (open != null) {
       if (open.isMinimized()) {
@@ -513,14 +599,17 @@ public final class WebApp {
     boolean needLaunchAlert = launchAlert == LAUNCH_ALERT_ALWAYS ||
       (launchAlert == LAUNCH_ALERT_UNLESS_CONFIRMED && !isLaunchConfirmed(tdlib, args.botUserId));
     if (needLaunchAlert) {
-      showLaunchAlert(context, args.botUserId, false, allowWriteAccess -> show(context, args));
+      showLaunchAlert(context, args.botUserId, false, allowWriteAccess -> show(context, ownerUserId, args));
       return;
     }
-    show(context, args);
+    show(context, ownerUserId, args);
   }
 
   @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-  private static void show (ViewController<?> context, WebAppController.Args args) {
+  private static void show (ViewController<?> context, long ownerUserId, WebAppController.Args args) {
+    if (!isLaunchContextValid(context, ownerUserId)) {
+      return;
+    }
     WebAppController c = new WebAppController(context.context(), context.tdlib());
     c.setArguments(args);
     c.show();
@@ -529,7 +618,7 @@ public final class WebApp {
   // Launch confirmations
 
   private static String launchConfirmedKey (Tdlib tdlib, long botUserId) {
-    return KEY_LAUNCH_CONFIRMED + tdlib.myUserId() + "_" + botUserId;
+    return KEY_LAUNCH_CONFIRMED + tdlib.myUserId(true) + "_" + botUserId;
   }
 
   /** TDLib asks to show the alert about data sent to the bot once for each bot. */
@@ -544,6 +633,7 @@ public final class WebApp {
     RunnableBool onStart
   ) {
     final Tdlib tdlib = context.tdlib();
+    final long ownerUserId = tdlib.myUserId(true);
     final String botName = tdlib.cache().userName(botUserId);
     CharSequence message = Lang.getMarkdownString(context, R.string.vg_BotWebViewStartPermission2);
     ListItem header = new ListItem(ListItem.TYPE_INFO, R.id.text_title, 0, message, false);
@@ -567,10 +657,15 @@ public final class WebApp {
       .setOnSettingItemClick((itemView, settingsId, item, doneButton, settingsAdapter, window) -> {
         if (item.getId() == R.id.btn_webAppMoreAboutBot) {
           window.hideWindow(true);
-          tdlib.ui().openPrivateProfile(context, botUserId, null);
+          if (isLaunchContextValid(context, ownerUserId)) {
+            tdlib.ui().openPrivateProfile(context, botUserId, null);
+          }
         }
       })
       .setIntDelegate((id, result) -> {
+        if (!isLaunchContextValid(context, ownerUserId)) {
+          return;
+        }
         Settings.instance().pmc().putBoolean(launchConfirmedKey(tdlib, botUserId), true);
         onStart.runWithBool(requestWriteAccess && result.get(R.id.btn_webAppAllowWrite) != 0);
       }));
@@ -587,6 +682,7 @@ public final class WebApp {
     RunnableBool onAdded
   ) {
     final Tdlib tdlib = context.tdlib();
+    final long ownerUserId = tdlib.myUserId(true);
     CharSequence message = Lang.getMarkdownString(context, R.string.vg_BotWebAppDisclaimerSubtitle);
     ListItem agreeItem = new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_webAppAgree, 0,
       Lang.getMarkdownString(context, R.string.vg_BotWebAppDisclaimerCheck), false);
@@ -606,6 +702,9 @@ public final class WebApp {
       .setRawItems(items)
       .setSaveStr(R.string.Continue)
       .setIntDelegate((id, result) -> {
+        if (!isLaunchContextValid(context, ownerUserId)) {
+          return;
+        }
         if (result.get(R.id.btn_webAppAgree) == 0) {
           UI.showToast(R.string.vg_BotWebAppDisclaimerRequired, Toast.LENGTH_SHORT);
           return;
@@ -613,6 +712,9 @@ public final class WebApp {
         boolean allowWriteAccess = requestWriteAccess && result.get(R.id.btn_webAppAllowWrite) != 0;
         tdlib.send(new TdApi.ToggleBotIsAddedToAttachmentMenu(botUserId, true, allowWriteAccess),
           (ok, error) -> UI.post(() -> {
+            if (!isLaunchContextValid(context, ownerUserId)) {
+              return;
+            }
             if (error != null) {
               UI.showError(error);
               return;
@@ -792,22 +894,17 @@ public final class WebApp {
     long botUserId,
     TdApi.KeyboardButton button,
     TdApi.KeyboardButtonSource source,
+    me.vkryl.core.lambda.FutureBool isCurrent,
     RunnableBool onResult
   ) {
     final Tdlib tdlib = context.tdlib();
     final ChatFilter filter;
     final RunnableData<TdApi.Chat> share;
-    final RunnableBool reply = isShared -> {
-      onResult.runWithBool(isShared);
-      if (!context.isDestroyed()) {
-        context.restoreFromTab();
-      }
-    };
     final Tdlib.ResultHandler<TdApi.Ok> handler = (ok, error) -> UI.post(() -> {
-      if (error != null) {
+      if (error != null && isCurrent.getBoolValue() && context.hasActiveAccount()) {
         UI.showError(error);
       }
-      reply.runWithBool(error == null);
+      onResult.runWithBool(error == null);
     });
     switch (button.type.getConstructor()) {
       case TdApi.KeyboardButtonTypeRequestUsers.CONSTRUCTOR: {
@@ -832,21 +929,25 @@ public final class WebApp {
     final boolean[] isPicked = new boolean[1];
     ChatsController c = new ChatsController(context.context(), tdlib);
     c.setArguments(new ChatsController.Arguments(filter, (chat, onDone) -> {
-      if (!isPicked[0]) {
+      if (!isPicked[0] && isCurrent.getBoolValue() && context.hasActiveAccount() && filter.accept(chat)) {
         isPicked[0] = true;
-        share.runWithData(chat);
-        c.navigateBack();
+        if (c.navigateBack()) {
+          share.runWithData(chat);
+        } else {
+          isPicked[0] = false;
+        }
       }
       return false;
     }));
+    if (!context.navigateFromPopup(c)) {
+      return false;
+    }
     c.addDestroyListener(() -> {
       if (!isPicked[0]) {
         isPicked[0] = true;
-        reply.runWithBool(false);
+        onResult.runWithBool(false);
       }
     });
-    context.minimize();
-    context.navigateTo(c);
     return true;
   }
 

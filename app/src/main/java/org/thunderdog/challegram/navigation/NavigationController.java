@@ -1078,7 +1078,16 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public final boolean navigateTo (ViewController<?> controller) {
-    if (!isAnimating && controller != null && isTabletSplit() && tabletLayout.getSection() != null
+    return navigateTo(controller, true);
+  }
+
+  /** A popup opens a child of the current screen, not a replacement detail for a left-pane tap. */
+  public final boolean navigateToFromPopup (ViewController<?> controller) {
+    return navigateTo(controller, false);
+  }
+
+  private boolean navigateTo (ViewController<?> controller, boolean allowTabletDetailReplacement) {
+    if (allowTabletDetailReplacement && !isAnimating && controller != null && isTabletSplit() && tabletLayout.getSection() != null
       && getStackSize() > 2 && tabletLayout.isLastTouchInMaster() && !isCurrentControllerAnimating()) {
       // Tablet split: a screen opened from the dock section in the left pane replaces the right pane.
       setControllerAnimated(controller, true, true);

@@ -38,6 +38,7 @@ import org.thunderdog.challegram.widget.PopupLayout;
 import java.util.ArrayList;
 
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.FutureBool;
 import me.vkryl.core.lambda.RunnableInt;
 
 /**
@@ -65,12 +66,17 @@ public final class StarsPaymentSheet {
    * @param onClosed receives one of {@code RESULT_*} when the payment UI is closed (or could not be opened)
    */
   public static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @Nullable Runnable onPaid, @Nullable Runnable onDone, @Nullable RunnableInt onClosed) {
+    open(context, tdlib, invoice, onPaid, onDone, onClosed, null, context::navigateTo);
+  }
+
+  /** Lets a popup keep its Stars sheet while delegating regular checkout to a navigation host. */
+  public static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @Nullable Runnable onPaid, @Nullable Runnable onDone, @Nullable RunnableInt onClosed, @Nullable FutureBool canShow, @NonNull StarsCheckoutController.Navigator checkoutNavigator) {
     final RunnableInt closed = onClosed != null ? onClosed : result -> { };
     tdlib.send(new TdApi.GetPaymentForm(invoice, null), (form, error) -> UI.post(() -> {
       if (onDone != null) {
         onDone.run();
       }
-      if (context.isDestroyed()) {
+      if (context.isDestroyed() || (canShow != null && !canShow.getBoolValue())) {
         closed.runWithInt(RESULT_CANCELLED);
         return;
       }
@@ -89,7 +95,7 @@ public final class StarsPaymentSheet {
           break;
         }
         case TdApi.PaymentFormTypeRegular.CONSTRUCTOR: {
-          StarsCheckoutController.open(context, tdlib, invoice, form, null, onPaid, onClosed);
+          StarsCheckoutController.open(context, tdlib, invoice, form, null, onPaid, closed, checkoutNavigator);
           break;
         }
         default: {
@@ -105,7 +111,7 @@ public final class StarsPaymentSheet {
     final boolean isSubscription = form.type.getConstructor() == TdApi.PaymentFormTypeStarSubscription.CONSTRUCTOR;
     final String botName = form.sellerBotUserId != 0 ? tdlib.cache().userName(form.sellerBotUserId) : "";
     final String productTitle = form.productInfo != null ? form.productInfo.title : "";
-    // paying stays set after a successful payment: the form is paid only once.
+    // Keep paying set after TDLib accepts the request, even if verification is still pending.
     final boolean[] confirming = new boolean[1], paying = new boolean[1], isClosed = new boolean[1];
     final RunnableInt close = result -> {
       if (!isClosed[0]) {
@@ -134,7 +140,7 @@ public final class StarsPaymentSheet {
         paying[0] = true;
         adapterRef[0].updateValuedSettingById(R.id.btn_vgStarsPay);
         tdlib.send(new TdApi.SendPaymentForm(invoice, form.id, "", "", null, 0), (result, error) -> UI.post(() -> {
-          close.runWithInt(error != null ? RESULT_FAILED : RESULT_PAID);
+          close.runWithInt(error != null ? RESULT_FAILED : result.success ? RESULT_PAID : RESULT_PENDING);
           if (popup[0] != null) {
             popup[0].hideWindow(true);
           }
@@ -145,6 +151,9 @@ public final class StarsPaymentSheet {
           }
           if (!StringUtils.isEmpty(result.verificationUrl) && !context.isDestroyed()) {
             StarsUi.openUrl(context, result.verificationUrl);
+          }
+          if (!result.success) {
+            return;
           }
           showPurchaseCompleted(productTitle, botName, starCount, isSubscription);
           if (onPaid != null) {

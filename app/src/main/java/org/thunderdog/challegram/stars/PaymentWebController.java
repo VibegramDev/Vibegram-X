@@ -30,6 +30,7 @@ import org.json.JSONObject;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.DoubleHeaderView;
+import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.UI;
@@ -64,10 +65,15 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
    * 3-D Secure: {@code onDone} receives true when the bank page finished (redirect to t.me), false when closed.
    * The redirect doesn't prove the payment: its result comes with the updates of TDLib.
    */
-  public static void openVerification (@NonNull ViewController<?> context, @NonNull String url, @NonNull RunnableBool onDone) {
+  public static boolean openVerification (@NonNull ViewController<?> context, @NonNull String url, @NonNull RunnableBool onDone) {
+    NavigationController navigation = context.navigationController();
+    if (navigation == null || navigation.getCurrentStackItem() != context || context.isStackLocked()) {
+      return false;
+    }
     PaymentWebController c = new PaymentWebController(context.context(), context.tdlib());
     c.setArguments(new Args(url, Lang.getString(R.string.vg_PaymentVerification), true, onDone, null));
-    context.navigateTo(c);
+    // Always push onto checkout, including when the last touch was in the tablet master pane.
+    return navigation.navigateToFromPopup(c);
   }
 
   public static void openCheckoutForm (@NonNull ViewController<?> context, @NonNull String url, @NonNull String botName, @NonNull StarsCardController.Callback callback) {
@@ -151,7 +157,7 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     Args args = getArgumentsStrict();
     if ("t.me".equals(uri.getHost()) || "telegram.me".equals(uri.getHost())) {
       if (args.isVerification) {
-        finishVerification(true);
+        finishVerification();
       }
       return true;
     }
@@ -182,27 +188,41 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     }
   }
 
-  private void finishVerification (boolean completed) {
-    if (finished) {
+  private void finishVerification () {
+    if (finished || isDestroyed()) {
       return;
     }
     finished = true;
-    ViewController<?> previous = navigationController != null ? navigationController.getPreviousStackItem() : null;
-    if (previous instanceof StarsCheckoutController) {
-      destroyPreviousStackItem();
+    if (isFocused()) {
+      UI.post(this::returnAfterVerification);
     }
-    navigateBack();
-    getArgumentsStrict().onVerificationDone.runWithBool(completed);
+  }
+
+  @Override
+  public void onFocus () {
+    super.onFocus();
+    // The WebView starts loading before the forward transition ends.
+    if (finished && getArgumentsStrict().isVerification) {
+      UI.post(this::returnAfterVerification);
+    }
+  }
+
+  private void returnAfterVerification () {
+    NavigationController navigation = navigationController();
+    if (!isDestroyed() && isFocused() && navigation != null && navigation.getCurrentStackItem() == this) {
+      navigateBack();
+    }
   }
 
   @Override
   public void destroy () {
+    boolean wasDestroyed = isDestroyed();
     super.destroy();
     Args args = getArguments();
-    if (args != null && args.isVerification && !finished) {
-      // Closed before the bank page has finished: the payment may still be processed.
-      finished = true;
-      args.onVerificationDone.runWithBool(false);
+    if (!wasDestroyed && args != null && args.isVerification) {
+      boolean completed = finished;
+      // Let the native Back transition settle before checkout closes. Keep the Mini App below both screens.
+      UI.post(() -> args.onVerificationDone.runWithBool(completed));
     }
   }
 }

@@ -165,7 +165,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
   private static final int MODE_TELEGRAM_FILES = 8;
 
   public interface ShareProviderDelegate {
-    void generateFunctionsForChat (long chatId, TdApi.Chat chat, TdApi.MessageSendOptions sendOptions, ArrayList<TdApi.Function<?>> functions);
+    void generateFunctionsForChat (long chatId, @Nullable TdApi.MessageTopic topicId, TdApi.MessageSendOptions sendOptions, ArrayList<TdApi.Function<?>> functions);
     CharSequence generateErrorMessageForChat (long chatId);
   }
 
@@ -3610,7 +3610,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
           break;
         }
         case MODE_CUSTOM: {
-          args.customDelegate.generateFunctionsForChat(chatId, chat, sendOptions, functions);
+          args.customDelegate.generateFunctionsForChat(chatId, messageTopicId, sendOptions, functions);
           break;
         }
         case MODE_CUSTOM_CONTENT: {

@@ -1832,6 +1832,7 @@ public class TdlibUi extends Handler {
   private static final int CHAT_OPTION_OPEN_PROFILE_IF_DUPLICATE = 1 << 7;
   private static final int CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT = 1 << 8;
   private static final int CHAT_OPTION_START_CALL = 1 << 9;
+  private static final int CHAT_OPTION_OPEN_FORUM_CHAT = 1 << 10;
 
   public static class ChatOpenParameters {
     public int options;
@@ -1991,6 +1992,12 @@ public class TdlibUi extends Handler {
 
     public ChatOpenParameters startCall () {
       this.options |= CHAT_OPTION_START_CALL;
+      return this;
+    }
+
+    /** Open the forum's message screen without changing its saved layout. */
+    public ChatOpenParameters openForumChat () {
+      this.options |= CHAT_OPTION_OPEN_FORUM_CHAT;
       return this;
     }
 
@@ -2258,7 +2265,7 @@ public class TdlibUi extends Handler {
     final boolean openForumTabs;
     if ((isBotForum || (tdlib.isForum(chat.id) && chat.viewAsTopics)) && messageThread == null && messageTopicId == null && !onlyScheduled) {
       boolean needChat = shareItem != null || forceDraft != null || voiceChatInvitation != null ||
-        (params != null && params.highlightMessageId != null) || (options & CHAT_OPTION_NO_OPEN) != 0;
+        (params != null && params.highlightMessageId != null) || (options & (CHAT_OPTION_NO_OPEN | CHAT_OPTION_OPEN_FORUM_CHAT)) != 0;
       if (!needChat && !tdlib.settings().isForumViewTabs(chat.id, isBotForum)) {
         ForumTopicsController listController = new ForumTopicsController(context.context(), context.tdlib());
         listController.setArguments(new ForumTopicsController.Arguments(chat));
@@ -3607,6 +3614,10 @@ public class TdlibUi extends Handler {
   }
 
   public void openTelegramUrl (final TdlibDelegate context, final String rawUrl, @Nullable UrlOpenParameters openParameters, @Nullable RunnableBool after) {
+    openTelegramUrl(context, rawUrl, openParameters, after, null);
+  }
+
+  public void openTelegramUrl (final TdlibDelegate context, final String rawUrl, @Nullable UrlOpenParameters openParameters, @Nullable RunnableBool after, @Nullable FutureBool canOpenMiniApp) {
     if (StringUtils.isEmpty(rawUrl) || tdlib.context().inRecoveryMode()) {
       if (after != null)
         after.runWithBool(false);
@@ -3629,6 +3640,7 @@ public class TdlibUi extends Handler {
       });
       return;
     }
+    final long linkOwnerUserId = context.tdlib().myUserId(true);
     AtomicReference<String> url = new AtomicReference<>(preProcessTelegramUrl(rawUrl));
     tdlib.send(new TdApi.GetInternalLinkType(url.get()), new Tdlib.ResultHandler<>() {
       @Override
@@ -3654,9 +3666,19 @@ public class TdlibUi extends Handler {
           }
           return;
         }
-        post(() ->
-          openInternalLinkType(context, currentUrl, linkType, openParameters, after)
-        );
+        post(() -> {
+          if ((linkType instanceof TdApi.InternalLinkTypeWebApp ||
+               linkType instanceof TdApi.InternalLinkTypeMainWebApp ||
+               linkType instanceof TdApi.InternalLinkTypeAttachmentMenuBot) &&
+              ((linkOwnerUserId != 0 && context.tdlib().myUserId(true) != linkOwnerUserId) ||
+               (canOpenMiniApp != null && !canOpenMiniApp.getBoolValue()))) {
+            if (after != null) {
+              after.runWithBool(false);
+            }
+            return;
+          }
+          openInternalLinkType(context, currentUrl, linkType, openParameters, after);
+        });
       }
     });
   }

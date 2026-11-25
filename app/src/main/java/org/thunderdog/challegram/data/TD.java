@@ -3304,15 +3304,15 @@ public class TD {
     return waveform;*/
   }
 
-  public static void processAlbum (Tdlib tdlib, long chatId, TdApi.MessageSendOptions options, List<TdApi.Function<?>> functions, List<TdApi.InputMessageContent> album) {
+  public static void processAlbum (long chatId, @Nullable TdApi.MessageTopic topicId, TdApi.MessageSendOptions options, List<TdApi.Function<?>> functions, List<TdApi.InputMessageContent> album) {
     if (album == null || album.isEmpty())
       return;
     if (album.size() == 1) {
-      processSingle(tdlib, chatId, options, functions, album.get(0));
+      processSingle(chatId, topicId, options, functions, album.get(0));
     } else {
       TdApi.InputMessageContent[] array = new TdApi.InputMessageContent[album.size()];
       album.toArray(array);
-      functions.add(new TdApi.SendMessageAlbum(chatId, null, null, options, array));
+      functions.add(new TdApi.SendMessageAlbum(chatId, topicId, null, options, array));
     }
     album.clear();
   }
@@ -3369,8 +3369,8 @@ public class TD {
     return functions;
   }
 
-  public static void processSingle (Tdlib tdlib, long chatId, TdApi.MessageSendOptions options, List<TdApi.Function<?>> functions, TdApi.InputMessageContent content) {
-    functions.add(new TdApi.SendMessage(chatId, null, null, options, null, content));
+  public static void processSingle (long chatId, @Nullable TdApi.MessageTopic topicId, TdApi.MessageSendOptions options, List<TdApi.Function<?>> functions, TdApi.InputMessageContent content) {
+    functions.add(new TdApi.SendMessage(chatId, topicId, null, options, null, content));
   }
 
   public static boolean withinDistance (TdApi.File file, long offset) {

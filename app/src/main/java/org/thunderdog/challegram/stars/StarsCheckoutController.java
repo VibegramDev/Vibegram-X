@@ -118,6 +118,14 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
    * without paying
    */
   public static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @NonNull TdApi.PaymentForm form, @Nullable TdApi.StarPaymentOption starOption, @Nullable Runnable onPaid, @Nullable RunnableInt onClosed) {
+    open(context, tdlib, invoice, form, starOption, onPaid, onClosed, context::navigateTo);
+  }
+
+  public interface Navigator {
+    boolean navigateTo (ViewController<?> checkout);
+  }
+
+  static void open (@NonNull ViewController<?> context, @NonNull Tdlib tdlib, @NonNull TdApi.InputInvoice invoice, @NonNull TdApi.PaymentForm form, @Nullable TdApi.StarPaymentOption starOption, @Nullable Runnable onPaid, @Nullable RunnableInt onClosed, @NonNull Navigator navigator) {
     TdApi.PaymentFormTypeRegular regular = (TdApi.PaymentFormTypeRegular) form.type;
     if (regular.invoice.needShippingAddress || regular.invoice.isFlexible) {
       // Delivery of physical goods isn't supported by this checkout.
@@ -137,7 +145,10 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
         args.close(c.isFailed ? StarsPaymentSheet.RESULT_FAILED : StarsPaymentSheet.RESULT_CANCELLED);
       }
     });
-    context.navigateTo(c);
+    if (!navigator.navigateTo(c)) {
+      c.isFailed = true;
+      c.destroy();
+    }
   }
 
   public StarsCheckoutController (Context context, Tdlib tdlib) {
@@ -535,7 +546,9 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
       if (!StringUtils.isEmpty(result.verificationUrl) && !isDestroyed()) {
         // 3-D Secure
         // The bank page finishing (or being closed) doesn't prove the payment: it's reported as being processed.
-        PaymentWebController.openVerification(this, result.verificationUrl, completed -> onPaymentDone(args, false));
+        if (!PaymentWebController.openVerification(this, result.verificationUrl, completed -> onPaymentDone(args, false))) {
+          onPaymentDone(args, false);
+        }
         return;
       }
       onPaymentDone(args, result.success);
@@ -558,8 +571,7 @@ public class StarsCheckoutController extends RecyclerViewController<StarsCheckou
       UI.showToast(R.string.vg_PaymentProcessing, Toast.LENGTH_LONG);
       args.close(StarsPaymentSheet.RESULT_PENDING);
     }
-    if (!isDestroyed()) {
-      // After 3-D Secure the checkout is already removed from the stack.
+    if (!isDestroyed() && navigationController() != null && navigationController().getCurrentStackItem() == this) {
       navigateBack();
     }
   }
