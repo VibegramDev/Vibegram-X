@@ -102,6 +102,8 @@ public final class SttManager {
     final String key;
     public volatile int state;
     public volatile @Nullable String text;
+    /** Timed phrases of the finished text (sherpa-onnx engines only), shown inside a playing round video. */
+    public volatile @Nullable SttSubtitles subtitles;
     public volatile @Nullable String error;
     public boolean expanded;
     /** 0..1 while running; -1 while waiting in the queue behind another message (or for the file). */
@@ -755,8 +757,13 @@ public final class SttManager {
 
   // Transcription
 
-  public static String key (int fileId, @Nullable String uniqueId) {
-    return uniqueId != null && !uniqueId.isEmpty() ? uniqueId : "file" + fileId;
+  /**
+   * A transcription is found by the account and the file id: both stay the same while the app runs, and results live
+   * only in memory. Not by remote.uniqueId: a just recorded round or voice gets it only when its upload ends, and the
+   * message (keeping the old key) and the full screen player (taking the new one) did not find the same result.
+   */
+  public static String key (int accountId, int fileId) {
+    return accountId + ":" + fileId;
   }
 
   private static String fullKey (String key, SttModel model) {
@@ -809,6 +816,7 @@ public final class SttManager {
     t.state = STATE_RUNNING;
     t.error = null;
     t.text = null;
+    t.subtitles = null;
     t.expanded = true;
     t.progress = -1f;
     t.runStartTime = 0;
@@ -842,6 +850,7 @@ public final class SttManager {
   private void fail (Transcription t, String key, @Nullable String error) {
     Log.w("STT: transcription failed: %s", error);
     t.text = null;
+    t.subtitles = null;
     t.state = STATE_FAILED;
     t.error = error;
     t.preparing = false;
@@ -914,6 +923,7 @@ public final class SttManager {
         // cancelled while the engine was finishing its last chunk
         throw new IOException("Cancelled");
       }
+      t.subtitles = engine.takeSubtitles();
       t.text = text;
       t.state = STATE_DONE;
       if (onDone != null && !text.isEmpty()) {
@@ -926,6 +936,7 @@ public final class SttManager {
       } else {
         Log.w("STT: transcription failed", e);
         t.text = null;
+        t.subtitles = null;
         t.state = STATE_FAILED;
         t.error = e.getMessage();
       }
@@ -1088,6 +1099,7 @@ public final class SttManager {
     t.state = STATE_NONE;
     t.expanded = false;
     t.text = null;
+    t.subtitles = null;
     t.preparing = false;
     t.progress = -1f;
     notifyTranscription(key);

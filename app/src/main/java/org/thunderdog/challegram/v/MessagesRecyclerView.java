@@ -346,6 +346,64 @@ public class MessagesRecyclerView extends RecyclerView implements FactorAnimator
     return false;
   }
 
+  // Vibegram X: the dates drawn in the last frame. The round video player floats above the list (RoundVideoController)
+  // and would cover them: it draws them again over the video.
+  private static final class DrawnDate {
+    TGMessage message;
+    int centerX, top;
+    float detachFactor, alpha;
+  }
+  private final java.util.ArrayList<DrawnDate> drawnDates = new java.util.ArrayList<>();
+  private int drawnDateCount;
+  private boolean drawnDatesChanged;
+
+  private boolean drawDate (TGMessage msg, Canvas c, int centerX, int top, float detachFactor, float alpha) {
+    if (!msg.drawDate(c, centerX, top, detachFactor, alpha)) {
+      return false;
+    }
+    DrawnDate date;
+    if (drawnDateCount < drawnDates.size()) {
+      date = drawnDates.get(drawnDateCount);
+      if (date.message != msg || date.centerX != centerX || date.top != top || date.detachFactor != detachFactor || date.alpha != alpha) {
+        drawnDatesChanged = true;
+      }
+    } else {
+      drawnDates.add(date = new DrawnDate());
+      drawnDatesChanged = true;
+    }
+    date.message = msg;
+    date.centerX = centerX;
+    date.top = top;
+    date.detachFactor = detachFactor;
+    date.alpha = alpha;
+    drawnDateCount++;
+    return true;
+  }
+
+  private void onDatesDrawn (int previousCount) {
+    for (int i = drawnDateCount; i < previousCount; i++) {
+      drawnDates.get(i).message = null;
+    }
+    if (drawnDatesChanged || drawnDateCount != previousCount) {
+      drawnDatesChanged = false;
+      UI.getContext(getContext()).getRoundVideoController().onListDatesChanged(this);
+    }
+  }
+
+  public boolean hasDrawnDates () {
+    return drawnDateCount > 0;
+  }
+
+  /** Draws the dates of the last frame again, in the coordinates of this view. */
+  public void drawDatesOver (Canvas c) {
+    for (int i = 0; i < drawnDateCount; i++) {
+      DrawnDate date = drawnDates.get(i);
+      if (date.message != null && !date.message.isDestroyed()) {
+        date.message.drawDate(c, date.centerX, date.top, date.detachFactor, date.alpha);
+      }
+    }
+  }
+
   private class MessagesItemDecoration extends ItemDecoration {
     protected TGMessage lastMessage;
     protected int lastTop;
@@ -374,6 +432,13 @@ public class MessagesRecyclerView extends RecyclerView implements FactorAnimator
       this.lastTop = 0;
       this.lastAlpha = 0f;
 
+      final int previousDateCount = drawnDateCount;
+      drawnDateCount = 0;
+      drawDates(c, parent, state);
+      onDatesDrawn(previousDateCount);
+    }
+
+    private void drawDates (Canvas c, RecyclerView parent, State state) {
       MessagesAdapter adapter = (MessagesAdapter) parent.getAdapter();
       if (adapter.getMessageCount() == 0) {
         return;
@@ -431,7 +496,7 @@ public class MessagesRecyclerView extends RecyclerView implements FactorAnimator
             float detachFactor = !isLast || checkTop >= 0 ? 0f : MathUtils.clamp((float) -checkTop / (float) dateHeight);
             float alpha = isLast ? scrollFactor : 1f;
             float drawAlpha = detachFactor == 1f ? alpha : 1f;
-            if (msg.drawDate(c, centerX, top, detachFactor, drawAlpha)) {
+            if (drawDate(msg, c, centerX, top, detachFactor, drawAlpha)) {
               hasDrawn = true;
               lastTop = top;
               lastMessage = msg;
@@ -442,7 +507,7 @@ public class MessagesRecyclerView extends RecyclerView implements FactorAnimator
               Object tag = msg.getTag();
               if (tag != null) {
                 TGMessage tagMsg = (TGMessage) tag;
-                if (!tagMsg.isDestroyed() && tagMsg.drawDate(c, centerX, top, 1f, alpha)) {
+                if (!tagMsg.isDestroyed() && drawDate(tagMsg, c, centerX, top, 1f, alpha)) {
                   hasDrawn = true;
                   lastTop = top;
                   lastMessage = tagMsg;
@@ -453,7 +518,7 @@ public class MessagesRecyclerView extends RecyclerView implements FactorAnimator
               }
               for (int j = position + 1; j < adapter.getMessageCount(); j++) {
                 TGMessage olderMessage = adapter.getMessage(j);
-                if (olderMessage != null && olderMessage.drawDate(c, centerX, top, 1f, alpha)) {
+                if (olderMessage != null && drawDate(olderMessage, c, centerX, top, 1f, alpha)) {
                   msg.setTag(olderMessage);
                   hasDrawn = true;
                   lastTop = top;

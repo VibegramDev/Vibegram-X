@@ -567,13 +567,17 @@ public class TextEntityMessage extends TextEntity {
         }
         break;
       }
-      case TdApi.TextEntityTypeBold.CONSTRUCTOR:
       case TdApi.TextEntityTypeCode.CONSTRUCTOR:
+      case TdApi.TextEntityTypePre.CONSTRUCTOR:
+      case TdApi.TextEntityTypePreCode.CONSTRUCTOR: {
+        // Vibegram: a tap on monospace text copies it at once (as in the official apps), long press keeps the menu
+        UI.copyText(Td.substring(text.getText(), clickableEntity), R.string.CopiedText);
+        break;
+      }
+      case TdApi.TextEntityTypeBold.CONSTRUCTOR:
       case TdApi.TextEntityTypeCustomEmoji.CONSTRUCTOR:
       case TdApi.TextEntityTypeItalic.CONSTRUCTOR:
       case TdApi.TextEntityTypeMediaTimestamp.CONSTRUCTOR:
-      case TdApi.TextEntityTypePre.CONSTRUCTOR:
-      case TdApi.TextEntityTypePreCode.CONSTRUCTOR:
       case TdApi.TextEntityTypeBlockQuote.CONSTRUCTOR:
       case TdApi.TextEntityTypeExpandableBlockQuote.CONSTRUCTOR:
       case TdApi.TextEntityTypeSpoiler.CONSTRUCTOR:

@@ -134,6 +134,19 @@ public class CameraManagerLegacy extends CameraManagerTexture {
     api.requestZoomRatio(ratio);
   }
 
+  /** The zoom the next opened camera starts with instead of 1×: see {@link CameraApi#setOpenZoomRatio(float)}. */
+  public void setOpenZoomRatio (float ratio) {
+    api.setOpenZoomRatio(ratio);
+  }
+
+  /**
+   * A new round renderer for the next recording of the same round video (continued after a pause).
+   * Unlike {@link #setUseRoundRender(boolean)} off and on, keeps the backend: that toggle replaced Camera2 with Camera1.
+   */
+  public void restartRoundRenderer () {
+    api.destroyRoundRenderer();
+  }
+
   /** @param target where a zoom animation is going: see {@link CameraApi#requestZoomRatio(float, float)} */
   public void requestZoomRatio (float ratio, float target) {
     api.requestZoomRatio(ratio, target);

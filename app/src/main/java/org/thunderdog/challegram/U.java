@@ -730,7 +730,10 @@ public class U {
     if (analyticsCollector != null) {
       b.setAnalyticsCollector(analyticsCollector);
     }
-    return b.build();
+    ExoPlayer player = b.build();
+    // Vibegram: temporary diagnostics of the round video echo (two players with the same sound)
+    org.thunderdog.challegram.util.RoundEchoWatch.onPlayerCreated(player, context);
+    return player;
   }
 
   public static boolean isUnsupportedFormat (PlaybackException e) {

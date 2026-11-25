@@ -168,6 +168,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
           v.setData(R.string.IconsBuiltIn);
         } else if (itemId == R.id.btn_reduceMotion) {
           v.getToggler().setRadioEnabled(Settings.instance().needReduceMotion(), isUpdate);
+        } else if (itemId == R.id.btn_vgShowPeerIds) {
+          v.getToggler().setRadioEnabled(Settings.instance().needShowPeerIds(), isUpdate);
         } else if (itemId == R.id.btn_autoplayGIFs) {
           v.getToggler().setRadioEnabled(Settings.instance().needAutoplayGIFs(), isUpdate);
         } else if (itemId == R.id.btn_saveToGallery) {
@@ -226,16 +228,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
           v.getToggler().setRadioEnabled(Settings.instance().useSystemFonts(), isUpdate);
         } else if (itemId == R.id.btn_secret_batmanTransitions) {
           v.getToggler().setRadioEnabled(Settings.instance().getNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS), isUpdate);
-        } else if (itemId == R.id.btn_navigationStyle) {
-          int navigationStyle = Settings.instance().getNavigationStyle();
-          v.setData(navigationStyle == Settings.NAVIGATION_STYLE_BAR ? R.string.NavigationStyleBar : R.string.NavigationStyleDock);
-        } else if (itemId == R.id.btn_vgDockContacts) {
-          long flag = Settings.SETTING_FLAG_DOCK_CONTACTS;
-          v.getToggler().setRadioEnabled(Settings.instance().getNewSetting(flag), isUpdate);
         } else if (itemId == R.id.btn_compactChats) {
           v.getToggler().setRadioEnabled(Settings.instance().useCompactChats(), isUpdate);
-        } else if (itemId == R.id.btn_centerTitles) {
-          v.getToggler().setRadioEnabled(Settings.instance().needCenterTitles(), isUpdate);
         } else if (itemId == R.id.btn_chatListStyle) {
           switch (Settings.instance().getChatListStyle()) {
             case Settings.CHAT_MODE_3LINE_BIG:
@@ -416,13 +410,6 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_chatListStyle, 0, R.string.ChatListStyle));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_compactChats, 0, R.string.CompactChats));
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_centerTitles, 0, R.string.CenterTitles));
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_navigationStyle, 0, R.string.NavigationStyle));
-      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
-      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgDockContacts, 0,
-        R.string.vg_DockContacts));
 
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_chatBackground, 0, R.string.Wallpaper));
@@ -665,7 +652,10 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       }
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_audioCompression, 0, R.string.CompressAudio));
+      items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+      items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_vgShowPeerIds, 0, R.string.vg_ShowPeerIds));
       items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
+      items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_ShowPeerIdsDesc));
 
       tdlib.getTesterLevel(testerLevel -> runOnUiThreadOptional(() -> {
         boolean needBatman = testerLevel >= Tdlib.TesterLevel.MIN_LEVEL_FOR_BATMAN_EFFECT || Settings.instance().getNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS);
@@ -987,6 +977,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
     if (viewId == R.id.btn_reduceMotion) {
       Settings.instance().toggleReduceMotion();
       adapter.updateValuedSettingById(R.id.btn_reduceMotion);
+    } else if (viewId == R.id.btn_vgShowPeerIds) {
+      Settings.instance().setShowPeerIds(adapter.toggleView(v));
     } else if (viewId == R.id.btn_icon) {
       SettingsCloudIconController c = new SettingsCloudIconController(context, tdlib);
       c.setArguments(new SettingsCloudController.Args<>(this));
@@ -1225,25 +1217,8 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       Settings.instance().setNewSetting(Settings.SETTING_FLAG_BATMAN_POLL_TRANSITIONS, adapter.toggleView(v));
     } else if (viewId == R.id.btn_chatListStyle) {
       showChatListOptions();
-    } else if (viewId == R.id.btn_vgDockContacts) {
-      Settings.instance().setNewSetting(Settings.SETTING_FLAG_DOCK_CONTACTS, adapter.toggleView(v));
-    } else if (viewId == R.id.btn_navigationStyle) {
-      int style = Settings.instance().getNavigationStyle();
-      showSettings(new SettingsWrapBuilder(R.id.btn_navigationStyle).setRawItems(new ListItem[] {
-        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleDock, 0, R.string.NavigationStyleDock, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_DOCK),
-        new ListItem(ListItem.TYPE_RADIO_OPTION, R.id.btn_navigationStyleBar, 0, R.string.NavigationStyleBar, R.id.btn_navigationStyle, style == Settings.NAVIGATION_STYLE_BAR),
-      }).setIntDelegate((id, result) -> {
-        int resultId = result.get(R.id.btn_navigationStyle);
-        Settings.instance().setNavigationStyle(resultId == R.id.btn_navigationStyleBar ? Settings.NAVIGATION_STYLE_BAR : Settings.NAVIGATION_STYLE_DOCK);
-        adapter.updateValuedSettingById(R.id.btn_navigationStyle);
-      }).setAllowResize(false));
     } else if (viewId == R.id.btn_compactChats) {
       Settings.instance().setUseCompactChats(adapter.toggleView(v));
-    } else if (viewId == R.id.btn_centerTitles) {
-      Settings.instance().setNeedCenterTitles(adapter.toggleView(v));
-      if (navigationController != null) {
-        navigationController.getHeaderViewFor(this).updateTextTitleLayout(this);
-      }
     } else if (viewId == R.id.btn_instantViewMode) {
       showInstantViewOptions();
     } else if (viewId == R.id.btn_chatSwipes) {

@@ -4214,7 +4214,6 @@
   <string name="ChatListStyle2">Three lines</string>
   <string name="ChatListStyle3">Three lines (bigger text)</string>
   <string name="CompactChats">Compact chats</string>
-  <string name="CenterTitles">Centered titles</string>
   <string name="Attach">Attach</string>
   <string name="SelectText">Select Text</string>
   <string name="PersonalChannel">Channel</string>
@@ -4232,9 +4231,6 @@
   <string name="PersonalChannelRemoved">Channel removed from your profile</string>
   <string name="DirectMessagesAll">All</string>
   <string name="QuoteSelection">Quote</string>
-  <string name="NavigationStyle">Navigation</string>
-  <string name="NavigationStyleDock">Bottom dock</string>
-  <string name="NavigationStyleBar">Navigation bar</string>
 
   <string name="format_tracksAndDuration">%1$s, %2$s</string>
 

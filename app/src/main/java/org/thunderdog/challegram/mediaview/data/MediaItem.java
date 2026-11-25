@@ -1003,6 +1003,36 @@ public class MediaItem implements MessageSourceProvider, InvalidateContentProvid
     return null;
   }
 
+  /** Vibegram X: a round video opened in full screen plays as a regular video (sound, seek bar), not as a GIF. */
+  public static MediaItem valueOfRoundVideo (BaseActivity context, Tdlib tdlib, TdApi.Message msg) {
+    TdApi.VideoNote note = ((TdApi.MessageVideoNote) msg.content).videoNote;
+    TdApi.Video video = new TdApi.Video(note.duration, note.length, note.length, "video.mp4", "video/mp4", false, true, note.minithumbnail, note.thumbnail, note.video);
+    MediaItem item = new MediaItem(context, tdlib, msg.chatId, msg.id, msg.senderId, msg.date, video, null, null, null, true).setMessage(msg);
+    item.isRoundVideo = true;
+    return item;
+  }
+
+  // Vibegram X: a round video opened in full screen goes on from the place the round was at, and back
+
+  private boolean isRoundVideo;
+  private long startPositionMs = -1;
+
+  public boolean isRoundVideo () {
+    return isRoundVideo;
+  }
+
+  public MediaItem setStartPosition (long positionMs) {
+    this.startPositionMs = positionMs;
+    return this;
+  }
+
+  /** The position to start the playback from, once. */
+  public long consumeStartPosition () {
+    long positionMs = startPositionMs;
+    startPositionMs = -1;
+    return positionMs;
+  }
+
   public static MediaItem valueOf (BaseActivity context, Tdlib tdlib, TdApi.Message msg) {
     if (msg == null) {
       return null;

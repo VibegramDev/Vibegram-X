@@ -43,6 +43,7 @@ import androidx.annotation.Nullable;
 
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.charts.CubicBezierInterpolator;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.loader.ComplexReceiver;
@@ -68,6 +69,8 @@ import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.RootFrameLayout;
 import org.thunderdog.challegram.widget.SimplestCheckBox;
+
+import java.util.ArrayList;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.ViewUtils;
@@ -158,8 +161,8 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
       setOutlineProvider(new ViewOutlineProvider() {
         @Override
         public void getOutline (View view, Outline outline) {
-          int margin = Screen.dp(PADDING);
-          outline.setRoundRect(margin, margin, view.getWidth() - margin, view.getHeight() - margin, Screen.dp(M3.CORNER_LARGE));
+          RectF rect = getContainerRect();
+          outline.setRoundRect(Math.round(rect.left), Math.round(rect.top), Math.round(rect.right), Math.round(rect.bottom), Screen.dp(M3.CORNER_LARGE));
         }
       });
       setElevation(Screen.dp(M3.ELEVATION_LEVEL2));
@@ -362,6 +365,11 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
    * Takes no space while no visible row is above it (a header that is hidden until its data loads).
    */
   public void addDivider () {
+    itemsLayout.addView(createDivider());
+  }
+
+  /** Divider as {@link #addDivider}, not added to the menu yet. */
+  public View createDivider () {
     View divider = new View(getContext()) {
       @Override
       protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
@@ -380,7 +388,8 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     if (themeListeners != null && forcedTheme == null) {
       themeListeners.addThemeInvalidateListener(divider);
     }
-    itemsLayout.addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(17f)));
+    divider.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(17f)));
+    return divider;
   }
 
   @Override
@@ -604,6 +613,13 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   }
 
   public TextView addItem (int id, CharSequence title, int iconRes, Drawable icon, OnClickListener listener) {
+    TextView menuItem = createItem(id, title, iconRes, icon, listener);
+    itemsLayout.addView(menuItem);
+    return menuItem;
+  }
+
+  /** Item as {@link #addItem}, not added to the menu yet (a row of a page, see {@link #openPage}). */
+  public TextView createItem (int id, CharSequence title, int iconRes, Drawable icon, OnClickListener listener) {
     TextView menuItem = new NoScrollTextView(getContext());
     menuItem.setId(id);
     menuItem.setTypeface(Fonts.getRobotoRegular());
@@ -633,7 +649,6 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
     }
     Views.setClickable(menuItem);
     setItemStateLayer(menuItem);
-    itemsLayout.addView(menuItem);
     menuItem.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
     menuItem.setTag(menuItem.getMeasuredWidth());
     return menuItem;
@@ -641,12 +656,321 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
 
   /** Interactive item drawn by the caller (e.g. an account row with an avatar): 48dp row with the menu state layer. */
   public void addCustomItem (View item, int desiredWidth, OnClickListener listener) {
+    prepareCustomItem(item, desiredWidth, listener);
+    itemsLayout.addView(item);
+  }
+
+  /** Interactive row as {@link #addCustomItem}, not added to the menu (e.g. a row of a list on a page). */
+  public void prepareCustomItem (View item, int desiredWidth, OnClickListener listener) {
     item.setOnClickListener(listener);
     item.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Screen.dp(ITEM_HEIGHT)));
     Views.setClickable(item);
     setItemStateLayer(item);
     item.setTag(Math.min(desiredWidth, Screen.dp(MAX_WIDTH)));
-    itemsLayout.addView(item);
+  }
+
+  /** Desired width of a row (its tag) changed after it was added, e.g. when its data has loaded. */
+  public void updateRowWidth (View row, int desiredWidth) {
+    row.setTag(Math.min(desiredWidth, Screen.dp(MAX_WIDTH)));
+    requestLayout();
+  }
+
+  // Pages: rows shown in place of the items, with a back row (as Telegram for Android's PopupSwipeBackLayout,
+  // e.g. the list of message viewers): for 300ms the container goes from the size of one page to the other while
+  // the page slides in over the items, which move half the width back, shrink to 95% and dim; back is the same in
+  // reverse and may interrupt it. The menu keeps its top and the edge next to the touch, so it does not move (only as
+  // far as a bigger page needs to stay in the window). During the transition the view has the size of the bigger of
+  // the two, is laid out once, and the set that is going away (or coming back) is drawn at its last place.
+
+  private static final long PAGE_DURATION = 300L;
+  private @Nullable View[] pageRows;
+  private final ArrayList<View> pageItems = new ArrayList<>();
+  private boolean pageOpen, pageTransition, pagePinned, pagePinRight;
+  private int pageMainWidth, pageMainHeight, pageWidth, pageHeight;
+  private float pagePinTop, pagePinEdge;
+  private @Nullable View[] pageDrawnViews;
+  private float[] pageDrawnX, pageDrawnY;
+  private int pageDrawnWidth;
+  private final RectF pageRect = new RectF();
+  private final android.graphics.Path pageClip = new android.graphics.Path();
+  private final Paint pageOverlayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+  private final FactorAnimator pageAnimator = new FactorAnimator(0, new FactorAnimator.Target() {
+    @Override
+    public void onFactorChanged (int id, float factor, float fraction, FactorAnimator callee) {
+      updatePagePosition();
+      invalidatePage();
+    }
+
+    @Override
+    public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) {
+      if (pageTransition && finalFactor == (pageOpen ? 1f : 0f)) {
+        finishPageTransition();
+      }
+    }
+  }, CubicBezierInterpolator.DEFAULT, PAGE_DURATION);
+
+  public boolean isPageOpen () {
+    return pageOpen;
+  }
+
+  /** 0 with the items shown, 1 with a page shown (e.g. the reactions above the menu fade out with it). */
+  public float getPageFactor () {
+    return pageRows != null ? pageAnimator.getFactor() : 0f;
+  }
+
+  public void openPage (View... views) {
+    if (pageOpen || (pageRows != null && pageRows != views)) {
+      return;
+    }
+    if (pageRows == null) {
+      pageMainWidth = getMeasuredWidth();
+      pageMainHeight = getMeasuredHeight();
+      pinPagePosition();
+      pageItems.clear();
+      for (int i = 0; i < itemsLayout.getChildCount(); i++) {
+        View v = itemsLayout.getChildAt(i);
+        if (v.getVisibility() != View.GONE) {
+          pageItems.add(v);
+        }
+      }
+      captureDrawnViews(pageItems.toArray(new View[0]), pageMainWidth);
+      for (View v : pageItems) {
+        v.setVisibility(View.GONE);
+      }
+      pageRows = views;
+      for (View v : views) {
+        itemsLayout.addView(v);
+      }
+    } else {
+      // Back was pressed a moment ago: the page comes back from where it is.
+      captureDrawnViews(pageItems.toArray(new View[0]), pageMainWidth);
+      for (View v : pageItems) {
+        v.setVisibility(View.GONE);
+      }
+      for (View v : pageRows) {
+        v.setVisibility(View.VISIBLE);
+      }
+    }
+    pageOpen = true;
+    startPageTransition();
+  }
+
+  public boolean closePage () {
+    if (!pageOpen || pageRows == null) {
+      return false;
+    }
+    captureDrawnViews(pageRows, pageWidth);
+    for (View v : pageRows) {
+      v.setVisibility(View.GONE);
+    }
+    for (View v : pageItems) {
+      v.setVisibility(View.VISIBLE);
+    }
+    pageOpen = false;
+    startPageTransition();
+    return true;
+  }
+
+  private void pinPagePosition () {
+    if (anchorMode == ANCHOR_MODE_RECT && getParent() instanceof View) {
+      // The edge next to the touch stays (the reactions above the menu are aligned to it too).
+      View parent = (View) getParent();
+      float left = getLeft() + getTranslationX();
+      float touchX = anchorRect.centerX() - Views.getLocationOnScreen(parent)[0];
+      pagePinRight = touchX >= left + getMeasuredWidth() / 2f;
+      pagePinEdge = pagePinRight ? left + getMeasuredWidth() : left;
+      pagePinTop = getTop() + getTranslationY();
+      pagePinned = true;
+    } else {
+      // Gravity keeps the top and the end of the overflow menu.
+      pagePinRight = !Lang.rtl();
+      pagePinned = false;
+    }
+  }
+
+  /** Remembers where {@code views} are drawn now (relative to the content of a page {@code setWidth} wide). */
+  private void captureDrawnViews (View[] views, int setWidth) {
+    pageDrawnViews = views;
+    pageDrawnWidth = setWidth;
+    pageDrawnX = new float[views.length];
+    pageDrawnY = new float[views.length];
+    float offset = pageContentOffset(setWidth);
+    for (int i = 0; i < views.length; i++) {
+      View v = views[i];
+      float x = v.getLeft(), y = v.getTop();
+      android.view.ViewParent parent = v.getParent();
+      while (parent instanceof View && parent != this) {
+        View p = (View) parent;
+        x += p.getLeft() - p.getScrollX();
+        y += p.getTop() - p.getScrollY();
+        parent = p.getParent();
+      }
+      pageDrawnX[i] = x - offset;
+      pageDrawnY[i] = y;
+    }
+  }
+
+  private float pageContentOffset (int setWidth) {
+    return pagePinRight ? getWidth() - setWidth : 0;
+  }
+
+  private void startPageTransition () {
+    pageTransition = true;
+    setSelectedIndex(-1);
+    if (itemsLayout != this && itemsLayout.getParent() instanceof ScrollView) {
+      ((ScrollView) itemsLayout.getParent()).scrollTo(0, 0);
+    }
+    pageAnimator.animateTo(pageOpen ? 1f : 0f);
+    requestLayout();
+    invalidatePage();
+  }
+
+  private void finishPageTransition () {
+    pageTransition = false;
+    pageDrawnViews = null;
+    if (!pageOpen && pageRows != null) {
+      for (View v : pageRows) {
+        itemsLayout.removeView(v);
+      }
+      pageRows = null;
+      pageItems.clear();
+      pagePinned = false;
+    }
+    requestLayout();
+    invalidatePage();
+  }
+
+  private void invalidatePage () {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      invalidateOutline();
+    }
+    invalidate();
+  }
+
+  /** Visible container (without the shadow margin): between the sizes of the two pages during a transition. */
+  private RectF getContainerRect () {
+    int margin = Screen.dp(PADDING);
+    if (pageTransition) {
+      float factor = pageAnimator.getFactor();
+      float width = MathUtils.fromTo(pageMainWidth, pageWidth, factor);
+      float height = MathUtils.fromTo(pageMainHeight, pageHeight, factor);
+      float left = pagePinRight ? getWidth() - width : 0;
+      pageRect.set(left + margin, margin, left + width - margin, height - margin);
+    } else {
+      pageRect.set(margin, margin, getWidth() - margin, getHeight() - margin);
+    }
+    return pageRect;
+  }
+
+  /** Keeps the top and the pinned edge of the menu; a page that does not fit there moves into the window with the transition. */
+  private boolean updatePagePosition () {
+    if (!pagePinned || !(getParent() instanceof View) || pageRows == null) {
+      return false;
+    }
+    View parent = (View) getParent();
+    float minTop = anchorInsets.top + reservedTop, maxBottom = parent.getHeight() - anchorInsets.bottom;
+    float pageTop = pageHeight == 0 ? pagePinTop : MathUtils.clamp(pagePinTop, minTop, Math.max(minTop, maxBottom - pageHeight));
+    float minLeft = anchorInsets.left, maxRight = parent.getWidth() - anchorInsets.right;
+    float pageEdge = pageWidth == 0 ? pagePinEdge : pagePinRight ?
+      MathUtils.clamp(pagePinEdge, minLeft + pageWidth, Math.max(minLeft + pageWidth, maxRight)) :
+      MathUtils.clamp(pagePinEdge, minLeft, Math.max(minLeft, maxRight - pageWidth));
+    float factor = pageAnimator.getFactor();
+    float top = MathUtils.fromTo(pagePinTop, pageTop, factor);
+    float edge = MathUtils.fromTo(pagePinEdge, pageEdge, factor);
+    float left = pagePinRight ? edge - getMeasuredWidth() : edge;
+    setTranslationX(left - getLeft());
+    setTranslationY(top - getTop());
+    return true;
+  }
+
+  @Override
+  protected void dispatchDraw (Canvas c) {
+    if (!pageTransition) {
+      super.dispatchDraw(c);
+      return;
+    }
+    float factor = pageAnimator.getFactor();
+    RectF rect = getContainerRect();
+    float radius = Screen.dp(M3.CORNER_LARGE);
+    int saveCount = c.save();
+    pageClip.reset();
+    pageClip.addRoundRect(rect, radius, radius, android.graphics.Path.Direction.CW);
+    c.clipPath(pageClip);
+    float direction = Lang.rtl() ? -1f : 1f;
+    int width = getWidth();
+
+    // Items: half the width back, 95%, dimmed.
+    int itemsSave = c.save();
+    float scale = 0.95f + 0.05f * (1f - factor);
+    c.translate(-direction * factor * width * 0.5f, 0);
+    c.scale(scale, scale, direction > 0 ? rect.left : rect.right, rect.top);
+    drawPageSet(c, false);
+    c.restoreToCount(itemsSave);
+    if (factor > 0f) {
+      pageOverlayPaint.setColor(0xff000000);
+      pageOverlayPaint.setAlpha((int) (factor * 0x40));
+      c.drawRect(rect, pageOverlayPaint);
+    }
+
+    // Page: slides in from the end over them, on the container color.
+    int pageSave = c.save();
+    c.translate(direction * (1f - factor) * width, 0);
+    c.drawRect(rect, Paints.fillingPaint(getContainerColor()));
+    drawPageSet(c, true);
+    c.restoreToCount(pageSave);
+
+    c.restoreToCount(saveCount);
+  }
+
+  private void drawPageSet (Canvas c, boolean page) {
+    if (page == pageOpen) {
+      // Laid out now.
+      long drawingTime = getDrawingTime();
+      for (int i = 0; i < getChildCount(); i++) {
+        View child = getChildAt(i);
+        if (child.getVisibility() == View.VISIBLE) {
+          drawChild(c, child, drawingTime);
+        }
+      }
+    } else if (pageDrawnViews != null) {
+      float offset = pageContentOffset(pageDrawnWidth);
+      for (int i = 0; i < pageDrawnViews.length; i++) {
+        int save = c.save();
+        c.translate(pageDrawnX[i] + offset, pageDrawnY[i]);
+        pageDrawnViews[i].draw(c);
+        c.restoreToCount(save);
+      }
+    }
+  }
+
+  @Override
+  public boolean dispatchTouchEvent (MotionEvent e) {
+    if (pageTransition) {
+      return true; // Rows move under the finger: no taps until they stop.
+    }
+    return super.dispatchTouchEvent(e);
+  }
+
+  private int availableItemsHeight;
+
+  /** Height the rows may take (between the system bars, minus the container padding), known after the menu was measured. */
+  public int getAvailableItemsHeight () {
+    return availableItemsHeight;
+  }
+
+  private final ArrayList<Destroyable> destroyables = new ArrayList<>();
+
+  /** Released with the menu (rows that own avatars or custom emoji). */
+  public void addDestroyable (Destroyable destroyable) {
+    destroyables.add(destroyable);
+  }
+
+  @Nullable ThemeDelegate getForcedTheme () {
+    return forcedTheme;
+  }
+
+  @Nullable ThemeListenerList getThemeListeners () {
+    return forcedTheme == null ? themeListeners : null;
   }
 
   @Override
@@ -656,11 +980,27 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
       // Stays between the system bars; a scrollable menu scrolls when it is taller than that.
       heightMeasureSpec = MeasureSpec.makeMeasureSpec(Math.max(0, parentHeight - anchorInsets.top - anchorInsets.bottom - reservedTop), MeasureSpec.AT_MOST);
     }
+    if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
+      availableItemsHeight = MeasureSpec.getSize(heightMeasureSpec) - Screen.dp(PADDING + INSET) * 2;
+    }
     super.onMeasure(MeasureSpec.makeMeasureSpec(getItemsWidth(), MeasureSpec.EXACTLY), heightMeasureSpec);
     if (anchorMode == ANCHOR_MODE_RECT && droppableHeader != null && droppableHeader.getVisibility() == View.VISIBLE && getParent() instanceof View && MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
       if (findAnchorTop((View) getParent(), parentHeight, getMeasuredHeight(), false) == Integer.MIN_VALUE) {
         droppableHeader.setVisibility(View.GONE);
         super.onMeasure(MeasureSpec.makeMeasureSpec(getItemsWidth(), MeasureSpec.EXACTLY), heightMeasureSpec);
+      }
+    }
+    if (pageRows != null) {
+      // Size of the page shown (laid out), then room for both while one replaces the other.
+      if (pageOpen) {
+        pageWidth = getMeasuredWidth();
+        pageHeight = getMeasuredHeight();
+      } else {
+        pageMainWidth = getMeasuredWidth();
+        pageMainHeight = getMeasuredHeight();
+      }
+      if (pageTransition) {
+        setMeasuredDimension(Math.max(pageMainWidth, pageWidth), Math.max(pageMainHeight, pageHeight));
       }
     }
   }
@@ -728,7 +1068,14 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   @Override
   protected void onLayout (boolean changed, int l, int t, int r, int b) {
     super.onLayout(changed, l, t, r, b);
-    if (anchorMode == ANCHOR_MODE_RECT) {
+    if (pageTransition && pagePinRight) {
+      // Rows were measured for the shown page: they stay at the pinned edge of the bigger view.
+      int dx = getWidth() - (pageOpen ? pageWidth : pageMainWidth);
+      for (int i = 0; i < getChildCount(); i++) {
+        getChildAt(i).offsetLeftAndRight(dx);
+      }
+    }
+    if (anchorMode == ANCHOR_MODE_RECT && !updatePagePosition()) {
       layoutAtAnchor();
     }
     if (pendingAction != null) {
@@ -920,9 +1267,7 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
 
     @Override
     public void draw (@NonNull Canvas c) {
-      int margin = Screen.dp(PADDING);
-      rect.set(getBounds());
-      rect.inset(margin, margin);
+      rect.set(menu.getContainerRect());
       float radius = Screen.dp(M3.CORNER_LARGE);
       paint.setColor(menu.getContainerColor());
       c.drawRoundRect(rect, radius, radius, paint);
@@ -1007,6 +1352,11 @@ public class MenuMoreWrap extends MenuMoreWrapAbstract implements Animated, Root
   /** Called by the popup when the menu is dismissed: releases avatars and custom emoji of the entries. */
   @Override
   public void performDestroy () {
+    pageAnimator.cancel();
+    for (Destroyable destroyable : destroyables) {
+      destroyable.performDestroy();
+    }
+    destroyables.clear();
     complexAvatarReceiver.performDestroy();
     if (textMediaReceiver != null) {
       textMediaReceiver.performDestroy();

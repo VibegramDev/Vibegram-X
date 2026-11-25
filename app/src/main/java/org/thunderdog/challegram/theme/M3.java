@@ -45,6 +45,55 @@ import me.vkryl.core.ColorUtils;
  * The accessors below read the roles of the current theme.
  */
 public final class M3 {
+  // Waveform of a voice message
+
+  /** Played part (and an unheard message): "graphical objects" need 3:1 against the bubble (WCAG 1.4.11, M3 accessibility). */
+  private static final double WAVEFORM_ACTIVE_CONTRAST = 3.0;
+  /** Unplayed part (a heard message is drawn all in it): still readable on the bubble, and apart from the played part. */
+  private static final double WAVEFORM_INACTIVE_CONTRAST = 2.0, WAVEFORM_PARTS_CONTRAST = 1.5;
+
+  private static final int WAVEFORM_CACHE_SIZE = 8;
+  private static final int[] waveformCache = new int[WAVEFORM_CACHE_SIZE * 5];
+  private static int waveformCacheCount, waveformCacheNext;
+
+  /**
+   * Color of a voice message waveform on its bubble. The theme's colors when they read well; otherwise the played color
+   * moves its tone to 3:1 with the bubble ({@link ThemeMonet#ensureContrast}, hue kept), and the unplayed one goes
+   * halfway between the bubble and the played color (themes drew it as a pale track: a heard message, drawn all in it,
+   * merged with the bubble, worst in Monet without hue where the bubble and the accent differ only by tone).
+   */
+  public static @ColorInt int waveformColor (@ColorInt int bubble, @ColorInt int active, @ColorInt int inactive, boolean needActive) {
+    synchronized (waveformCache) {
+      for (int i = 0; i < waveformCacheCount; i++) {
+        int at = i * 5;
+        if (waveformCache[at] == bubble && waveformCache[at + 1] == active && waveformCache[at + 2] == inactive) {
+          return waveformCache[needActive ? at + 3 : at + 4];
+        }
+      }
+      final int background = bubble | 0xFF000000;
+      final int activeOpaque = androidx.core.graphics.ColorUtils.compositeColors(active, background);
+      final int activeResult = androidx.core.graphics.ColorUtils.calculateContrast(activeOpaque, background) >= WAVEFORM_ACTIVE_CONTRAST ? active : ThemeMonet.ensureContrast(activeOpaque, background, WAVEFORM_ACTIVE_CONTRAST);
+      final int activeFinal = androidx.core.graphics.ColorUtils.compositeColors(activeResult, background);
+      final int inactiveOpaque = androidx.core.graphics.ColorUtils.compositeColors(inactive, background);
+      final int inactiveResult;
+      if (androidx.core.graphics.ColorUtils.calculateContrast(inactiveOpaque, background) >= WAVEFORM_INACTIVE_CONTRAST &&
+        androidx.core.graphics.ColorUtils.calculateContrast(inactiveOpaque, activeFinal) >= WAVEFORM_PARTS_CONTRAST) {
+        inactiveResult = inactive;
+      } else {
+        inactiveResult = ColorUtils.fromToArgb(background, activeFinal, .5f);
+      }
+      int at = waveformCacheNext * 5;
+      waveformCache[at] = bubble;
+      waveformCache[at + 1] = active;
+      waveformCache[at + 2] = inactive;
+      waveformCache[at + 3] = activeResult;
+      waveformCache[at + 4] = inactiveResult;
+      waveformCacheNext = (waveformCacheNext + 1) % WAVEFORM_CACHE_SIZE;
+      waveformCacheCount = Math.min(waveformCacheCount + 1, WAVEFORM_CACHE_SIZE);
+      return needActive ? activeResult : inactiveResult;
+    }
+  }
+
   private M3 () { }
 
   // Shape scale (ShapeKeyTokens), dp

@@ -946,25 +946,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     return BackHeaderButton.TYPE_BACK;
   }
 
-  @Override
-  protected int getFloatingButtonId () {
-    // Users, bots and the own profile: "Chat" is the first button of the row of profile actions.
-    return isEditing() || mode == Mode.USER || mode == Mode.SECRET ? 0 : R.drawable.baseline_chat_bubble_24;
-  }
-
-  @Override
-  protected void onFloatingButtonPressed () {
-    if (mode == Mode.CHANNEL && FeatureToggles.CHANNEL_PROFILE_FLOATING_BUTTON_OPENS_DISCUSSION_GROUP && !hasProfileAction(R.id.btn_vgProfileDiscuss)) {
-      if (supergroup != null && supergroup.isChannel && supergroup.hasLinkedChat) {
-        long linkedChatId = supergroupFull != null ? supergroupFull.linkedChatId : 0;
-        if (linkedChatId != 0) {
-          tdlib.ui().openLinkedChat(this, supergroup.id, false, new TdlibUi.ChatOpenParameters().keepStack().removeDuplicates());
-          return;
-        }
-      }
-    }
-    openProfileChat();
-  }
+  // No floating button: "Chat" is the first button of the row of profile actions in every profile.
 
   /** Block / unblock the user or stop / restart the bot (⋮ "Block" of users, "Stop" / "Start" button of bots). */
   private void toggleUserBlocked () {
@@ -1496,6 +1478,81 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
       private float startX, startY;
 
+      // Pull-down on the expanded header opens the photos full screen (as the pull in Telegram for Android).
+      private boolean pullPossible, pulling, pullReached;
+      private float pullStartX, pullStartY;
+
+      @Override
+      public boolean dispatchTouchEvent (MotionEvent e) {
+        switch (e.getActionMasked()) {
+          case MotionEvent.ACTION_DOWN: {
+            pulling = pullReached = false;
+            pullStartX = e.getX();
+            pullStartY = e.getY();
+            pullPossible = canPullToOpenPhoto();
+            break;
+          }
+          case MotionEvent.ACTION_POINTER_DOWN: {
+            if (pulling) {
+              return true;
+            }
+            pullPossible = false;
+            break;
+          }
+          case MotionEvent.ACTION_MOVE: {
+            float dx = e.getX() - pullStartX, dy = e.getY() - pullStartY;
+            if (!pulling && pullPossible) {
+              float slop = Screen.getTouchSlop();
+              if (dy > slop && dy > Math.abs(dx) * 1.5f) {
+                pulling = true;
+                pullStartY = e.getY();
+                // Children stop here: the lists and the pager don't get this gesture.
+                MotionEvent cancel = MotionEvent.obtain(e);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+              } else if (Math.abs(dx) > slop || dy < -slop) {
+                pullPossible = false;
+              }
+            }
+            if (pulling) {
+              float factor = Math.max(0f, e.getY() - pullStartY) / Screen.dp(PULL_TO_OPEN_PHOTO_DISTANCE);
+              if (factor > 1f) {
+                factor = 1f + (factor - 1f) * .25f; // resistance past the threshold
+              }
+              boolean reached = factor >= 1f;
+              if (reached != pullReached) {
+                pullReached = reached;
+                if (reached) {
+                  UI.hapticVibrate(this, false);
+                }
+              }
+              if (headerCell != null) {
+                headerCell.setPullFactor(Math.min(factor, 1.25f));
+              }
+              return true;
+            }
+            break;
+          }
+          case MotionEvent.ACTION_UP:
+          case MotionEvent.ACTION_CANCEL: {
+            if (pulling) {
+              pulling = false;
+              if (headerCell != null) {
+                headerCell.releasePull();
+              }
+              if (pullReached && e.getActionMasked() == MotionEvent.ACTION_UP) {
+                openPhoto();
+              }
+              pullReached = false;
+              return true;
+            }
+            break;
+          }
+        }
+        return super.dispatchTouchEvent(e);
+      }
+
       private int lastHeight;
 
       @Override
@@ -1623,9 +1680,6 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       headerCell.setInnerRightMarginStart(Screen.dp(49f));
       headerCell.setInnerMargins(Screen.dp(56f), calculateMenuWidth());
       headerCell.setAllowEmptyClick();
-      // Centered titles: the layout of the chat header, the avatar grows out of the center.
-      headerCell.setAllowCenterContent(true);
-      headerCell.setCenteredAvatarCollapses(true);
       headerCell.initWithController(this, false);
       setHeaderCellTextColors(0f);
       // The expanded avatar is 96dp: show the full photo there, not only in the photo viewer
@@ -1707,10 +1761,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     addThemeInvalidateListener(topView);
     topView.setItems(getPagerTitles());
     topCellView.getRecyclerView().setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    // Scrollable tabs: "the first visible tab should be offset by 52dp from the left side".
-    int offset = Screen.dp(52f);
-    topCellView.getRecyclerView().setPadding(Lang.rtl() ? 0 : offset, 0, Lang.rtl() ? offset : 0, 0);
-    topCellView.getRecyclerView().setClipToPadding(false);
+    // The label of the first tab starts at the edge of the cards above (16dp), not 52dp + 19dp in.
+    topView.setItemPadding(Screen.dp(SEGMENT_INSET));
     topView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
     topCellView.setLayoutParams(params);
     topWrap.addView(topCellView);
@@ -1863,7 +1915,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
           view.setData(R.string.PictureAndText);
         } else if (itemId == R.id.btn_peer_id) {
           view.setName(getPeerTypeStringResourceId());
-          view.setData(Strings.buildCounter(getPeerId()));
+          view.setData(Long.toString(getPeerId())); // Vibegram: as copied, without digit grouping
         } else if (itemId == R.id.btn_birthdate) {
           view.setData(R.string.Birthdate);
           TdApi.Birthdate birthdate = userFull != null ? userFull.birthdate : null;
@@ -2512,7 +2564,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   }
 
   private boolean needPhoneCell () {
-    return user.isContact || user.isMutualContact || TD.hasPhoneNumber(user);
+    // Only a known number: a contact who hides it showed a useless "Unknown" row.
+    return TD.hasPhoneNumber(user);
   }
 
   private void buildUserCells () {
@@ -2698,7 +2751,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
   }
 
   // Row of profile actions under the name (ProfileActionsView), as the buttons of the official profile. Only actions
-  // this screen already had: the chat (floating button), notifications, the call (app bar), share, edit, stop bot,
+  // this screen already had: the chat (floating button, gone now), notifications, the call (app bar), share, edit, stop bot,
   // discussion (floating button of channels), leave / join (⋮ menu). They are not repeated in the app bar, the
   // floating button and the ⋮ menu.
 
@@ -2769,6 +2822,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
       case Mode.CHANNEL:
       case Mode.SUPERGROUP:
       case Mode.GROUP: {
+        // As in the profiles of users: "Chat" left of "Mute" instead of the floating button.
+        actions.add(newProfileAction(R.id.btn_vgProfileChat, R.drawable.baseline_chat_bubble_24, R.string.vg_ProfileActionChat));
         addSoundProfileAction(actions);
         if (mode == Mode.CHANNEL && supergroup != null && supergroup.hasLinkedChat) {
           actions.add(newProfileAction(R.id.btn_vgProfileDiscuss, R.drawable.baseline_forum_24, R.string.vg_ProfileActionDiscuss));
@@ -5295,6 +5350,15 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     }
   }
 
+  /** Finger travel that opens the photo viewer from the expanded header. */
+  private static final float PULL_TO_OPEN_PHOTO_DISTANCE = 96f;
+
+  /** The pull opens the photos only from the fully expanded header, with a photo, and not while editing or selecting. */
+  private boolean canPullToOpenPhoto () {
+    return headerCell != null && chat != null && chat.photo != null && !TD.isFileEmpty(chat.photo.small) &&
+      !isEditing() && !inSelectMode && baseScrollState == RecyclerView.SCROLL_STATE_IDLE && calculateBaseScrollY() == 0;
+  }
+
   private void openPhoto () {
     if (chat.photo != null && !TD.isFileEmpty(chat.photo.small)) {
       MediaViewController.openFromChat(this, chat, headerCell);
@@ -5392,7 +5456,8 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     } else if (viewId == R.id.btn_useExplicitDice) {
       Settings.instance().setNewSetting(((ListItem) v.getTag()).getLongId(), baseAdapter.toggleView(v));
     } else if (viewId == R.id.btn_peer_id) {
-      showOptions(Long.toString(getPeerId()), new int[]{R.id.btn_peer_id_copy}, new String[]{Lang.getString(R.string.Copy)}, null, new int[]{R.drawable.baseline_content_copy_24});
+      // Vibegram: a tap copies the ID (it was a menu with the only item "Copy").
+      UI.copyText(Long.toString(getPeerId()), R.string.CopiedPeerId);
     } else if (viewId == R.id.btn_username) {
       boolean canSetUsername = canSetUsername();
       boolean canInviteUsers = chat != null && tdlib.canManageInviteLinks(chat);
@@ -6133,13 +6198,15 @@ public class ProfileController extends ViewController<ProfileController.Args> im
               lastUsernames = sequence;
             }
           }
-          return lastUsernameAddHeight + Screen.dp(76f);
+          // SettingView.getCurrentHeight (72dp row since the M3 redesign)
+          return lastUsernameAddHeight + Screen.dp(72f);
         } else if (itemId == R.id.btn_description) {
           if (aboutWrapper != null) {
             aboutWrapper.get(getTextWidth(width));
-            return Math.max(aboutWrapper.getHeight() + Screen.dp(21f + 13f) - Screen.dp(13f) + Screen.dp(12f) + Screen.dp(25), Screen.dp(76f));
+            // SettingView.getCurrentHeight: pDataTop of TYPE_INFO_MULTILINE is 19 + 13dp
+            return Math.max(aboutWrapper.getHeight() + Screen.dp(19f + 13f) - Screen.dp(13f) + Screen.dp(12f) + Screen.dp(25), Screen.dp(72f));
           }
-          return Screen.dp(76f);
+          return Screen.dp(72f);
         }
         throw new UnsupportedOperationException();
       }
@@ -6234,7 +6301,7 @@ public class ProfileController extends ViewController<ProfileController.Args> im
         if (i == firstVisible) {
           View view = manager.findViewByPosition(i);
           if (view != null) {
-            recyclerBottom += view.getTop();
+            recyclerBottom += getCalculatedTop(manager, view);
           }
         }
         if (i != ignoreIndex) {
@@ -6335,6 +6402,17 @@ public class ProfileController extends ViewController<ProfileController.Args> im
     }
   }
 
+  /**
+   * Where the row's height in {@link #calculateHeight} starts: its decorated top minus its top margin. The row of profile
+   * actions has a negative top offset (BaseItemsDecoration) and the cards have the 2dp gap as a top margin; with the
+   * plain view top the tabs moved by that overlap or gap whenever such a row became the first visible one.
+   */
+  private static int getCalculatedTop (RecyclerView.LayoutManager manager, View view) {
+    ViewGroup.LayoutParams params = view.getLayoutParams();
+    int topMargin = params instanceof ViewGroup.MarginLayoutParams ? ((ViewGroup.MarginLayoutParams) params).topMargin : 0;
+    return manager.getDecoratedTop(view) - topMargin;
+  }
+
   private int calculateBaseScrollY () {
     int width = baseRecyclerView.getMeasuredWidth();
     int maxPossibleScroll = maxItemsScrollY();
@@ -6347,10 +6425,11 @@ public class ProfileController extends ViewController<ProfileController.Args> im
 
     int scrollY = 0;
 
-    View view = baseRecyclerView.getLayoutManager().findViewByPosition(firstVisibleItemPosition);
+    RecyclerView.LayoutManager manager = baseRecyclerView.getLayoutManager();
+    View view = manager.findViewByPosition(firstVisibleItemPosition);
 
     if (view != null) {
-      scrollY -= view.getTop();
+      scrollY -= getCalculatedTop(manager, view);
     }
     for (int j = firstVisibleItemPosition - 1; j >= 0; j--) {
       scrollY += calculateHeight(j, width, baseAdapter.getItems().get(j));

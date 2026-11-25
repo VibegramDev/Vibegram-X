@@ -230,8 +230,7 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
     int maxWidth = MeasureSpec.getSize(widthMeasureSpec);
     if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && maxWidth > 0) {
       int availWidth = Math.max(0, maxWidth - getActionsWidth());
-      // Centered title: take all the space up to the actions, the title is drawn at the center of the app bar.
-      width = Settings.instance().needCenterTitles() ? availWidth : Math.min(width, availWidth);
+      width = Math.min(width, availWidth);
     }
     super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(Size.getHeaderPortraitSize(), MeasureSpec.EXACTLY));
     layoutTitle(getMeasuredWidth());
@@ -253,13 +252,6 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
     float baseline = cy - (paint.ascent() + paint.descent()) / 2f;
     float textLeft = rtl ? width - Screen.dp(START_PADDING) - textWidth : Screen.dp(START_PADDING);
     int emojiWidth = emojiFits ? emojiWidth() : 0;
-    if (Settings.instance().needCenterTitles() && getParent() instanceof View) {
-      // Center of the whole app bar (as on iOS), shifted only as much as needed to stay clear of the actions.
-      float contentWidth = textWidth + (emojiWidth > 0 ? Screen.dp(EMOJI_GAP) + emojiWidth : 0);
-      float groupLeft = ((View) getParent()).getWidth() / 2f - getLeft() - contentWidth / 2f;
-      groupLeft = MathUtils.clamp(groupLeft, Screen.dp(START_PADDING), Math.max(Screen.dp(START_PADDING), width - Screen.dp(END_PADDING) - contentWidth));
-      textLeft = rtl ? groupLeft + contentWidth - textWidth : groupLeft;
-    }
     c.drawText(text, 0, text.length(), textLeft, baseline, paint);
     if (emojiWidth == 0) {
       defaultEmojiRect.setEmpty();

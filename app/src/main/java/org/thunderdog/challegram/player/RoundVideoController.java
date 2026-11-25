@@ -75,6 +75,7 @@ import org.thunderdog.challegram.v.MessagesRecyclerView;
 import org.thunderdog.challegram.widget.CircleFrameLayout;
 import org.thunderdog.challegram.widget.ImageReceiverView;
 import org.thunderdog.challegram.widget.RectFrameLayout;
+import org.thunderdog.challegram.util.RoundEchoWatch;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
@@ -95,16 +96,41 @@ public class RoundVideoController extends BasePlaybackController implements
   public RoundVideoController (BaseActivity context) {
     this.context = context;
     this.handler = new VideoHandler(this);
+    // Vibegram: addTrackChangeListener immediately replays the current track. A round that is already playing belongs
+    // to the controller of another activity: taking it here started a second player of the same round (echo), or
+    // crashed in addToNavigation, because this activity has no navigation yet (BaseActivity.onCreate).
+    isAttaching = true;
     TdlibManager.instance().player().addTrackChangeListener(this);
+    isAttaching = false;
+    // Vibegram: temporary diagnostics of the round video echo (one controller per activity, each with its own player)
+    RoundEchoWatch.onControllerCreated(this, context);
+  }
+
+  /** Vibegram: state line for {@link RoundEchoWatch}. */
+  public String describeForDiagnostics () {
+    return "activity=" + context.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(context)) +
+      " activityState=" + context.getActivityState() +
+      " activityDestroyed=" + (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && context.isDestroyed()) +
+      " finishing=" + context.isFinishing() +
+      " controllerDestroyed=" + isControllerDestroyed() +
+      " message=" + (object != null ? object.chatId + "/" + object.id : "none") +
+      " isPlaying=" + isPlaying +
+      " player=" + (exoPlayer != null ? Integer.toHexString(System.identityHashCode(exoPlayer)) : "none");
   }
 
   /**
    * Entry section. At this point we receive triggers to process some video, or destroy it.
    * */
 
+  private boolean isAttaching;
+
   @Override
   protected boolean isSupported (TdApi.Message message) {
-    return Td.isVideoNote(message.content);
+    // Vibegram: every activity has its own controller and all of them follow the single global track. With two live
+    // activities (e.g. a second window of the app, ManageSpaceActivity) each of them played the round with its own
+    // player: the same sound twice, the second a bit later. Only the activity the user is in (UI context) plays it;
+    // the controller of a background activity lets the round go on the next track change.
+    return Td.isVideoNote(message.content) && !isAttaching && UI.getUiContext() == context;
   }
 
   @Override
@@ -120,6 +146,11 @@ public class RoundVideoController extends BasePlaybackController implements
       fakeFrame.eraseColor(0);
       invalidatePlaceholders();
       currentProgress = visualProgress;
+    }
+
+    RoundEchoWatch.onRoundStarted(this, message);
+    if (pendingPositionMs >= 0 && (message.chatId != pendingChatId || message.id != pendingMessageId)) {
+      pendingPositionMs = -1;
     }
 
     // Before we start, detach main texture
@@ -209,6 +240,36 @@ public class RoundVideoController extends BasePlaybackController implements
     }
   }
 
+  // Vibegram X: the round goes on from the place the full screen player was at (and the other way round)
+
+  private long pendingChatId, pendingMessageId, pendingPositionMs = -1;
+
+  /** Position of the given round if it is the one this controller plays now, -1 otherwise. */
+  public long getPlaybackPosition (Tdlib tdlib, TdApi.Message message) {
+    if (exoPlayer == null || source == null || !comparePlayingObject(tdlib, message)) {
+      return -1;
+    }
+    long position = exoPlayer.getCurrentPosition();
+    return position != C.TIME_UNSET ? position : -1;
+  }
+
+  /** The next playback of the given round starts at the given position instead of the beginning. */
+  public void setPendingStartPosition (TdApi.Message message, long positionMs) {
+    this.pendingChatId = message.chatId;
+    this.pendingMessageId = message.id;
+    this.pendingPositionMs = positionMs;
+  }
+
+  private void applyPendingStartPosition () {
+    if (pendingPositionMs < 0) {
+      return;
+    }
+    if (object != null && object.chatId == pendingChatId && object.id == pendingMessageId) {
+      exoPlayer.seekTo(pendingPositionMs);
+    }
+    pendingPositionMs = -1;
+  }
+
   public void seekTo (float progress, boolean play) {
     if (exoPlayer != null) {
       final long duration = exoPlayer.getDuration();
@@ -255,6 +316,7 @@ public class RoundVideoController extends BasePlaybackController implements
     if (source != null) {
       exoPlayer.setMediaSource(source);
       exoPlayer.prepare();
+      applyPendingStartPosition();
     }
     setPlayProgress(0f, -1, -1);
   }
@@ -581,6 +643,7 @@ public class RoundVideoController extends BasePlaybackController implements
 
     texturePrepared = false;
 
+    setDatesSource(null);
     context.removeFromNavigation(rootView);
     rootView = null;
     mainPlayerView = null; mainTextureView = null; mainProgressView = null;
@@ -1389,20 +1452,39 @@ public class RoundVideoController extends BasePlaybackController implements
       int topOffset = m.getTopOffset();
       topOffset += UI.getContext(context).navigation().getHeaderView().getFilling().getPlayerOffset();
       int bottomClip = bottomOffset + Math.max(-translationY, 0);
-      int composerTop = rootView.getHeight() > 0 ? m.getFloatingComposerTop(rootView) : -1;
-      if (composerTop >= 0) {
-        // Floating composer: the list goes down to the screen edge, the player stops at the composer.
-        bottomClip = Math.max(bottomClip, rootView.getHeight() - composerTop);
+      final int listBottom = rootView.getHeight() > 0 ? m.getRoundPlayerBottom(rootView, bottomFade) : -1;
+      if (listBottom >= 0) {
+        // Floating composer: the list goes on under it and fades out, so does the player (with the composer cut out),
+        // otherwise the round is cut by a line and the list shows its preview below.
+        bottomClip = Math.max(rootView.getHeight() - listBottom, Math.max(-translationY, 0));
+      } else {
+        int composerTop = rootView.getHeight() > 0 ? m.getFloatingComposerTop(rootView) : -1;
+        if (composerTop >= 0) {
+          // The player stops at the composer.
+          bottomClip = Math.max(bottomClip, rootView.getHeight() - composerTop);
+        }
       }
+      rootView.setBottomFade(listBottom >= 0 ? bottomFade : null);
       setMargins(topOffset + Math.max(0, translationY), bottomClip);
       floatingButtonsPath.rewind();
       boolean hasButtons = rootView.getHeight() > 0 && m.addFloatingButtonsShape(rootView, floatingButtonsPath);
+      if (listBottom >= 0 && bottomFade.hasShape) {
+        floatingButtonsPath.addRoundRect(bottomFade.shape, bottomFade.radius, bottomFade.radius, android.graphics.Path.Direction.CW);
+        hasButtons = true;
+      }
       rootView.setExcludedPath(floatingButtonsPath, !hasButtons);
+      setDatesSource(recyclerView);
+      if (recyclerView.hasDrawnDates()) {
+        // The player moves under the dates drawn over it
+        rootView.invalidate();
+      }
       abort = abort || !m.isFocused() && isAnimatingBackward;
     } else {
       // setBottomMargin(0);
       floatingButtonsPath.rewind();
       rootView.setExcludedPath(floatingButtonsPath, true);
+      rootView.setBottomFade(null);
+      setDatesSource(null);
       abort = true;
     }
 
@@ -1437,6 +1519,60 @@ public class RoundVideoController extends BasePlaybackController implements
     return totalX > -playerSize && totalX < navigationWidth && totalY >= -playerSize + HeaderView.getPlayerSize() && totalY < navigationHeight;
   }
 
+  private final RectFrameLayout.BottomFade bottomFade = new RectFrameLayout.BottomFade();
+
+  // Vibegram X: the list under the player. Its dates (the sticky one at the top) go over the round, and its stretch
+  // overscroll is off while the round plays: the stretch moves the list but not the player, and the preview of the
+  // round in the list came out from under the player.
+  private @Nullable MessagesRecyclerView datesSource;
+  private int datesSourceOverScrollMode;
+
+  private void setDatesSource (@Nullable MessagesRecyclerView view) {
+    if (datesSource == view) {
+      return;
+    }
+    if (datesSource != null) {
+      datesSource.setOverScrollMode(datesSourceOverScrollMode);
+    }
+    datesSource = view;
+    if (view != null) {
+      datesSourceOverScrollMode = view.getOverScrollMode();
+      view.setOverScrollMode(View.OVER_SCROLL_NEVER);
+    }
+    if (rootView != null) {
+      rootView.setOverDrawer(view != null ? this::drawDatesOver : null);
+      rootView.invalidate();
+    }
+  }
+
+  public void onListDatesChanged (MessagesRecyclerView view) {
+    if (datesSource == view && rootView != null) {
+      rootView.invalidate();
+    }
+  }
+
+  private void drawDatesOver (RectFrameLayout view, Canvas c) {
+    final MessagesRecyclerView list = datesSource;
+    if (list == null || !list.hasDrawnDates() || mainPlayerView == null || mainPlayerView.getVisibility() != View.VISIBLE || mainPlayerView.getAlpha() <= 0f || list.getWindowToken() == null || view.getWindowToken() == null) {
+      return;
+    }
+    // Views.getLocationInWindow returns one shared array: copy the values.
+    int[] location = Views.getLocationInWindow(list);
+    final int listLeft = location[0], listTop = location[1];
+    location = Views.getLocationInWindow(view);
+    final float size = mainPlayerView.getWidth() * mainPlayerView.getScaleX();
+    final float left = mainPlayerView.getLeft() + mainPlayerView.getTranslationX(), top = mainPlayerView.getTop() + mainPlayerView.getTranslationY();
+    final int saveCount = Views.save(c);
+    datesClip.rewind();
+    datesClip.addCircle(left + size / 2f, top + size / 2f, size / 2f, android.graphics.Path.Direction.CW);
+    c.clipPath(datesClip);
+    c.translate(listLeft - location[0], listTop - location[1]);
+    list.drawDatesOver(c);
+    Views.restore(c, saveCount);
+  }
+
+  private final android.graphics.Path datesClip = new android.graphics.Path();
+
   private void setMargins (int top, int bottom) {
     rootView.setClip(top, bottom);
   }
@@ -1463,6 +1599,7 @@ public class RoundVideoController extends BasePlaybackController implements
 
   @Override
   public void onActivityDestroy () {
+    RoundEchoWatch.onControllerDestroyed(this);
     destroy();
   }
 

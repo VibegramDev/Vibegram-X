@@ -30,8 +30,6 @@ import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
-import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -72,15 +70,16 @@ import me.vkryl.core.lambda.Destroyable;
 /**
  * Main sections of the app: chats, calls, contacts and settings (shown as the user's avatar).
  * Tablet: floating bar at the bottom of the chat list (search is the search bar in the app bar there).
- * Phone, navigation style "dock": the same floating bar, compact, centered at the bottom (search is in the app bar).
- * Phone, navigation style "bar": M3 flexible navigation bar (full width at the bottom, icons with labels).
+ * Phone: the dock, the same floating bar, compact, centered at the bottom, with the search button before settings.
  */
 public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   // Item ids are also indexes in the items array.
   public static final int ITEM_CHATS = 0;
   public static final int ITEM_CALLS = 1;
   public static final int ITEM_CONTACTS = 2;
-  public static final int ITEM_SETTINGS = 3;
+  /** Phone: opens the search of the chat list, before settings. An action, not a section: never selected, not one of the tabs. */
+  public static final int ITEM_SEARCH = 3;
+  public static final int ITEM_SETTINGS = 4;
   public interface Callback {
     void onNavigationItemClick (int item);
   }
@@ -91,7 +90,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private static final float BAR_ICON_CENTER_Y = BAR_HEIGHT / 2f;
   private static final float AVATAR_SIZE = 28f;
   /** Navigation bar (labels): active indicator (and pressed state layer) height. */
-  private static final float INDICATOR_HEIGHT = 32f;
   /**
    * Floating bar (dock): the active indicator is a tall pill with the same gap to the bar edge on every side:
    * 56 - 4 * 2 = 48dp tall, item width - 4dp wide (the bar has 2dp padding at the ends, so the outer items also get
@@ -108,27 +106,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   private final AvatarView avatarView;
   private final Counter unreadCounter;
   private @Nullable Callback callback;
-  private boolean isBar;
   private int selectedItem = ITEM_CHATS;
 
-  /**
-   * Phone, navigation style "bar": M3 flexible navigation bar with vertical items (m3.material.io/components/navigation-bar).
-   * "The container should always be placed at the bottom of the product and span the full length of the window",
-   * "All navigation items require a label text". Search is the search button in the app bar.
-   * Sizes are the flexible navigation bar tokens: 64dp container, 56x32dp active indicator, 24dp icon,
-   * 6dp from the top to the indicator, 4dp between the indicator and the label (label medium, 16dp line).
-   */
-  private boolean isNavBar;
   /** Phone dock style: the floating bar is only as wide as its items, centered. */
   private boolean isCompactBar;
   /** Phone dock style in a short window (landscape): the compact bar is at the end, the folder chips in line with it. */
   private boolean isCompactBarAtEnd;
-  private static final float NAV_BAR_HEIGHT = 64f;
-  private static final float NAV_BAR_INDICATOR_WIDTH = 56f;
-  private static final float NAV_BAR_INDICATOR_TOP = 6f;
-  private static final float NAV_BAR_LABEL_GAP = 4f;
-  private static final float NAV_BAR_LABEL_LINE_HEIGHT = 16f;
-  private @Nullable TextPaint labelPaint;
 
   /** Compact floating bar (phone dock style): 74dp per item and 2dp padding at the ends (300dp for 4 items). */
   private static final float COMPACT_ITEM_WIDTH = 74f;
@@ -175,6 +158,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       new ItemView(context, ITEM_CHATS, R.drawable.vg_tab_chats_24, R.drawable.vg_tab_chats_active_24, R.string.Chats),
       new ItemView(context, ITEM_CALLS, R.drawable.vg_tab_calls_24, R.drawable.vg_tab_calls_active_24, R.string.Calls),
       new ItemView(context, ITEM_CONTACTS, R.drawable.vg_tab_contacts_24, R.drawable.vg_tab_contacts_active_24, R.string.Contacts),
+      new ItemView(context, ITEM_SEARCH, R.drawable.baseline_search_24, 0, R.string.Search),
       new ItemView(context, ITEM_SETTINGS, 0, 0, R.string.Settings)
     };
     items[ITEM_SETTINGS].addView(avatarView);
@@ -204,7 +188,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
         M3Tooltip.hideCurrent(true);
         // The finger keeps moving over the screen to pick an entry: no swipe back or scrolling.
         v.getParent().requestDisallowInterceptTouchEvent(true);
-      } else if (isNavBar || !M3Tooltip.show(v, M3Tooltip.PLACEMENT_ABOVE, barBounds, item.label)) {
+      } else if (!M3Tooltip.show(v, M3Tooltip.PLACEMENT_ABOVE, barBounds, item.label)) {
         return false;
       }
       v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
@@ -219,7 +203,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
         super.onInitializeAccessibilityNodeInfo(host, info);
         info.setCollectionInfo(AccessibilityNodeInfoCompat.CollectionInfoCompat.obtain(1,
-          visibleItemCount(), false,
+          visibleItemCount() - (items[ITEM_SEARCH].getVisibility() != View.GONE ? 1 : 0), false,
           AccessibilityNodeInfoCompat.CollectionInfoCompat.SELECTION_MODE_SINGLE));
       }
     });
@@ -227,15 +211,11 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       setOutlineProvider(new ViewOutlineProvider() {
         @Override
         public void getOutline (View view, Outline outline) {
-          if (isNavBar) {
-            outline.setRect(0, 0, view.getWidth(), view.getHeight());
-          } else {
-            outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), getBarRadius());
-          }
+          outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), getBarRadius());
         }
       });
     }
-    setLayoutMode(true, false, 0);
+    setLayoutMode(0);
   }
 
   public void setCallback (@Nullable Callback callback) {
@@ -273,7 +253,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       if (item == view) {
         break;
       }
-      if (item.getVisibility() != View.GONE) {
+      if (item.getVisibility() != View.GONE && item.id != ITEM_SEARCH) {
         index++;
       }
     }
@@ -281,8 +261,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   }
 
   private void updateLongClickable (ItemView item) {
-    // Navigation bar: labels are visible, no tooltips.
-    item.setLongClickable(!isNavBar || item.menu != null);
+    item.setLongClickable(true);
   }
 
   public Counter getUnreadCounter () {
@@ -340,12 +319,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
    * close to the bar to read in light themes. Navigation bar: M3 secondaryContainer indicator.
    */
   private int indicatorColor () {
-    return isNavBar ? M3.secondaryContainer() : M3.surfaceContainerHighest();
+    return M3.surfaceContainerHighest();
   }
 
   /** Icon of the selected item: onSurface on the neutral dock indicator, onSecondaryContainer in the navigation bar. */
   private int selectedIconColor () {
-    return isNavBar ? M3.onSecondaryContainer() : M3.onSurface();
+    return M3.onSurface();
   }
 
   /**
@@ -353,14 +332,8 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
    * Floating bar: 48dp pill, item width - 4dp. Navigation bar: 56x32dp, 6dp from the top.
    */
   private void getIndicatorRect (RectF rect, int itemLeft, int itemTop, int itemWidth) {
-    float width, height;
-    if (isNavBar) {
-      width = Math.min(itemWidth - Screen.dp(8f), Screen.dp(NAV_BAR_INDICATOR_WIDTH));
-      height = Screen.dp(INDICATOR_HEIGHT);
-    } else {
-      width = itemWidth - Screen.dp(BAR_INDICATOR_INSET);
-      height = Screen.dp(BAR_INDICATOR_HEIGHT);
-    }
+    float width = itemWidth - Screen.dp(BAR_INDICATOR_INSET);
+    float height = Screen.dp(BAR_INDICATOR_HEIGHT);
     float cx = itemLeft + itemWidth / 2f;
     float cy = itemTop + getIconCenterY();
     rect.set(cx - width / 2f, cy - height / 2f, cx + width / 2f, cy + height / 2f);
@@ -375,25 +348,12 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       ripple = new RippleDrawable(ColorStateList.valueOf(Theme.RIPPLE_COLOR), null, mask);
     } else {
-      ripple = Theme.transparentRoundSelector(Screen.dp((isNavBar ? INDICATOR_HEIGHT : BAR_INDICATOR_HEIGHT) / 2f));
+      ripple = Theme.transparentRoundSelector(Screen.dp(BAR_INDICATOR_HEIGHT / 2f));
     }
     view.setBackground(null);
     ForegroundCompat.set(view, ripple);
   }
 
-
-  public boolean isBar () {
-    return isBar;
-  }
-
-  public boolean isNavBar () {
-    return isNavBar;
-  }
-
-  /** Navigation bar: height of the container above the system navigation bar. */
-  public static int getNavBarHeight () {
-    return Screen.dp(NAV_BAR_HEIGHT);
-  }
 
   public static int getBarHeight () {
     return Screen.dp(BAR_HEIGHT);
@@ -460,40 +420,29 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   }
 
   /**
-   * @param isBar floating bar (tablet, phone dock style)
-   * @param isNavBar phone only: navigation style "bar" (ignored with isBar)
+   * The floating bar: the tablet layout and the phone dock.
    * @param bottomInset system navigation bar inset
    */
-  public void setLayoutMode (boolean isBar, boolean isNavBar, int bottomInset) {
-    isNavBar = isNavBar && !isBar;
-    isBar = !isNavBar;
-    boolean modeChanged = this.isBar != isBar || this.isNavBar != isNavBar || getLayoutParams() == null || (isBar && isCompactBar != (getLayoutParams().width != ViewGroup.LayoutParams.MATCH_PARENT));
-    this.isBar = isBar;
-    this.isNavBar = isNavBar;
+  public void setLayoutMode (int bottomInset) {
+    boolean modeChanged = getLayoutParams() == null || isCompactBar != (getLayoutParams().width != ViewGroup.LayoutParams.MATCH_PARENT);
     FrameLayoutFix.LayoutParams params;
-    if (isNavBar) {
-      // Edge to edge: the container goes under the system navigation bar, the items stay above it.
-      params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getNavBarHeight() + bottomInset, Gravity.BOTTOM);
-      setPadding(0, 0, 0, bottomInset);
+    if (isCompactBar) {
+      int horizontalGravity = isCompactBarAtEnd ? (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) : Gravity.CENTER_HORIZONTAL;
+      params = FrameLayoutFix.newParams(getCompactBarWidth(), getBarHeight(), Gravity.BOTTOM | horizontalGravity);
     } else {
-      if (isCompactBar) {
-        int horizontalGravity = isCompactBarAtEnd ? (Lang.rtl() ? Gravity.LEFT : Gravity.RIGHT) : Gravity.CENTER_HORIZONTAL;
-        params = FrameLayoutFix.newParams(getCompactBarWidth(), getBarHeight(), Gravity.BOTTOM | horizontalGravity);
-      } else {
-        params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
-      }
-      params.leftMargin = params.rightMargin = getBarMargin();
-      params.bottomMargin = getBarBottomMargin() + bottomInset;
-      // Half of the indicator inset: the outer indicators keep the same 4dp gap to the rounded ends as to the top and bottom.
-      int padding = Screen.dp(BAR_INDICATOR_INSET / 2f);
-      setPadding(padding, 0, padding, 0);
+      params = FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, getBarHeight(), Gravity.BOTTOM);
     }
+    params.leftMargin = params.rightMargin = getBarMargin();
+    params.bottomMargin = getBarBottomMargin() + bottomInset;
+    // Half of the indicator inset: the outer indicators keep the same 4dp gap to the rounded ends as to the top and bottom.
+    int padding = Screen.dp(BAR_INDICATOR_INSET / 2f);
+    setPadding(padding, 0, padding, 0);
     setLayoutParams(params);
     for (ItemView item : items) {
       updateLongClickable(item);
     }
     for (int i = 0; i < items.length; i++) {
-      FrameLayoutFix.LayoutParams itemParams = FrameLayoutFix.newParams(0, isNavBar ? getNavBarHeight() : getBarHeight(), Gravity.TOP | Gravity.LEFT);
+      FrameLayoutFix.LayoutParams itemParams = FrameLayoutFix.newParams(0, getBarHeight(), Gravity.TOP | Gravity.LEFT);
       items[i].setLayoutParams(itemParams);
       if (items[i].getForeground() == null) {
         setPressedStateLayer(items[i], new IndicatorMask());
@@ -503,7 +452,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     Views.setTopMargin(avatarView, getIconCenterY() - Screen.dp(AVATAR_SIZE) / 2);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       // Floating bar: soft shadow drawn by M3BottomScrimView (same as the floating message composer).
-      // Navigation bar: "M3: Taller and no drop shadow", the container color separates it from the content.
       setElevation(0);
       setClipToOutline(true);
       invalidateOutline();
@@ -515,16 +463,13 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   }
 
   private int getIconCenterY () {
-    if (isNavBar) {
-      return Screen.dp(NAV_BAR_INDICATOR_TOP + INDICATOR_HEIGHT / 2f);
-    }
     return Screen.dp(BAR_ICON_CENTER_Y);
   }
 
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
     {
-      // Navigation bar: "Vertical navigation items dynamically change width to equally fit the container".
+      // Items share the width of the bar equally.
       int width = MeasureSpec.getSize(widthMeasureSpec) - getPaddingLeft() - getPaddingRight();
       int count = visibleItemCount();
       int itemWidth = width / count;
@@ -545,19 +490,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     super.onMeasure(widthMeasureSpec, heightMeasureSpec);
   }
 
-  /** Label medium: 12sp, medium weight, 0.5sp tracking. */
-  private TextPaint getLabelPaint () {
-    if (labelPaint == null) {
-      labelPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-      labelPaint.setTypeface(Fonts.getRobotoMedium());
-      labelPaint.setTextSize(Screen.sp(12f));
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        labelPaint.setLetterSpacing(.5f / 12f);
-      }
-    }
-    return labelPaint;
-  }
-
   private void invalidateItems () {
     for (ItemView item : items) {
       item.invalidate();
@@ -567,11 +499,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
   @Override
   protected void onDraw (Canvas c) {
     int fillingColor = containerColor();
-    if (isNavBar) {
-      // Full width, square corners, surfaceContainer, no shadow (also behind the system navigation bar).
-      c.drawRect(0, 0, getWidth(), getHeight(), Paints.fillingPaint(fillingColor));
-      return;
-    }
     {
       RectF rect = Paints.getRectF();
       rect.set(0, 0, getWidth(), getHeight());
@@ -633,6 +560,10 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
         @Override
         public void onInitializeAccessibilityNodeInfo (@NonNull View host, @NonNull AccessibilityNodeInfoCompat info) {
           super.onInitializeAccessibilityNodeInfo(host, info);
+          if (id == ITEM_SEARCH) {
+            info.setClassName("android.widget.Button");
+            return;
+          }
           // Tab, "N of M", selected (MDC NavigationBarItemView).
           info.setRoleDescription(getResources().getString(R.string.vg_TabRole));
           int index = visibleIndexOf(ItemView.this);
@@ -719,21 +650,6 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
       }
       if (selectedIcon != null && selected > 0f) {
         Drawables.draw(c, selectedIcon, cx - selectedIcon.getMinimumWidth() / 2f, cy - selectedIcon.getMinimumHeight() / 2f, Paints.getPorterDuffPaint(ColorUtils.alphaColor(selected, selectedIconColor())));
-      }
-      if (isNavBar) {
-        // Label below the indicator: secondary when active, onSurfaceVariant when inactive ("Active label changed from
-        // on-surface-variant to secondary"). Never truncated by design: 1-2 short words.
-        TextPaint paint = getLabelPaint();
-        paint.setColor(ColorUtils.fromToArgb(M3.onSurfaceVariant(), M3.secondary(), selected));
-        paint.setTypeface(selected >= .5f ? Fonts.getRobotoBold() : Fonts.getRobotoMedium());
-        float lineTop = Screen.dp(NAV_BAR_INDICATOR_TOP + INDICATOR_HEIGHT + NAV_BAR_LABEL_GAP);
-        Paint.FontMetrics metrics = paint.getFontMetrics();
-        float baseline = lineTop + Screen.dp(NAV_BAR_LABEL_LINE_HEIGHT) / 2f - (metrics.ascent + metrics.descent) / 2f;
-        String text = label;
-        if (paint.measureText(text) > getWidth()) {
-          text = TextUtils.ellipsize(text, paint, getWidth(), TextUtils.TruncateAt.END).toString();
-        }
-        c.drawText(text, cx - paint.measureText(text) / 2f, baseline, paint);
       }
     }
 

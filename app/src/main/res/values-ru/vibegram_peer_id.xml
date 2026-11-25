@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="vg_ShowPeerIds">Показывать ID в профилях</string>
+  <string name="vg_ShowPeerIdsDesc">На странице пользователя, группы или канала будет его ID. Нажмите на него, чтобы скопировать.</string>
+</resources>

@@ -62,8 +62,9 @@ public class VideoControlView extends FrameLayoutFix implements FactorAnimator.T
     sliderView = new SliderView(context);
     sliderView.setAnchorMode(SliderView.ANCHOR_MODE_START);
     sliderView.setForceBackgroundColorId(ColorId.videoSliderInactive);
-    sliderView.setForceSecondaryColorId(ColorId.videoSliderInactive);
+    // Vibegram X: the loaded part is lighter than the rest of the track (was the same colour, so invisible), like YouTube
     sliderView.setSlideEnabled(true, false);
+    sliderView.setSeekOnTrackTap(true);
     sliderView.setColorId(ColorId.videoSliderActive, false);
     sliderView.setPadding(Screen.dp(56f), 0, Screen.dp(56f), 0);
     sliderView.setLayoutParams(params);

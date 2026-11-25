@@ -35,6 +35,14 @@ fi
 WHISPER_DIR="$WORK/whisper.cpp-$WHISPER_VERSION"
 rm -rf "$WHISPER_DIR"
 tar -xzf "$ARCHIVE" -C "$WORK"
+# Word times (token_timestamps) are refined by the signal loudness. whisper.cpp 1.9.5 reads the loudness at the token
+# time minus the segment start (a fix for its own VAD, which is off here), but the loudness covers the whole audio:
+# every segment after the first was refined by the wrong place. Read it at the absolute time.
+perl -0pi -e 's/int64_t relative_t = t - segment_t0;/int64_t relative_t = t; (void) segment_t0;/; s/return relative_timestamp \+ segment_t0;/(void) segment_t0;\n    return relative_timestamp;/' "$WHISPER_DIR/src/whisper.cpp"
+if [ "$(grep -c -e 'int64_t relative_t = t;' -e '^    return relative_timestamp;' "$WHISPER_DIR/src/whisper.cpp")" != 2 ]; then
+  echo "whisper.cpp $WHISPER_VERSION: the token time patch does not apply" >&2
+  exit 1
+fi
 
 if [ "${1:-}" = "--host" ]; then
   cmake -S "$SOURCE" -B "$WORK/host" -G Ninja -DCMAKE_BUILD_TYPE=Release -DWHISPER_DIR="$WHISPER_DIR"

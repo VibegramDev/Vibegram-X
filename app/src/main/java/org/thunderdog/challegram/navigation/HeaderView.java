@@ -1222,21 +1222,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
       return;
     boolean updated;
     int top = Screen.dp(15f) + currentHeaderOffset;
-    FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) textTitle.getLayoutParams();
-    boolean centered = needCenterTitle();
-    int horizontalGravity =
-      centered ? Gravity.CENTER_HORIZONTAL : Lang.rtl() ? Gravity.RIGHT : Gravity.LEFT;
-    int gravity = Gravity.TOP | horizontalGravity;
-    boolean gravityChanged = params.gravity != gravity;
-    params.gravity = gravity;
-    if (centered) {
-      // Centered in the whole app bar (as on iOS): equal room on both sides, clear of the back
-      // button and the menu.
-      boolean hasBackButton = item.getHeaderBackButton() != BackHeaderButton.TYPE_NONE;
-      int startWidth = Screen.dp(hasBackButton ? 68f : 18f);
-      int sideMargin = Math.max(startWidth, menuWidth);
-      updated = Views.setMargins(params, sideMargin, top, sideMargin, 0);
-    } else if (item.getHeaderBackButton() != BackHeaderButton.TYPE_NONE) {
+    if (item.getHeaderBackButton() != BackHeaderButton.TYPE_NONE) {
       if (Lang.rtl()) {
         updated = Views.setMargins((FrameLayout.LayoutParams) textTitle.getLayoutParams(), menuWidth, top, Screen.dp(68f), 0);
       } else {
@@ -1249,7 +1235,7 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
         updated = Views.setMargins((FrameLayout.LayoutParams) textTitle.getLayoutParams(), Screen.dp(18f), top, menuWidth, 0);
       }
     }
-    if (updated || gravityChanged)
+    if (updated)
       Views.updateLayoutParams(textTitle);
   }
 
@@ -1264,11 +1250,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     }
   }
 
-  /** Settings: centered titles. Text titles of every screen are centered, as on iOS. */
-  public static boolean needCenterTitle () {
-    return Settings.instance().needCenterTitles() && !Lang.rtl();
-  }
-
   /** Hidden buttons count too: they can appear without a new layout of the title. */
   private static int getMenuWidth (LinearLayout menu) {
     int width = 0;
@@ -1276,15 +1257,6 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
       width += menu.getChildAt(i).getLayoutParams().width;
     }
     return width;
-  }
-
-  /** Settings: centered titles changed, the title of the current screen follows it right away. */
-  public void updateTextTitleLayout (ViewController<?> item) {
-    if (title != null && title == textTitle) {
-      boolean sameMenu = item.getMenuId() != 0 && menu.getId() == item.getMenuId();
-      int menuWidth = sameMenu ? getMenuWidth(menu) : 0;
-      updateTextMargins(textTitle, item, menuWidth, getCurrentHeaderOffset());
-    }
   }
 
   private void genTitle (ViewController<?> item) {

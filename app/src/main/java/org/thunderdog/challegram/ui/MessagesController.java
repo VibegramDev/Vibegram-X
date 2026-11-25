@@ -180,6 +180,7 @@ import org.thunderdog.challegram.navigation.HeaderButton;
 import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.MenuMoreWrap;
+import org.thunderdog.challegram.navigation.MessageSeenMenu;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.NavigationStack;
@@ -395,7 +396,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   /** Attach button inside the field, at its bottom-end corner, while the send button replaces the attach buttons. */
   private ImageView inlineAttachButton;
   private static final float INLINE_ATTACH_WIDTH = 40f;
-  private InvisibleImageView cameraButton, scheduleButton;
+  private InvisibleImageView scheduleButton;
   private InvisibleImageView commandButton;
   private @Nullable SilentButton silentButton;
 
@@ -715,6 +716,32 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   /** Top edge of the bottom button floating in place of the composer, -1 when there is none or it is collapsed. */
+  /**
+   * Vibegram X: the round video player floats above the list. Under the floating composer (or the bottom button) the
+   * list goes on to the bottom and fades out: the player goes on too, with the same fade and the composer cut out of it.
+   * Fills {@code out} in the coordinates of {@code view} and returns the bottom of the list there, or -1 when the player
+   * stops at the composer (no fade, keyboard panels under the composer).
+   */
+  public int getRoundPlayerBottom (View view, org.thunderdog.challegram.widget.RectFrameLayout.BottomFade out) {
+    if (!composerFloating || composerScrim == null || composerScrim.getVisibility() != View.VISIBLE || composerScrim.getAlpha() <= 0f || composerScrim.getHeight() == 0 || getKeyboardOffset() > 0f || view.getWindowToken() == null || composerScrim.getWindowToken() == null) {
+      return -1;
+    }
+    RectF shape = new RectF();
+    out.hasShape = getComposerShape(composerScrim, shape);
+    // Views.getLocationInWindow returns one shared array: copy the values.
+    int[] location = Views.getLocationInWindow(composerScrim);
+    final int scrimLeft = location[0], scrimTop = location[1];
+    location = Views.getLocationInWindow(view);
+    final int dx = scrimLeft - location[0], dy = scrimTop - location[1];
+    out.fadeTop = getComposerFadeTop(composerScrim, shape) + dy;
+    out.shape.set(shape);
+    out.shape.offset(dx, dy);
+    out.radius = MainNavigationBar.getBarRadius();
+    out.alpha = composerScrim.getAlpha();
+    out.fadeBottom = composerScrim.getHeight() + dy;
+    return composerScrim.getHeight() + dy;
+  }
+
   private int getBottomBarTop (View view) {
     if (!composerFloating || bottomBar == null || bottomBar.getVisibility() != View.VISIBLE || scrollToBottomVisible.getFloatValue() > 0f) {
       return -1;
@@ -1451,15 +1478,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     mediaButton.setLayoutParams(lp);
 
 
-    lp = new LinearLayout.LayoutParams(Screen.dp(ATTACH_BUTTONS_WIDTH), Screen.dp(49f));
-    cameraButton = new CameraAccessImageView(context, this);
-    cameraButton.setId(R.id.btn_camera);
-    cameraButton.setScaleType(ImageView.ScaleType.CENTER);
-    cameraButton.setImageResource(R.drawable.deproko_baseline_camera_26);
-    cameraButton.setColorFilter(Theme.iconColor());
-    addThemeFilterListener(cameraButton, ColorId.icon);
-    cameraButton.setOnClickListener(this);
-    cameraButton.setLayoutParams(lp);
+    // Vibegram X: no camera button in the composer, the camera is in the attach menu (MediaLayout.needCameraButton).
 
     if (!areScheduled /*&& isSelfChat()*/) {
       lp = new LinearLayout.LayoutParams(Screen.dp(ATTACH_BUTTONS_WIDTH), Screen.dp(49f));
@@ -1512,9 +1531,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
     if (scheduleButton != null) {
       attachButtons.addView(scheduleButton);
-    }
-    if (cameraButton != null) {
-      attachButtons.addView(cameraButton);
     }
     attachButtons.addView(mediaButton);
     attachButtons.addView(recordButton);
@@ -1755,9 +1771,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
       contentView.addView(messagesView);
       // Same fade and shadow as the dock of the chat list
       composerScrim = new M3BottomScrimView(context);
-      composerScrim.setFadeTopProvider(this::getComposerFadeTop);
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
+      composerScrim.setFadeTopProvider(this::getComposerFadeTop);
       addThemeInvalidateListener(composerScrim);
       contentView.addView(composerScrim);
       if (!inPreviewMode) {
@@ -2424,6 +2440,19 @@ public class MessagesController extends ViewController<MessagesController.Argume
   public void viewMessagesFromSender (TdApi.MessageSender sender, boolean animated) {
     if (headerView != null) {
       headerView.openSearchMode(animated, false);
+      if (!inSearchMode()) {
+        // The header did not switch this screen to search (it is busy with another mode or an animation, or this
+        // screen is not the current one of its stack): the search manager does not exist yet, searching would crash.
+        // Show the messages on their own screen instead, as from the list of members.
+        foundMessageId = null;
+        searchFromUserMessageId = null;
+        if (!inPreviewMode && chat != null) {
+          HashtagChatController c = new HashtagChatController(context, tdlib);
+          c.setArguments(new HashtagChatController.Arguments(null, chat.id, null, sender, tdlib.isChannel(Td.getSenderId(sender))));
+          navigateTo(c);
+        }
+        return;
+      }
       onSetSearchMessagesSenderId(sender);
       onSetSearchFilteredShowMode(true);
       searchChatMessages(getLastMessageSearchQuery());
@@ -2452,11 +2481,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         scrollToUnreadOrStartMessage();
       }
     }
-    if (viewId == R.id.btn_camera) {
-      if (!showPhotoVideoRestriction(v)) {
-        openInAppCamera(new CameraOpenOptions().anchor(v).noTrace(isSecretChat()));
-      }
-    } else if (viewId == R.id.btn_viewScheduled) {
+    if (viewId == R.id.btn_viewScheduled) {
       viewScheduledMessages(false);
     } else if (viewId == R.id.msg_bottomReply) {
       if (reply != null) {
@@ -4155,12 +4180,11 @@ public class MessagesController extends ViewController<MessagesController.Argume
         return R.id.menu_gallery;
     }
     if (topicTabs != null) {
-      return R.id.menu_more;
+      return topicTabs.getMenuId();
     }
     if (getChatId() != 0) {
       if (isSelfChat()) {
-        // Centered titles: the avatar takes the end button, Search is in the "more" menu.
-        return Settings.instance().needCenterTitles() && !Lang.rtl() ? R.id.menu_more : R.id.menu_search;
+        return R.id.menu_search;
       }
       if (isSecretChat()) {
         return R.id.menu_secretChat;
@@ -4228,19 +4252,12 @@ public class MessagesController extends ViewController<MessagesController.Argume
 
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
-    if (id == R.id.menu_more) {
+    if (id == R.id.menu_more || id == R.id.menu_topicTabs || id == R.id.menu_topicTabsCreate) {
       if (topicTabs != null) {
         topicTabs.fillMenuItems(header, menu, getHeaderIconColorId());
-        if (topicTabs.isSideTabs() && !inPreviewMode) {
-          // Side tabs keep the chat header: its avatar takes the place of the more button.
-          ChatHeaderView.bindAvatarButton(menu.findViewById(R.id.menu_btn_more));
-        }
         return;
       }
-      HeaderButton moreButton = header.addMoreButton(menu, this);
-      if (previewMode == PREVIEW_MODE_NONE && getChatId() != 0) {
-        checkAvatarAsMoreButton(moreButton);
-      }
+      header.addMoreButton(menu, this);
     } else if (id == R.id.menu_gallery) {
       header.addButton(menu, R.id.menu_btn_gallery, R.drawable.baseline_image_24, getHeaderIconColorId(), this, Screen.dp(52f));
     } else if (id == R.id.menu_share) {
@@ -4252,13 +4269,13 @@ public class MessagesController extends ViewController<MessagesController.Argume
     } else if (id == R.id.menu_chat) {
       HeaderButton btn = header.addButton(menu, R.id.menu_btn_viewScheduled, R.drawable.baseline_date_range_24, getHeaderIconColorId(), this, Screen.dp(52f));
       btn.setVisibility(tdlib.chatHasScheduled(getChatId()) ? View.VISIBLE : View.GONE);
-      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
+      header.addMoreButton(menu, this);
     } else if (id == R.id.menu_secretChat) {
-      // The centered title stays clear of the timer too, not only of the more button.
+      // The title stays clear of the timer too, not only of the more button.
       headerCell.setInnerRightMargin(Screen.dp(49f) * 2);
       StopwatchHeaderButton headerButton = header.addStopwatchButton(menu, this);
       headerButton.forceValue(tdlib.ui().getTTLShort(getChatId()), isSecretChat() && tdlib.canChangeMessageAutoDeleteTime(chat.id));
-      checkAvatarAsMoreButton(header.addMoreButton(menu, this));
+      header.addMoreButton(menu, this);
     } else if (id == R.id.menu_messageActions) {
       int iconColorId = getSelectHeaderIconColorId();
       HeaderButton selectInBetweenBtn = header.addButton(menu, R.id.menu_btn_selectInBetween, R.drawable.baseline_toc_24, iconColorId, this, Screen.dp(49f));
@@ -4302,16 +4319,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (value) totalButtonsCount++;
 
       reportButton.setVisibility(canReportSelectedMessages(totalButtonsCount) ? View.VISIBLE : View.GONE);
-    }
-  }
-
-  /**
-   * Centered titles (iOS-like header): the chat avatar is drawn by the header in place of the "more" icon, the button
-   * stays (transparent) and opens the same menu.
-   */
-  private void checkAvatarAsMoreButton (HeaderButton moreButton) {
-    if (!inPreviewMode) {
-      ChatHeaderView.bindAvatarButton(moreButton);
     }
   }
 
@@ -5549,30 +5556,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
       }
 
       if (withMetadata && message.canGetViewers() && !(message.isUnread() && !message.noUnread())) {
-        TextView viewersItem = menu.addItem(R.id.more_btn_openReadReceipts, Lang.getString(R.string.LoadingMessageSeen), R.drawable.baseline_visibility_24, null, null);
-        tdlib.client().send(new TdApi.GetMessageViewers(message.getChatId(), message.getId()), (obj) -> {
-          if (obj.getConstructor() != TdApi.MessageViewers.CONSTRUCTOR) return;
-          runOnUiThreadOptional(() -> {
-            TdApi.MessageViewers viewers = (TdApi.MessageViewers) obj;
-            if (viewers.viewers.length > 1) {
-              viewersItem.setText(MessageSeenController.getViewString(message, viewers.viewers.length).toString());
-            } else if (viewers.viewers.length == 1) {
-              TdApi.MessageViewer viewer = viewers.viewers[0];
-              String name = tdlib.senderName(new TdApi.MessageSenderUser(viewer.userId));
-              viewersItem.setText(viewer.viewDate != 0 ? name + ", " + TGUser.getActionDateStatus(tdlib, viewer.viewDate, message.getMessage()) : name);
-            } else {
-              viewersItem.setText(MessageSeenController.getNobodyString(message));
-            }
-            viewersItem.setOnClickListener((v) -> {
-              popupRef[0].hideWindow(true);
-              if (viewers.viewers.length > 1) {
-                ModernActionedLayout.showMessageSeen(this, message, viewers);
-              } else if (viewers.viewers.length == 1) {
-                tdlib.ui().openPrivateProfile(this, viewers.viewers[0].userId, new TdlibUi.UrlOpenParameters().tooltip(context().tooltipManager().builder(v)));
-              }
-            });
-          });
-        });
+        // As in Telegram for Android: double check, "N views" and the viewers' avatars; a tap lists them in the menu.
+        MessageSeenMenu.add(menu, this, message, () -> popupRef[0].hideWindow(true));
       }
 
       int reactionsCount = message.getMessageReactions().getTotalCount();
@@ -8773,6 +8758,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   private float prevButtonsY;
+  private int prevInputHeight;
 
   /**
    * Content of the composer on its surfaceContainer, as in the dock: text onSurface, placeholder and icons
@@ -8791,7 +8777,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
     if (emojiButton != null) {
       emojiButton.setColorFilter(content);
     }
-    for (ImageView button : new ImageView[] {mediaButton, cameraButton, scheduleButton, commandButton}) {
+    for (ImageView button : new ImageView[] {mediaButton, scheduleButton, commandButton}) {
       if (button != null) {
         button.setColorFilter(content);
       }
@@ -8941,9 +8927,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
     messageSenderButton.setTranslationY(y);
 
+    int inputHeight = inputView != null ? inputView.getHeight() : 0;
     if (prevButtonsY != y) {
       prevButtonsY = y;
+      prevInputHeight = inputHeight;
       onMessagesFrameChanged();
+      updateRecordLayout();
+    } else if (prevInputHeight != inputHeight) {
+      // The field grew or shrank while its bottom (and the buttons) stayed: the record bar covers the field, so it is
+      // resized too (e.g. the text was cleared just before recording, and the field shrank after the bar took its height).
+      prevInputHeight = inputHeight;
       updateRecordLayout();
     }
   }
@@ -13799,10 +13792,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
     return chat != null && chat.messageSenderId != null;
   }
 
-  public boolean isCameraButtonVisibleOnAttachPanel () {
-    return !canSelectSender();
-  }
-
   public HapticMenuHelper.MenuItem createHapticSenderItem (int id, TdApi.MessageSender sender, boolean useUsername, boolean isLocked) {
     String title = useUsername ? tdlib.senderName(sender) : Lang.getString(R.string.SendAs);
     if (tdlib.isSelfSender(sender)) {
@@ -13853,11 +13842,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   // Interface
 
   private void updateSelectMessageSenderInterface (boolean animated) {
-    boolean cameraVisible = isCameraButtonVisibleOnAttachPanel();
     boolean canSetSender = canSelectSender();
-    if (cameraButton != null) {
-      cameraButton.setVisibility(cameraVisible ? View.VISIBLE : View.GONE);  //.setVisible(cameraVisible);
-    }
 
     messageSenderButton.setVisibility((canSetSender && attachButtons.getVisibility() == View.VISIBLE) ? View.VISIBLE : View.GONE);
     if (canSetSender) {

@@ -16,6 +16,7 @@ package org.thunderdog.challegram.data;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Color;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.view.MotionEvent;
@@ -44,6 +45,8 @@ import org.thunderdog.challegram.loader.ImageFileLocal;
 import org.thunderdog.challegram.loader.Receiver;
 import org.thunderdog.challegram.loader.gif.GifFile;
 import org.thunderdog.challegram.loader.gif.GifReceiver;
+import org.thunderdog.challegram.mediaview.MediaViewController;
+import org.thunderdog.challegram.mediaview.data.MediaItem;
 import org.thunderdog.challegram.mediaview.disposable.DisposableMediaViewController;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.player.RoundVideoController;
@@ -56,6 +59,7 @@ import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Paints;
+import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Strings;
 import org.thunderdog.challegram.tool.UI;
@@ -67,6 +71,7 @@ import org.thunderdog.challegram.widget.FileProgressComponent;
 
 import java.io.File;
 
+import me.vkryl.android.ViewUtils;
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
@@ -130,6 +135,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     boolean allowStt = getChatId() != 0 && !TD.isSelfDestructTypeImmediately(getMessage()) && SttManager.isSupported();
     if (allowStt && stt == null) {
       stt = new SttBlock(this, this, STT_TEXT_GAP, STT_STATUS_ROW);
+      stt.setSubtitlesMode(true);
     }
     if (stt != null) {
       stt.setFile(allowStt ? videoNote.video : null, videoNote.duration, SttManager.MAX_VOICE_SECONDS, 0, true);
@@ -201,7 +207,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     if (StringUtils.isEmpty(durationStr) || this.duration != duration) {
       this.duration = duration;
       this.durationStr = Strings.buildDuration(duration);
-      this.durationWidth = U.measureText(durationStr, useBubbles() ? mTimeBubble() : mTime(false));
+      this.durationWidth = U.measureText(durationStr, mTimeBubble());
       if (compact && compactDurationText != null) {
         buildCompactDuration(compactDurationText.getMaxWidth());
         invalidate();
@@ -410,6 +416,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     boolean unmuted = state != TGPlayerController.STATE_NONE;
     if (!unmuted) {
       playProgress = -1f;
+      updateSubtitle(-1);
     }
     setUnmuted(unmuted);
     checkTrackListenerAttached();
@@ -426,6 +433,7 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
       if (compact) {
         invalidate();
       }
+      updateSubtitle(playPosition);
     }
   }
 
@@ -668,40 +676,75 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     int circleX;
     int contentWidth = (int) (durationWidth + Screen.dp(5f) * viewFactor);
     int textY = receiver.getBottom() - getBubbleTimePartHeight() - Screen.dp(8f);
-    boolean useBubbles = useBubbles();
-    // The transcription button goes at the bottom left of the round, the duration right after it
+    // Vibegram X: the duration always sits on a pill, as in Telegram for Android (without bubbles it had none)
+    textY -= Screen.dp(3.5f);
+    final int padding = Screen.dp(6f);
+    final RectF pill = Paints.getRectF();
+    pill.set(x - contentWidth - padding * 2, textY, x, textY + Screen.dp(21f));
+    final float pillLeft = pill.left, pillCy = pill.centerY();
+    // without bubbles there is no wallpaper: the same pill as over a bubble without a wallpaper
+    final int pillColor = useBubbles() ? getBubbleTimeColor() : Theme.getColor(ColorId.bubble_mediaTime_noWallpaper);
+    final int pillTextColor = useBubbles() ? getBubbleTimeTextColor() : Theme.getColor(ColorId.bubble_mediaTimeText_noWallpaper);
+    c.drawRoundRect(pill, Screen.dp(12f), Screen.dp(12f), Paints.fillingPaint(pillColor));
+    textY -= Screen.dp(1f);
+    c.drawText(durationStr, x - contentWidth - padding, textY + Screen.dp(15.5f), Paints.colorPaint(mTimeBubble(), pillTextColor));
+    circleX = x - Screen.dp(7f);
+
+    // Vibegram X: the transcription button sits on the same line as the duration, right at the edge of the round:
+    // to the right of an incoming round, to the left of an outgoing one (and of its duration)
     final boolean hasStt = hasStt();
     final float sttAlpha = hasStt ? (1f - unmuteFactor) : 0f;
-    final int sttSpace = hasStt ? Screen.dp(STT_ROUND_BUTTON + STT_ROUND_GAP) : 0;
     if (hasStt) {
-      int pillWidth = contentWidth + (useBubbles ? Screen.dp(6f) * 2 : 0);
-      x = Math.max(x, receiver.getLeft() + sttSpace + pillWidth);
-      int pillLeft = x - pillWidth;
-      float buttonCy = useBubbles ? textY - Screen.dp(3.5f) + Screen.dp(21f) / 2f : textY + Screen.dp(10.5f);
       if (sttAlpha > 0f) {
-        // same look as the duration next to it
-        stt.drawCircleButton(c, pillLeft - Screen.dp(STT_ROUND_GAP) - Screen.dp(STT_ROUND_BUTTON) / 2f, buttonCy, STT_ROUND_BUTTON,
-          useBubbles ? getBubbleTimeColor() : 0x40000000, useBubbles ? getBubbleTimeTextColor() : 0xffffffff, .75f, sttAlpha);
+        final float buttonRadius = Screen.dp(STT_ROUND_BUTTON) / 2f;
+        final float roundRadius = receiver.getWidth() / 2f;
+        final float distance = roundRadius + Screen.dp(STT_ROUND_GAP) + buttonRadius;
+        final float dy = Math.min(distance, Math.max(0f, pillCy - receiver.centerY()));
+        final float dx = (float) Math.sqrt(distance * distance - dy * dy);
+        float buttonCx = isOutgoingBubble() ?
+          Math.min(centerX - dx, pillLeft - Screen.dp(STT_ROUND_GAP) - buttonRadius) :
+          centerX + dx;
+        float buttonCy = pillCy;
+        final RectF time = sttTimeRect;
+        if (!isOutgoingBubble() && getBubbleTimePillBounds(view, time)) {
+          // the time of an incoming round sits on the same line at its lower right: the button goes after it,
+          // as in Telegram (to the right of the round, the time in between), or above it when there is no room
+          final float gap = Screen.dp(STT_ROUND_GAP);
+          if (buttonCx - buttonRadius - gap < time.right && buttonCx + buttonRadius + gap > time.left &&
+              buttonCy - buttonRadius < time.bottom && buttonCy + buttonRadius > time.top) {
+            final float afterTime = time.right + gap + buttonRadius;
+            if (afterTime + buttonRadius <= view.getMeasuredWidth() - Screen.dp(4f)) {
+              buttonCx = Math.max(buttonCx, afterTime);
+              buttonCy = time.centerY();
+            } else {
+              buttonCy = time.top - gap - buttonRadius;
+              final float upDy = Math.min(distance, Math.max(0f, buttonCy - receiver.centerY()));
+              buttonCx = centerX + (float) Math.sqrt(distance * distance - upDy * upDy);
+            }
+          }
+        }
+        stt.drawCircleButton(c, buttonCx, buttonCy, STT_ROUND_BUTTON, pillColor, pillTextColor, .75f, sttAlpha);
       } else {
         stt.clearButton();
       }
     }
-    if (useBubbles) {
-      textY -= Screen.dp(3.5f);
-      RectF rectF = Paints.getRectF();
-      int padding = Screen.dp(6f);
-      rectF.set(x - contentWidth - padding * 2, textY, x, textY + Screen.dp(21f));
-      c.drawRoundRect(rectF, Screen.dp(12f), Screen.dp(12f), Paints.fillingPaint(getBubbleTimeColor()));
-      textY -= Screen.dp(1f);
-      c.drawText(durationStr, x - contentWidth - padding, textY + Screen.dp(15.5f), Paints.colorPaint(mTimeBubble(), getBubbleTimeTextColor()));
-      circleX = x - Screen.dp(7f);
-    } else {
-      c.drawText(durationStr, x - contentWidth, textY + Screen.dp(15f), mTime(true));
-      circleX = x;
-    }
 
     if (viewFactor > 0f) {
-      c.drawCircle(circleX, textY + Screen.dp(11.5f), Screen.dp(1.5f), Paints.fillingPaint(ColorUtils.alphaColor(viewFactor, useBubbles ? 0xffffffff : Theme.getColor(ColorId.online))));
+      c.drawCircle(circleX, textY + Screen.dp(11.5f), Screen.dp(1.5f), Paints.fillingPaint(ColorUtils.alphaColor(viewFactor, pillTextColor)));
+    }
+
+    // Vibegram X: while the round plays (big, with sound) the full screen button takes the place of the muted icon
+    final float fullscreenAlpha = canOpenFullscreen() ? unmuteFactor : 0f;
+    this.fullscreenAlpha = fullscreenAlpha;
+    if (fullscreenAlpha > 0f) {
+      final float fullscreenRadius = Screen.dp(FULLSCREEN_BUTTON) / 2f;
+      drawFullscreenButton(view, c, centerX, receiver.getBottom() - fullscreenRadius - Screen.dp(8f), 0x40000000, 0xffffffff, fullscreenAlpha);
+    } else {
+      fullscreenRect.setEmpty();
+    }
+
+    if (unmuteFactor > 0f) {
+      drawSubtitle(c, receiver, unmuteFactor, fullscreenAlpha);
     }
 
     final boolean drawSpoiler = TD.isSelfDestructTypeImmediately(getMessage());
@@ -731,8 +774,128 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     }
   }
 
+  // Vibegram X: subtitles inside a playing round, from its on-device transcription.
+  // The phrase at the current position sits in the lower part of the circle, above the full screen button.
+
+  private static final float SUBTITLE_TEXT_SIZE = 15f, SUBTITLE_GAP = 8f;
+
+  private final org.thunderdog.challegram.widget.SubtitlePlate subtitle = new org.thunderdog.challegram.widget.SubtitlePlate(SUBTITLE_TEXT_SIZE);
+
+  private @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles () {
+    return !compact && stt != null ? stt.getSubtitles() : null;
+  }
+
+  /** @param positionMs position of the playing round, -1 when it does not play */
+  private void updateSubtitle (long positionMs) {
+    if (subtitle.update(positionMs >= 0 ? getSubtitles() : null, positionMs)) {
+      invalidateOverlay();
+    }
+  }
+
+  private void drawSubtitle (Canvas c, Receiver receiver, float unmuteFactor, float fullscreenAlpha) {
+    if (subtitle.isEmpty()) {
+      return;
+    }
+    final float radius = receiver.getWidth() / 2f;
+    final float centerX = receiver.centerX(), centerY = receiver.centerY();
+    // above the full screen button while it is shown, near the bottom of the circle otherwise
+    final float buttonSpace = Screen.dp(8f + FULLSCREEN_BUTTON + SUBTITLE_GAP) * fullscreenAlpha + Screen.dp(14f) * (1f - fullscreenAlpha);
+    final float bottom = receiver.getBottom() - buttonSpace;
+    // the plate must fit into the circle at its bottom edge, the narrowest part
+    final float dy = Math.max(0f, bottom - centerY);
+    final float chord = dy < radius ? 2f * (float) Math.sqrt(radius * radius - dy * dy) : 0f;
+    final int maxWidth = (int) Math.min(chord - Screen.dp(8f), radius * 1.5f + Screen.dp(20f));
+    if (subtitle.draw(c, centerX, bottom, maxWidth, unmuteFactor)) {
+      invalidateOverlay();
+    }
+  }
+
+  // Vibegram X: full screen button of a playing round
+
+  private float fullscreenAlpha;
+  private final RectF fullscreenRect = new RectF();
+  private boolean fullscreenPressed;
+
+  private boolean canOpenFullscreen () {
+    return !compact && Config.ROUND_VIDEOS_PLAYBACK_SUPPORTED && msg.content.getConstructor() == TdApi.MessageVideoNote.CONSTRUCTOR && !TD.isSelfDestructTypeImmediately(getMessage()) && !isSponsoredMessage() && !isEventLog();
+  }
+
+  private static final float FULLSCREEN_BUTTON = 32f;
+
+  private void drawFullscreenButton (MessageView view, Canvas c, float cx, float cy, int backgroundColor, int iconColor, float alpha) {
+    final float radius = Screen.dp(FULLSCREEN_BUTTON) / 2f;
+    fullscreenRect.set(cx - radius, cy - radius, cx + radius, cy + radius);
+    final float scale = .6f + .4f * alpha;
+    c.drawCircle(cx, cy, radius * scale, Paints.fillingPaint(ColorUtils.alphaColor(alpha, backgroundColor)));
+    Drawable icon = view.getSparseDrawable(R.drawable.vg_round_fullscreen_24, 0);
+    final int saveCount = Views.save(c);
+    final float iconScale = .75f * scale;
+    c.scale(iconScale, iconScale, cx, cy);
+    Paint paint = Paints.getPorterDuffPaint(iconColor);
+    paint.setAlpha((int) (255f * alpha * (Color.alpha(iconColor) / 255f)));
+    Drawables.draw(c, icon, cx - icon.getMinimumWidth() / 2f, cy - icon.getMinimumHeight() / 2f, paint);
+    paint.setAlpha(255);
+    Views.restore(c, saveCount);
+  }
+
+  private boolean onFullscreenTouchEvent (MessageView view, MotionEvent e) {
+    final float slop = Screen.dp(6f);
+    final boolean inside = e.getX() >= fullscreenRect.left - slop && e.getX() < fullscreenRect.right + slop && e.getY() >= fullscreenRect.top - slop && e.getY() < fullscreenRect.bottom + slop;
+    switch (e.getAction()) {
+      case MotionEvent.ACTION_DOWN: {
+        fullscreenPressed = fullscreenAlpha >= .5f && !fullscreenRect.isEmpty() && inside && canOpenFullscreen();
+        return fullscreenPressed;
+      }
+      case MotionEvent.ACTION_MOVE: {
+        return fullscreenPressed;
+      }
+      case MotionEvent.ACTION_UP: {
+        if (fullscreenPressed) {
+          fullscreenPressed = false;
+          if (inside && fullscreenAlpha >= .5f) {
+            ViewUtils.onClick(view);
+            openFullscreen();
+          }
+          return true;
+        }
+        return false;
+      }
+      case MotionEvent.ACTION_CANCEL: {
+        boolean wasPressed = fullscreenPressed;
+        fullscreenPressed = false;
+        return wasPressed;
+      }
+    }
+    return false;
+  }
+
+  private void openFullscreen () {
+    // The round stops and goes on as a regular video from the same place: sound, seek bar, rotation
+    final RoundVideoController round = context().getRoundVideoController();
+    final long position = round != null ? round.getPlaybackPosition(tdlib, msg) : -1;
+    final MediaItem item = MediaItem.valueOfRoundVideo(context(), tdlib, msg);
+    if (position > 0) {
+      item.setStartPosition(position);
+    }
+    tdlib.context().player().stopRoundPlayback(true);
+    MediaViewController.openRoundVideo(this, item);
+  }
+
+  /** The full screen player was closed while playing: the round goes on in the chat from the same place. */
+  public void continueAfterFullscreen (long positionMs) {
+    final RoundVideoController round = context().getRoundVideoController();
+    if (round == null || round.comparePlayingObject(tdlib, msg)) {
+      return;
+    }
+    round.setPendingStartPosition(msg, positionMs);
+    tdlib.context().player().playPauseMessage(tdlib, msg, manager);
+  }
+
   @Override
   public boolean onTouchEvent (MessageView view, MotionEvent e) {
+    if (onFullscreenTouchEvent(view, e)) {
+      return true;
+    }
     if (onSttTouchEvent(e)) {
       return true;
     }
@@ -760,16 +923,23 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
   }
 
   // Vibegram X: on-device transcription of video messages.
-  // A button at the bottom left of the round starts it; then the message turns into a bubble like a voice message:
-  // small round (plays in place), waveform, duration and the button (stop / collapse), the text under them.
-  // Collapsing turns it back into the round.
+  // The button next to the round starts it (the ring shows the progress, a tap stops it); when it is done the round
+  // plays with subtitles, and a later tap on the button plays it again. Only when the model gives no word times
+  // (Whisper) or the run failed, the message turns into a bubble like a voice message: small round (plays in place),
+  // waveform, duration and the button (collapse), the text under them. Collapsing turns it back into the round.
 
-  private static final float STT_ROUND_BUTTON = 28f, STT_ROUND_GAP = 4f;
+  private static final float STT_ROUND_BUTTON = 32f, STT_ROUND_GAP = 4f;
   private static final float STT_BUTTON_WIDTH = 34f, STT_BUTTON_HEIGHT = 28f, STT_BUTTON_GAP = 8f, STT_TEXT_GAP = 6f;
   private static final float STT_STATUS_ROW = 24f;
   private static final float COMPACT_PREVIEW_OFFSET = 12f, COMPACT_DURATION_GAP = 12f;
 
   private @Nullable SttBlock stt;
+  private final RectF sttTimeRect = new RectF();
+
+  /** Vibegram X: subtitles of the file for the full screen player, the same ones this message shows. */
+  public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSttSubtitles (int fileId) {
+    return stt != null ? stt.getSubtitles(fileId) : null;
+  }
 
   @Override
   public @Nullable String getTranscriptionText () {
@@ -796,8 +966,30 @@ public class TGMessageVideo extends TGMessage implements FileProgressComponent.S
     return stt != null && stt.isEnabled();
   }
 
+  /**
+   * The round turns into a bubble with the text only when the text has to be read: the model gave no word times
+   * (Whisper) or the transcription failed. Otherwise the result plays as subtitles inside the round.
+   */
   private boolean computeCompact () {
-    return hasStt() && stt.isOpen();
+    if (!hasStt() || !stt.isOpen()) {
+      return false;
+    }
+    switch (stt.getState()) {
+      case SttManager.STATE_DONE:
+        return stt.getSubtitles() == null;
+      case SttManager.STATE_FAILED:
+        return true;
+    }
+    return false;
+  }
+
+  @Override
+  public void onSttPlaySubtitles (SttBlock block) {
+    if (isDestroyed() || !isAttachedToView() || isUnmuted || !Config.ROUND_VIDEOS_PLAYBACK_SUPPORTED || TD.isSelfDestructTypeImmediately(getMessage())) {
+      // left the chat, scrolled away or already playing: the subtitles show up on the next playback
+      return;
+    }
+    tdlib.context().player().playPauseMessage(tdlib, msg, manager);
   }
 
   /**

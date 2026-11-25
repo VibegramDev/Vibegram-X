@@ -32,6 +32,10 @@ public interface ThemeDelegate {
    *   <li>the status bar gets no tint and dark icons in light themes;</li>
    *   <li>floating chat buttons (scroll down, mentions, reactions, collapsed mute bell, camera): secondaryContainer
    *   with an onSecondaryContainer icon (FAB: "Ensure the icon has a minimum 3:1 contrast ratio with the container").</li>
+   *   <li>the chat background without a wallpaper is surface too. Dark presets whose incoming bubble is the surface
+   *   color (Night Blue: TGX drew it on a darker chatBackground) get surfaceContainerHigh for it, as Monet does:
+   *   otherwise the bubbles merge with the chat.</li>
+   *   <li>the waveform of a voice message keeps its shape readable on its bubble ({@link M3#waveformColor}).</li>
    * </ul>
    * Custom themes keep the colors set in the theme editor over these roles ({@link ThemeCustom#getColor}).
    */
@@ -57,6 +61,19 @@ public interface ThemeDelegate {
         return getRoleColor(M3.SECONDARY_CONTAINER);
       case ColorId.circleButtonChatIcon:
         return getRoleColor(M3.ON_SECONDARY_CONTAINER);
+      case ColorId.bubbleIn_background: {
+        int color = getRawColor(colorId);
+        if (isDark() && (color | 0xFF000000) == getRoleColor(M3.SURFACE)) {
+          return getRoleColor(M3.SURFACE_CONTAINER_HIGH);
+        }
+        return color;
+      }
+      case ColorId.waveformActive:
+      case ColorId.waveformInactive:
+        return M3.waveformColor(getColor(ColorId.bubbleIn_background), getRawColor(ColorId.waveformActive), getRawColor(ColorId.waveformInactive), colorId == ColorId.waveformActive);
+      case ColorId.bubbleOut_waveformActive:
+      case ColorId.bubbleOut_waveformInactive:
+        return M3.waveformColor(getColor(ColorId.bubbleOut_background), getRawColor(ColorId.bubbleOut_waveformActive), getRawColor(ColorId.bubbleOut_waveformInactive), colorId == ColorId.bubbleOut_waveformActive);
     }
     return getRawColor(colorId);
   }

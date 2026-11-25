@@ -5,6 +5,7 @@
  *
  * The progress and the text recognized so far are reported while a long message is still processed:
  * whisper.cpp streams its segments, Parakeet gets the audio in chunks of up to a minute cut at pauses.
+ * Every engine also gives word times, which become the subtitles of a round video (SttSubtitles).
  */
 package org.thunderdog.challegram.stt;
 
@@ -16,6 +17,7 @@ import com.k2fsa.sherpa.onnx.FeatureConfig;
 import com.k2fsa.sherpa.onnx.OfflineModelConfig;
 import com.k2fsa.sherpa.onnx.OfflineRecognizer;
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig;
+import com.k2fsa.sherpa.onnx.OfflineRecognizerResult;
 import com.k2fsa.sherpa.onnx.OfflineStream;
 import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig;
 
@@ -37,7 +39,20 @@ public abstract class SttEngine {
 
   protected volatile boolean cancelled;
 
+  // Vibegram X: words with their times for the subtitles of a round video
+  protected final java.util.ArrayList<SttSubtitles.Word> words = new java.util.ArrayList<>();
+  /** Start of the chunk being recognized in the whole message. */
+  protected long chunkOffsetMs;
+
+  /** Subtitles of the last {@link #transcribe} call, null when the engine gives no times. Recognition thread. */
+  public @Nullable SttSubtitles takeSubtitles () {
+    SttSubtitles subtitles = SttSubtitles.build(words);
+    words.clear();
+    return subtitles;
+  }
+
   public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
+    words.clear();
     // chunk boundaries only: each chunk is copied right before it is recognized, so the whole message
     // never exists twice in memory
     int[] bounds = splitOnPauses(samples, maxChunkSeconds());
@@ -50,6 +65,7 @@ public abstract class SttEngine {
       final int chunkStart = bounds[index];
       final int chunkLength = bounds[index + 1] - chunkStart;
       float[] chunk = chunkStart == 0 && chunkLength == samples.length ? samples : java.util.Arrays.copyOfRange(samples, chunkStart, chunkStart + chunkLength);
+      chunkOffsetMs = chunkStart * 1000L / AudioDecoder.SAMPLE_RATE;
       String text = transcribeChunk(chunk, listener == null ? null : progress ->
         listener.onProgress((chunkStart + chunkLength * Math.max(0f, Math.min(1f, progress))) / (float) total)
       );
@@ -266,6 +282,8 @@ public abstract class SttEngine {
      */
     @Override
     public String transcribe (float[] samples, @Nullable Listener listener) throws IOException {
+      words.clear();
+      chunkOffsetMs = 0;
       final StringBuilder committed = new StringBuilder();
       String text = transcribeChunk(samples, listener == null ? null : new ChunkProgress() {
         @Override
@@ -357,13 +375,20 @@ public abstract class SttEngine {
         }
         throw new IOException("whisper.cpp failed");
       }
-      String decoded = new String(result, StandardCharsets.UTF_8);
+      // "language\ntext", then a 0 byte and the token records with times (see WhisperNative.transcribe)
+      int textLength = 0;
+      while (textLength < result.length && result[textLength] != 0) {
+        textLength++;
+      }
+      String decoded = new String(result, 0, textLength, StandardCharsets.UTF_8);
       int newLine = decoded.indexOf('\n');
       String text = (newLine >= 0 ? decoded.substring(newLine + 1) : decoded).trim();
-      if (text.equalsIgnoreCase(WHISPER_PROMPT)) {
-        // the prompt echoed back on silence
+      if (text.isEmpty() || text.equalsIgnoreCase(WHISPER_PROMPT)) {
+        // nothing recognized, or the prompt echoed back on silence: no words either
         return "";
       }
+      SttSubtitles.addWhisperWords(words, result, textLength + 1, chunkOffsetMs,
+        chunkOffsetMs + chunk.length * 1000L / AudioDecoder.SAMPLE_RATE, HALLUCINATION);
       return text;
     }
 
@@ -421,7 +446,9 @@ public abstract class SttEngine {
       try {
         stream.acceptWaveform(chunk, AudioDecoder.SAMPLE_RATE);
         recognizer.decode(stream);
-        return restoreUnknown(recognizer.getResult(stream).getText()).trim();
+        OfflineRecognizerResult result = recognizer.getResult(stream);
+        SttSubtitles.addWords(words, result.getTokens(), result.getTimestamps(), result.getDurations(), chunkOffsetMs);
+        return restoreUnknown(result.getText()).trim();
       } finally {
         stream.release();
       }

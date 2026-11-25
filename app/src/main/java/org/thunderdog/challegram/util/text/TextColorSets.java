@@ -280,6 +280,11 @@ public final class TextColorSets {
     }
 
     @Override
+    default int spoilerColor () {
+      return iconColor();
+    }
+
+    @Override
     default int clickableTextColorId (boolean isPressed) {
       return ColorId.bubbleOut_textLink;
     }

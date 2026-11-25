@@ -77,6 +77,7 @@ import org.thunderdog.challegram.core.Media;
 import org.thunderdog.challegram.data.InlineResult;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.data.TGMessage;
+import org.thunderdog.challegram.data.TGMessageVideo;
 import org.thunderdog.challegram.data.TGMessageMedia;
 import org.thunderdog.challegram.data.TGMessageText;
 import org.thunderdog.challegram.data.TGWebPage;
@@ -398,7 +399,31 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   }
 
   public MediaViewThumbLocation getCurrentTargetLocation () {
-    return delegate != null && !UI.isNavigationAnimating() ? delegate.getTargetLocation(stack.getCurrentIndex(), stack.getCurrent()) : null;
+    MediaViewThumbLocation location = delegate != null && !UI.isNavigationAnimating() ? delegate.getTargetLocation(stack.getCurrentIndex(), stack.getCurrent()) : null;
+    if (location != null) {
+      offsetToParentPane(location);
+    }
+    return location;
+  }
+
+  /**
+   * Vibegram X: delegates give the place of the thumb within the screen that opened the viewer. On a tablet that screen
+   * lies in the right pane, so the viewer grew out of the chat list on the left: move the place by the pane's offset
+   * (zero on a phone).
+   */
+  private void offsetToParentPane (MediaViewThumbLocation location) {
+    Args args = getArguments();
+    View parentView = args != null && args.parentController != null ? args.parentController.getWrapUnchecked() : null;
+    if (parentView == null || parentView.getWindowToken() == null) {
+      return;
+    }
+    int parentX = Views.getLocationInWindow(parentView)[0];
+    View selfView = getWrapUnchecked(); // not attached yet when opening: the viewer covers the whole window
+    int selfX = selfView != null && selfView.getWindowToken() != null ? Views.getLocationInWindow(selfView)[0] : 0;
+    int dx = parentX - selfX;
+    if (dx != 0) {
+      location.set(location.left + dx, location.top, location.right + dx, location.bottom);
+    }
   }
 
   // Appear animation
@@ -996,6 +1021,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
 
   @Override
   public boolean launchHideAnimation (PopupLayout popup, FactorAnimator ignored) {
+    continueRoundVideoIfPlaying();
     MediaViewThumbLocation location;
 
     if (forceAnimationType != -1) {
@@ -1537,6 +1563,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
 
   @Override
   public void onMediaChanged (int index, int estimatedTotalSize, MediaItem currentItem, boolean itemCountChanged) {
+    updateSubtitles(currentItem, -1);
     switch (mode) {
       case MODE_GALLERY: {
         checkView.setChecked(selectDelegate != null && selectDelegate.isMediaItemSelected(index, currentItem));
@@ -2042,6 +2069,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   }
 
   private void setHeaderVisibilityFactor (float factor) {
+    invalidateSubtitles();
     updateHeaderAlpha();
     updateCaptionAlpha();
     updateSliderAlpha();
@@ -3341,6 +3369,90 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     }
   }
 
+  // Vibegram X: subtitles of a video (or a round opened in full screen) from its on-device transcription.
+  // The phrase sits above the seek bar and the caption while they are shown, near the bottom edge otherwise.
+
+  private static final float SUBTITLES_TEXT_SIZE = 18f, SUBTITLES_GAP = 16f, SUBTITLES_MAX_WIDTH = 560f;
+
+  private @Nullable SubtitlesView subtitlesView;
+  private @Nullable MediaItem subtitlesItem;
+
+  private final class SubtitlesView extends View {
+    private final org.thunderdog.challegram.widget.SubtitlePlate plate = new org.thunderdog.challegram.widget.SubtitlePlate(SUBTITLES_TEXT_SIZE);
+
+    SubtitlesView (Context context) {
+      super(context);
+    }
+
+    @Override
+    protected void onDraw (Canvas c) {
+      final float alpha = 1f - pipFactor;
+      if (plate.isEmpty() || alpha <= 0f) {
+        return;
+      }
+      final float visible = headerVisible.getFloatValue() * alpha;
+      float controls = Screen.dp(56f) * videoFactor * visible;
+      if (Views.isValid(captionWrapView) && captionWrapView.getAlpha() > 0f) {
+        controls = Math.max(controls, (Screen.dp(56f) * videoFactor + captionWrapView.getHeight()) * captionWrapView.getAlpha());
+      }
+      final float bottom = getMeasuredHeight() - getBottomWrapMargin() - controls - Screen.dp(SUBTITLES_GAP);
+      final int maxWidth = Math.min(getMeasuredWidth() - Screen.dp(32f), Screen.dp(SUBTITLES_MAX_WIDTH));
+      if (plate.draw(c, getMeasuredWidth() / 2f, bottom, maxWidth, alpha)) {
+        invalidate();
+      }
+    }
+  }
+
+  private void invalidateSubtitles () {
+    if (subtitlesView != null && !subtitlesView.plate.isEmpty()) {
+      subtitlesView.invalidate();
+    }
+  }
+
+  /**
+   * Subtitles of the finished transcription of the item with the selected model, null when there are none.
+   * The message it was opened from is asked first, so the player shows exactly what the chat shows.
+   */
+  private static @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles (@Nullable MediaItem item) {
+    if (item == null || !(item.isVideo() || item.isRoundVideo()) || !org.thunderdog.challegram.stt.SttManager.isSupported()) {
+      return null;
+    }
+    TdApi.File file = item.getTargetFile();
+    if (file == null) {
+      return null;
+    }
+    TGMessage source = item.getSourceMessage();
+    org.thunderdog.challegram.stt.SttSubtitles subtitles = null;
+    if (source instanceof org.thunderdog.challegram.data.TGMessageVideo) {
+      subtitles = ((org.thunderdog.challegram.data.TGMessageVideo) source).getSttSubtitles(file.id);
+    } else if (source instanceof org.thunderdog.challegram.data.TGMessageMedia) {
+      subtitles = ((org.thunderdog.challegram.data.TGMessageMedia) source).getSttSubtitles(file.id);
+    }
+    if (subtitles != null) {
+      return subtitles;
+    }
+    org.thunderdog.challegram.stt.SttManager.Transcription t = org.thunderdog.challegram.stt.SttManager.instance().peekTranscription(
+      org.thunderdog.challegram.stt.SttManager.key(item.tdlib().id(), file.id)
+    );
+    return t != null && t.state == org.thunderdog.challegram.stt.SttManager.STATE_DONE ? t.subtitles : null;
+  }
+
+  /** @param positionMs position of the playing video, -1 when another item became current */
+  private void updateSubtitles (@Nullable MediaItem item, long positionMs) {
+    if (subtitlesView == null) {
+      return;
+    }
+    if (subtitlesItem != item) {
+      subtitlesItem = item;
+      subtitlesView.plate.reset();
+      subtitlesView.invalidate();
+    }
+    if (subtitlesView.plate.update(getSubtitles(item), positionMs) || !subtitlesView.plate.isEmpty()) {
+      // the controls above may move while it plays
+      subtitlesView.invalidate();
+    }
+  }
+
   @Override
   public void onPlayStarted (MediaItem item, boolean isPlaying) {
     if (videoSliderView != null && stack.getCurrent() == item) {
@@ -3384,6 +3496,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     if (this.videoFactor != factor) {
       this.videoFactor = factor;
       checkBottomComponentOffsets();
+      invalidateSubtitles();
       if (videoSliderView != null) {
         videoSliderView.setInnerAlpha(factor);
         updateBottomSpaceAlpha();
@@ -3433,6 +3546,9 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   public void onSeekProgress (MediaItem item, long nowMs, long durationMs, float progress) {
     if (stack.getCurrent() == item && videoSliderView != null) {
       videoSliderView.updateSeek(nowMs, durationMs, progress);
+    }
+    if (stack.getCurrent() == item) {
+      updateSubtitles(item, nowMs);
     }
   }
 
@@ -5332,6 +5448,15 @@ public class MediaViewController extends ViewController<MediaViewController.Args
         videoSliderView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         videoSliderView.setSlideEnabled(stack.getCurrent().canSeekVideo());
         bottomWrap.addView(videoSliderView);
+
+        subtitlesView = new SubtitlesView(context);
+        subtitlesView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !Config.DISABLE_VIEWER_ELEVATION) {
+          // above the media view (2dp), the same as the controls; no background, so no shadow
+          subtitlesView.setOutlineProvider(null);
+          subtitlesView.setElevation(Screen.dp(3f));
+        }
+        contentView.addView(subtitlesView);
 
         contentView.addView(bottomWrap);
 
@@ -8404,6 +8529,37 @@ public class MediaViewController extends ViewController<MediaViewController.Args
       delegate.modifyMediaArguments(stack, args);
     }
 
+    openWithArgs(context, args);
+  }
+
+  /** Vibegram X: a round video in full screen, alone (no other media of the chat around it). */
+  /** A round video closed while playing goes on in the chat from the same place. */
+  private void continueRoundVideoIfPlaying () {
+    final MediaItem item = stack != null ? stack.getCurrent() : null;
+    final MediaCellView cell = mediaView != null ? mediaView.getBaseCell() : null;
+    if (item == null || !item.isRoundVideo() || cell == null || !cell.isPlaying() || !(item.getSourceMessage() instanceof TGMessageVideo)) {
+      return;
+    }
+    final long position = cell.getTimeNow();
+    cell.pauseIfPlaying();
+    ((TGMessageVideo) item.getSourceMessage()).continueAfterFullscreen(Math.max(0, position));
+  }
+
+  public static void openRoundVideo (TGMessage message, MediaItem item) {
+    ViewController<?> context = message.controller();
+    if (context.isStackLocked()) {
+      return;
+    }
+    item.setSourceMessage(message);
+    MediaStack stack = new MediaStack(context.context(), context.tdlib());
+    stack.set(item);
+    Args args = new Args(context, MODE_MESSAGES, stack);
+    args.reverseMode = true;
+    if (context instanceof MediaCollectorDelegate) {
+      ((MediaCollectorDelegate) context).modifyMediaArguments(message, args);
+    }
+    args.noLoadMore = true;
+    args.areOnlyScheduled = message.isScheduled();
     openWithArgs(context, args);
   }
 

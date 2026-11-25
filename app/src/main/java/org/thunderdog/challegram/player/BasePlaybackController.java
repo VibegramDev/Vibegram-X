@@ -47,6 +47,11 @@ public abstract class BasePlaybackController implements TGPlayerController.Track
     return this.tdlib != null && this.tdlib == tdlib && this.object != null && this.object.chatId == object.chatId && this.object.id == object.id && TD.getFileId(this.object) == TD.getFileId(object);
   }
 
+  /** Vibegram: for diagnostics. */
+  public final boolean isControllerDestroyed () {
+    return isDestroyed;
+  }
+
   protected final void destroy () {
     isDestroyed = true;
     if (object != null) {

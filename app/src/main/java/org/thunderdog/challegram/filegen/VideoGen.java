@@ -314,7 +314,13 @@ public class VideoGen {
           if (!entry.canceled.get() && sendOriginalInCaseFileSizeGrows) {
             sendOriginal(info, entry);
           } else {
-            tdlib.filegen().failGeneration(info, -1, Lang.getString(R.string.SendVideoError));
+            String error = Lang.getString(R.string.SendVideoError);
+            if (info.isRoundVideo()) {
+              // Vibegram: the generic text says nothing about why a round could not be re-encoded to fit
+              // Telegram's 10 MB: name the failing stage and codec right in the failed message.
+              error = error + " (" + describeRoundFailure(t) + ")";
+            }
+            tdlib.filegen().failGeneration(info, -1, error);
             entries.remove(destinationPath);
           }
         }
@@ -328,6 +334,44 @@ public class VideoGen {
     }
 
     awaitOrConvertVideo(sourcePath, destinationPath, info, entry, onProgress, onComplete, onCancel, onFailure);
+  }
+
+  /** Vibegram: why a round video re-encoding failed, short enough for the failed message: error code, codec, codec error. */
+  private static String describeRoundFailure (@Nullable Throwable t) {
+    if (t == null) {
+      return "no error";
+    }
+    StringBuilder b = new StringBuilder();
+    if (t instanceof ExportException) {
+      ExportException e = (ExportException) t;
+      b.append(e.getErrorCodeName());
+      if (e.codecInfo != null) {
+        b.append(", ")
+          .append(e.codecInfo.isVideo ? "video " : "audio ")
+          .append(e.codecInfo.isDecoder ? "decoder " : "encoder ")
+          .append(e.codecInfo.name);
+      }
+    }
+    Throwable cause = t;
+    while (cause.getCause() != null && cause.getCause() != cause) {
+      cause = cause.getCause();
+    }
+    if (cause != t || !(t instanceof ExportException)) {
+      if (b.length() > 0) {
+        b.append(": ");
+      }
+      b.append(cause.getClass().getSimpleName());
+      String message;
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && cause instanceof android.media.MediaCodec.CodecException) {
+        message = ((android.media.MediaCodec.CodecException) cause).getDiagnosticInfo();
+      } else {
+        message = cause.getMessage();
+      }
+      if (!StringUtils.isEmpty(message)) {
+        b.append(' ').append(message.length() > 160 ? message.substring(0, 160) + "…" : message);
+      }
+    }
+    return b.toString();
   }
 
   private final AtomicInteger runningVideoGenerations = new AtomicInteger();

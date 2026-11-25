@@ -1,6 +1,6 @@
 /*
  * Vibegram X: Settings → Voice transcription. Lists the speech recognition models with their size and quality,
- * downloads, deletes and selects them, and credits the authors of the models and engines.
+ * downloads, deletes and selects them; the authors of the models and the engines are on their own pages.
  */
 package org.thunderdog.challegram.ui;
 
@@ -20,7 +20,6 @@ import org.thunderdog.challegram.stt.SttManager;
 import org.thunderdog.challegram.stt.SttModel;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.telegram.Tdlib;
-import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
@@ -62,8 +61,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
           boolean selected = manager.getSelectedModel() == model && manager.isDownloaded(model);
           view.findRadioView().setChecked(selected, isUpdate);
           bindModelRow(view, model);
-        } else if (item.getId() == R.id.btn_vgSttCredit) {
-          view.setData(((SttModel.Credit) item.getData()).displayUrl());
         }
       }
     };
@@ -71,12 +68,16 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
     ArrayList<ListItem> items = new ArrayList<>();
     items.add(new ListItem(ListItem.TYPE_DESCRIPTION, 0, 0, R.string.vg_SttDescription));
 
-    // One radio group in two sections: the Russian-only model on top, the multilingual ones below.
-    addModels(items, R.string.vg_SttRussianHeader, true);
+    // One radio group in two sections: the multilingual models on top, the Russian-only one below.
     addModels(items, R.string.vg_SttMultilingualHeader, false);
+    addModels(items, R.string.vg_SttRussianHeader, true);
 
-    addCredits(items, R.string.vg_SttCreditsModels, SttModel.MODEL_CREDITS);
-    addCredits(items, R.string.vg_SttCreditsEngines, SttModel.ENGINE_CREDITS);
+    // Credits: each list on its own page.
+    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgSttModelCredits, R.drawable.baseline_group_24, R.string.vg_SttCreditsModels));
+    items.add(new ListItem(ListItem.TYPE_SEPARATOR));
+    items.add(new ListItem(ListItem.TYPE_SETTING, R.id.btn_vgSttEngineCredits, R.drawable.baseline_build_24, R.string.vg_SttCreditsEngines));
+    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
 
     adapter.setItems(items, false);
     recyclerView.setAdapter(adapter);
@@ -96,20 +97,6 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
       }
       first = false;
       items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT_WITH_RADIO, R.id.btn_vgSttModel, 0, model.title, false).setData(model));
-    }
-    items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
-  }
-
-  private static void addCredits (ArrayList<ListItem> items, int headerRes, SttModel.Credit[] credits) {
-    items.add(new ListItem(ListItem.TYPE_HEADER, 0, 0, headerRes));
-    items.add(new ListItem(ListItem.TYPE_SHADOW_TOP));
-    for (int i = 0; i < credits.length; i++) {
-      if (i > 0) {
-        items.add(new ListItem(ListItem.TYPE_SEPARATOR));
-      }
-      SttModel.Credit credit = credits[i];
-      int icon = credit.github ? R.drawable.baseline_github_24 : R.drawable.baseline_open_in_browser_24;
-      items.add(new ListItem(ListItem.TYPE_VALUED_SETTING_COMPACT, R.id.btn_vgSttCredit, icon, credit.title, false).setData(credit));
     }
     items.add(new ListItem(ListItem.TYPE_SHADOW_BOTTOM));
   }
@@ -313,9 +300,10 @@ public class SettingsVoiceTranscriptionController extends RecyclerViewController
 
   @Override
   public void onClick (View v) {
-    if (v.getId() == R.id.btn_vgSttCredit) {
-      SttModel.Credit credit = (SttModel.Credit) ((ListItem) v.getTag()).getData();
-      tdlib.ui().openUrl(this, credit.url, new TdlibUi.UrlOpenParameters().disableInstantView());
+    if (v.getId() == R.id.btn_vgSttModelCredits || v.getId() == R.id.btn_vgSttEngineCredits) {
+      SettingsVoiceTranscriptionCreditsController c = new SettingsVoiceTranscriptionCreditsController(context, tdlib);
+      c.setArguments(v.getId() == R.id.btn_vgSttModelCredits);
+      navigateTo(c);
       return;
     }
     if (v.getId() != R.id.btn_vgSttModel) {

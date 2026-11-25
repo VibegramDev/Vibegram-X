@@ -29,6 +29,12 @@ public interface TextColorSet {
     return defaultTextColor();
   }
 
+  /** Vibegram: colour of hidden (spoiler) text particles; text colour, outgoing bubbles use the time colour (official app). */
+  @ColorInt
+  default int spoilerColor () {
+    return defaultTextColor();
+  }
+
   default long mediaTextComplexColor () {
     return Theme.newComplexColor(false, defaultTextColor());
   }

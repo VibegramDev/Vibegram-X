@@ -158,6 +158,8 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
 
   private int textLeft;
   private int timeLeft;
+  /** Left of the time with the pill of a pinned chat. */
+  private int timeBlockLeft;
   private int muteLeft, verifyLeft;
   private int emojiStatusLeft;
   private int checkRight;
@@ -590,6 +592,10 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
     if (getChatId() == chatId) {
       TdApi.ChatPosition prevPosition = ChatPosition.findPosition(chat, chatList);
       if (Tdlib.updateChatPosition(chat, position) && Td.equalsTo(chatList, position.list)) {
+        if (pinStateChanged && currentWidth > 0) {
+          layoutTime();
+          layoutTitle(false);
+        }
         if (sourceChanged) {
           setTime();
           setCounter(true);
@@ -611,6 +617,39 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   public boolean isPinned () {
     TdApi.ChatPosition position = getPosition();
     return position != null && position.isPinned;
+  }
+
+  /**
+   * Vibegram X: a gap with shadows splits the archive row and promoted chats (proxy sponsor, announcements) from the
+   * rest of the list. Pinned chats go on without a gap: they are marked with a pin by the time instead ({@link #showTimePin()}).
+   */
+  public static boolean needGroupSplit (TGChat a, TGChat b) {
+    return a.isArchive() != b.isArchive() || (a.getSource() != null) != (b.getSource() != null);
+  }
+
+  /**
+   * Vibegram X: the time of a pinned chat goes into a pill with a pin before it, as in Telegram for Android
+   * (DialogCell: dialogs_pinnedDrawable2 + a round rect of the time colour), so the pin stays visible next to
+   * the unread counter.
+   */
+  public boolean showTimePin () {
+    boolean pinned = forumTopic != null ? forumTopic.isPinned : isPinned();
+    return pinned && !isArchive() && time != null && !time.isEmpty();
+  }
+
+  /** The pill of a pinned chat takes the accent colour while the chat has unread messages and is not muted (Telegram: drawCount && !isCounterMuted). */
+  public boolean needAccentTimePin () {
+    int unreadCount = getUnreadCount();
+    return (unreadCount > 0 || unreadCount == Tdlib.CHAT_MARKED_AS_UNREAD || hasUnreadMentions()) && notificationsEnabled();
+  }
+
+  /** Space of the pill besides the time: the pin before it and the padding after. */
+  public static int getTimePinStart () {
+    return Screen.dp(20f);
+  }
+
+  public static int getTimePinEnd () {
+    return Screen.dp(6f);
   }
 
   public boolean isPinnedOrSpecial () {
@@ -1114,7 +1153,7 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   private int lastAvailWidth = -1;
 
   public void layoutTitle (boolean changed) {
-    int avail = currentWidth - ChatView.getLeftPadding(listMode) - timeWidth - ChatView.getTimePaddingRight() - ChatView.getTimePaddingLeft();
+    int avail = currentWidth - ChatView.getLeftPadding(listMode) - (currentWidth - timeBlockLeft) - ChatView.getTimePaddingLeft();
     final boolean isSecret = isSecretChat();
     if (showMute()) {
       avail = avail - ChatView.getMuteOffset() - Icons.getChatMuteDrawableWidth();
@@ -1322,13 +1361,24 @@ public class TGChat implements TdlibStatusManager.HelperTarget, ContentPreview.R
   }
 
   private void layoutTime () {
-    timeLeft = currentWidth - ChatView.getTimePaddingRight() - timeWidth;
-    checkRight = timeLeft - ChatView.getTimePaddingLeft();
+    if (showTimePin()) {
+      // As in Telegram: the pill ends 2dp past the usual end of the time, the time moves 4dp left within it
+      timeLeft = currentWidth - ChatView.getTimePaddingRight() + Screen.dp(2f) - getTimePinEnd() - timeWidth;
+      timeBlockLeft = timeLeft - getTimePinStart();
+    } else {
+      timeLeft = currentWidth - ChatView.getTimePaddingRight() - timeWidth;
+      timeBlockLeft = timeLeft;
+    }
+    checkRight = timeBlockLeft - ChatView.getTimePaddingLeft();
     reactionsRight = checkRight - ChatView.getTimePaddingLeft();
   }
 
   public String getTime () {
     return time;
+  }
+
+  public int getTimeBlockLeft () {
+    return timeBlockLeft;
   }
 
   public int getTimeLeft () {

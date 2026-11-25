@@ -1077,7 +1077,8 @@ public class RecordAudioVideoController implements
     durationView.reset();
     lockView.setCollapseFactor(0f);
     disposableSwitchButton.setActive(false, false);
-    disposableSwitchButton.setVisibility(canSendSelfDestructMessages() ? View.VISIBLE : View.GONE);
+    // Dictation only types text: nothing is sent, so there is nothing to make view-once.
+    disposableSwitchButton.setVisibility(canSendSelfDestructMessages() && !dictating ? View.VISIBLE : View.GONE);
     recordBackground.setVolume(0f, false);
     editAnimator.setValue(false, false);
     videoPreviewView.performDestroy();
@@ -1917,7 +1918,9 @@ public class RecordAudioVideoController implements
         return;
       }
 
-      ownedCamera.getLegacyManager().setUseRoundRender(false);
+      // Continue with the same camera, lens and zoom: a new renderer only, on the same backend
+      ownedCamera.getLegacyManager().restartRoundRenderer();
+      ownedCamera.getLegacyManager().setOpenZoomRatio(pausedZoomRatio);
 
       setRecordModeImpl(RECORD_MODE_NONE);
       resetRoundState();
@@ -1932,7 +1935,9 @@ public class RecordAudioVideoController implements
       resetRoundState();
       isCameraReady = false;
 
+      resumingRound = true;
       prepareVideoRecording();
+      resumingRound = false;
       attachZoomBar();
     }
     setRecordMode(mode, true);
@@ -2024,8 +2029,16 @@ public class RecordAudioVideoController implements
 
   // Video record impl
 
+  /** A round continued after a pause: its camera stays as it was. */
+  private boolean resumingRound;
+  /** Zoom of the recording stopped for the preview, the continued one starts with it (the same lens). */
+  private float pausedZoomRatio;
+
   private void setupCamera (boolean isOwned) {
-    ownedCamera.getManager().setPreferFrontFacingCamera(!Settings.instance().startRoundWithRear() && isOwned);
+    if (!resumingRound) {
+      // The camera keeps its index (switched or not) while the preference stays: the order of cameras must not change.
+      ownedCamera.getManager().setPreferFrontFacingCamera(!Settings.instance().startRoundWithRear() && isOwned);
+    }
     // Vibegram: the round quality (settings, 0 = max) decides which camera stream is needed.
     int roundMaxResolution = 0;
     if (isOwned) {
@@ -2171,6 +2184,7 @@ public class RecordAudioVideoController implements
       throw new IllegalStateException();
     this.recordingRoundVideo = false;
     this.roundCloseMode = closeMode;
+    this.pausedZoomRatio = closeMode == CLOSE_MODE_PREVIEW || closeMode == CLOSE_MODE_PREVIEW_SCHEDULE ? zoomBar.getRatio() : 0f;
     final boolean needResult = closeMode != CLOSE_MODE_CANCEL;
     if (ownedCamera == null) {
       throw new RuntimeException(releasedTrace);
@@ -2369,8 +2383,12 @@ public class RecordAudioVideoController implements
     if (StringUtils.equalsOrBothEmpty(roundKey, key)) {
       boolean success = resultFileSize > 0;
       if (awaitingRoundResult()) {
-        if (success) {
-          this.savedRoundDurationSeconds += (int) resultFileDurationUnit.toSeconds(resultFileDuration);
+        // A part recorded after a pause that failed keeps what was recorded before it:
+        // finishFileGeneration() then takes the previous file as is, instead of a preview waiting forever.
+        if (success || prevVideoPath != null) {
+          if (success) {
+            this.savedRoundDurationSeconds += (int) resultFileDurationUnit.toSeconds(resultFileDuration);
+          }
           if (roundCloseMode == CLOSE_MODE_PREVIEW || roundCloseMode == CLOSE_MODE_PREVIEW_SCHEDULE) {
             awaitRoundVideo();
             finishFileGeneration(resultFileSize, null);

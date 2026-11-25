@@ -41,6 +41,23 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     void onSttStateChanged (SttBlock block);
     /** Only the button needs redrawing (the progress ring turns). */
     void onSttInvalidate (SttBlock block);
+    /** Subtitles mode: the transcription is ready (or its button was tapped again), play the video with them. UI thread. */
+    default void onSttPlaySubtitles (SttBlock block) { }
+  }
+
+  /**
+   * Video notes and videos: the result is shown as subtitles over the playing video instead of a text under it.
+   * The button starts the transcription (only the ring on the button shows the progress), then the video plays;
+   * a failed run (or a result without word times) falls back to the text.
+   */
+  private boolean subtitlesMode;
+
+  public void setSubtitlesMode (boolean subtitlesMode) {
+    this.subtitlesMode = subtitlesMode;
+  }
+
+  private boolean playsSubtitles () {
+    return subtitlesMode && getSubtitles() != null;
   }
 
   private static final long FRAME_DELAY_MS = 33; // 30 frames per second are enough for the ring and leave the CPU to the recognition
@@ -111,7 +128,7 @@ public final class SttBlock implements SttManager.TranscriptionListener {
    * @return true when the key changed
    */
   public boolean setFile (@Nullable TdApi.File file, int durationSeconds, int maxSeconds, @StringRes int tooLongRes, boolean marksRead) {
-    String newKey = file != null && SttManager.isSupported() ? SttManager.key(file.id, file.remote != null ? file.remote.uniqueId : null) : null;
+    String newKey = file != null && SttManager.isSupported() ? SttManager.key(message.tdlib().id(), file.id) : null;
     this.file = newKey != null ? file : null;
     this.durationSeconds = durationSeconds;
     this.maxSeconds = maxSeconds;
@@ -174,6 +191,17 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     return getState() == SttManager.STATE_RUNNING;
   }
 
+  /** Subtitles for a player of the file with this id: the same ones the message shows, null when there are none. */
+  public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles (int fileId) {
+    return file != null && file.id == fileId ? getSubtitles() : null;
+  }
+
+  /** Timed phrases of the finished transcription, null when there are none. */
+  public @Nullable org.thunderdog.challegram.stt.SttSubtitles getSubtitles () {
+    SttManager.Transcription t = transcription;
+    return t != null && t.state == SttManager.STATE_DONE ? t.subtitles : null;
+  }
+
   public boolean isExpanded () {
     SttManager.Transcription t = transcription;
     return t != null && t.expanded;
@@ -197,6 +225,9 @@ public final class SttBlock implements SttManager.TranscriptionListener {
   /** The finished result (or the error) is shown: the button collapses it. */
   private boolean isResultShown () {
     int state = getState();
+    if (state == SttManager.STATE_DONE && playsSubtitles()) {
+      return false;
+    }
     return isExpanded() && (state == SttManager.STATE_DONE || state == SttManager.STATE_FAILED);
   }
 
@@ -209,9 +240,13 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     }
     switch (t.state) {
       case SttManager.STATE_RUNNING:
-        // text recognized so far; the status goes into its own row
-        return StringUtils.isEmpty(t.text) ? null : t.text;
+        // text recognized so far; the status goes into its own row. Subtitles mode: only the ring on the button
+        return subtitlesMode || StringUtils.isEmpty(t.text) ? null : t.text;
       case SttManager.STATE_DONE:
+        if (playsSubtitles()) {
+          // the video plays with them instead
+          return null;
+        }
         return StringUtils.isEmpty(t.text) ? Lang.getString(R.string.vg_SttEmpty) : t.text;
       case SttManager.STATE_FAILED:
         return Lang.getString(R.string.vg_SttFailed);
@@ -221,7 +256,7 @@ public final class SttBlock implements SttManager.TranscriptionListener {
 
   private int computeStatusCode () {
     SttManager.Transcription t = transcription;
-    if (t == null || !t.expanded || t.state != SttManager.STATE_RUNNING) {
+    if (t == null || !t.expanded || t.state != SttManager.STATE_RUNNING || subtitlesMode) {
       return STATUS_NONE;
     }
     float progress = t.getDisplayProgress();
@@ -315,9 +350,15 @@ public final class SttBlock implements SttManager.TranscriptionListener {
 
   // Button
 
-  private static Drawable sttIcon, collapseIcon;
+  private static Drawable sttIcon, subtitlesIcon, collapseIcon;
 
-  private static Drawable sttIcon () {
+  private Drawable sttIcon () {
+    if (subtitlesMode) {
+      if (subtitlesIcon == null) {
+        subtitlesIcon = Drawables.get(R.drawable.vg_subtitles_24);
+      }
+      return subtitlesIcon;
+    }
     if (sttIcon == null) {
       sttIcon = Drawables.get(R.drawable.vg_speech_to_text_24);
     }
@@ -457,6 +498,10 @@ public final class SttBlock implements SttManager.TranscriptionListener {
       manager.cancelTranscription(key);
       return;
     }
+    if (state == SttManager.STATE_DONE && playsSubtitles()) {
+      host.onSttPlaySubtitles(this);
+      return;
+    }
     if (state == SttManager.STATE_DONE || state == SttManager.STATE_FAILED) {
       if (state == SttManager.STATE_FAILED && !expanded) {
         start();
@@ -494,7 +539,24 @@ public final class SttBlock implements SttManager.TranscriptionListener {
     // the message object outlives its views, so the mark is applied even after scrolling away
     final TGMessage message = this.message;
     final boolean marksRead = this.marksRead;
-    boolean started = SttManager.instance().transcribe(message.tdlib(), file, key, maxSeconds, marksRead ? () -> markRead(message) : null);
+    final Runnable onDone;
+    if (subtitlesMode) {
+      onDone = () -> {
+        if (destroyed) {
+          return;
+        }
+        refreshTranscription();
+        if (playsSubtitles()) {
+          // watching the round with subtitles marks it as viewed by itself
+          host.onSttPlaySubtitles(this);
+        } else if (marksRead) {
+          markRead(message);
+        }
+      };
+    } else {
+      onDone = marksRead ? () -> markRead(message) : null;
+    }
+    boolean started = SttManager.instance().transcribe(message.tdlib(), file, key, maxSeconds, onDone);
     if (!started) {
       UI.showToast(R.string.vg_SttNoModel, android.widget.Toast.LENGTH_SHORT);
       message.controller().navigateTo(new SettingsVoiceTranscriptionController(message.controller().context(), message.tdlib()));

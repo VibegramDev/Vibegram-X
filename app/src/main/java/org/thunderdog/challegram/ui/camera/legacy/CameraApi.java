@@ -310,6 +310,13 @@ public abstract class CameraApi {
   protected volatile float mZoomTarget;
   /** Set before reopening the same camera (lens lock): {@link #setZoomCapabilities} keeps this ratio instead of 1×. */
   protected float mKeepZoomRatio;
+  /** The ratio the next opened camera starts with instead of 1× (a round continued after a pause), 0 = none. */
+  private volatile float mOpenZoomRatio;
+
+  /** Any thread. The next camera opened starts at this ratio (clamped to its range) instead of 1×; used once. */
+  public final void setOpenZoomRatio (float ratio) {
+    mOpenZoomRatio = ratio;
+  }
 
   /** Camera thread: the ratio to apply for a requested one (Camera2 lens lock: the target when it is on another lens). */
   protected float resolveZoomRatio (float ratio, float target) {
@@ -372,6 +379,10 @@ public abstract class CameraApi {
     mZoomStops = stops;
     float keep = mKeepZoomRatio;
     mKeepZoomRatio = 0f;
+    if (keep <= 0f && maxRatio > minRatio) {
+      // A camera is being opened (closing reports 1..1): start where the paused recording was
+      keep = mOpenZoomRatio;
+    }
     if (keep > 0f) {
       // The same camera reopened on another lens: the zoom stays, no jump to 1× and back
       mZoomRatio = Math.max(minRatio, Math.min(maxRatio, keep));
@@ -1145,6 +1156,8 @@ public abstract class CameraApi {
         } catch (Throwable t) {
           Log.w(Log.TAG_CAMERA, "Cannot prepare camera", t);
         }
+        // Used by setZoomCapabilities() of this opening only
+        mOpenZoomRatio = 0f;
         if (success) {
           try {
             SurfaceTexture surface;

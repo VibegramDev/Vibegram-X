@@ -289,15 +289,117 @@ static jmethodID findMethod (JNIEnv * env, jclass cls, const char * name, const 
   return method;
 }
 
-/** "language\ntext" in UTF-8 */
-static jbyteArray recognizedText (JNIEnv * env, whisper_context * ctx) {
+static void putInt32 (std::string & out, int32_t value) {
+  const auto v = (uint32_t) value;
+  out += (char) (v & 0xff);
+  out += (char) ((v >> 8) & 0xff);
+  out += (char) ((v >> 16) & 0xff);
+  out += (char) ((v >> 24) & 0xff);
+}
+
+static void putUint16 (std::string & out, uint16_t value) {
+  out += (char) (value & 0xff);
+  out += (char) (value >> 8);
+}
+
+/**
+ * Times of the text tokens of one segment, in 10 ms units of the whole audio.
+ * whisper.cpp's estimate (token_timestamps) is rough: the first token may get 0 or the time of the
+ * previous segment, short tokens get t0 == t1. Times are kept inside the segment and the audio,
+ * made non-decreasing, and a token without a duration ends where the next one starts.
+ */
+static void tokenTimes (whisper_context * ctx, int segment, int duration, std::vector<whisper_token_data> & tokens) {
+  int64_t segmentStart = whisper_full_get_segment_t0(ctx, segment);
+  int64_t segmentEnd = whisper_full_get_segment_t1(ctx, segment);
+  segmentStart = std::max<int64_t>(0, std::min<int64_t>(segmentStart, duration));
+  segmentEnd = std::max(segmentStart, std::min<int64_t>(segmentEnd, duration));
+  const size_t n = tokens.size();
+  // a time outside the segment is unknown (-1)
+  for (auto & token : tokens) {
+    if (token.t0 < segmentStart || token.t0 > segmentEnd) {
+      token.t0 = -1;
+    }
+    if (token.t1 < segmentStart || token.t1 > segmentEnd) {
+      token.t1 = -1;
+    }
+  }
+  if (n > 0 && tokens[0].t0 < 0) {
+    tokens[0].t0 = segmentStart;
+  }
+  // unknown starts: evenly between the known neighbours
+  for (size_t i = 1; i < n; ) {
+    if (tokens[i].t0 >= 0) {
+      tokens[i].t0 = std::max(tokens[i].t0, tokens[i - 1].t0);
+      i++;
+      continue;
+    }
+    size_t j = i;
+    while (j < n && tokens[j].t0 < 0) {
+      j++;
+    }
+    const int64_t from = tokens[i - 1].t0;
+    const int64_t to = j < n ? std::max(tokens[j].t0, from) : std::max(segmentEnd, from);
+    for (size_t k = i; k < j; k++) {
+      tokens[k].t0 = from + (to - from) * (int64_t) (k - i + 1) / (int64_t) (j - i + 1);
+    }
+    i = j;
+  }
+  for (size_t i = 0; i < n; i++) {
+    const int64_t next = i + 1 < n ? tokens[i + 1].t0 : segmentEnd;
+    if (tokens[i].t1 <= tokens[i].t0) {
+      tokens[i].t1 = std::max(next, tokens[i].t0);
+    }
+    if (i + 1 < n) {
+      tokens[i].t1 = std::min(tokens[i].t1, std::max(next, tokens[i].t0));
+    }
+  }
+}
+
+/**
+ * "language\ntext" in UTF-8, then a 0 byte and the text tokens of the same segments for subtitles,
+ * one record each (little-endian): int32 t0, int32 t1 (10 ms units from the start of the audio),
+ * uint16 segment index, uint16 byte length, the token bytes. A token may end in the middle of a
+ * UTF-8 character, the reader joins the bytes of a word before decoding them.
+ */
+static jbyteArray recognizedText (JNIEnv * env, whisper_context * ctx, int duration) {
   const char * language = whisper_lang_str(whisper_full_lang_id(ctx));
   std::string result = language != nullptr ? language : "";
   result += '\n';
   const int segmentCount = whisper_full_n_segments(ctx);
+  std::vector<bool> speech(segmentCount);
   for (int i = 0; i < segmentCount; i++) {
-    if (isSpeech(ctx, i)) {
+    speech[i] = isSpeech(ctx, i);
+    if (speech[i]) {
       result += whisper_full_get_segment_text(ctx, i);
+    }
+  }
+  result += '\0';
+  const whisper_token eot = whisper_token_eot(ctx);
+  std::vector<whisper_token_data> tokens;
+  for (int i = 0; i < segmentCount && i <= UINT16_MAX; i++) {
+    if (!speech[i]) {
+      continue;
+    }
+    tokens.clear();
+    const int tokenCount = whisper_full_n_tokens(ctx, i);
+    for (int j = 0; j < tokenCount; j++) {
+      whisper_token_data token = whisper_full_get_token_data(ctx, i, j);
+      if (token.id < eot) {
+        tokens.push_back(token);
+      }
+    }
+    tokenTimes(ctx, i, duration, tokens);
+    for (const auto & token : tokens) {
+      const char * text = whisper_token_to_str(ctx, token.id);
+      const size_t length = text != nullptr ? std::min<size_t>(strlen(text), UINT16_MAX) : 0;
+      if (length == 0) {
+        continue;
+      }
+      putInt32(result, (int32_t) token.t0);
+      putInt32(result, (int32_t) token.t1);
+      putUint16(result, (uint16_t) i);
+      putUint16(result, (uint16_t) length);
+      result.append(text, length);
     }
   }
   jbyteArray array = env->NewByteArray((jsize) result.size());
@@ -383,6 +485,14 @@ JNIEXPORT jbyteArray JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_tr
   params.translate = false;
   params.no_context = true;
   params.no_timestamps = false;
+  // word times for subtitles: whisper.cpp's estimate from the timestamp tokens and the signal energy.
+  // DTW would be more precise but does not work together with flash attention.
+#ifdef __ANDROID__
+  params.token_timestamps = true;
+#else
+  // desktop test: compare the speed without them
+  params.token_timestamps = getenv("VGWHISPER_NO_TOKEN_TIMES") == nullptr;
+#endif
   params.single_segment = false;
   params.print_special = false;
   params.print_progress = false;
@@ -417,7 +527,7 @@ JNIEXPORT jbyteArray JNICALL Java_org_thunderdog_challegram_stt_WhisperNative_tr
   if (result != 0 || context->cancelled != 0) {
     return nullptr;
   }
-  return recognizedText(env, context->ctx);
+  return recognizedText(env, context->ctx, s.duration);
 }
 
 }

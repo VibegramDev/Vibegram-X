@@ -47,6 +47,16 @@ public class SliderView extends View implements FactorAnimator.Target {
     this.anchorMode = anchorMode;
   }
 
+  private boolean seekOnTrackTap;
+
+  /**
+   * Vibegram X: a touch anywhere on the track (not only on the thumb) moves the thumb under the finger and goes on as a
+   * drag, so a tap seeks there (video player timeline).
+   */
+  public void setSeekOnTrackTap (boolean seekOnTrackTap) {
+    this.seekOnTrackTap = seekOnTrackTap;
+  }
+
   public void setValueCount (int count) {
     if (this.valueCount != count) {
       this.valueCount = count;
@@ -334,27 +344,19 @@ public class SliderView extends View implements FactorAnimator.Target {
           return true;
         }
 
+        if (seekOnTrackTap && x >= getTotalPaddingLeft() - radius && x <= getMeasuredWidth() - getTotalPaddingRight() + radius && y >= cy - radius && y <= cy + radius && slideEnabled && (changeAnimator == null || !changeAnimator.isAnimating()) && (listener == null || listener.allowSliderChanges(this))) {
+          // Vibegram X: the thumb jumps under the finger, the touch goes on as a drag of the thumb.
+          diffX = 0;
+          setIsUp(true);
+          changeValue(getFactorAt(x));
+          return true;
+        }
+
         return false;
       }
       case MotionEvent.ACTION_MOVE: {
         if (isUp) {
-          x -= diffX;
-
-          float factor;
-
-          int left = getTotalPaddingLeft();
-          int width = (getMeasuredWidth() - getTotalPaddingRight() - left);
-
-          if (anchorMode == ANCHOR_MODE_CENTER) {
-            int centerX = left + width / 2;
-            float diff = x - centerX;
-            factor = Math.max(-1f, Math.min(1f, diff / (float) (width / 2)));
-          } else {
-            float diff = x - left;
-            factor = Math.max(0f, Math.min(1f, diff / (float) width));
-          }
-
-          changeValue(factor);
+          changeValue(getFactorAt(x - diffX));
           return true;
         }
 
@@ -376,6 +378,20 @@ public class SliderView extends View implements FactorAnimator.Target {
       }
     }
     return isUp;
+  }
+
+  /** Value of the thumb centred at {@code x}. */
+  private float getFactorAt (float x) {
+    int left = getTotalPaddingLeft();
+    int width = (getMeasuredWidth() - getTotalPaddingRight() - left);
+    if (anchorMode == ANCHOR_MODE_CENTER) {
+      int centerX = left + width / 2;
+      float diff = x - centerX;
+      return Math.max(-1f, Math.min(1f, diff / (float) (width / 2)));
+    } else {
+      float diff = x - left;
+      return Math.max(0f, Math.min(1f, diff / (float) width));
+    }
   }
 
   @Override

@@ -287,7 +287,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
             int adapterPosition = parent.getChildAdapterPosition(view);
             if (adapterPosition != RecyclerView.NO_POSITION) {
               TGChat nextChat = context.adapter.getChatByItemPosition(adapterPosition + 1);
-              boolean needSplit = nextChat != null && (chat.isArchive() != nextChat.isArchive() || chat.isPinnedOrSpecial() != nextChat.isPinnedOrSpecial());
+              boolean needSplit = nextChat != null && TGChat.needGroupSplit(chat, nextChat);
               boolean needShadowTop = adapterPosition > 0 && context.adapter.getItemViewType(adapterPosition - 1) == ChatsAdapter.VIEW_TYPE_SUGGESTED_CHATS;
 
               if (needShadowTop) {
@@ -426,7 +426,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
       }
 
       TGChat next = context.adapter.getChatByItemPosition(position + 1);
-      if (next != null && (current.isArchive() != next.isArchive() || current.isPinnedOrSpecial() != next.isPinnedOrSpecial())) {
+      if (next != null && TGChat.needGroupSplit(current, next)) {
         outRect.bottom = Screen.dp(12f);
       } else {
         outRect.bottom = Screen.separatorSize();
@@ -1442,13 +1442,7 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
       }
       if (cloudPinCount > 0 || secretPinCount > 0) {
         boolean isUnpin = mode == ACTION_MODE_ALL_ENABLED;
-        int maxPinnedCount = chatList().getConstructor() == TdApi.ChatListMain.CONSTRUCTOR ? tdlib.pinnedChatsMaxCount() : tdlib.pinnedArchivedChatsMaxCount();
-        int pinnedCloudCount = adapter.getPinnedChatCount(false), pinnedSecretCount = adapter.getPinnedChatCount(true);
-        if (!isUnpin && (pinnedCloudCount + cloudPinCount > maxPinnedCount || pinnedSecretCount + secretPinCount > maxPinnedCount)) {
-          CharSequence message = chatList().getConstructor() == TdApi.ChatListMain.CONSTRUCTOR ? Lang.pluralBold(R.string.PinTooMuchWarn, maxPinnedCount) : Lang.plural(R.string.ErrorPinnedChatsLimit, maxPinnedCount);
-          context.tooltipManager().builder(view).controller(getParentOrSelf()).icon(R.drawable.baseline_error_24).show(tdlib, message);
-          return;
-        }
+        // Vibegram X: no limit check, the pins over the server limit stay on this device (Tdlib.toggleChatIsPinned)
         showOptions((secretPinCount + cloudPinCount) == 1 ? tdlib.chatTitle(lastChatId) : Lang.pluralBold(isUnpin ? R.string.UnpinXChats : R.string.PinXChats, secretPinCount + cloudPinCount), new int[] {
           R.id.btn_pinUnpinChat,
           R.id.btn_cancel
@@ -1465,34 +1459,29 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
                 }
               }
               AtomicInteger remaining = new AtomicInteger(remainingCount);
-              Client.ResultHandler handler = object -> {
-                switch (object.getConstructor()) {
-                  case TdApi.Ok.CONSTRUCTOR:
-                    if (remaining.decrementAndGet() == 0) {
-                      tdlib.ui().post(this::onSelectionActionComplete);
-                    }
-                    break;
-                  case TdApi.Error.CONSTRUCTOR:
-                    UI.showError(object);
-                    break;
+              Runnable handler = () -> {
+                if (remaining.decrementAndGet() == 0) {
+                  onSelectionActionComplete();
                 }
               };
               for (int i = 0; i < selectedChats.size(); i++) {
                 long chatId = selectedChats.keyAt(i);
                 if (ChatPosition.isPinned(selectedChats.valueAt(i), chatList)) {
-                  tdlib.client().send(new TdApi.ToggleChatIsPinned(chatList, chatId, false), handler);
+                  tdlib.toggleChatIsPinned(chatList, chatId, false, handler);
                 }
               }
             } else {
-              List<Long> pinnedChats = tdlib.getPinnedChats(chatList);
+              // Pinned one by one from the last in the list: every new pin goes on top of its group, so they keep
+              // the order of the list; the ones over the server limit are pinned on this device.
               TdApi.Chat[] chats = ArrayUtils.asArray(selectedChats, new TdApi.Chat[selectedChats.size()]);
               Td.sort(chats, chatList);
+              List<Long> toPin = new ArrayList<>(chats.length);
               for (TdApi.Chat chat : chats) {
                 if (!ChatPosition.isPinned(chat, chatList)) {
-                  pinnedChats.add(chat.id);
+                  toPin.add(0, chat.id);
                 }
               }
-              performSelectAction(new TdApi.SetPinnedChats(chatList, ArrayUtils.asArray(pinnedChats)));
+              pinChatsOneByOne(chatList, toPin, 0);
             }
           }
           return true;
@@ -2016,6 +2005,16 @@ public class ChatsController extends TelegramViewController<ChatsController.Argu
         finishSelectMode(-1);
       }
     });
+  }
+
+  private void pinChatsOneByOne (TdApi.ChatList chatList, List<Long> chatIds, int index) {
+    if (index >= chatIds.size()) {
+      if (!isDestroyed()) {
+        onSelectionActionComplete();
+      }
+      return;
+    }
+    tdlib.toggleChatIsPinned(chatList, chatIds.get(index), true, () -> pinChatsOneByOne(chatList, chatIds, index + 1));
   }
 
   private void performSelectAction (TdApi.Function<?> function) {

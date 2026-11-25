@@ -4055,6 +4055,103 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     return position != null ? position.source : null;
   }
 
+  // Vibegram X: pins over the server limit, kept on this device (LocalPinnedChats)
+
+  private LocalPinnedChats localPins;
+
+  public LocalPinnedChats localPins () {
+    synchronized (dataLock) {
+      if (localPins == null) {
+        localPins = new LocalPinnedChats(accountId);
+      }
+      return localPins;
+    }
+  }
+
+  private void applyLocalPins (long chatId, TdApi.ChatPosition[] positions) {
+    if (positions == null) {
+      return;
+    }
+    LocalPinnedChats pins = localPins();
+    for (int i = 0; i < positions.length; i++) {
+      positions[i] = pins.apply(chatId, positions[i]);
+    }
+  }
+
+  /** Takes the position of the chat in the list from TDLib again, so a local pin or unpin shows up in the list. */
+  private void refreshChatPosition (TdApi.ChatList chatList, long chatId, @Nullable Runnable after) {
+    client().send(new TdApi.GetChat(chatId), result -> {
+      if (result.getConstructor() == TdApi.Chat.CONSTRUCTOR) {
+        TdApi.ChatPosition position = ChatPosition.findPosition((TdApi.Chat) result, chatList);
+        if (position != null) {
+          updateChatPosition(new TdApi.UpdateChatPosition(chatId, position));
+        }
+      }
+      if (after != null) {
+        ui().post(after);
+      }
+    });
+  }
+
+  /**
+   * Pins or unpins the chat. A pin goes to the server while it fits its limit, the rest are pinned on this device only.
+   *
+   * @param after called on the UI thread when done, unless an error was shown
+   */
+  public void toggleChatIsPinned (TdApi.ChatList chatList, long chatId, boolean isPinned, @Nullable Runnable after) {
+    if (!isPinned) {
+      if (localPins().unpin(chatList, chatId)) {
+        refreshChatPosition(chatList, chatId, after);
+      } else {
+        client().send(new TdApi.ToggleChatIsPinned(chatList, chatId, false), okHandler(after));
+      }
+      return;
+    }
+    if (chatPinned(chatList, chatId)) {
+      if (after != null) {
+        ui().post(after);
+      }
+      return;
+    }
+    client().send(new TdApi.ToggleChatIsPinned(chatList, chatId, true), result -> {
+      if (result.getConstructor() == TdApi.Error.CONSTRUCTOR && LocalPinnedChats.listKey(chatList) != null && isPinLimitError((TdApi.Error) result)) {
+        localPins().pin(chatList, chatId);
+        refreshChatPosition(chatList, chatId, after);
+        return;
+      }
+      okHandler(after).onResult(result);
+    });
+  }
+
+  private static boolean isPinLimitError (TdApi.Error error) {
+    String message = error.message != null ? error.message.toLowerCase(java.util.Locale.ROOT) : "";
+    return message.contains("pinned") && (message.contains("maximum") || message.contains("exceeded") || message.contains("too"));
+  }
+
+  /**
+   * Moves a pinned chat to the place of another one. Server pins are reordered on the server, local pins here; a local
+   * pin can't move above a server one.
+   *
+   * @param pinnedChatIds pinned chats of the list in their current order, with the move applied
+   */
+  public void reorderPinnedChats (TdApi.ChatList chatList, List<Long> pinnedChatIds, long movedChatId) {
+    LocalPinnedChats pins = localPins();
+    if (pins.isPinned(chatList, movedChatId)) {
+      pins.reorder(chatList, pinnedChatIds);
+      for (long chatId : pins.chatIds(chatList)) {
+        refreshChatPosition(chatList, chatId, null);
+      }
+    } else {
+      List<Long> serverChatIds = new ArrayList<>(pinnedChatIds.size());
+      for (Long chatId : pinnedChatIds) {
+        if (!pins.isPinned(chatList, chatId)) {
+          serverChatIds.add(chatId);
+        }
+      }
+      send(new TdApi.SetPinnedChats(chatList, ArrayUtils.asArray(serverChatIds)), typedOkHandler());
+    }
+  }
+
   public boolean chatPinned (TdApi.ChatList chatList, long chatId) {
     if (chatId == 0) {
       return false;
@@ -8319,6 +8416,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
           channels.remove(supergroupId);
       }
       if (update.chat.positions != null && update.chat.positions.length > 0) {
+        applyLocalPins(update.chat.id, update.chat.positions);
         chatLists = new ArrayList<>(update.chat.positions.length);
         for (TdApi.ChatPosition position : update.chat.positions) {
           if (position.order != 0) {
@@ -8562,6 +8660,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
   }
 
   private List<ChatListChange> setChatPositions (TdApi.Chat chat, @NonNull TdApi.ChatPosition[] newPositions) {
+    applyLocalPins(chat.id, newPositions);
     List<ChatListChange> changes = null;
     TdApi.ChatPosition[] oldPositions = chat.positions;
     int extraPositionCount = oldPositions.length;
@@ -8634,6 +8733,7 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
       if (TdlibUtils.assertChat(update.chatId, chat, update)) {
         return;
       }
+      update.position = localPins().apply(update.chatId, update.position);
       int changeFlags = setChatPosition(chat, update.position);
       if (changeFlags != 0) {
         TdlibChatList chatList = chatListImpl(update.position.list);

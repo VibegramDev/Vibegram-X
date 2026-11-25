@@ -16,12 +16,15 @@ package org.thunderdog.challegram.widget;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.Region;
 import android.os.Build;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
 import org.thunderdog.challegram.config.Config;
@@ -80,6 +83,100 @@ public class RectFrameLayout extends FrameLayoutFix {
     invalidate();
   }
 
+  /** Vibegram X: drawing over the children (the dates of the list the round video covers). */
+  public interface OverDrawer {
+    void drawOver (RectFrameLayout view, Canvas c);
+  }
+
+  private @Nullable OverDrawer overDrawer;
+
+  public void setOverDrawer (@Nullable OverDrawer overDrawer) {
+    this.overDrawer = overDrawer;
+  }
+
+  /**
+   * Vibegram X: the list goes under the floating composer (or the bottom button) and fades out there
+   * (M3BottomScrimView). The round video floats above the list: it gets the same veil and shadow of the composer, drawn
+   * only over what the children have drawn.
+   */
+  public static final class BottomFade {
+    /** The band of the fade: from {@code fadeTop} to {@code fadeBottom} (the bottom of the composer's scrim). */
+    public float fadeTop, fadeBottom, alpha, radius;
+    public final RectF shape = new RectF();
+    public boolean hasShape;
+  }
+
+  private final BottomFade bottomFade = new BottomFade();
+  private boolean hasBottomFade;
+  private Paint shadowPaint;
+  private M3BottomScrimView.Fade fade;
+
+  public void setBottomFade (@Nullable BottomFade value) {
+    boolean has = value != null && value.alpha > 0f;
+    if (!has && !hasBottomFade) {
+      return;
+    }
+    if (has && hasBottomFade && bottomFade.fadeTop == value.fadeTop && bottomFade.fadeBottom == value.fadeBottom && bottomFade.alpha == value.alpha && bottomFade.radius == value.radius && bottomFade.hasShape == value.hasShape && (!value.hasShape || bottomFade.shape.equals(value.shape))) {
+      return;
+    }
+    hasBottomFade = has;
+    if (has) {
+      bottomFade.fadeTop = value.fadeTop;
+      bottomFade.fadeBottom = value.fadeBottom;
+      bottomFade.alpha = value.alpha;
+      bottomFade.radius = value.radius;
+      bottomFade.hasShape = value.hasShape;
+      bottomFade.shape.set(value.shape);
+    }
+    invalidate();
+  }
+
+  private boolean needBottomFade () {
+    if (!hasBottomFade || bottomFade.fadeTop >= getMeasuredHeight() - bottom) {
+      return false;
+    }
+    // Only while a child reaches the band
+    for (int i = 0; i < getChildCount(); i++) {
+      View child = getChildAt(i);
+      if (child.getVisibility() == View.VISIBLE && child.getAlpha() > 0f && child.getWidth() > 0) {
+        float childBottom = child.getTop() + child.getTranslationY() + child.getPivotY() + (child.getHeight() - child.getPivotY()) * child.getScaleY();
+        if (childBottom > bottomFade.fadeTop) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private void drawChildren (Canvas c) {
+    final boolean needFade = needBottomFade();
+    final int layer = needFade ? c.saveLayer(0, 0, getMeasuredWidth(), getMeasuredHeight(), null) : -1;
+    super.dispatchDraw(c);
+    if (overDrawer != null) {
+      overDrawer.drawOver(this, c);
+    }
+    if (needFade) {
+      // The same veil as under the composer, down to the bottom of its scrim, and its shadow.
+      if (fade == null) {
+        fade = M3BottomScrimView.Fade.veil();
+        fade.setXfermode(SRC_ATOP);
+      }
+      final float containerTop = bottomFade.hasShape ? bottomFade.shape.top : bottomFade.fadeTop;
+      final float rampTop = M3BottomScrimView.composerRampTop(bottomFade.fadeTop, containerTop);
+      fade.drawRamp(c, getMeasuredWidth(), rampTop, M3BottomScrimView.composerRampBottom(rampTop), Math.max(getMeasuredHeight(), bottomFade.fadeBottom), bottomFade.alpha);
+      if (bottomFade.hasShape) {
+        if (shadowPaint == null) {
+          shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+          shadowPaint.setXfermode(SRC_ATOP);
+        }
+        M3BottomScrimView.drawShadow(c, shadowPaint, bottomFade.shape, bottomFade.radius, bottomFade.alpha);
+      }
+      c.restoreToCount(layer);
+    }
+  }
+
+  private static final android.graphics.PorterDuffXfermode SRC_ATOP = new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_ATOP);
+
   @Override
   protected void dispatchDraw(Canvas c) {
     if (hasExcludedPath) {
@@ -99,11 +196,11 @@ public class RectFrameLayout extends FrameLayoutFix {
 
   private void dispatchDrawClipped (Canvas c) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !Config.DEBUG_CLIPPING) {
-      super.dispatchDraw(c);
+      drawChildren(c);
     } else {
       final int saveCount = Views.save(c);
       c.clipRect(0, top, getMeasuredWidth(), getMeasuredHeight() - bottom);
-      super.dispatchDraw(c);
+      drawChildren(c);
       Views.restore(c, saveCount);
     }
   }

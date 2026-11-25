@@ -38,11 +38,11 @@ import org.thunderdog.challegram.tool.Screen;
 import me.vkryl.core.ColorUtils;
 
 /**
- * Backdrop of a floating bottom container (dock, message composer): a fade and a soft shadow, as in the official
- * Android app. The fade lies only inside the band the content keeps free for the container (its bottom padding:
- * the margin above the container, the container and the system inset below it), from transparent at the top of the
- * band. Content resting above the band (the last message or chat) is never dimmed; content scrolled into the band
- * washes out behind the container.
+ * Shadow of a floating bottom container (dock, message composer) and the fade of the content behind it, as the official
+ * app does it (owner: «затемнение… официальный клиент для референса, там хорошо сделано»; BlurredBackgroundWithFadeDrawable
+ * with a plain color source, MainTabsActivity and ChatActivityFadeView): the surface fades in from a margin above the
+ * container over {@link #DOCK_RAMP_DP} (dock) or {@link #COMPOSER_RAMP_DP} (composer) to {@link #VEIL_ALPHA}, flat
+ * below, not darker toward the bottom. {@link Fade} without arguments is the older eased fade under mini app tabs.
  */
 public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   public interface ShapeProvider {
@@ -55,32 +55,32 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     float getFadeTop (@NonNull M3BottomScrimView view, @NonNull RectF shape);
   }
 
-  /** Height of the fade from the top of the band (the official app: 48dp above the composer, 60dp above the tabs). */
-  public static int getFadeHeight () {
-    return Screen.dp(48f);
-  }
+  /** Stops of the fade of the official app, evenly spaced: 0x00, 0x60, 0xB0, 0xE8 scaled by 255/285 (to 0xCF). */
+  private static final int[] VEIL_STOPS = {0, 0x60 * 255 / 285, 0xB0 * 255 / 285, 0xE8 * 255 / 285};
+  public static final int VEIL_ALPHA = 0xE8 * 255 / 285;
+
+  /**
+   * The fade starts this far above the container (the official app: its margins, 9dp in a chat and 8dp under the dock),
+   * inside the gap left under the resting content, and takes the given height (the official app: 48dp and 60dp).
+   */
+  private static final float COMPOSER_RAMP_ABOVE_DP = 9f, COMPOSER_RAMP_DP = 48f;
+  private static final float DOCK_RAMP_ABOVE_DP = 8f, DOCK_RAMP_DP = 60f;
+
+  /** Part of the band the fade takes from its top, the surface is flat below (behind the bottom of the container). */
+  private static final float FADE_SPREAD = .75f;
 
   /** Opacity of the surface at the end of the fade and below it (the official app: 0xE8). */
   private static final int ALPHA_MAX = 0xE8;
 
-  private final Fade fade = new Fade();
   private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final RectF shape = new RectF();
   private @Nullable ShapeProvider provider;
   private @Nullable FadeTopProvider fadeTopProvider;
+  private Fade veil;
   private float radius;
-  private boolean shadowOnly;
 
   public M3BottomScrimView (Context context) {
     super(context);
-  }
-
-  /** Draws only the shadow of the floating container: the content behind it is washed out by another view. */
-  public void setShadowOnly (boolean shadowOnly) {
-    if (this.shadowOnly != shadowOnly) {
-      this.shadowOnly = shadowOnly;
-      invalidate();
-    }
   }
 
   public void setShapeProvider (@Nullable ShapeProvider provider, float radius) {
@@ -89,7 +89,7 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     invalidate();
   }
 
-  /** Without a provider the band starts at the top of this view (the view is as tall as the band). */
+  /** The composer: the fade starts no lower than the top given by the provider. Without it: the dock. */
   public void setFadeTopProvider (@Nullable FadeTopProvider fadeTopProvider) {
     this.fadeTopProvider = fadeTopProvider;
     invalidate();
@@ -105,51 +105,108 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     if (provider == null || !provider.getShape(this, shape)) {
       return;
     }
-    if (!shadowOnly) {
-      float fadeTop = fadeTopProvider != null ? fadeTopProvider.getFadeTop(this, shape) : 0f;
-      fade.draw(c, getWidth(), fadeTop, getHeight(), 1f);
+    if (veil == null) {
+      veil = Fade.veil();
     }
+    final float rampTop, rampBottom;
+    if (fadeTopProvider != null) {
+      rampTop = composerRampTop(fadeTopProvider.getFadeTop(this, shape), shape.top);
+      rampBottom = composerRampBottom(rampTop);
+    } else {
+      rampTop = shape.top - Screen.dp(DOCK_RAMP_ABOVE_DP);
+      rampBottom = rampTop + Screen.dp(DOCK_RAMP_DP);
+    }
+    veil.drawRamp(c, getWidth(), rampTop, rampBottom, getHeight(), 1f);
     drawShadow(c, shadowPaint, shape, radius, 1f);
+  }
+
+  /** Start of the ramp of the composer veil: {@code fadeTop} (the top of the band kept free) or a bit above the composer. */
+  public static float composerRampTop (float fadeTop, float containerTop) {
+    return Math.min(fadeTop, containerTop - Screen.dp(COMPOSER_RAMP_ABOVE_DP));
+  }
+
+  /** End of the ramp of the composer veil, behind the composer. */
+  public static float composerRampBottom (float rampTop) {
+    return rampTop + Screen.dp(COMPOSER_RAMP_DP);
   }
 
   /** The fade of this view, for views that draw their floating container themselves (dock, strip of mini app tabs). */
   public static final class Fade {
     // An eased gradient of unit height stretched by a local matrix (the band moves on every frame of the keyboard and
-    // tab animations, the shader is created once per color), then the flat surface down to the bottom.
-    private final Paint fadePaint = new Paint(), solidPaint = new Paint();
+    // tab animations, the shader is created once per color).
+    private final Paint fadePaint = new Paint();
     private final Matrix matrix = new Matrix();
+    private final int alphaMax;
+    private final boolean official;
     private int color;
     private boolean shaderReady;
 
+    /** The fade of the official app (mini app tabs). */
+    public Fade () {
+      this(ALPHA_MAX, false);
+    }
+
+    private Fade (int alphaMax, boolean official) {
+      this.alphaMax = alphaMax;
+      this.official = official;
+    }
+
+    /** The fade of the official app behind the dock and the composer ({@link #VEIL_STOPS}). */
+    public static Fade veil () {
+      return new Fade(VEIL_ALPHA, true);
+    }
+
+    /** Vibegram X: SRC_ATOP fades only what is already drawn (the round video player over the list). */
+    public void setXfermode (@Nullable android.graphics.Xfermode xfermode) {
+      fadePaint.setXfermode(xfermode);
+    }
+
     /**
      * From {@code top} (the top of the band kept free for the container) to {@code bottom}: transparent at {@code top},
-     * eased to {@link #ALPHA_MAX} of the surface over {@link #getFadeHeight()}, flat below. Nothing above {@code top}.
+     * eased to {@link #ALPHA_MAX} of the surface over {@link #FADE_SPREAD} of the band, flat below (the official app spreads
+     * the fade over the zone too: a short fixed ramp reads as a dark strip at its top). Nothing above {@code top}.
      */
     public void draw (Canvas c, float width, float top, float bottom, float alpha) {
+      draw(c, width, top, bottom, bottom, alpha);
+    }
+
+    /** The same, the flat end of the fade goes on from {@code bottom} down to {@code drawBottom}. */
+    public void draw (Canvas c, float width, float top, float bottom, float drawBottom, float alpha) {
       if (alpha <= 0f || bottom <= top) {
+        return;
+      }
+      drawRamp(c, width, top, top + (bottom - top) * FADE_SPREAD, Math.max(bottom, drawBottom), alpha);
+    }
+
+    /** Transparent at {@code top}, eased to the full fade at {@code rampBottom}, flat from there down to {@code drawBottom}. */
+    public void drawRamp (Canvas c, float width, float top, float rampBottom, float drawBottom, float alpha) {
+      if (alpha <= 0f || drawBottom <= top || rampBottom <= top) {
         return;
       }
       final int surface = M3.surface();
       if (!shaderReady || color != surface) {
         shaderReady = true;
         color = surface;
-        fadePaint.setShader(newEasedFade(surface, 0, ALPHA_MAX));
+        fadePaint.setShader(official ? newVeil(surface) : newEasedFade(surface, 0, alphaMax));
       }
-      final int paintAlpha = Math.round(255 * Math.min(1f, alpha));
-      final float fadeBottom = Math.min(bottom, top + getFadeHeight());
-      matrix.setScale(1f, getFadeHeight());
+      matrix.setScale(1f, rampBottom - top);
       matrix.postTranslate(0, top);
       fadePaint.getShader().setLocalMatrix(matrix);
-      fadePaint.setAlpha(paintAlpha);
-      c.drawRect(0, top, width, fadeBottom, fadePaint);
-      if (fadeBottom < bottom) {
-        solidPaint.setColor(ColorUtils.alphaColor(alpha, (ALPHA_MAX << 24) | (surface & 0x00FFFFFF)));
-        c.drawRect(0, fadeBottom, width, bottom, solidPaint);
-      }
+      fadePaint.setAlpha(Math.round(255 * Math.min(1f, alpha)));
+      c.drawRect(0, top, width, drawBottom, fadePaint);
     }
   }
 
-  private static final int SMOOTH_FADE_STEPS = 12;
+  private static Shader newVeil (int color) {
+    final int rgb = color & 0x00FFFFFF;
+    final int[] colors = new int[VEIL_STOPS.length];
+    for (int i = 0; i < colors.length; i++) {
+      colors[i] = (VEIL_STOPS[i] << 24) | rgb;
+    }
+    return new LinearGradient(0, 0, 0, 1, colors, null, Shader.TileMode.CLAMP);
+  }
+
+  private static final int SMOOTH_FADE_STEPS = 24;
 
   /**
    * {@code color} from {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1, eased in and out (smoothstep): a linear

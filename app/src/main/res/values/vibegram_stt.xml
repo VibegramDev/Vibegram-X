@@ -6,6 +6,9 @@
   <item type="id" name="btn_vgSttModel" />
   <item type="id" name="btn_vgSttAction" />
   <item type="id" name="btn_vgSttCredit" />
+  <item type="id" name="controller_vgSttCredits" />
+  <item type="id" name="btn_vgSttModelCredits" />
+  <item type="id" name="btn_vgSttEngineCredits" />
   <item type="id" name="btn_vgSttDownload" />
   <item type="id" name="btn_vgSttCancel" />
   <item type="id" name="btn_vgSttDelete" />
