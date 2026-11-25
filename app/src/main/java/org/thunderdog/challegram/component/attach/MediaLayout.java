@@ -1179,6 +1179,62 @@ public class MediaLayout extends FrameLayoutFix implements
   // Callbacks
 
   private boolean showKeyboardOnHide;
+  private @Nullable PendingAttachmentSend pendingAttachmentSend;
+
+  private final class PendingAttachmentSend implements MessagesController.AttachmentSendCallback {
+    private final PopupLayout pickerPopup = popupLayout;
+    private final @Nullable PopupLayout previewPopup;
+    private final boolean multi;
+    private final @Nullable Runnable onDispatched;
+
+    private PendingAttachmentSend (@Nullable PopupLayout previewPopup, boolean multi, @Nullable Runnable onDispatched) {
+      this.previewPopup = previewPopup;
+      this.multi = multi;
+      this.onDispatched = onDispatched;
+    }
+
+    @Override
+    public boolean isCurrent () {
+      return pendingAttachmentSend == this && popupLayout == pickerPopup && !hidden && !isDestroyed &&
+        !pickerPopup.isWindowHidden() && pickerPopup.isBoundWindowShowing() &&
+        (previewPopup == null || (!previewPopup.isWindowHidden() && previewPopup.isBoundWindowShowing()));
+    }
+
+    @Override
+    public void onFinished (boolean dispatched) {
+      if (pendingAttachmentSend != this) {
+        return;
+      }
+      try {
+        if (dispatched && isCurrent()) {
+          if (previewPopup != null) {
+            forceHide();
+            ((MediaViewController) previewPopup.getBoundController()).forceClose();
+          } else {
+            hide(multi);
+          }
+          if (onDispatched != null) {
+            onDispatched.run();
+          }
+        }
+      } finally {
+        pendingAttachmentSend = null;
+      }
+    }
+  }
+
+  private @Nullable PendingAttachmentSend startAttachmentSend (@Nullable PopupLayout previewPopup, boolean multi, @Nullable Runnable onDispatched) {
+    if (pendingAttachmentSend != null || popupLayout == null) {
+      return null;
+    }
+    PendingAttachmentSend attempt = new PendingAttachmentSend(previewPopup, multi, onDispatched);
+    pendingAttachmentSend = attempt;
+    if (!attempt.isCurrent()) {
+      pendingAttachmentSend = null;
+      return null;
+    }
+    return attempt;
+  }
 
   public void chooseInlineBot (TGUser user) {
     if (user.getUser() != null && target != null) {
@@ -1197,6 +1253,9 @@ public class MediaLayout extends FrameLayoutFix implements
   }
 
   public void pickDateOrProceed (TdlibUi.SimpleSendCallback sendCallback) {
+    if (pendingAttachmentSend != null) {
+      return;
+    }
     if (target != null && target.areScheduledOnly()) {
       tdlib().ui().showScheduleOptions(target, getTargetChatId(), false, sendCallback, null, null);
     } else {
@@ -1232,10 +1291,10 @@ public class MediaLayout extends FrameLayoutFix implements
   }
 
   public void sendFilesMixed (View view, List<String> files, ArrayList<MediaBottomFilesController.MusicEntry> musicFiles, TdApi.MessageSendOptions options, boolean isMultiSend) {
-    if ((files == null || files.isEmpty()) && (musicFiles == null || musicFiles.isEmpty()))
+    if (pendingAttachmentSend != null || ((files == null || files.isEmpty()) && (musicFiles == null || musicFiles.isEmpty())))
       return;
     if (files != null && !files.isEmpty()) {
-      if (target != null && target.showRestriction(view, RightId.SEND_DOCS)) {
+      if (target != null && target.showFilesRestriction(view, files, null)) {
         return;
       }
     }
@@ -1251,30 +1310,37 @@ public class MediaLayout extends FrameLayoutFix implements
     } else {
       needGroupMedia = !Settings.instance().rememberAlbumSetting() || Settings.instance().needGroupMedia();
     }
-    if (target != null) {
-      if (files != null) {
-        target.sendFiles(view, files, needGroupMedia, true, options);
-      }
-      if (musicFiles != null) {
-        target.sendMusic(view, musicFiles, needGroupMedia, true, options);
-      }
+    List<String> filePaths = files != null ? files : Collections.emptyList();
+    int musicCount = musicFiles != null ? musicFiles.size() : 0;
+    boolean isRestricted = target != null && target.showSingleMessageRestriction(
+      view, filePaths, null, musicCount, needGroupMedia, options
+    );
+    if (isRestricted) {
+      return;
     }
-    hide(isMultiSend);
+    if (target != null) {
+      PendingAttachmentSend attempt = startAttachmentSend(null, isMultiSend, null);
+      if (attempt == null) {
+        return;
+      }
+      if (files != null && !files.isEmpty()) {
+        target.sendFiles(view, files, musicFiles, needGroupMedia, true, options, attempt);
+      } else {
+        target.sendMusic(view, musicFiles, needGroupMedia, true, options, attempt);
+      }
+    } else {
+      hide(isMultiSend);
+    }
   }
 
   public void sendFile (View v, String file) {
-    if (target != null && target.showRestriction(v, RightId.SEND_DOCS)) {
+    List<String> files = Collections.singletonList(file);
+    if (target != null && target.showFilesRestriction(v, files, null)) {
       return;
     }
-    pickDateOrProceed((sendOptions, disableMarkdown) -> {
-      if (target != null) {
-        if (target.showRestriction(v, RightId.SEND_DOCS)) {
-          return;
-        }
-        target.sendFiles(v, Collections.singletonList(file), needGroupMedia, true, sendOptions);
-      }
-      hide(false);
-    });
+    pickDateOrProceed((sendOptions, disableMarkdown) ->
+      sendFilesMixed(v, files, null, sendOptions, false)
+    );
   }
 
   public void sendMusic (View view, MediaBottomFilesController.MusicEntry musicFile) {
@@ -1283,9 +1349,13 @@ public class MediaLayout extends FrameLayoutFix implements
     }
     pickDateOrProceed((sendOptions, disableMarkdown) -> {
       if (target != null) {
-        target.sendMusic(view, Collections.singletonList(musicFile), needGroupMedia, true, sendOptions);
+        PendingAttachmentSend attempt = startAttachmentSend(null, false, null);
+        if (attempt != null) {
+          target.sendMusic(view, Collections.singletonList(musicFile), needGroupMedia, true, sendOptions, attempt);
+        }
+      } else {
+        hide(false);
       }
-      hide(false);
     });
   }
 
@@ -1313,6 +1383,9 @@ public class MediaLayout extends FrameLayoutFix implements
   }
 
   public boolean sendPhotosOrVideos (View view, ArrayList<ImageFile> images, boolean areRemote, TdApi.MessageSendOptions options, boolean disableMarkdown, boolean asFiles, boolean disableAnimation) {
+    if (pendingAttachmentSend != null) {
+      return false;
+    }
     if (mode == MODE_AVATAR_PICKER) {
       parent.context().forceCloseCamera();
     }
@@ -1325,6 +1398,9 @@ public class MediaLayout extends FrameLayoutFix implements
       if (target != null) {
         CharSequence text = target.tdlib().getInlineRestrictionText(target.getChat());
         if (target.showRestriction(view, text)) {
+          return false;
+        }
+        if (images.size() > 1 && target.showSingleMessageRestriction(view, options)) {
           return false;
         }
       }
@@ -1347,8 +1423,6 @@ public class MediaLayout extends FrameLayoutFix implements
     } else {
       ArrayList<ImageGalleryFile> galleryFiles = new ArrayList<>(images.size());
 
-      boolean first = true;
-
       if (target != null) {
         boolean havePhotos = false;
         boolean haveVideos = false;
@@ -1366,7 +1440,15 @@ public class MediaLayout extends FrameLayoutFix implements
             break;
           }
         }
-        if (target.showPhotoVideoRestriction(view, havePhotos, haveVideos)) {
+        if (target.showPhotoVideoRestriction(view, havePhotos && !asFiles, haveVideos) ||
+          (havePhotos && asFiles && target.showRestriction(view, RightId.SEND_DOCS))) {
+          return false;
+        }
+        // Photos sent as files are documents, apart from the videos
+        boolean isSeveralMessages =
+          (images.size() > 1 && (!needGroupMedia || (asFiles && havePhotos && haveVideos))) ||
+          images.size() > TdConstants.MAX_MESSAGE_GROUP_SIZE;
+        if (isSeveralMessages && target.showSingleMessageRestriction(view, options)) {
           return false;
         }
       }
@@ -1375,33 +1457,35 @@ public class MediaLayout extends FrameLayoutFix implements
         if (galleryFile.getFilePath() != null) {
           galleryFiles.add(galleryFile);
         }
-        if (callback != null && callback instanceof MediaGalleryCallback) {
-          if (galleryFile.isVideo()) {
-            ((MediaGalleryCallback) callback).onSendVideo(galleryFile, first);
-          } else {
-            ((MediaGalleryCallback) callback).onSendPhoto(galleryFile, first);
-          }
-        }
-        first = false;
       }
 
       if (target != null) {
-        ImageGalleryFile[] result = new ImageGalleryFile[galleryFiles.size()];
-        galleryFiles.toArray(result);
+        PopupLayout previewPopup = null;
+        if (disableAnimation) {
+          // Capture the preview from its send button, not whichever popup is on top at completion.
+          previewPopup = Views.findAncestor(view, PopupLayout.class, false);
+          if (previewPopup == null || !(previewPopup.getBoundController() instanceof MediaViewController)) {
+            return false;
+          }
+          MediaViewController preview = (MediaViewController) previewPopup.getBoundController();
+          MediaViewController.Args args = preview.getArguments();
+          // Camera previews rely on the synchronous delegate marking the media as sent for file cleanup.
+          if (preview.isFromCamera() || args == null || args.hasFlag(MediaViewController.Args.FLAG_DELETE_FILE_ON_EXIT)) {
+            return false;
+          }
+        }
+        PendingAttachmentSend attempt = startAttachmentSend(previewPopup, true,
+          callback instanceof MediaGalleryCallback ? () -> notifyGalleryCallback(images) : null);
+        if (attempt == null) {
+          return false;
+        }
         Settings.instance().setNeedGroupMedia(needGroupMedia);
-        TdApi.FormattedText caption = getCaptionText();
-        if (captionFromComposer && captionView != null && selectionOnTop) {
-          // The field replaced the composer text: what is in the field now is the caption, even if it was erased.
-          target.clearComposerTextTakenAsCaption();
-        }
-        if (caption != null && result.length > 0) {
-          // Same item as the composer text taken as a caption (MessagesController#sendPhotosAndVideosCompressed).
-          result[needGroupMedia ? result.length - 1 : 0].setCaption(caption);
-        }
-        boolean showCaptionAboveMedia = false;
-        boolean hasSpoiler = allowSpoiler && needSpoiler;
-        target.sendPhotosAndVideosCompressed(result, needGroupMedia, options, disableMarkdown, asFiles, showCaptionAboveMedia, hasSpoiler);
+        target.sendPickedPhotosAndVideos(galleryFiles.toArray(new ImageGalleryFile[0]), needGroupMedia, options,
+          disableMarkdown, asFiles, false, allowSpoiler && needSpoiler, getCaptionText(),
+          selectionOnTop ? captionComposerText : null, attempt);
+        return false; // The accepted callback closes the captured preview.
       }
+      notifyGalleryCallback(images);
     }
 
     if (disableAnimation) {
@@ -1410,6 +1494,22 @@ public class MediaLayout extends FrameLayoutFix implements
       hide(true);
     }
     return true;
+  }
+
+  private void notifyGalleryCallback (ArrayList<ImageFile> images) {
+    if (callback instanceof MediaGalleryCallback) {
+      MediaGalleryCallback galleryCallback = (MediaGalleryCallback) callback;
+      boolean first = true;
+      for (ImageFile image : images) {
+        ImageGalleryFile galleryFile = (ImageGalleryFile) image;
+        if (galleryFile.isVideo()) {
+          galleryCallback.onSendVideo(galleryFile, first);
+        } else {
+          galleryCallback.onSendPhoto(galleryFile, first);
+        }
+        first = false;
+      }
+    }
   }
 
   public void sendVenue (MediaLocationData place) {
@@ -1693,7 +1793,7 @@ public class MediaLayout extends FrameLayoutFix implements
    */
   private FrameLayoutFix captionPill;
   private EmojiEditText captionView;
-  private boolean captionFromComposer;
+  private @Nullable String captionComposerText;
   private final M3.RoleShape captionBackground = new M3.RoleShape(M3.SURFACE_CONTAINER_HIGH);
   private FrameLayoutFix selectionHeader;
   private final M3.RoleShape selectionHeaderBackground = new M3.RoleShape(M3.SURFACE_CONTAINER_LOW);
@@ -1753,7 +1853,7 @@ public class MediaLayout extends FrameLayoutFix implements
     if (composerText != null) {
       // Text typed in the chat before opening the picker becomes the caption (as before), now visible and editable.
       captionView.setText(composerText);
-      captionFromComposer = true;
+      captionComposerText = composerText;
     }
     captionPill.addView(captionView);
     captionPill.setVisibility(View.GONE);

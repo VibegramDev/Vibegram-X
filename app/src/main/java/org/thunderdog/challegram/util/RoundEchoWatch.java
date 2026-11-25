@@ -112,7 +112,7 @@ public final class RoundEchoWatch {
 
   private static boolean isPlaying (ExoPlayer player) {
     try {
-      return player.getApplicationLooper() == Looper.myLooper() && !player.isReleased() && player.isPlaying();
+      return player.getApplicationLooper() == Looper.myLooper() && !MediaDiagnostics.isReleased(player) && player.isPlaying();
     } catch (Throwable t) {
       return false;
     }
@@ -180,7 +180,7 @@ public final class RoundEchoWatch {
       if (player.getApplicationLooper() != Looper.myLooper()) {
         return "other thread";
       }
-      if (player.isReleased()) {
+      if (MediaDiagnostics.isReleased(player)) {
         return "released";
       }
       return "playing=" + player.isPlaying() +

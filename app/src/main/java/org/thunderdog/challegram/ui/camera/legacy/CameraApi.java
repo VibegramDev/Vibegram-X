@@ -14,13 +14,14 @@
  */
 package org.thunderdog.challegram.ui.camera.legacy;
 
-import java.util.Arrays;
 import android.content.Context;
 import android.graphics.SurfaceTexture;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
 
+import androidx.annotation.ChecksSdkIntAtLeast;
 import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
 
@@ -33,6 +34,7 @@ import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.camera.CameraFeatures;
 import org.thunderdog.challegram.ui.camera.CameraManager;
 
+import java.util.Arrays;
 import java.util.List;
 
 import me.vkryl.core.lambda.RunnableData;
@@ -102,7 +104,7 @@ public abstract class CameraApi {
   protected abstract void onPreviewSizeChanged (int newWidth, int newHeight);
 
   private boolean isCameraBusy () {
-    return isVideoCapturing || (roundRecorder != null && roundRecorder.isCapturing());
+    return isVideoCapturing || (hasRoundRecorder() && roundRecorder.isCapturing());
   }
 
   /**
@@ -152,7 +154,7 @@ public abstract class CameraApi {
       return;
     }
 
-    if (roundRecorder != null) {
+    if (hasRoundRecorder()) {
       if (roundRecorder.canSwitchToNewCamera()) {
         onNextCameraSourceRequested();
       }
@@ -410,8 +412,9 @@ public abstract class CameraApi {
     }
   }
 
+  @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
   protected final boolean hasRoundRecorder () {
-    return roundRecorder != null;
+    return Config.ROUND_VIDEOS_RECORD_SUPPORTED && roundRecorder != null;
   }
 
   public static final int FACING_UNKNOWN = -1, FACING_BACK = 0, FACING_FRONT = 1;
@@ -1051,7 +1054,7 @@ public abstract class CameraApi {
       sendMessage(ACTION_OPEN_CAMERA_IF_NEEDED, recorder);
       return;
     }
-    if (this.roundRecorder == recorder && isCameraActive && !cameraOpened) {
+    if (hasRoundRecorder() && this.roundRecorder == recorder && isCameraActive && !cameraOpened) {
       boolean opened = false;
       try {
         opened = openCamera(recorder.getCameraTexture());
@@ -1140,7 +1143,7 @@ public abstract class CameraApi {
       sendMessage(ACTION_DESTROY_ROUND_RENDERER);
       return;
     }
-    if (roundRecorder != null) {
+    if (hasRoundRecorder()) {
       roundRecorder.destroy();
       roundRecorder = null;
     }
@@ -1167,7 +1170,7 @@ public abstract class CameraApi {
             if (surface == null) {
               throw new NullPointerException();
             }
-            if (manager.useRoundRender()) {
+            if (Config.ROUND_VIDEOS_RECORD_SUPPORTED && manager.useRoundRender()) {
               if (roundRecorder == null) {
                 roundRecorder = new RoundVideoRecorder(this, surface, mSurfaceWidth, mSurfaceHeight);
                 roundRecorder.setPreviewSizes(getCameraOutputWidth(), getCameraOutputHeight(), getRoundFrameOrientation(), getRoundContentRotation());
@@ -1193,7 +1196,7 @@ public abstract class CameraApi {
         } catch (Throwable t) {
           Log.w(Log.TAG_CAMERA, "Cannot close camera, but we ignore it.", t);
         }
-        if (roundRecorder != null) {
+        if (hasRoundRecorder()) {
           roundRecorder.onCameraClose();
         }
         cameraOpened = false;
@@ -1217,7 +1220,7 @@ public abstract class CameraApi {
       return;
     }
 
-    if (roundRecorder != null) {
+    if (hasRoundRecorder()) {
       roundRecorder.startCapture(delegate, key, outputPath);
     } else {
       // Vibegram: the renderer is gone (camera failed or the backend is being replaced)
@@ -1232,7 +1235,7 @@ public abstract class CameraApi {
       return;
     }
 
-    if (roundRecorder != null) {
+    if (hasRoundRecorder()) {
       roundRecorder.finishCapture(key, saveResult);
     } else {
       Log.w(Log.TAG_ROUND, "finishOrCancelRoundVideoCapture without a renderer, key: %s", key);

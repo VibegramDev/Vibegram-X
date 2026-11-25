@@ -57,6 +57,12 @@ public class SettingsWrapBuilder {
   public boolean needRootInsets = false;
 
   public String saveStr = Lang.getString(R.string.Save);
+  public boolean saveDestructive;
+
+  public SettingsWrapBuilder setSaveDestructive (boolean destructive) {
+    this.saveDestructive = destructive;
+    return this;
+  }
 
   public String cancelStr = Lang.getString(R.string.Cancel);
 

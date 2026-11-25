@@ -333,7 +333,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     if (!canLoadMore) {
       return;
     }
-    tdlib.client().send(new TdApi.GetForumTopics(chatId, query, 0, 0, 0, TOPICS_PAGE_SIZE), result -> {
+    tdlib.client().send(new TdApi.GetForumTopics(chatId, query, 0L, false, false, 0, 0, 0, TOPICS_PAGE_SIZE), result -> {
       final TdApi.ForumTopics found = result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR ? (TdApi.ForumTopics) result : null;
       runOnUiThreadOptional(() -> {
         if (found == null || requestId != topicSearchRequestId || adapter.isMessageSearchMode || !query.equals(adapter.highlightQuery)) {
@@ -761,7 +761,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     final int requestId = ++topicsRequestId;
     isLoadingFirstPage = true;
     isLoadingMore = false;
-    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0, 0, 0, TOPICS_PAGE_SIZE), result -> {
+    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, 0, 0, 0, TOPICS_PAGE_SIZE), result -> {
       final TdApi.ForumTopics forumTopics = result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR ? (TdApi.ForumTopics) result : null;
       if (forumTopics != null) {
         tdlib.topics().putTopics(chatId, forumTopics.topics);
@@ -909,7 +909,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     if (isLoadingFirstPage || isLoadingMore || !canLoadMore || allTopics == null || allTopics.isEmpty()) return;
     isLoadingMore = true;
     final int requestId = topicsRequestId;
-    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", nextOffsetDate, nextOffsetMessageId, nextOffsetForumTopicId, TOPICS_PAGE_SIZE), result -> {
+    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, nextOffsetDate, nextOffsetMessageId, nextOffsetForumTopicId, TOPICS_PAGE_SIZE), result -> {
       final TdApi.ForumTopics forumTopics = result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR ? (TdApi.ForumTopics) result : null;
       if (forumTopics != null) {
         tdlib.topics().putTopics(chatId, forumTopics.topics);

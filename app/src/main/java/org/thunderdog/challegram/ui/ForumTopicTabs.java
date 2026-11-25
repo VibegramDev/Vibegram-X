@@ -493,7 +493,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
         onTabsChanged();
       }
     }
-    tdlib.send(new TdApi.GetForumTopics(chatId, "", 0, 0L, 0, 100), (forumTopics, error) -> owner.runOnUiThreadOptional(() -> {
+    tdlib.send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, 0, 0L, 0, 100), (forumTopics, error) -> owner.runOnUiThreadOptional(() -> {
       isLoading = false;
       if (forumTopics == null || !isActive()) {
         return;
@@ -512,7 +512,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       return;
     }
     isLoading = true;
-    tdlib.send(new TdApi.GetForumTopics(chatId, "", nextOffsetDate, nextOffsetMessageId, nextOffsetForumTopicId, 50), (forumTopics, error) -> owner.runOnUiThreadOptional(() -> {
+    tdlib.send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, nextOffsetDate, nextOffsetMessageId, nextOffsetForumTopicId, 50), (forumTopics, error) -> owner.runOnUiThreadOptional(() -> {
       isLoading = false;
       if (forumTopics == null || !isActive()) {
         return;

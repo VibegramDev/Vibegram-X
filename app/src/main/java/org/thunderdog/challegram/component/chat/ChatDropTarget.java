@@ -36,6 +36,7 @@ import android.webkit.MimeTypeMap;
 import androidx.annotation.Nullable;
 
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.tool.Drawables;
@@ -234,6 +235,10 @@ public final class ChatDropTarget implements View.OnDragListener {
   }
 
   private static void copy (ContentResolver resolver, Uri uri, File dir, List<String> paths, List<String> mimeTypes) {
+    // Apply the same policy as the system picker before copying a shared URI into our cache.
+    if (U.isInternalUri(uri) || U.resolveSharedFilePath(uri) == null) {
+      return;
+    }
     String name = null;
     if ("file".equals(uri.getScheme())) {
       name = uri.getLastPathSegment();

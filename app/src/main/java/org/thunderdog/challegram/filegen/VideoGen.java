@@ -62,6 +62,7 @@ import org.thunderdog.challegram.mediaview.crop.CropState;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.unsorted.AppContext;
 import org.thunderdog.challegram.unsorted.Settings;
+import org.thunderdog.challegram.util.MediaDiagnostics;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -344,13 +345,7 @@ public class VideoGen {
     StringBuilder b = new StringBuilder();
     if (t instanceof ExportException) {
       ExportException e = (ExportException) t;
-      b.append(e.getErrorCodeName());
-      if (e.codecInfo != null) {
-        b.append(", ")
-          .append(e.codecInfo.isVideo ? "video " : "audio ")
-          .append(e.codecInfo.isDecoder ? "decoder " : "encoder ")
-          .append(e.codecInfo.name);
-      }
+      b.append(e.getErrorCodeName()).append(MediaDiagnostics.exportCodecSuffix(e));
     }
     Throwable cause = t;
     while (cause.getCause() != null && cause.getCause() != cause) {

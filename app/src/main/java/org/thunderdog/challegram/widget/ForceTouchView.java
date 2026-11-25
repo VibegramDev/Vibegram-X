@@ -1683,7 +1683,11 @@ public class ForceTouchView extends FrameLayoutFix implements
         break;
       case DataType.USER:
       case DataType.ACCOUNT:
-        setHeaderUser(user);
+        tdlib.ui().post(() -> {
+          if (!isDestroyed) {
+            setHeaderUser(user);
+          }
+        });
         break;
     }
   }

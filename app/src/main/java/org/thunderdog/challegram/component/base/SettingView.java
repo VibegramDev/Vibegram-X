@@ -1113,6 +1113,7 @@ public class SettingView extends FrameLayoutFix implements FactorAnimator.Target
   public void clearDrawModifiers () {
     if (drawModifiers != null && !drawModifiers.isEmpty()) {
       drawModifiers.clear();
+      invalidate();
     }
   }
 

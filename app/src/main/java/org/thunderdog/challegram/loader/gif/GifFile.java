@@ -14,8 +14,6 @@
  */
 package org.thunderdog.challegram.loader.gif;
 
-import android.os.SystemClock;
-
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 
@@ -30,6 +28,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.StringUtils;
@@ -39,6 +38,9 @@ public class GifFile {
   public static final int TYPE_MPEG4 = 2;
   public static final int TYPE_WEBM = 2;
   public static final int TYPE_TG_LOTTIE = 3;
+
+  // Telegram makes video stickers 512 on the longer side and emoji 100x100
+  public static final int MAX_VIDEO_STICKER_SIZE = 576, MAX_VIDEO_EMOJI_SIZE = 128;
 
   public static final int FIT_CENTER = 1;
   public static final int CENTER_CROP = 2;
@@ -78,8 +80,10 @@ public class GifFile {
   private int vibrationPattern = Emoji.VIBRATION_PATTERN_NONE;
   private int fitzpatrickType;
   private double startMediaTimestamp;
+  private int maxSourceSize;
 
-  private final long creationTime;
+  private static final AtomicLong lastInstanceId = new AtomicLong();
+  private final long instanceId;
 
   public GifFile (Tdlib tdlib, TdApi.Animation gif) {
     this(tdlib, gif.animation,
@@ -100,17 +104,23 @@ public class GifFile {
 
   public GifFile (Tdlib tdlib, TdApi.Sticker sticker) {
     this(tdlib, sticker.sticker, sticker.format);
+    if (sticker.fullType.getConstructor() == TdApi.StickerFullTypeCustomEmoji.CONSTRUCTOR) {
+      this.maxSourceSize = MAX_VIDEO_EMOJI_SIZE;
+    }
   }
 
   public GifFile (Tdlib tdlib, TdApi.File file, TdApi.StickerFormat format) {
     this(tdlib, file, toFileType(format));
+    if (format.getConstructor() == TdApi.StickerFormatWebm.CONSTRUCTOR) {
+      this.maxSourceSize = MAX_VIDEO_STICKER_SIZE;
+    }
   }
 
   public GifFile (Tdlib tdlib, TdApi.File file, int type) {
     this.tdlib = tdlib;
     this.file = file;
     this.type = type;
-    this.creationTime = SystemClock.uptimeMillis();
+    this.instanceId = lastInstanceId.incrementAndGet();
   }
 
   public boolean isLottie () {
@@ -139,6 +149,14 @@ public class GifFile {
 
   public double getStartMediaTimestamp () {
     return startMediaTimestamp;
+  }
+
+  public int getMaxSourceSize () {
+    return maxSourceSize;
+  }
+
+  public void setMaxSourceSize (int maxSourceSize) {
+    this.maxSourceSize = maxSourceSize;
   }
 
   public interface FrameChangeListener {
@@ -412,7 +430,7 @@ public class GifFile {
       b.append(",f").append(fitzpatrickType);
     }
     if (isUnique() || (isPlayOnce() && StringUtils.isEmpty(playOnceId))) {
-      b.append(",o").append(creationTime);
+      b.append(",o").append(instanceId);
     } else if (isPlayOnce()) {
       b.append(",p").append(playOnceId);
     }

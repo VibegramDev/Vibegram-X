@@ -8,6 +8,7 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
+import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.component.dialogs.SearchManager;
 import org.thunderdog.challegram.core.Lang;
@@ -102,7 +103,7 @@ public class ContactsCallsController extends ViewPagerController<Void> {
   private void layoutTabs (ViewPagerHeaderViewCompact header) {
     FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) header.getRecyclerView().getLayoutParams();
     int start = Screen.dp(18f) - Screen.dp(12f); // the item padding of ViewPagerTopView is 12dp
-    int end = Screen.dp(49f) * 2; // "New contact" and search
+    int end = Screen.dp(49f) * 2; // Search plus the current tab action
     params.leftMargin = Lang.rtl() ? end : start;
     params.rightMargin = Lang.rtl() ? start : end;
     header.getRecyclerView().setLayoutParams(params);
@@ -147,7 +148,7 @@ public class ContactsCallsController extends ViewPagerController<Void> {
     }
   }
 
-  // Header: "New contact" on the contacts tab, search on both.
+  // Header: "New contact" on Contacts, settings on Calls, search on both.
 
   @Override
   protected int getMenuId () {
@@ -162,8 +163,13 @@ public class ContactsCallsController extends ViewPagerController<Void> {
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
     if (id == R.id.menu_people) {
+      int position = getViewPager() != null ? getCurrentPagerItemPosition() : startPosition;
       header.addButton(menu, R.id.menu_btn_addContact, R.drawable.baseline_person_add_24, getHeaderIconColorId(), this, Screen.dp(49f))
-        .setVisibility(startPosition == POSITION_CONTACTS ? View.VISIBLE : View.GONE);
+        .setVisibility(position == POSITION_CONTACTS ? View.VISIBLE : View.GONE);
+      if (BuildConfig.CALLS_AVAILABLE) {
+        header.addButton(menu, R.id.menu_btn_settings, CallListController.getCallSettingsIcon(tdlib), 49f, this, getHeaderIconColorId())
+          .setVisibility(position == POSITION_CALLS ? View.VISIBLE : View.GONE);
+      }
       header.addSearchButton(menu, this);
     } else if (id == R.id.menu_clear) {
       header.addClearButton(menu, this);
@@ -176,6 +182,8 @@ public class ContactsCallsController extends ViewPagerController<Void> {
       PhoneController c = new PhoneController(context, tdlib);
       c.setMode(PhoneController.MODE_ADD_CONTACT);
       navigateTo(c);
+    } else if (id == R.id.menu_btn_settings && BuildConfig.CALLS_AVAILABLE) {
+      tdlib.ui().openCallSettings(this);
     } else if (id == R.id.menu_btn_search) {
       openSearchMode();
     } else if (id == R.id.menu_btn_clear) {
@@ -188,6 +196,9 @@ public class ContactsCallsController extends ViewPagerController<Void> {
     super.onPageSelected(position, actualPosition);
     if (headerView != null) {
       headerView.updateButton(getMenuId(), R.id.menu_btn_addContact, position == POSITION_CONTACTS ? View.VISIBLE : View.GONE, 0);
+      if (BuildConfig.CALLS_AVAILABLE) {
+        headerView.updateButton(getMenuId(), R.id.menu_btn_settings, position == POSITION_CALLS ? View.VISIBLE : View.GONE, CallListController.getCallSettingsIcon(tdlib));
+      }
     }
   }
 

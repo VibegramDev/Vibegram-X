@@ -1264,6 +1264,32 @@ public class RecordAudioVideoController implements
     return recordMode != RECORD_MODE_NONE || Math.max(recordFactor, editFactor) > 0f;
   }
 
+  private final List<Runnable> actsOnceClosed = new ArrayList<>();
+
+  public void runOnceClosed (Runnable act) {
+    if (isOpen()) {
+      actsOnceClosed.add(act);
+    } else {
+      act.run();
+    }
+  }
+
+  private void checkClosed () {
+    if (!isOpen() && !actsOnceClosed.isEmpty()) {
+      // Posted: with animations off, a round video resumed from its preview closes and opens again
+      UI.post(() -> {
+        if (isOpen()) {
+          return;
+        }
+        List<Runnable> acts = new ArrayList<>(actsOnceClosed);
+        actsOnceClosed.clear();
+        for (Runnable act : acts) {
+          act.run();
+        }
+      });
+    }
+  }
+
   // Permissions check
 
   private boolean requestPermissions (boolean video, boolean allowRequest) {
@@ -1404,6 +1430,7 @@ public class RecordAudioVideoController implements
     StuckWatch.event("recorder mode " + this.recordMode + " -> " + mode);
     this.recordMode = mode;
     context.notifyBackPressAvailabilityChanged();
+    checkClosed();
   }
 
   private void setRecordMode (int mode, boolean animated) {
@@ -1881,6 +1908,7 @@ public class RecordAudioVideoController implements
         break;
       }
     }
+    checkClosed();
   }
 
   // Record  impl

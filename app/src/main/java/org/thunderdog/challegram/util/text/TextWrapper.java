@@ -36,7 +36,7 @@ import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.lambda.Destroyable;
 
-public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.TextMediaListener, Text.QuoteExpander, Text.SpoilerRevealListener {
+public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.TextMediaListener, Text.SpoilerRevealListener {
   private static final int PORTRAIT_INDEX = 0;
   private static final int LANDSCAPE_INDEX = 1;
 
@@ -83,10 +83,16 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
 
   private TextWrapper setTextFlags (int textFlags) {
     if (this.textFlags != textFlags) {
+      final boolean needLayout =
+        BitwiseUtils.hasFlag(this.textFlags ^ textFlags, Text.FLAG_WRAP_CODE_BLOCKS);
       this.textFlags = textFlags;
-      for (Text text : texts) {
-        if (text != null)
-          text.setTextFlags(textFlags);
+      for (int i = 0; i < texts.length; i++) {
+        if (texts[i] != null) {
+          texts[i].setTextFlags(textFlags);
+          if (needLayout) {
+            sizes[i] = 0;
+          }
+        }
       }
     }
     return this;
@@ -117,6 +123,13 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
 
   public TextWrapper setLineWidthProvider (Text.LineWidthProvider provider) {
     this.lineWidthProvider = provider;
+    return this;
+  }
+
+  private @Nullable BlockSwitches blockSwitches;
+
+  public TextWrapper setBlockSwitches (@Nullable BlockSwitches blockSwitches) {
+    this.blockSwitches = blockSwitches;
     return this;
   }
 
@@ -229,7 +242,8 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
     }
 
     boolean sizeChanged = textSizes[index] != textSizePx || (texts[index] != null && texts[index].getMaxLineCount() != maxLines);
-    if (sizeChanged || texts[index] == null || sizes[index] != maxWidth) {
+    if (sizeChanged || texts[index] == null || sizes[index] != maxWidth ||
+      texts[index].needLayoutForBlockSwitches()) {
       boolean needBigEmoji = BitwiseUtils.hasFlag(textFlags, Text.FLAG_BIG_EMOJI) && Settings.instance().useBigEmoji();
       final Text oldText = texts[index];
       Text text = oldText;
@@ -242,7 +256,7 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
           .viewProvider(viewProvider)
           .highlight(highlightText)
           .lineWidthProvider(lineWidthProvider)
-          .quoteExpander(quoteToggleListener != null ? this : null)
+          .blockSwitches(blockSwitches)
           .textFlags(BitwiseUtils.setFlag(textFlags, Text.FLAG_BIG_EMOJI, false));
         text = b.build();
         if (needBigEmoji) {
@@ -267,9 +281,8 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
         }
       }
       text.setViewProvider(viewProvider);
-      text.setQuoteExpander(quoteToggleListener != null ? this : null);
       text.setSpoilerRevealListener(this);
-      if (spoilersRevealed) {
+      if (spoilersRevealed && text != oldText) {
         text.revealSpoilersImmediately();
       }
       sizes[index] = maxWidth;
@@ -300,6 +313,16 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
   public int getLineWidth (int lineIndex) {
     final Text text = getCurrent();
     return text == null ? -1 : text.getLineWidth(lineIndex);
+  }
+
+  public boolean endsWithCodeBlock () {
+    final Text text = getCurrent();
+    return text != null && text.endsWithCodeBlock();
+  }
+
+  public boolean endsWithExpandableQuote () {
+    final Text text = getCurrent();
+    return text != null && text.endsWithExpandableQuote();
   }
 
   public boolean getLastLineIsRtl () {
@@ -339,27 +362,6 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
   private MultipleViewProvider currentViews;
   private ViewProvider viewProvider;
 
-  // Expandable quotes
-
-  private @Nullable Runnable quoteToggleListener;
-  private @Nullable java.util.Set<Integer> expandedQuotes;
-
-  /** Enables collapsing of expandable quotes; the listener is called after a quote is expanded or collapsed. */
-  public TextWrapper setQuoteToggleListener (@Nullable Runnable listener) {
-    this.quoteToggleListener = listener;
-    for (Text text : texts) {
-      if (text != null) {
-        text.setQuoteExpander(listener != null ? this : null);
-      }
-    }
-    return this;
-  }
-
-  @Override
-  public boolean isQuoteExpanded (int quoteId) {
-    return expandedQuotes != null && expandedQuotes.contains(quoteId);
-  }
-
   // Vibegram: hidden text revealed in one layout stays revealed in the others (rotation, resize)
   private boolean spoilersRevealed;
 
@@ -370,24 +372,6 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
       if (other != null && other != text) {
         other.revealSpoilersImmediately();
       }
-    }
-  }
-
-  @Override
-  public void onQuoteToggle (Text text, int quoteId) {
-    if (expandedQuotes == null) {
-      expandedQuotes = new java.util.HashSet<>();
-    }
-    if (!expandedQuotes.remove(quoteId)) {
-      expandedQuotes.add(quoteId);
-    }
-    for (Text t : texts) {
-      if (t != null) {
-        t.changeMaxWidth(t.getMaxWidth(), true);
-      }
-    }
-    if (quoteToggleListener != null) {
-      quoteToggleListener.run();
     }
   }
 
@@ -469,8 +453,15 @@ public class TextWrapper implements ListAnimator.Measurable, Destroyable, Text.T
   public final void draw (Canvas c, int startX, int endX, int endXPadding, int startY, TextColorSet colorTheme, float alpha, @Nullable ComplexReceiver textMediaReceiver) {
     final Text text = getCurrent();
     if (text != null) {
+      text.setCodeBlockEnd(codeBlockEnd);
       text.draw(c, startX, endX, endXPadding, startY, colorTheme, alpha, textMediaReceiver);
     }
+  }
+
+  private int codeBlockEnd = Text.NO_CODE_BLOCK_END;
+
+  public void setCodeBlockEnd (int codeBlockEnd) {
+    this.codeBlockEnd = codeBlockEnd;
   }
 
   @Override

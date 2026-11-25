@@ -567,13 +567,16 @@ public abstract class PageBlock {
       case TdApi.PageBlockBlockQuote.CONSTRUCTOR: {
         TdApi.PageBlockBlockQuote quoteRaw = (TdApi.PageBlockBlockQuote) block;
         context.openQuotes.add(quoteRaw);
+        int quoteStart = out.size();
         for (int i = 0; i < quoteRaw.blocks.length; i++) {
           TdApi.PageBlock quoteBlock = quoteRaw.blocks[i];
           parse(parent, out, context, quoteBlock, openParameters);
         }
         if (!Td.isEmpty(quoteRaw.credit)) {
           PageBlockRichText credit = new PageBlockRichText(parent, quoteRaw, context.quoteLevel(), openParameters);
-          credit.mergeWith(out.get(out.size() - 1));
+          if (out.size() > quoteStart) {
+            credit.mergeWith(out.get(out.size() - 1));
+          }
           context.process(credit, out);
         }
         context.openQuotes.remove(context.openQuotes.size() - 1);
