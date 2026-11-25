@@ -3710,20 +3710,16 @@ public class MessagesController extends ViewController<MessagesController.Argume
       if (last == -1) {
         last = manager.findLastVisibleItemPosition();
       }
-      if (first != -1 && last != -1 && !messagesView.isComputingLayout()) {
-        MessagesAdapter adapter = this.manager.getAdapter();
-        final int messageCount = adapter.getMessageCount();
-        if (messageCount > 0) {
-          for (int i = first; i <= last; i++) {
-            if (i >= 0 && i < messageCount && MessagesHolder.isMessageType(adapter.getItemViewType(i)) && adapter.getItem(i).getId() == playingMessageId) {
-              View view = manager.findViewByPosition(i);
-              if (view instanceof MessageViewGroup) {
-                TGMessage msg = ((MessageViewGroup) view).getMessageView().getMessage();
-                if (msg != null && msg.getId() == playingMessageId) {
-                  targetView = ((MessageViewGroup) view);
-                  break;
-                }
-              }
+      if (first != -1 && last != -1) {
+        // These are layout positions. The adapter may already contain a new message
+        // while the visible children are still laid out at their old positions.
+        for (int i = first; i <= last; i++) {
+          View view = manager.findViewByPosition(i);
+          if (view instanceof MessageViewGroup) {
+            TGMessage message = ((MessageViewGroup) view).getMessage();
+            if (message != null && message.getChatId() == getChatId() && message.getId() == playingMessageId) {
+              targetView = (MessageViewGroup) view;
+              break;
             }
           }
         }
