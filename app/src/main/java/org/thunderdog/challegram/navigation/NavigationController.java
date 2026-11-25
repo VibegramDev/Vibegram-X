@@ -835,16 +835,6 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
     }
   }
 
-  private org.thunderdog.challegram.widget.M3Backdrop.Source[] contentBackdropSources;
-
-  /** Vibegram X: the screens under {@link #getPersistentBarLayer()}, blurred behind the dock. */
-  public org.thunderdog.challegram.widget.M3Backdrop.Source[] getContentBackdropSources () {
-    if (contentBackdropSources == null) {
-      contentBackdropSources = new org.thunderdog.challegram.widget.M3Backdrop.Source[] {contentWrapper.backdrop};
-    }
-    return contentBackdropSources;
-  }
-
   /** Layer above the screens and below the app bar; it doesn't take touches itself. */
   public FrameLayoutFix getPersistentBarLayer () {
     if (persistentBarLayer == null) {

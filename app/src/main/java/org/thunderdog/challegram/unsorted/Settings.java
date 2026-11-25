@@ -434,8 +434,6 @@ public class Settings {
   public static final long SETTING_FLAG_FOLDER_SLIDE_OFF_FILTERS = 1 << 21;
   /** Unused since -128 (contacts are always in the dock, calls are their tab); the bit stays reserved. */
   public static final long SETTING_FLAG_DOCK_CONTACTS = 1 << 22;
-  /** Vibegram X: no blur behind the dock and the message composer (Android 12+, on by default). */
-  public static final long SETTING_FLAG_NO_BACKDROP_BLUR = 1 << 23;
 
   public static final long EXPERIMENT_FLAG_ALLOW_EXPERIMENTS = 1;
   public static final long EXPERIMENT_FLAG_SHOW_PEER_IDS = 1 << 2;

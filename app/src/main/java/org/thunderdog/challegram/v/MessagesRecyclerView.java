@@ -66,20 +66,6 @@ public class MessagesRecyclerView extends RecyclerView implements FactorAnimator
 
   private CustomItemAnimator itemAnimator;
 
-  /** Vibegram X: messages behind the floating composer, blurred there (M3Backdrop). */
-  public final org.thunderdog.challegram.widget.M3Backdrop.Source backdrop = new org.thunderdog.challegram.widget.M3Backdrop.Source(this);
-
-  @Override
-  public void draw (Canvas c) {
-    Canvas content = backdrop.beginDraw(c);
-    if (content != null) {
-      super.draw(content);
-      backdrop.endDraw(c);
-    } else {
-      super.draw(c);
-    }
-  }
-
   private boolean animatorEnabled;
 
   public void setMessageAnimatorEnabled (boolean isEnabled) {

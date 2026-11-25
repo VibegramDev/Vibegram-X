@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Vibegram X: Settings → Interface → blur behind the dock and the message composer (Android 12+). -->
-<resources>
-  <string name="vg_BackdropBlur">Blur under bars</string>
-</resources>

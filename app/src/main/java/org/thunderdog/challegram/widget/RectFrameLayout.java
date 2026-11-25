@@ -162,7 +162,7 @@ public class RectFrameLayout extends FrameLayoutFix {
         fade.setXfermode(SRC_ATOP);
       }
       final float containerTop = bottomFade.hasShape ? bottomFade.shape.top : bottomFade.fadeTop;
-      fade.drawRamp(c, getMeasuredWidth(), M3BottomScrimView.composerRampTop(bottomFade.fadeTop, containerTop), M3BottomScrimView.composerRampBottom(containerTop), Math.max(getMeasuredHeight(), bottomFade.fadeBottom), bottomFade.alpha * M3BottomScrimView.composerVeilAlpha());
+      fade.drawRamp(c, getMeasuredWidth(), M3BottomScrimView.composerRampTop(bottomFade.fadeTop, containerTop), M3BottomScrimView.composerRampBottom(containerTop), Math.max(getMeasuredHeight(), bottomFade.fadeBottom), bottomFade.alpha);
       if (bottomFade.hasShape) {
         if (shadowPaint == null) {
           shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
