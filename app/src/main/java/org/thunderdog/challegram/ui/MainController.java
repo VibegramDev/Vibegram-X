@@ -209,6 +209,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
   }
 
   private FrameLayoutFix mainWrap;
+  /** Vibegram X: the chat lists and the tablet sections, blurred behind the dock (M3Backdrop). */
+  private FrameLayoutFix backdropWrap;
+  private org.thunderdog.challegram.widget.M3Backdrop.Source[] backdropSources;
   /** Root of the main screen: hosts the dock section of the tablet left pane above the chat list, below the bar. */
   private FrameLayoutFix rootContentView;
   private @Nullable View tabletSectionView;
@@ -354,7 +357,29 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     mainWrap.addView(pagerWrap);
     generateChatSearchView(mainWrap);
 
-    contentView.addView(mainWrap);
+    backdropWrap = new FrameLayoutFix(context) {
+      private final org.thunderdog.challegram.widget.M3Backdrop.Source backdrop = new org.thunderdog.challegram.widget.M3Backdrop.Source(this);
+
+      {
+        backdropSources = new org.thunderdog.challegram.widget.M3Backdrop.Source[] {backdrop};
+        // A view group without a background skips draw(Canvas) and only dispatches it.
+        setWillNotDraw(false);
+      }
+
+      @Override
+      public void draw (android.graphics.Canvas c) {
+        android.graphics.Canvas content = backdrop.beginDraw(c);
+        if (content != null) {
+          super.draw(content);
+          backdrop.endDraw(c);
+        } else {
+          super.draw(c);
+        }
+      }
+    };
+    backdropWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    backdropWrap.addView(mainWrap);
+    contentView.addView(backdropWrap);
 
     navigationBar = new MainNavigationBar(context, this);
     navigationBar.setMyUser(tdlib);
@@ -393,6 +418,8 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       out.set(left, top, left + navigationBar.getWidth(), top + navigationBar.getHeight());
       return true;
     }, MainNavigationBar.getBarRadius());
+    // Over Calls, Contacts and Settings the dock lies in the layer of the navigation, above its screens.
+    navigationScrim.setBackdropProvider(() -> navigationInOverlay && overlayNavigation != null ? overlayNavigation.getContentBackdropSources() : backdropSources);
     addThemeInvalidateListener(navigationScrim);
     contentView.addView(navigationScrim);
     contentView.addView(navigationBar);
@@ -1468,12 +1495,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
     if (tabletSectionView == view || rootContentView == null) {
       return;
     }
-    if (tabletSectionView != null && tabletSectionView.getParent() == rootContentView) {
-      rootContentView.removeView(tabletSectionView);
+    if (tabletSectionView != null && tabletSectionView.getParent() == backdropWrap) {
+      backdropWrap.removeView(tabletSectionView);
     }
     tabletSectionView = view;
     if (view != null) {
-      rootContentView.addView(view, rootContentView.indexOfChild(mainWrap) + 1);
+      backdropWrap.addView(view, backdropWrap.indexOfChild(mainWrap) + 1);
     }
     mainWrap.setVisibility(view != null ? View.INVISIBLE : View.VISIBLE);
   }
@@ -1721,8 +1748,9 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       layer.setVisibility(View.VISIBLE);
       int index = navigationIndex >= 0 && navigationIndex <= rootContentView.getChildCount() ? navigationIndex : rootContentView.getChildCount();
       // The tablet section content may have been added meanwhile (unfold): the bar stays above it.
-      if (tabletSectionView != null && tabletSectionView.getParent() == rootContentView) {
-        index = Math.max(index, rootContentView.indexOfChild(tabletSectionView) + 1);
+      // The tablet section content lies in backdropWrap: the bar stays above it.
+      if (backdropWrap != null && backdropWrap.getParent() == rootContentView) {
+        index = Math.max(index, rootContentView.indexOfChild(backdropWrap) + 1);
       }
       rootContentView.addView(navigationScrim, index);
       rootContentView.addView(navigationBar, index + 1);

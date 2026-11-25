@@ -57,6 +57,20 @@ public class WallpaperView extends View implements ThemeChangeListener, ChatStyl
 
   private boolean inSetupMode, inSelfBlurMode, selfBlurValue;
 
+  /** Vibegram X: the wallpaper of the chat behind the floating composer, blurred there (M3Backdrop). */
+  public final org.thunderdog.challegram.widget.M3Backdrop.Source backdrop = new org.thunderdog.challegram.widget.M3Backdrop.Source(this);
+
+  @Override
+  public void draw (Canvas c) {
+    Canvas content = backdrop.beginDraw(c);
+    if (content != null) {
+      super.draw(content);
+      backdrop.endDraw(c);
+    } else {
+      super.draw(c);
+    }
+  }
+
   public WallpaperView (Context context, MessagesManager manager, Tdlib tdlib) {
     super(context);
     this.manager = manager;

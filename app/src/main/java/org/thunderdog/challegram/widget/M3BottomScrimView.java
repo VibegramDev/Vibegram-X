@@ -34,6 +34,7 @@ import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.theme.ThemeInvalidateListener;
 import org.thunderdog.challegram.tool.Screen;
+import org.thunderdog.challegram.unsorted.Settings;
 
 import me.vkryl.core.ColorUtils;
 
@@ -42,9 +43,15 @@ import me.vkryl.core.ColorUtils;
  * owner removed the fade of the official app). Behind the composer the messages are veiled by a flat surface
  * ({@link #COMPOSER_ALPHA}) after a short eased ramp above it ({@link FadeTopProvider}): the owner wants them only a bit
  * hidden there, without the darkening that grows down to the bottom. {@link Fade} is the fade of the official app,
- * still used under the strip of mini app tabs.
+ * still used under the strip of mini app tabs. On Android 12+ both blur the content behind them first
+ * ({@link M3Backdrop}, setting «Blur under bars»), the composer veil is then weaker ({@link #COMPOSER_ALPHA_OVER_BLUR}).
  */
-public class M3BottomScrimView extends View implements ThemeInvalidateListener {
+public class M3BottomScrimView extends View implements ThemeInvalidateListener, Settings.SettingsChangeListener {
+  /** Content behind the container, blurred in its band. Never an ancestor of the scrim (the nodes would draw themselves). */
+  public interface BackdropProvider {
+    @Nullable M3Backdrop.Source[] getBackdropSources ();
+  }
+
   public interface ShapeProvider {
     /** Fills the bounds of the floating container in the coordinates of this view, false when there is none. */
     boolean getShape (@NonNull M3BottomScrimView view, @NonNull RectF out);
@@ -57,6 +64,14 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
 
   /** Opacity of the flat surface behind the composer: the messages stay barely visible there. */
   public static final int COMPOSER_ALPHA = 0xCC;
+
+  /** The same over the blur (owner: blur first, a weaker veil over it). */
+  public static final int COMPOSER_ALPHA_OVER_BLUR = 0x80;
+
+  /** Factor of the composer veil: weaker over the blur. */
+  public static float composerVeilAlpha () {
+    return M3Backdrop.isEnabled() ? (float) COMPOSER_ALPHA_OVER_BLUR / COMPOSER_ALPHA : 1f;
+  }
 
   /**
    * Ramp from transparent to {@link #COMPOSER_ALPHA}: it starts a bit above the composer (inside the gap left under the
@@ -75,6 +90,8 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
   private @Nullable ShapeProvider provider;
   private @Nullable FadeTopProvider fadeTopProvider;
   private Fade composerFade;
+  private @Nullable BackdropProvider backdropProvider;
+  private M3Backdrop.Blur blur;
   private float radius;
 
   public M3BottomScrimView (Context context) {
@@ -93,6 +110,36 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     invalidate();
   }
 
+  public void setBackdropProvider (@Nullable BackdropProvider backdropProvider) {
+    if (this.backdropProvider != backdropProvider) {
+      this.backdropProvider = backdropProvider;
+      invalidate();
+    }
+  }
+
+  @Override
+  protected void onAttachedToWindow () {
+    super.onAttachedToWindow();
+    if (M3Backdrop.isSupported()) {
+      Settings.instance().addNewSettingsListener(this);
+    }
+  }
+
+  @Override
+  protected void onDetachedFromWindow () {
+    super.onDetachedFromWindow();
+    if (M3Backdrop.isSupported()) {
+      Settings.instance().removeNewSettingsListener(this);
+    }
+  }
+
+  @Override
+  public void onSettingsChanged (long newSettings, long oldSettings) {
+    if (((newSettings ^ oldSettings) & Settings.SETTING_FLAG_NO_BACKDROP_BLUR) != 0) {
+      invalidate();
+    }
+  }
+
   @Override
   public void onThemeInvalidate (boolean isTempUpdate) {
     invalidate();
@@ -103,12 +150,20 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
     if (provider == null || !provider.getShape(this, shape)) {
       return;
     }
+    // The composer: from the top of the band it keeps free (or a bit above it). The dock: a bit above it, in its band.
+    final float rampTop = fadeTopProvider != null ? composerRampTop(fadeTopProvider.getFadeTop(this, shape), shape.top) : Math.max(0f, shape.top - Screen.dp(COMPOSER_RAMP_ABOVE_DP));
+    final float rampBottom = composerRampBottom(shape.top);
+    if (backdropProvider != null && M3Backdrop.isEnabled()) {
+      if (blur == null) {
+        blur = new M3Backdrop.Blur();
+      }
+      blur.draw(c, this, rampTop, rampBottom, getHeight(), backdropProvider.getBackdropSources());
+    }
     if (fadeTopProvider != null) {
       if (composerFade == null) {
         composerFade = new Fade(COMPOSER_ALPHA);
       }
-      float fadeTop = composerRampTop(fadeTopProvider.getFadeTop(this, shape), shape.top);
-      composerFade.drawRamp(c, getWidth(), fadeTop, composerRampBottom(shape.top), getHeight(), 1f);
+      composerFade.drawRamp(c, getWidth(), rampTop, rampBottom, getHeight(), composerVeilAlpha());
     }
     drawShadow(c, shadowPaint, shape, radius, 1f);
   }
@@ -190,7 +245,7 @@ public class M3BottomScrimView extends View implements ThemeInvalidateListener {
    * {@code color} from {@code alphaFrom} at y = 0 to {@code alphaTo} at y = 1, eased in and out (smoothstep): a linear
    * ramp shows a visible line where it starts.
    */
-  private static Shader newEasedFade (int color, int alphaFrom, int alphaTo) {
+  static Shader newEasedFade (int color, int alphaFrom, int alphaTo) {
     final int rgb = color & 0x00FFFFFF;
     final int steps = SMOOTH_FADE_STEPS;
     final int[] colors = new int[steps + 1];

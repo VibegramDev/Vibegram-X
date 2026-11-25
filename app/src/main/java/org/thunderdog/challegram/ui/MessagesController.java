@@ -1774,6 +1774,9 @@ public class MessagesController extends ViewController<MessagesController.Argume
       composerScrim.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       composerScrim.setVisibility(View.GONE);
       composerScrim.setFadeTopProvider(this::getComposerFadeTop);
+      // The wallpaper and the messages are blurred behind the composer (Android 12+).
+      final org.thunderdog.challegram.widget.M3Backdrop.Source[] backdropSources = {wallpaperView.backdrop, messagesView.backdrop};
+      composerScrim.setBackdropProvider(() -> backdropSources);
       addThemeInvalidateListener(composerScrim);
       contentView.addView(composerScrim);
       if (!inPreviewMode) {

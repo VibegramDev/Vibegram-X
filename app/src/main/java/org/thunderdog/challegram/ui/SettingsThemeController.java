@@ -533,6 +533,11 @@ public class SettingsThemeController extends RecyclerViewController<SettingsThem
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_customVibrations, 0, R.string.CustomVibrations));
       items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
       items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_reduceMotion, 0, R.string.ReduceMotion, Settings.instance().needReduceMotion()));
+      if (org.thunderdog.challegram.widget.M3Backdrop.isSupported()) {
+        // Vibegram X: blur behind the dock and the message composer, on by default (Android 12+).
+        items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
+        items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_toggleNewSetting, 0, R.string.vg_BackdropBlur).setLongId(Settings.SETTING_FLAG_NO_BACKDROP_BLUR).setBoolValue(true));
+      }
       if (Lang.rtl() || Lang.getLanguageDirection() != Lang.LANGUAGE_DIRECTION_LTR) {
         items.add(new ListItem(ListItem.TYPE_SEPARATOR_FULL));
         items.add(new ListItem(ListItem.TYPE_RADIO_SETTING, R.id.btn_switchRtl, 0, R.string.RtlLayout));

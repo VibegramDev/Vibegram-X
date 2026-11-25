@@ -26,6 +26,22 @@ import me.vkryl.core.lambda.Destroyable;
 public class NavigationLayout extends FrameLayoutFix implements Destroyable, RootFrameLayout.InsetsChangeListener {
   public NavigationLayout (Context context) {
     super(context);
+    // A view group without a background skips draw(Canvas) and only dispatches it (backdrop below).
+    setWillNotDraw(false);
+  }
+
+  /** Vibegram X: screens shown with the dock (Calls, Contacts, Settings) behind the floating dock, blurred there (M3Backdrop). */
+  public final org.thunderdog.challegram.widget.M3Backdrop.Source backdrop = new org.thunderdog.challegram.widget.M3Backdrop.Source(this);
+
+  @Override
+  public void draw (android.graphics.Canvas c) {
+    android.graphics.Canvas content = backdrop.beginDraw(c);
+    if (content != null) {
+      super.draw(content);
+      backdrop.endDraw(c);
+    } else {
+      super.draw(c);
+    }
   }
 
   private RootFrameLayout rootView;
