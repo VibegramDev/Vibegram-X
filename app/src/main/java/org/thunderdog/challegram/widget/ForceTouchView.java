@@ -1178,7 +1178,6 @@ public class ForceTouchView extends FrameLayoutFix implements
 
       if (forceTouchContext.maximizeListener != null) {
         if (forceTouchContext.maximizeListener.onPerformMaximize(revealAnimator, MAXIMIZE_FACTOR, forceTouchContext.listenerArg)) {
-          org.thunderdog.challegram.util.StuckWatch.event("preview maximize: waiting for the opened screen, revealFactor=" + revealFactor);
           return true;
         }
       }
@@ -1683,7 +1682,11 @@ public class ForceTouchView extends FrameLayoutFix implements
         break;
       case DataType.USER:
       case DataType.ACCOUNT:
-        setHeaderUser(user);
+        tdlib.ui().post(() -> {
+          if (!isDestroyed) {
+            setHeaderUser(user);
+          }
+        });
         break;
     }
   }

@@ -24,15 +24,22 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.annotation.ChecksSdkIntAtLeast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.media3.common.C;
 import androidx.media3.common.Effect;
+import androidx.media3.common.Format;
+import androidx.media3.common.MimeTypes;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.VideoSize;
+import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
+import androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException;
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.source.ClippingMediaSource;
 import androidx.media3.exoplayer.source.MediaSource;
 
@@ -68,6 +75,9 @@ import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.CancellableRunnable;
+import tgx.player.OriginalVideoFailures;
+import tgx.player.VideoDecoderSelector;
+import tgx.player.VideoDecoders;
 import tgx.td.data.HlsVideo;
 
 public class VideoPlayerView implements Player.Listener, CallManager.CurrentCallListener, Runnable {
@@ -144,7 +154,99 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
 
   private @Nullable MediaItem currentItem;
 
+  private static final OriginalVideoFailures originalFailures = new OriginalVideoFailures();
+
+  // HLS of the original that plays, while it may still give way to it
+  private @Nullable HlsVideo alternativesOfOriginal;
+  private boolean hasOriginalFailed;
+
+  private final VideoDecoderSelector decoderSelector = new VideoDecoderSelector();
+  private @Nullable MediaItem failedDecodersItem;
+  private boolean hasFailedDecodersOfHls;
+
+  private static boolean hasFailedInHardware (HlsVideo hlsVideo) {
+    return originalFailures.isRemembered(hlsVideo.video.video.remote.uniqueId);
+  }
+
+  private static boolean canReplaceOriginal (MediaItem mediaItem, HlsVideo hlsVideo) {
+    boolean isConnectedOrUpdating = mediaItem.tdlib().isConnectedOrUpdating();
+    return VideoDecoders.areVideoDecodersQueried() &&
+      hlsVideo.canReplaceOriginal(VideoDecoders.getVideoDecoderSupport(), isConnectedOrUpdating);
+  }
+
+  private boolean replaceFailedOriginal (@Nullable PlaybackException error) {
+    MediaItem mediaItem = currentItem;
+    HlsVideo hlsVideo = alternativesOfOriginal;
+    if (player == null || mediaItem == null || hlsVideo == null) {
+      return false;
+    }
+    alternativesOfOriginal = null;
+    String uniqueId = hlsVideo.video.video.remote.uniqueId;
+    if (!hasOriginalFailed) {
+      hasOriginalFailed = true;
+      if (error != null) {
+        originalFailures.addDecoderError(uniqueId, error.errorCode);
+      } else {
+        originalFailures.addSoftwareDecoder(uniqueId);
+      }
+    }
+    if (!canReplaceOriginal(mediaItem, hlsVideo)) {
+      return false;
+    }
+    Log.w(
+      Log.TAG_VIDEO,
+      "Unable to play the original video in hardware, playing its alternatives, remembered: %b",
+      error,
+      originalFailures.isRemembered(uniqueId)
+    );
+    restartVideo(mediaItem, true);
+    return true;
+  }
+
+  private long getResumePosition () {
+    long positionMs = player != null && player.getCurrentMediaItem() != null ? player.getCurrentPosition() : C.TIME_UNSET;
+    return positionMs >= 0 ? positionMs : lastPosition;
+  }
+
+  private void restartVideo (@NonNull MediaItem mediaItem, boolean hasOriginalFailed) {
+    long positionMs = getResumePosition();
+    boolean played = playedSinceSet;
+    // Keep the playback intent and bypass position persistence during internal source changes.
+    releasePlayer();
+    currentItem = null;
+    setVideo(mediaItem, hasOriginalFailed, positionMs);
+    playedSinceSet |= played;
+  }
+
+  private void replaceOriginalIfSoftware (
+    ExoPlayer decodingPlayer,
+    HlsVideo hlsVideo,
+    String decoderName
+  ) {
+    // Events of a released player may still come
+    // ExoPlayer starts a software decoder when the hardware one fails to start or is missing
+    if (decodingPlayer == player && hlsVideo == alternativesOfOriginal &&
+      VideoDecoders.isSoftwareVideoDecoder(decoderName)) {
+      replaceFailedOriginal(null);
+    }
+  }
+
+  private void releasePlayer () {
+    UI.cancel(bufferedPoll);
+    mediaSource = null;
+    player.removeListener(this);
+    player.setVideoTextureView(null);
+    Views.removeFromParent(targetView);
+    player.release();
+    player = null;
+    needPrepareOnSurface = false;
+  }
+
   public void setVideo (@Nullable MediaItem mediaItem) {
+    setVideo(mediaItem, false, C.TIME_UNSET);
+  }
+
+  private void setVideo (@Nullable MediaItem mediaItem, boolean hasOriginalFailed, long resumePositionMs) {
     if (!Config.VIDEO_PLAYER_AVAILABLE) {
       if (mediaItem != null && mediaItem.isLoaded()) {
         U.openFile(UI.getContext(context).navigation().getCurrentStackItem(), mediaItem.getSourceVideo());
@@ -167,17 +269,17 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     this.currentItem = mediaItem;
     this.playedSinceSet = false;
     this.isHls = false;
+    this.lastPosition = 0;
     UI.cancel(bufferedPoll);
+    this.alternativesOfOriginal = null;
+    this.hasOriginalFailed = hasOriginalFailed;
     checkAudioFocus();
     if (isDetached) {
       return;
     }
     if (mediaItem == null) {
       if (player != null) {
-        player.setVideoTextureView(null);
-        Views.removeFromParent(targetView);
-        player.release();
-        player = null;
+        releasePlayer();
       }
       setLongStreamingAlertHandler(false);
       setPlaying(false);
@@ -186,6 +288,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
 
     // String path;
     MediaSource source;
+    boolean isHls = false;
 
     boolean forcePlay = false;
 
@@ -194,12 +297,19 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       case MediaItem.TYPE_GIF: {
         HlsVideo hlsVideo = mediaItem.getHslVideo();
         TdApi.File targetFile = mediaItem.getTargetFile();
-        if (hlsVideo == null || TD.isFileLoaded(targetFile) || targetFile.local.isDownloadingActive || !hlsVideo.hasSupportedCodecs() || Settings.instance().getNewSetting(Settings.SETTING_FLAG_FORCE_DISABLE_HLS_VIDEO)) {
-          long durationMs = mediaItem.getVideoDuration(false, TimeUnit.MILLISECONDS);
-          source = U.newMediaSource(mediaItem.tdlib().id(), targetFile, TdlibFilesManager.PRIORITY_STREAMING_VIDEO, TdlibDataSource.Flag.OPTIMIZE_CHUNKS, durationMs);
-        } else {
+        boolean allowsHls = hlsVideo != null && hlsVideo.hasSupportedCodecs() &&
+          !Settings.instance().getNewSetting(Settings.SETTING_FLAG_FORCE_DISABLE_HLS_VIDEO);
+        boolean isOriginalLocal =
+          TD.isFileLoaded(targetFile) || targetFile.local.isDownloadingActive;
+        if (allowsHls && (!isOriginalLocal ||
+          ((hasOriginalFailed || hasFailedInHardware(hlsVideo)) &&
+            canReplaceOriginal(mediaItem, hlsVideo)))) {
           source = U.newMediaSource(mediaItem.tdlib().id(), hlsVideo);
           isHls = true;
+        } else {
+          long durationMs = mediaItem.getVideoDuration(false, TimeUnit.MILLISECONDS);
+          source = U.newMediaSource(mediaItem.tdlib().id(), targetFile, TdlibFilesManager.PRIORITY_STREAMING_VIDEO, TdlibDataSource.Flag.OPTIMIZE_CHUNKS, durationMs);
+          alternativesOfOriginal = allowsHls ? hlsVideo : null;
         }
         forcePlay = mediaItem.getType() == MediaItem.TYPE_GIF;
         break;
@@ -215,8 +325,15 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       }
     }
 
+    this.isHls = isHls;
+    if (failedDecodersItem != mediaItem || hasFailedDecodersOfHls != isHls) {
+      failedDecodersItem = mediaItem;
+      hasFailedDecodersOfHls = isHls;
+      decoderSelector.clear();
+    }
+
     if (player == null) {
-      this.player = U.newExoPlayer(context, preferExtensions);
+      this.player = U.newExoPlayer(context, preferExtensions, decoderSelector);
       this.player.addListener(this);
       checkMuted();
       this.player.setVideoTextureView(renderView);
@@ -226,14 +343,37 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       //        estimated remaining download time (when can be determined) is over 2 seconds.
       //        Uncomment line below once implemented properly.
       // setLongStreamingAlertHandler(true);
+      ExoPlayer listenedPlayer = this.player;
       this.player.addAnalyticsListener(new AnalyticsListener() {
         @Override
         public void onRenderedFirstFrame (@NonNull EventTime eventTime, @NonNull Object output, long renderTimeMs) {
-          setLongStreamingAlertHandler(false);
+          if (listenedPlayer == player) {
+            setLongStreamingAlertHandler(false);
+          }
+        }
+
+        @Override
+        public void onVideoDecoderInitialized (
+          @NonNull EventTime eventTime,
+          @NonNull String decoderName,
+          long initializedTimestampMs,
+          long initializationDurationMs
+        ) {
+          HlsVideo hlsVideo = alternativesOfOriginal;
+          if (hlsVideo == null) {
+            return;
+          }
+          if (VideoDecoders.areVideoDecodersQueried()) {
+            replaceOriginalIfSoftware(listenedPlayer, hlsVideo, decoderName);
+          } else {
+            VideoDecoders.whenVideoDecodersQueried(() -> UI.post(() ->
+              replaceOriginalIfSoftware(listenedPlayer, hlsVideo, decoderName)
+            ));
+          }
         }
       });
 
-      this.player.setPlayWhenReady(isPlaying);
+      this.player.setPlayWhenReady(isPlaying && !playNeeded);
       if (targetView.getParent() == null) {
         this.parentView.addView(targetView, addIndex);
       }
@@ -245,39 +385,27 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
       applyEffects(player, cropState, false);
       this.appliedEffectsId = makeEffectsId(cropState);
     }
+    final long startPosition = mediaItem.consumeStartPosition();
+    if (resumePositionMs == C.TIME_UNSET) {
+      // Fullscreen round-video handoff takes precedence over the stored position.
+      long savedMs = startPosition > 0 ? startPosition : VideoPositions.get(VideoPositions.keyOf(mediaItem));
+      resumePositionMs = savedMs > 0 ? savedMs : C.TIME_UNSET;
+    }
     this.originalSource = source;
     this.trimStartUs = this.trimEndUs = -1;
-    if (mediaItem.needTrim()) {
-      setTrim(mediaItem.getTrimStartUs(), mediaItem.getTrimEndUs());
-    } else {
-      setDataSource(source);
-    }
-    final long startPosition = mediaItem.consumeStartPosition();
-    if (seekToSavedPosition) {
-      seekToSavedPosition = false;
-      player.seekTo(savedPosition);
-    } else if (startPosition > 0) {
-      // Vibegram X: a round video opened in full screen goes on from where the round was
-      player.seekTo(startPosition);
-      lastPosition = startPosition;
-    } else {
-      // Vibegram X: a video opened again goes on from the place it was left at
-      long savedMs = VideoPositions.get(VideoPositions.keyOf(mediaItem));
-      if (savedMs > 0) {
-        player.seekTo(savedMs);
-        lastPosition = savedMs;
-      }
+    if (!mediaItem.needTrim() || !setTrim(mediaItem.getTrimStartUs(), mediaItem.getTrimEndUs(), resumePositionMs)) {
+      setDataSource(source, resumePositionMs);
     }
     if (forcePlay) {
       setPlaying(true);
     }
-    UI.post(bufferedPoll, BUFFERED_POLL_MS);
   }
 
   // Vibegram X: the part of the video loaded ahead of the playback, shown on the timeline like on YouTube
 
   private static final long BUFFERED_POLL_MS = 500;
   private boolean isHls;
+  private long bufferSourceGeneration;
   private final Runnable bufferedPoll = this::pollBuffered;
 
   /**
@@ -286,24 +414,26 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
    */
   private void pollBuffered () {
     final MediaItem item = currentItem;
-    if (player == null || item == null || isDetached || destroyed) {
+    final ExoPlayer polledPlayer = player;
+    final long polledGeneration = bufferSourceGeneration;
+    if (polledPlayer == null || mediaSource == null || item == null || isDetached || destroyed) {
       return;
     }
     UI.post(bufferedPoll, BUFFERED_POLL_MS);
-    final long durationMs = player.getDuration();
+    final long durationMs = polledPlayer.getDuration();
     if (callback == null || durationMs == C.TIME_UNSET || durationMs <= 0) {
       return;
     }
-    final float playerBuffered = MathUtils.clamp((float) player.getBufferedPosition() / (float) durationMs);
+    final float playerBuffered = MathUtils.clamp((float) polledPlayer.getBufferedPosition() / (float) durationMs);
     final TdApi.File file = item.getTargetFile();
     if (isHls || file == null || file.expectedSize <= 0) {
       callback.onBufferedProgress(playerBuffered);
       return;
     }
     final long size = file.expectedSize;
-    final long offset = (long) ((double) size * MathUtils.clamp((float) player.getCurrentPosition() / (float) durationMs));
+    final long offset = (long) ((double) size * MathUtils.clamp((float) polledPlayer.getCurrentPosition() / (float) durationMs));
     item.tdlib().send(new TdApi.GetFileDownloadedPrefixSize(file.id, offset), (result, error) -> UI.post(() -> {
-      if (currentItem == item && callback != null) {
+      if (player == polledPlayer && bufferSourceGeneration == polledGeneration && currentItem == item && callback != null) {
         float downloaded = result != null ? MathUtils.clamp((float) ((double) (offset + result.size) / (double) size)) : 0f;
         callback.onBufferedProgress(Math.max(playerBuffered, downloaded));
       }
@@ -353,6 +483,7 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
     pendingLsAlert = UI.getContext(context).showAlert(b);
   }
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static String makeEffectsId (@Nullable CropState cropState) {
     if (cropState == null) {
       return null;
@@ -376,8 +507,10 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   }
 
   // FIXME[exoplayer]: There are at least two render bugs in media3 that might go away with future versions.
+  @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.LOLLIPOP)
   public static final boolean APPLY_CROP_EFFECTS = false; // Config.MODERN_VIDEO_TRANSCODING_ENABLED
 
+  @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   private static void applyEffects (@NonNull ExoPlayer player, @Nullable CropState cropState, boolean needEmpty) {
     List<Effect> effects = new ArrayList<>();
     if (cropState != null) {
@@ -424,26 +557,51 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   private MediaSource originalSource;
   private long trimStartUs = -1, trimEndUs = -1;
   private MediaSource mediaSource;
+  private boolean needPrepareOnSurface;
 
   public boolean setTrim (long trimStartUs, long trimEndUs) {
+    return setTrim(trimStartUs, trimEndUs, C.TIME_UNSET);
+  }
+
+  private boolean setTrim (long trimStartUs, long trimEndUs, long resumePositionMs) {
     if (this.trimStartUs != trimStartUs || this.trimEndUs != trimEndUs) {
       this.trimStartUs = trimStartUs;
       this.trimEndUs = trimEndUs;
       if (trimStartUs != -1 && trimEndUs != -1) {
-        setDataSource(new ClippingMediaSource(originalSource, trimStartUs, trimEndUs));
+        setDataSource(new ClippingMediaSource(originalSource, trimStartUs, trimEndUs), resumePositionMs);
       } else {
-        setDataSource(originalSource);
+        setDataSource(originalSource, resumePositionMs);
       }
       return true;
     }
     return false;
   }
 
-  private void setDataSource (MediaSource mediaSource) {
+  private void setDataSource (MediaSource mediaSource, long resumePositionMs) {
     if (player != null && this.mediaSource != mediaSource) {
+      UI.cancel(bufferedPoll);
+      bufferSourceGeneration++;
       this.mediaSource = mediaSource;
-      player.setMediaSource(mediaSource);
+      lastPosition = resumePositionMs == C.TIME_UNSET ? 0 : resumePositionMs;
+      player.setMediaSource(mediaSource, resumePositionMs);
       player.setRepeatMode(isLooping ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+      UI.post(bufferedPoll, BUFFERED_POLL_MS);
+      prepareWithSurface();
+    }
+  }
+
+  private void prepareWithSurface () {
+    if (renderView.isAvailable()) {
+      player.prepare();
+    } else {
+      needPrepareOnSurface = true;
+    }
+  }
+
+  @Override
+  public void onSurfaceSizeChanged (int width, int height) {
+    if (needPrepareOnSurface && player != null && width > 0 && height > 0) {
+      needPrepareOnSurface = false;
       player.prepare();
     }
   }
@@ -481,14 +639,13 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
 
   private boolean isDetached;
   private MediaItem detachedItem;
+  private boolean hasDetachedOriginalFailed;
   private long savedPosition;
-  private boolean seekToSavedPosition;
 
   public void attach () {
     if (isDetached) {
       isDetached = false;
-      seekToSavedPosition = detachedItem != null;
-      setVideo(detachedItem);
+      setVideo(detachedItem, hasDetachedOriginalFailed, savedPosition);
       detachedItem = null;
     }
   }
@@ -496,7 +653,8 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   public void detach () {
     if (!isDetached) {
       detachedItem = currentItem;
-      savedPosition = lastPosition;
+      hasDetachedOriginalFailed = hasOriginalFailed;
+      savedPosition = getResumePosition();
       if (player != null) {
         player.setPlayWhenReady(false);
       }
@@ -532,16 +690,45 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
 
   private boolean preferExtensions = Config.PREFER_RENDER_EXTENSIONS;
 
+  private static boolean isVideoDecoderError (PlaybackException error) {
+    if (!U.isRenderError(error)) {
+      return false;
+    }
+    Format format = ((ExoPlaybackException) error).rendererFormat;
+    return format != null && MimeTypes.isVideo(format.sampleMimeType) &&
+      error.errorCode >= PlaybackException.ERROR_CODE_DECODER_INIT_FAILED &&
+      error.errorCode <= PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED;
+  }
+
+  private boolean playByNextDecoder (PlaybackException error) {
+    // ExoPlayer falls back only from decoders that fail to start
+    MediaCodecInfo decoder = error.getCause() instanceof MediaCodecDecoderException ?
+      ((MediaCodecDecoderException) error.getCause()).codecInfo : null;
+    if (player == null || decoder == null || !decoderSelector.leaveOut(decoder)) {
+      return false;
+    }
+    Log.w(Log.TAG_VIDEO, "Video decoder %s failed, playing by the next one", error, decoder.name);
+    long positionMs = getResumePosition();
+    if (player.getCurrentPosition() != positionMs) {
+      player.seekTo(positionMs);
+    }
+    player.prepare();
+    return true;
+  }
+
   @Override
   public void onPlayerError (@NonNull PlaybackException error) {
-    if (U.isRenderError(error) && preferExtensions == Config.PREFER_RENDER_EXTENSIONS) {
+    if (alternativesOfOriginal != null && isVideoDecoderError(error) &&
+      replaceFailedOriginal(error)) {
+      return;
+    }
+    if (isVideoDecoderError(error) && playByNextDecoder(error)) {
+      return;
+    }
+    if (player != null && currentItem != null && U.isRenderError(error) && preferExtensions == Config.PREFER_RENDER_EXTENSIONS) {
       Log.w(Log.TAG_VIDEO, "Unable to play video, but trying to retry, preferExtensions:%b", error, preferExtensions);
       preferExtensions = !preferExtensions;
-      boolean isPlaying = this.isPlaying;
-      MediaItem currentItem = this.currentItem;
-      setVideo(null);
-      setVideo(currentItem);
-      setPlaying(isPlaying);
+      restartVideo(currentItem, hasOriginalFailed);
     } else {
       Log.e(Log.TAG_VIDEO, "Unable to play video", error);
       errorHandler.onError(error, currentItem);
@@ -571,9 +758,11 @@ public class VideoPlayerView implements Player.Listener, CallManager.CurrentCall
   private long lastPosition;
 
   private void updateTimes () {
-    if (callback != null && player != null && player.getDuration() != C.TIME_UNSET) {
+    if (player != null && player.getDuration() != C.TIME_UNSET) {
       lastPosition = player.getCurrentPosition();
-      callback.onPlayProgress(player.getDuration(), lastPosition);
+      if (callback != null) {
+        callback.onPlayProgress(player.getDuration(), lastPosition);
+      }
     }
     if (isPlaying && android.os.SystemClock.uptimeMillis() - lastPositionSaveMs >= POSITION_SAVE_MS) {
       saveCurrentPosition();

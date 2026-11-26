@@ -1,9 +1,11 @@
 package org.thunderdog.challegram.telegram
 
 import android.os.SystemClock
+import androidx.annotation.UiThread
 import me.vkryl.core.reference.ReferenceMap
 import org.drinkless.tdlib.TdApi.*
 import org.thunderdog.challegram.data.TD
+import org.thunderdog.challegram.tool.UI
 
 class TdlibForumTopicManager(
   tdlib: Tdlib
@@ -47,7 +49,7 @@ class TdlibForumTopicManager(
   }
 
   private val listLock = Any()
-  private val topicLists = HashMap<Long, IntArray>()
+  private val topicLists = LinkedHashMap<Long, ForumTopicList>(16, 0.75f, true)
   private val muteEndTimes = HashMap<Key, Long>()
 
   private fun setMuteEndTime(key: Key, settings: ChatNotificationSettings?) {
@@ -100,7 +102,7 @@ class TdlibForumTopicManager(
   fun putTopic(chatId: Long, topic: ForumTopic) {
     val key = Key(chatId, topic.info.forumTopicId)
     setMuteEndTime(key, topic.notificationSettings)
-    putValue(key, copyOf(topic))
+    putValue(key, ForumTopicState.copyOf(topic))
   }
 
   @TdlibThread
@@ -110,40 +112,36 @@ class TdlibForumTopicManager(
     }
   }
 
-  /** Remembers the order of the topic list last shown for the chat. Known topics are kept: updates keep them fresh. */
-  fun setTopicList(chatId: Long, topics: List<ForumTopic>) {
-    val ids = IntArray(topics.size)
-    for ((index, topic) in topics.withIndex()) {
-      ids[index] = topic.info.forumTopicId
-      val key = Key(chatId, topic.info.forumTopicId)
-      if (find(key)?.value == null) {
-        setMuteEndTime(key, topic.notificationSettings)
-        putValue(key, copyOf(topic))
+  @UiThread
+  fun list(chatId: Long): ForumTopicList {
+    topicLists[chatId]?.let { return it }
+    if (topicLists.size >= 8) {
+      val iterator = topicLists.values.iterator()
+      while (iterator.hasNext() && topicLists.size >= 8) {
+        val list = iterator.next()
+        if (list.isIdle) {
+          list.destroy()
+          iterator.remove()
+        }
       }
     }
-    synchronized(listLock) {
-      topicLists[chatId] = ids
-    }
+    return ForumTopicList(tdlib, chatId).also { topicLists[chatId] = it }
   }
 
-  /** Copies of the topics last shown for the chat, to show them right away while the list is loaded. */
-  fun getTopicList(chatId: Long): List<ForumTopic>? {
-    val ids = synchronized(listLock) {
-      topicLists[chatId]
-    } ?: return null
-    val topics = ArrayList<ForumTopic>(ids.size)
-    for (forumTopicId in ids) {
-      find(Key(chatId, forumTopicId))?.value?.let {
-        topics.add(copyOf(it))
-      }
-    }
-    return topics
-  }
-
+  @TdlibThread
   fun clearTopicLists() {
-    synchronized(listLock) {
-      topicLists.clear()
-      muteEndTimes.clear()
+    synchronized(listLock) { muteEndTimes.clear() }
+    UI.post {
+      val iterator = topicLists.values.iterator()
+      while (iterator.hasNext()) {
+        val list = iterator.next()
+        if (list.hasListeners()) {
+          list.resetAfterClientRestart()
+        } else {
+          list.destroy()
+          iterator.remove()
+        }
+      }
     }
   }
 
@@ -160,27 +158,8 @@ class TdlibForumTopicManager(
       update.forumTopicId
     )
     setMuteEndTime(key, update.notificationSettings)
-    val isUpdated = replaceExisting(key) { prevValue, _ ->
-      if (prevValue != null) {
-        val prevLastMessage = prevValue.lastMessage
-        val isRead = prevLastMessage != null && update.lastReadInboxMessageId >= prevLastMessage.id
-        ForumTopic(
-          prevValue.info,
-          prevValue.lastMessage,
-          maxOf(prevValue.order, draftOrder(update.draftMessage)),
-          update.isPinned,
-          if (isRead) 0 else prevValue.unreadCount,
-          update.lastReadInboxMessageId,
-          update.lastReadOutboxMessageId,
-          update.unreadMentionCount,
-          update.unreadReactionCount,
-          update.unreadPollVoteCount,
-          update.notificationSettings,
-          update.draftMessage
-        )
-      } else {
-        null
-      }
+    val isUpdated = replaceExisting(key) { previous, _ ->
+      previous?.let { ForumTopicState.withUpdate(it, update) }
     }
     if (isUpdated) {
       observers.iterate(key) { observer ->
@@ -195,25 +174,8 @@ class TdlibForumTopicManager(
       update.info.chatId,
       update.info.forumTopicId
     )
-    val isUpdated = replaceExisting(key) { prevValue, _ ->
-      if (prevValue != null) {
-        ForumTopic(
-          update.info,
-          prevValue.lastMessage,
-          prevValue.order,
-          prevValue.isPinned,
-          prevValue.unreadCount,
-          prevValue.lastReadInboxMessageId,
-          prevValue.lastReadOutboxMessageId,
-          prevValue.unreadMentionCount,
-          prevValue.unreadReactionCount,
-          prevValue.unreadPollVoteCount,
-          prevValue.notificationSettings,
-          prevValue.draftMessage
-        )
-      } else {
-        null
-      }
+    val isUpdated = replaceExisting(key) { previous, _ ->
+      previous?.let { ForumTopicState.withInfo(it, update.info) }
     }
     if (isUpdated) {
       observers.iterate(key) { observer ->
@@ -228,26 +190,8 @@ class TdlibForumTopicManager(
     if (topicId !is MessageTopicForum) {
       return
     }
-    replaceExisting(Key(message.chatId, topicId.forumTopicId)) { prevValue, _ ->
-      if (prevValue != null && (prevValue.lastMessage?.let { it.id < message.id } ?: true)) {
-        val isUnread = !message.isOutgoing && message.id > prevValue.lastReadInboxMessageId
-        ForumTopic(
-          prevValue.info,
-          message,
-          maxOf(prevValue.order, messageOrder(message)),
-          prevValue.isPinned,
-          prevValue.unreadCount + (if (isUnread) 1 else 0),
-          prevValue.lastReadInboxMessageId,
-          prevValue.lastReadOutboxMessageId,
-          prevValue.unreadMentionCount,
-          prevValue.unreadReactionCount,
-          prevValue.unreadPollVoteCount,
-          prevValue.notificationSettings,
-          prevValue.draftMessage
-        )
-      } else {
-        null
-      }
+    replaceExisting(Key(message.chatId, topicId.forumTopicId)) { previous, _ ->
+      previous?.let { ForumTopicState.withMessage(it, message, 0).takeUnless { next -> next === previous } }
     }
   }
 
@@ -266,30 +210,4 @@ class TdlibForumTopicManager(
     observers.remove(key, observer)
   }
 
-  companion object {
-    /** ForumTopic.order of TDLib: date of the last message or draft in the high bits, server message id in the low ones. */
-    @JvmStatic
-    fun messageOrder(message: Message?): Long =
-      if (message != null) (message.date.toLong() shl 32) + (message.id shr 20) else 0L
-
-    @JvmStatic
-    fun draftOrder(draftMessage: DraftMessage?): Long =
-      if (draftMessage != null) draftMessage.date.toLong() shl 32 else 0L
-
-    @JvmStatic
-    fun copyOf(topic: ForumTopic): ForumTopic = ForumTopic(
-      topic.info,
-      topic.lastMessage,
-      topic.order,
-      topic.isPinned,
-      topic.unreadCount,
-      topic.lastReadInboxMessageId,
-      topic.lastReadOutboxMessageId,
-      topic.unreadMentionCount,
-      topic.unreadReactionCount,
-      topic.unreadPollVoteCount,
-      topic.notificationSettings,
-      topic.draftMessage
-    )
-  }
 }

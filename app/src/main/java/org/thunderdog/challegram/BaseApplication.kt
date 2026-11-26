@@ -17,14 +17,17 @@ package org.thunderdog.challegram
 import android.content.Context
 import androidx.work.Configuration
 import com.google.firebase.messaging.FirebaseMessaging
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
+import org.thunderdog.challegram.core.Background
 import org.thunderdog.challegram.push.FirebaseDeviceTokenRetriever
 import org.thunderdog.challegram.service.PushHandler
 import org.thunderdog.challegram.telegram.TdlibManager
 import org.thunderdog.challegram.unsorted.AppContext
 import org.thunderdog.challegram.unsorted.DeviceTokenRetrieverInstance
 import org.thunderdog.challegram.unsorted.Settings
+import org.thunderdog.challegram.util.text.CodeHighlighter
 import tgx.bridge.*
 import tgx.extension.TelegramXExtension
 import tgx.flavor.TgxApplication
@@ -60,6 +63,12 @@ class BaseApplication : TgxApplication(), Configuration.Provider {
     )
 
     AppContext.init(applicationContext)
+    Background.instance().post {
+      // Previous releases could leave the temporary diagnostic files behind on upgrade.
+      val dir = File(filesDir, "logs")
+      File(dir, "vg_round_audio.log").delete()
+      File(dir, "vg_stuck.log").delete()
+    }
 
     if (!BuildConfig.EXPERIMENTAL) {
       val deviceTokenRetriever = DeviceTokenRetrieverInstance.get()
@@ -73,6 +82,7 @@ class BaseApplication : TgxApplication(), Configuration.Provider {
   override fun onTrimMemory(level: Int) {
     super.onTrimMemory(level)
     TdlibManager.trimMemory(level)
+    CodeHighlighter.trimMemory(level)
   }
 
   override val workManagerConfiguration: Configuration

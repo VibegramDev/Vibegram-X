@@ -19,12 +19,15 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.drinkless.tdlib.Client;
 import org.drinkless.tdlib.TdApi;
+import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.component.attach.CustomItemAnimator;
@@ -39,13 +42,16 @@ import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.SettingsWrapBuilder;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.telegram.CallProblems;
 import org.thunderdog.challegram.telegram.DateChangeListener;
+import org.thunderdog.challegram.telegram.GlobalCallProblemsListener;
+import org.thunderdog.challegram.telegram.GlobalTokenStateListener;
 import org.thunderdog.challegram.telegram.MessageListener;
+import org.thunderdog.challegram.telegram.SessionListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibOptionListener;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
-import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.StringList;
 import org.thunderdog.challegram.v.CustomRecyclerView;
 import org.thunderdog.challegram.widget.BaseView;
@@ -72,7 +78,10 @@ public class CallListController extends RecyclerViewController<Void> implements
   MoreDelegate,
   DateChangeListener,
   View.OnLongClickListener,
-  BaseView.ActionListProvider, TdlibOptionListener {
+  BaseView.ActionListProvider, TdlibOptionListener,
+  SessionListener,
+  GlobalTokenStateListener,
+  GlobalCallProblemsListener {
   public CallListController (Context context, Tdlib tdlib) {
     super(context, tdlib);
   }
@@ -87,6 +96,10 @@ public class CallListController extends RecyclerViewController<Void> implements
     return Lang.getString(R.string.Calls);
   }
 
+  private boolean canDeleteCallHistory () {
+    return Config.ENABLE_DELETE_CALL_HISTORY && hasRecentCalls();
+  }
+
   @Override
   protected int getBackButton () {
     // M3 top-level destination opened from the dock: no navigation icon, the dock switches destinations
@@ -96,25 +109,91 @@ public class CallListController extends RecyclerViewController<Void> implements
 
   @Override
   protected int getMenuId () {
-    if (Config.ENABLE_DELETE_CALL_HISTORY) {
-      return messages != null && !messages.isEmpty() ? R.id.menu_btn_more : 0;
-    } else {
-      return 0;
-    }
+    return BuildConfig.CALLS_AVAILABLE || canDeleteCallHistory() ? R.id.menu_calls : 0;
   }
 
   @Override
   public void fillMenuItems (int id, HeaderView header, LinearLayout menu) {
-    if (id == R.id.menu_btn_more) {
-      header.addMoreButton(menu, this);
+    if (id == R.id.menu_calls) {
+      if (BuildConfig.CALLS_AVAILABLE) {
+        header.addButton(
+          menu,
+          R.id.menu_btn_settings,
+          getCallSettingsIcon(tdlib),
+          49f,
+          this,
+          getHeaderIconColorId()
+        );
+      }
+      if (canDeleteCallHistory()) {
+        header.addMoreButton(menu, this);
+      }
+    }
+  }
+
+  static @DrawableRes int getCallSettingsIcon (Tdlib tdlib) {
+    boolean hasProblem = CallProblems.isOffForDevice(tdlib) ||
+      CallProblems.getOfSettings(tdlib) != CallProblems.Type.NONE;
+    return hasProblem ? R.drawable.baseline_settings_alert_24 : R.drawable.baseline_settings_24;
+  }
+
+  private void updateCallSettingsButton () {
+    if (!BuildConfig.CALLS_AVAILABLE) {
+      return;
+    }
+    ViewController<?> parent = getParentOrSelf();
+    if (parent instanceof ContactsCallsController && parent.isAttachedToNavigationController()) {
+      parent.navigationController().getHeaderViewFor(parent).updateButton(
+        R.id.menu_people, R.id.menu_btn_settings, button -> button.setImageResource(getCallSettingsIcon(tdlib))
+      );
+    } else if (headerView != null) {
+      headerView.updateButton(getMenuId(), R.id.menu_btn_settings, View.VISIBLE, getCallSettingsIcon(tdlib));
     }
   }
 
   @Override
   public void onMenuItemPressed (int id, View view) {
-    if (id == R.id.menu_btn_more) {
+    if (id == R.id.menu_btn_settings) {
+      tdlib.ui().openCallSettings(getParentOrSelf());
+    } else if (id == R.id.menu_btn_more) {
       showMore(new int[] {R.id.more_btn_delete}, new String[] {Lang.getString(R.string.DeleteCallHistory)});
     }
+  }
+
+  private void loadSessions (boolean allowCached) {
+    tdlib.getSessions(allowCached, sessions ->
+      runOnUiThreadOptional(this::updateCallSettingsButton)
+    );
+  }
+
+  @Override
+  public void onSessionListChanged (Tdlib tdlib, boolean isWeakGuess) {
+    loadSessions(true);
+  }
+
+  @Override
+  public void onSessionCanAcceptCallsChanged (Tdlib tdlib, long sessionId, boolean canAcceptCalls) {
+    runOnUiThreadOptional(this::updateCallSettingsButton);
+  }
+
+  @Override
+  public void onTokenStateChanged (
+    int newState,
+    @Nullable String error,
+    @Nullable Throwable fullError
+  ) {
+    runOnUiThreadOptional(this::updateCallSettingsButton);
+  }
+
+  @Override
+  public void onActivityResume () {
+    super.onActivityResume();
+    updateCallSettingsButton();
+  }
+
+  @Override
+  public void onCallProblemsChanged () {
+    updateCallSettingsButton();
   }
 
   @Override
@@ -215,6 +294,9 @@ public class CallListController extends RecyclerViewController<Void> implements
     tdlib.client().send(new TdApi.GetTopChats(new TdApi.TopChatCategoryCalls(), 30), this);
     tdlib.listeners().subscribeForGlobalUpdates(this);
     tdlib.context().dateManager().addListener(this);
+    tdlib.context().global().addTokenStateListener(this);
+    tdlib.context().global().addCallProblemsListener(this);
+    loadSessions(false);
   }
 
   @Override
@@ -230,6 +312,7 @@ public class CallListController extends RecyclerViewController<Void> implements
   @Override
   public void onPrepareToShow () {
     super.onPrepareToShow();
+    updateCallSettingsButton();
     if (isDockSection()) {
       setDoneIcon(R.drawable.baseline_phone_24);
       setDoneVisible(true, false);
@@ -241,6 +324,7 @@ public class CallListController extends RecyclerViewController<Void> implements
     super.onFocus();
     // The tab of Contacts gets no onPrepareToShow from the pager; it gets the button each time it's selected.
     if (getParentOrSelf() instanceof ContactsCallsController) {
+      updateCallSettingsButton();
       setDoneIcon(R.drawable.baseline_phone_24);
       setDoneVisible(true, true);
     }
@@ -661,6 +745,8 @@ public class CallListController extends RecyclerViewController<Void> implements
     super.destroy();
     tdlib.listeners().unsubscribeFromGlobalUpdates(this);
     tdlib.context().dateManager().removeListener(this);
+    tdlib.context().global().removeTokenStateListener(this);
+    tdlib.context().global().removeCallProblemsListener(this);
   }
 
   @Override

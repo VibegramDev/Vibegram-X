@@ -652,36 +652,47 @@ public final class SttManager {
         if (have > 0) {
           connection.setRequestProperty("Range", "bytes=" + have + "-");
         }
-        int code = connection.getResponseCode();
-        if (code == HttpURLConnection.HTTP_OK) {
-          have = 0;
-        } else if (code != HttpURLConnection.HTTP_PARTIAL) {
-          throw new IOException("HTTP " + code + " for " + spec.url);
-        }
-        try (InputStream in = connection.getInputStream(); OutputStream out = new FileOutputStream(part, have > 0)) {
-          byte[] buffer = new byte[128 * 1024];
-          int read;
-          long lastNotify = 0;
-          while ((read = in.read(buffer)) != -1) {
-            if (task.cancelled) {
-              throw new IOException("Cancelled");
+        try {
+          int code = connection.getResponseCode();
+          if (code == HttpURLConnection.HTTP_OK) {
+            have = 0;
+          } else if (code == HttpURLConnection.HTTP_PARTIAL) {
+            String range = connection.getHeaderField("Content-Range");
+            String prefix = "bytes " + have + "-";
+            if (range == null || !range.regionMatches(true, 0, prefix, 0, prefix.length())) {
+              throw new IOException("Unexpected range for " + spec.name);
             }
-            out.write(buffer, 0, read);
-            have += read;
-            long now = SystemClock.uptimeMillis();
-            if (now - lastNotify > 300) {
-              lastNotify = now;
-              final float progress = (float) ((done + have) / (double) total);
-              UI.post(() -> {
-                if (downloads.get(model.id) == task) {
-                  downloadProgress.put(model.id, progress);
-                  for (int i = modelListeners.size() - 1; i >= 0; i--) {
-                    if (i < modelListeners.size()) {
-                      modelListeners.get(i).onModelDownloadProgress(model);
+          } else {
+            throw new IOException("HTTP " + code + " for " + spec.url);
+          }
+          try (InputStream in = connection.getInputStream(); OutputStream out = new FileOutputStream(part, have > 0)) {
+            byte[] buffer = new byte[128 * 1024];
+            int read;
+            long lastNotify = 0;
+            while ((read = in.read(buffer)) != -1) {
+              if (task.cancelled) {
+                throw new IOException("Cancelled");
+              }
+              if (read > spec.size - have) {
+                throw new IOException("Size mismatch for " + spec.name);
+              }
+              out.write(buffer, 0, read);
+              have += read;
+              long now = SystemClock.uptimeMillis();
+              if (now - lastNotify > 300) {
+                lastNotify = now;
+                final float progress = (float) ((done + have) / (double) total);
+                UI.post(() -> {
+                  if (downloads.get(model.id) == task) {
+                    downloadProgress.put(model.id, progress);
+                    for (int i = modelListeners.size() - 1; i >= 0; i--) {
+                      if (i < modelListeners.size()) {
+                        modelListeners.get(i).onModelDownloadProgress(model);
+                      }
                     }
                   }
-                }
-              });
+                });
+              }
             }
           }
         } finally {

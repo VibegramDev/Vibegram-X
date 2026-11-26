@@ -165,7 +165,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
   private static final int MODE_TELEGRAM_FILES = 8;
 
   public interface ShareProviderDelegate {
-    void generateFunctionsForChat (long chatId, TdApi.Chat chat, TdApi.MessageSendOptions sendOptions, ArrayList<TdApi.Function<?>> functions);
+    void generateFunctionsForChat (long chatId, @Nullable TdApi.MessageTopic topicId, TdApi.MessageSendOptions sendOptions, ArrayList<TdApi.Function<?>> functions);
     CharSequence generateErrorMessageForChat (long chatId);
   }
 
@@ -793,7 +793,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
               textRes = R.string.ShareTextPlain;
               break;
             default:
-              Td.assertMessageContent_cc875c63();
+              Td.assertMessageContent_e4738066();
               title1Res = R.string.ShareTitleMedia;
               title2Res = R.string.ShareTitleMediaX;
               textRes = R.string.ShareTextMedia;
@@ -2050,7 +2050,11 @@ public class ShareController extends TelegramViewController<ShareController.Args
     if (topicId != null && topicId != 0) {
       return new TdApi.MessageTopicForum(topicId.intValue());
     }
-    // If it's a forum but no topic selected, default to General topic (id = 1)
+    // A bot's General topic is hidden: let Tdlib create a topic before sending.
+    if (tdlib.canManageBotForumTopics(chatId)) {
+      return null;
+    }
+    // A regular forum without a selected topic defaults to General.
     if (tdlib.isForum(chatId)) {
       return new TdApi.MessageTopicForum(1);
     }
@@ -2059,7 +2063,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
 
   private void showForumTopicPicker (long chatId) {
     // Load forum topics and show a picker popup
-    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0, 0, 0, 100), result -> {
+    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, 0, 0, 0, 100), result -> {
       if (result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR) {
         TdApi.ForumTopics topics = (TdApi.ForumTopics) result;
         runOnUiThreadOptional(() -> {
@@ -3475,7 +3479,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
 
   // Send messages
 
-  private boolean isSent;
+  private boolean isSent, isConfirmingSend;
   private boolean needHideAuthor, needRemoveCaptions, forceSendWithoutSound;
 
   private void sendMessages (boolean forceGoToChat, boolean isSingleTap, @Nullable TdApi.MessageSendOptions finalSendOptions) {
@@ -3483,7 +3487,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
   }
 
   private void sendMessages (boolean forceGoToChat, boolean isSingleTap, @Nullable TdApi.MessageSendOptions finalSendOptions, boolean reloadProperties) {
-    if (selectedChats.size() == 0 || isSent) {
+    if (selectedChats.size() == 0 || isSent || isConfirmingSend) {
       return;
     }
 
@@ -3566,20 +3570,20 @@ public class ShareController extends TelegramViewController<ShareController.Args
             replyTo = new TdApi.InputMessageReplyToMessage(contentfulMediaMessageId != 0 ? contentfulMediaMessageId : args.messages[0].id, null, 0, "");
           }
         }
-        functions.addAll(TD.sendMessageText(chatId, null, replyTo, sendOptions, new TdApi.InputMessageText(comment, null, false), tdlib.maxMessageTextLength()));
+        functions.addAll(TD.sendMessageText(chatId, messageTopicId, replyTo, sendOptions, new TdApi.InputMessageText(comment, null, false), tdlib.maxMessageTextLength()));
       }
       switch (mode) {
         case MODE_TEXT: {
-          functions.addAll(TD.sendMessageText(chatId, null, null, sendOptions, new TdApi.InputMessageText(args.text, null, false), tdlib.maxMessageTextLength()));
+          functions.addAll(TD.sendMessageText(chatId, messageTopicId, null, sendOptions, new TdApi.InputMessageText(args.text, null, false), tdlib.maxMessageTextLength()));
           break;
         }
         case MODE_MESSAGES: {
-          if (!messageReplyIncluded && !TD.forwardMessages(chatId, null, args.messages, needHideAuthor, needRemoveCaptions, sendOptions, functions))
+          if (!messageReplyIncluded && !TD.forwardMessages(chatId, messageTopicId, args.messages, needHideAuthor, needRemoveCaptions, sendOptions, functions))
             return;
           break;
         }
         case MODE_GAME: {
-          functions.add(new TdApi.SendMessage(chatId, null, null, sendOptions, null, new TdApi.InputMessageForwarded(args.botMessage.chatId, args.botMessage.id, args.withUserScore, false, 0, null)));
+          functions.add(new TdApi.SendMessage(chatId, messageTopicId, null, sendOptions, null, new TdApi.InputMessageForwarded(args.botMessage.chatId, args.botMessage.id, args.withUserScore, false, 0, null)));
           break;
         }
         case MODE_FILES  : {
@@ -3606,7 +3610,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
           break;
         }
         case MODE_CUSTOM: {
-          args.customDelegate.generateFunctionsForChat(chatId, chat, sendOptions, functions);
+          args.customDelegate.generateFunctionsForChat(chatId, messageTopicId, sendOptions, functions);
           break;
         }
         case MODE_CUSTOM_CONTENT: {
@@ -3633,7 +3637,7 @@ public class ShareController extends TelegramViewController<ShareController.Args
           return;
       }
       if (commentAsCaption && !attachCommentAsCaption(functions.subList(chatFunctionsStart, functions.size()), comment)) {
-        functions.addAll(chatFunctionsStart, TD.sendMessageText(chatId, null, null, sendOptions, new TdApi.InputMessageText(comment, null, false), tdlib.maxMessageTextLength()));
+        functions.addAll(chatFunctionsStart, TD.sendMessageText(chatId, messageTopicId, null, sendOptions, new TdApi.InputMessageText(comment, null, false), tdlib.maxMessageTextLength()));
       }
     }
 
@@ -3645,13 +3649,26 @@ public class ShareController extends TelegramViewController<ShareController.Args
         break;
       }
     }
-    if (mayBePaid) {
-      ViewController<?> payContext = context().navigation().getCurrentStackItem();
-      org.thunderdog.challegram.stars.PaidMessages.send(payContext != null ? payContext : this, tdlib, functions);
-    } else {
-      tdlib.sendMessages(functions, tdlib.messageHandler());
+    if (functions.isEmpty()) {
+      return;
     }
+    final long singleChatId = selectedChats.size() == 1 ? selectedChats.valueAt(0).getAnyId() : 0;
+    if (mayBePaid) {
+      isConfirmingSend = true;
+      ViewController<?> payContext = context().navigation().getCurrentStackItem();
+      org.thunderdog.challegram.stars.PaidMessages.confirm(payContext != null ? payContext : this, tdlib, functions, confirmed -> {
+        isConfirmingSend = false;
+        if (confirmed && !isSent && !isDestroyed() && !popupLayout.isWindowHidden()) {
+          dispatchShareFunctions(functions, isSingleTap, true, singleChatId);
+        }
+      });
+    } else {
+      dispatchShareFunctions(functions, isSingleTap, false, singleChatId);
+    }
+  }
 
+  private void dispatchShareFunctions (List<TdApi.Function<?>> functions, boolean isSingleTap, boolean mayBePaid, long singleChatId) {
+    tdlib.sendMessages(functions, tdlib.messageHandler());
     onSent();
 
     // With paid chats the result is shown by the payment confirmation instead of «Done».
@@ -3659,15 +3676,14 @@ public class ShareController extends TelegramViewController<ShareController.Args
       if (!mayBePaid) {
         UI.showToast(R.string.DoneSave, Toast.LENGTH_SHORT);
       }
-    } else if (selectedChats.size() == 1) {
+    } else if (singleChatId != 0) {
       // Shared with one chat: that chat opens (it used to open only for content shared from other apps).
       ViewController<?> c = context().navigation().getCurrentStackItem();
-      if (!(c instanceof MessagesController && ((MessagesController) c).compareChat(selectedChats.valueAt(0).getAnyId(), (TdApi.MessageTopic) null))) {
+      if (!(c instanceof MessagesController && ((MessagesController) c).compareChat(singleChatId, (TdApi.MessageTopic) null))) {
         // At the newest messages, where the shared ones arrive, not at the saved scroll position
         TdlibUi.ChatOpenParameters params = new TdlibUi.ChatOpenParameters()
           .highlightMessage(MessagesManager.HIGHLIGHT_MODE_NONE, null);
-        long chatId = selectedChats.valueAt(0).getAnyId();
-        UI.post(() -> tdlib.ui().openChat(ShareController.this, chatId, params), 250);
+        UI.post(() -> tdlib.ui().openChat(ShareController.this, singleChatId, params), 250);
       }
     } else if (!mayBePaid) {
       UI.showToast(R.string.Done, Toast.LENGTH_SHORT);

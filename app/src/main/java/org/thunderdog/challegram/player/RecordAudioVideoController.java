@@ -74,7 +74,6 @@ import org.thunderdog.challegram.ui.camera.CameraController;
 import org.thunderdog.challegram.ui.camera.legacy.CameraManagerLegacy;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.HapticMenuHelper;
-import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.widget.CircleFrameLayout;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.SendButton;
@@ -1255,13 +1254,35 @@ public class RecordAudioVideoController implements
 
   // State
 
-  /** Diagnostics for {@link StuckWatch}. */
-  public String stuckState () {
-    return "open=" + isOpen() + ", mode=" + recordMode + ", recordFactor=" + recordFactor + ", editFactor=" + editFactor + ", recordAnimator=" + recordAnimator.getValue() + "/" + recordAnimator.getFloatValue() + ", editAnimator=" + editAnimator.getValue() + "/" + editAnimator.getFloatValue() + ", currentRecording=" + currentRecording + ", raise=" + inRaiseMode;
-  }
 
   public boolean isOpen () {
     return recordMode != RECORD_MODE_NONE || Math.max(recordFactor, editFactor) > 0f;
+  }
+
+  private final List<Runnable> actsOnceClosed = new ArrayList<>();
+
+  public void runOnceClosed (Runnable act) {
+    if (isOpen()) {
+      actsOnceClosed.add(act);
+    } else {
+      act.run();
+    }
+  }
+
+  private void checkClosed () {
+    if (!isOpen() && !actsOnceClosed.isEmpty()) {
+      // Posted: with animations off, a round video resumed from its preview closes and opens again
+      UI.post(() -> {
+        if (isOpen()) {
+          return;
+        }
+        List<Runnable> acts = new ArrayList<>(actsOnceClosed);
+        actsOnceClosed.clear();
+        for (Runnable act : acts) {
+          act.run();
+        }
+      });
+    }
   }
 
   // Permissions check
@@ -1401,9 +1422,9 @@ public class RecordAudioVideoController implements
   }
 
   private void setRecordModeImpl (int mode) {
-    StuckWatch.event("recorder mode " + this.recordMode + " -> " + mode);
     this.recordMode = mode;
     context.notifyBackPressAvailabilityChanged();
+    checkClosed();
   }
 
   private void setRecordMode (int mode, boolean animated) {
@@ -1881,6 +1902,7 @@ public class RecordAudioVideoController implements
         break;
       }
     }
+    checkClosed();
   }
 
   // Record  impl

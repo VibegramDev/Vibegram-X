@@ -90,6 +90,7 @@ import org.thunderdog.challegram.loader.ImageGalleryFile;
 import org.thunderdog.challegram.loader.ImageLoader;
 import org.thunderdog.challegram.loader.ImageReader;
 import org.thunderdog.challegram.loader.ImageReceiver;
+import org.thunderdog.challegram.loader.ImageStrictCache;
 import org.thunderdog.challegram.loader.Receiver;
 import org.thunderdog.challegram.loader.Watcher;
 import org.thunderdog.challegram.loader.WatcherReference;
@@ -148,6 +149,7 @@ import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.unsorted.Size;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.util.StringList;
+import org.thunderdog.challegram.util.text.BlockSwitches;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.v.MaxHeightScrollView;
@@ -1636,7 +1638,8 @@ public class MediaViewController extends ViewController<MediaViewController.Args
 
   private boolean canGoPip () {
     MediaItem current = stack.getCurrent();
-    return current != null && current.isVideo() && !current.isGifType();
+    return (mode == MODE_MESSAGES || mode == MODE_SIMPLE) &&
+      current != null && current.isVideo() && !current.isGifType();
   }
 
   private boolean canEdit () {
@@ -4342,7 +4345,7 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   private int desiredThumbScrollByX;
 
   private void ensureThumbsPosition (boolean scrollBy, boolean onlyMeasure) {
-    if (thumbsRecyclerView.getMeasuredWidth() > 0) {
+    if (thumbsRecyclerView.getMeasuredWidth() > 0 && thumbsAdapter.items != null) {
       ensureThumbsPosition(scrollBy, onlyMeasure, thumbsAdapter.items.getFocusItemPosition());
     }
   }
@@ -5427,6 +5430,9 @@ public class MediaViewController extends ViewController<MediaViewController.Args
         MaxHeightScrollView scrollView = new MaxHeightScrollView(context);
         scrollView.setMaxHeight(Text.getLineHeight(TGMessage.getTextStyleProvider(), true) * 10 + Screen.dp(14f));
         scrollView.addView(captionWrap);
+        captionView.setCodeBlockWrapping(BlockSwitches.CODE_WRAPPING_DISABLED);
+        captionView.setCollapsedQuoteLineCount(Config.VIEWER_EXPANDABLE_QUOTE_COLLAPSED_LINE_COUNT);
+        captionView.setBlockSwitches(true, scrollView);
         scrollView.setAlpha(0f);
         scrollView.setBackgroundColor(Theme.getColor(ColorId.transparentEditor));
         scrollView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
@@ -8828,10 +8834,23 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     return forceEditModeOld_arguments != null;
   }
 
+  private int forceEditRequestId, closedForceEditRequestId;
+
+  private boolean canOpenForceEditMode (MediaItem requestedItem, int requestId) {
+    return !inForceEditMode() && !isDestroyed() && !popupView.isWindowHidden() &&
+      requestId > closedForceEditRequestId && stack.getCurrent() == requestedItem;
+  }
+
   private void openForceEditMode () {
-    ImageFile imageFile = stack.getCurrent().getTargetImage();
+    final MediaItem requestedItem = stack.getCurrent();
+    final int requestId = ++forceEditRequestId;
+    ImageFile imageFile = requestedItem.getTargetImage();
     U.toGalleryFile(new File(imageFile.getFilePath()), false, imageGalleryFile -> {
       if (imageGalleryFile == null) {
+        return;
+      }
+      if (!canOpenForceEditMode(requestedItem, requestId)) {
+        ImageStrictCache.instance().forget(imageGalleryFile);
         return;
       }
 
@@ -8935,7 +8954,12 @@ public class MediaViewController extends ViewController<MediaViewController.Args
               return false;
             }
 
-            final @RightId int rightId = file.isVideo() ? RightId.SEND_VIDEOS : RightId.SEND_PHOTOS;
+            final @RightId int rightId;
+            if (file.isVideo()) {
+              rightId = RightId.SEND_VIDEOS;
+            } else {
+              rightId = asFiles ? RightId.SEND_DOCS : RightId.SEND_PHOTOS;
+            }
             if (m.showSlowModeRestriction(sendButton, options)) {
               return false;
             }
@@ -8978,6 +9002,10 @@ public class MediaViewController extends ViewController<MediaViewController.Args
   }
 
   private void closeForceEditMode () {
+    closedForceEditRequestId = forceEditRequestId;
+    if (sectionChangeAnimator != null && sectionChangeAnimator.isAnimating()) {
+      sectionChangeAnimator.forceFactor(1f);
+    }
     for (View v : forceEditMode_views) {
       contentView.removeView(v);
     }
@@ -9290,6 +9318,8 @@ public class MediaViewController extends ViewController<MediaViewController.Args
     }
     captionView.setHighlightColor(ColorUtils.alphaColor(0.2f, Theme.fillingTextSelectionColor()));
     captionView.setHighlightColor(getForcedTheme().getColor(ColorId.textSelectionHighlight));
+    captionView.setForcedTheme(getForcedTheme());
+    captionView.setOverMedia(true);
     // addThemeHighlightColorListener(captionView, ColorId.textSelectionHighlight);
     captionView.setMaxCodePointCount(tdlib.maxCaptionLength());
     captionView.setIgnoreCustomStuff(false);

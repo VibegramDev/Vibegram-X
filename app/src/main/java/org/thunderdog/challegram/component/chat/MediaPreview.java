@@ -205,6 +205,7 @@ public abstract class MediaPreview implements ListAnimator.Measurable {
       case TdApi.LinkPreviewTypeVideoChat.CONSTRUCTOR:
       case TdApi.LinkPreviewTypeWebApp.CONSTRUCTOR:
       case TdApi.LinkPreviewTypeRequestManagedBot.CONSTRUCTOR:
+      case TdApi.LinkPreviewTypeBotInvite.CONSTRUCTOR:
       case TdApi.LinkPreviewTypeEmbeddedAnimationPlayer.CONSTRUCTOR:
       case TdApi.LinkPreviewTypeExternalAudio.CONSTRUCTOR:
       case TdApi.LinkPreviewTypeExternalVideo.CONSTRUCTOR:
@@ -213,7 +214,7 @@ public abstract class MediaPreview implements ListAnimator.Measurable {
         break;
       }
       default:
-        Td.assertLinkPreviewType_883de866();
+        Td.assertLinkPreviewType_821de27a();
         throw Td.unsupported(linkPreview.type);
     }
     return false;
@@ -294,6 +295,7 @@ public abstract class MediaPreview implements ListAnimator.Measurable {
             case TdApi.LinkPreviewTypeGiftAuction.CONSTRUCTOR:
             case TdApi.LinkPreviewTypeLiveStory.CONSTRUCTOR:
             case TdApi.LinkPreviewTypeRequestManagedBot.CONSTRUCTOR:
+            case TdApi.LinkPreviewTypeBotInvite.CONSTRUCTOR:
             case TdApi.LinkPreviewTypeUser.CONSTRUCTOR:
             case TdApi.LinkPreviewTypeVideoChat.CONSTRUCTOR:
             case TdApi.LinkPreviewTypeGroupCall.CONSTRUCTOR:
@@ -306,7 +308,7 @@ public abstract class MediaPreview implements ListAnimator.Measurable {
               break;
             }
             default:
-              Td.assertLinkPreviewType_883de866();
+              Td.assertLinkPreviewType_821de27a();
               throw Td.unsupported(linkPreview.type);
           }
         }
@@ -496,6 +498,7 @@ public abstract class MediaPreview implements ListAnimator.Measurable {
       case TdApi.MessageUpgradedGift.CONSTRUCTOR:
       case TdApi.MessageUpgradedGiftPurchaseOffer.CONSTRUCTOR:
       case TdApi.MessageUpgradedGiftPurchaseOfferRejected.CONSTRUCTOR:
+      case TdApi.MessageUpgradedGiftOnChainPurchaseOffer.CONSTRUCTOR:
       case TdApi.MessageStakeDice.CONSTRUCTOR:
       case TdApi.MessageRefundedUpgradedGift.CONSTRUCTOR:
       case TdApi.MessageContactRegistered.CONSTRUCTOR:
@@ -520,6 +523,7 @@ public abstract class MediaPreview implements ListAnimator.Measurable {
       case TdApi.MessageChatOwnerChanged.CONSTRUCTOR:
       case TdApi.MessageChatOwnerLeft.CONSTRUCTOR:
       case TdApi.MessageManagedBotCreated.CONSTRUCTOR:
+      case TdApi.MessageBotInvite.CONSTRUCTOR:
       case TdApi.MessagePollOptionAdded.CONSTRUCTOR:
       case TdApi.MessagePollOptionDeleted.CONSTRUCTOR:
       case TdApi.MessageChatAddedToCommunity.CONSTRUCTOR:
@@ -527,12 +531,13 @@ public abstract class MediaPreview implements ListAnimator.Measurable {
       case TdApi.MessageTonConnectRequest.CONSTRUCTOR:
       case TdApi.MessageTonWalletTransfer.CONSTRUCTOR:
       case TdApi.MessageUnpaidMessagesAllowedByLink.CONSTRUCTOR:
+      case TdApi.MessageWidget.CONSTRUCTOR:
       case TdApi.MessageUnsupported.CONSTRUCTOR: {
         // No media preview.
         break;
       }
       default: {
-        Td.assertMessageContent_cc875c63();
+        Td.assertMessageContent_e4738066();
         throw Td.unsupported(message.content);
       }
     }

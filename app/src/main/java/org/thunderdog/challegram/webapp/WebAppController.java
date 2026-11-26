@@ -84,6 +84,7 @@ import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.NavigationController;
 import org.thunderdog.challegram.navigation.NavigationStack;
 import org.thunderdog.challegram.navigation.ViewController;
+import org.thunderdog.challegram.telegram.ChatFilter;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
@@ -116,6 +117,7 @@ import me.vkryl.android.widget.FrameLayoutFix;
 import me.vkryl.core.ColorUtils;
 import me.vkryl.core.MathUtils;
 import me.vkryl.core.StringUtils;
+import me.vkryl.core.lambda.FutureBool;
 import me.vkryl.core.lambda.RunnableBool;
 import me.vkryl.core.lambda.RunnableData;
 import tgx.td.ChatId;
@@ -197,9 +199,11 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   private static final int ANIMATOR_LOADED = 6;
 
   private static @Nullable Bitmap videoPoster;
+  private final long ownerUserId;
 
   public WebAppController (Context context, Tdlib tdlib) {
     super(context, tdlib);
+    ownerUserId = tdlib.myUserId(true);
   }
 
   @Override
@@ -330,6 +334,10 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
 
   boolean isMinimized () {
     return isMinimized;
+  }
+
+  boolean isCoveredByNativeScreen () {
+    return nativeScreen != null;
   }
 
   /**
@@ -770,6 +778,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   }
 
   private @Nullable ViewController<?> paneScreen;
+  private @Nullable ViewController<?> nativeScreen;
+  private @Nullable Runnable onNativeScreenClosed;
   private final NavigationStack.ChangeListener paneScreenListener = stack -> checkPaneScreen();
 
   private void setPaneScreenListener (boolean listen) {
@@ -789,7 +799,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   /** A screen opened in the right pane from the left one comes in place of the app: the app is minimized. */
   private void checkPaneScreen () {
     NavigationController navigation = context().navigation();
-    if (isMinimized || isClosing || navigation == null) {
+    if (isMinimized || isClosing || nativeScreen != null || navigation == null) {
       return;
     }
     ViewController<?> c = navigation.getCurrentStackItem();
@@ -1132,17 +1142,21 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
     requireSameOrigin = url.requireSameOrigin;
     trustedOrigin = requireSameOrigin ? getOrigin(url.url) : null;
+    if ((requireSameOrigin && trustedOrigin == null) || !bridge.attachTo(webView, trustedOrigin)) {
+      UI.showToast(R.string.vg_BotWebViewNotAvailablePlaceholder, Toast.LENGTH_LONG);
+      closeNow();
+      return;
+    }
     loadPlaceholder();
-    bridge.attachTo(webView, trustedOrigin);
     webView.loadUrl(url.url);
   }
 
   private void loadPlaceholder () {
-    tdlib.send(new TdApi.GetWebAppPlaceholder(getBotUserId()), (outline, error) -> UI.post(() -> {
-      if (outline != null && !isDestroyed()) {
-        placeholderView.setOutline(outline);
+    tdlib.outline().requestWebAppPlaceholder(getBotUserId(), (manager, entry) -> UI.post(() -> {
+      if (entry.value != null && !isDestroyed() && !isClosing) {
+        placeholderView.setOutline(entry.value);
       }
-    }));
+    }), true);
   }
 
   void onPageReady () {
@@ -1463,28 +1477,121 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     return WebApp.isAttachmentMenuBot(tdlib, getBotUserId());
   }
 
-  void switchInlineQuery (String query, @Nullable TdApi.TargetChatTypes chatTypes) {
+  boolean hasActiveAccount () {
+    return !isClosing && !isDestroyed() && !context().isFinishing() &&
+      tdlib.isAuthorized() && ownerUserId != 0 && ownerUserId == tdlib.myUserId(true) &&
+      context().hasTdlib() && context().currentTdlib() == tdlib;
+  }
+
+  private @Nullable ViewController<?> getNativeNavigationHost () {
+    if (!hasActiveAccount() || isMinimized || nativeScreen != null || popupLayout == null ||
+      popupLayout.getVisibility() != View.VISIBLE || context().getCurrentPopupWindow() != popupLayout ||
+      context().getActivityState() != UI.State.RESUMED || context().isPasscodeShowing()) {
+      return null;
+    }
+    NavigationController navigation = context().navigation();
+    ViewController<?> host = navigation != null ? navigation.getCurrentStackItem() : null;
+    return navigation != null && !navigation.isDestroyed() && host != null &&
+      !host.isDestroyed() && host.tdlib() == tdlib &&
+      host.navigationController() == navigation ? host : null;
+  }
+
+  boolean canPresentNativeUi () {
+    return getNativeNavigationHost() != null;
+  }
+
+  /** The popup is not on the navigation stack and would cover the newly opened screen. */
+  boolean navigateFromPopup (ViewController<?> screen) {
+    ViewController<?> host = getNativeNavigationHost();
+    if (host == null || host.isStackLocked() || screen.tdlib() != tdlib) {
+      return false;
+    }
+    // Suppress tablet stack-driven minimization during the synchronous push.
+    NavigationController navigation = host.navigationController();
+    nativeScreen = screen;
+    if (!navigation.navigateToFromPopup(screen)) {
+      nativeScreen = null;
+      return false;
+    }
+    hideSoftwareKeyboard();
+    setSheetHidden(true);
+    bridge.onVisibilityChanged(false);
+    if (webView != null) {
+      webView.onPause();
+    }
+    screen.addDestroyListener(() -> {
+      // The Back transition posts any queued rebase after destroying the child.
+      boolean hasPendingRebase = navigation.getPendingController() != null;
+      UI.post(() -> restoreAfterNativeScreen(screen, host, navigation, hasPendingRebase));
+    });
+    return true;
+  }
+
+  void afterNativeScreen (Runnable action) {
+    if (nativeScreen == null) {
+      action.run();
+    } else {
+      Runnable previous = onNativeScreenClosed;
+      onNativeScreenClosed = previous == null ? action : () -> {
+        previous.run();
+        action.run();
+      };
+    }
+  }
+
+  private void restoreAfterNativeScreen (ViewController<?> screen, ViewController<?> host, NavigationController navigation, boolean hasPendingRebase) {
+    if (nativeScreen != screen || isClosing || isDestroyed()) {
+      return;
+    }
+    // Back removes the child before destroying it. A stack reset can also destroy it,
+    // including in split mode where the original host may survive in the left pane.
+    if (hasPendingRebase || !hasActiveAccount() || context().navigation() != navigation || navigation.isDestroyed() ||
+        host.isDestroyed() || navigation.getCurrentStackItem() != host) {
+      closeNow();
+      return;
+    }
+    nativeScreen = null;
+    paneScreen = host;
+    setSheetHidden(false);
+    if (webView != null && context().getActivityState() == UI.State.RESUMED) {
+      webView.onResume();
+      bridge.onVisibilityChanged(true);
+    }
+    Runnable after = onNativeScreenClosed;
+    onNativeScreenClosed = null;
+    if (after != null) {
+      after.run();
+    }
+  }
+
+  void switchInlineQuery (String query, @Nullable TdApi.TargetChatTypes chatTypes, FutureBool isCurrent) {
+    ViewController<?> host = getNativeNavigationHost();
+    if (host == null) {
+      return;
+    }
     TdApi.User bot = tdlib.cache().user(getBotUserId());
     if (bot == null || !Td.hasUsername(bot)) {
       return;
     }
     String username = Td.primaryUsername(bot);
     if (chatTypes == null) {
-      ViewController<?> c = context().navigation().getCurrentStackItem();
-      if (c instanceof MessagesController &&
-        ((MessagesController) c).getChatId() == getArgumentsStrict().chatId) {
+      if (host instanceof MessagesController &&
+        host.getChatId() == getArgumentsStrict().chatId) {
         closeNow();
-        ((MessagesController) c).switchInline(getBotUserId(),
+        ((MessagesController) host).switchInline(getBotUserId(),
           new TdApi.InlineKeyboardButtonTypeSwitchInline(query, new TdApi.TargetChatCurrent()));
       }
       return;
     }
-    closeNow();
+    ChatFilter filter = chat -> WebApp.isChatAllowed(tdlib, chat.id, chatTypes) && tdlib.canSendBasicMessage(chat);
     ChatsController c = new ChatsController(context(), tdlib);
-    c.setArguments(new ChatsController.Arguments(new ChatsController.PickerDelegate() {
+    c.setArguments(new ChatsController.Arguments(filter, new ChatsController.PickerDelegate() {
       @Override
       public boolean onChatPicked (TdApi.Chat chat, Runnable onDone) {
-        if (!WebApp.isChatAllowed(tdlib, chat.id, chatTypes) || !tdlib.canSendBasicMessage(chat)) {
+        if (!hasActiveAccount() || !isCurrent.getBoolValue()) {
+          return false;
+        }
+        if (!filter.accept(chat)) {
           UI.showToast(R.string.YouCantSendMessages, Toast.LENGTH_SHORT);
           return false;
         }
@@ -1495,8 +1602,13 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       public Object getShareItem () {
         return new TGSwitchInline(username, query);
       }
+
+      @Override
+      public void modifyChatOpenParams (TdlibUi.ChatOpenParameters params) {
+        params.after(chatId -> closeNow());
+      }
     }));
-    navigateTo(c);
+    navigateFromPopup(c);
   }
 
   void addToHomeScreen (RunnableBool onResult) {
@@ -1530,9 +1642,10 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   boolean openRequestedChatPicker (
     TdApi.KeyboardButton button,
     TdApi.KeyboardButtonSource source,
+    FutureBool isCurrent,
     RunnableBool onResult
   ) {
-    return WebApp.openRequestedChatPicker(this, getBotUserId(), button, source, onResult);
+    return WebApp.openRequestedChatPicker(this, getBotUserId(), button, source, isCurrent, onResult);
   }
 
   @Override
@@ -1680,7 +1793,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
       destroy();
       return;
     }
-    if (isMinimized) {
+    if (isMinimized || nativeScreen != null) {
       context().letsRememberAboutThisWindow(popupLayout);
       popupLayout.hideWindow(false);
     } else {
@@ -1799,7 +1912,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   @Override
   public void onActivityPause () {
     super.onActivityPause();
-    if (webView != null && !isMinimized) {
+    if (webView != null && !isMinimized && nativeScreen == null) {
       webView.onPause();
       bridge.onVisibilityChanged(false);
     }
@@ -1808,7 +1921,7 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   @Override
   public void onActivityResume () {
     super.onActivityResume();
-    if (webView != null && !isMinimized) {
+    if (webView != null && !isMinimized && nativeScreen == null) {
       webView.onResume();
       bridge.onVisibilityChanged(true);
     }
@@ -1839,6 +1952,8 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
   public void destroy () {
     super.destroy();
     openControllers.remove(this);
+    nativeScreen = null;
+    onNativeScreenClosed = null;
     setPaneScreenListener(false);
     WebAppTabs.remove(this);
     ThemeManager.instance().removeThemeListener(this);

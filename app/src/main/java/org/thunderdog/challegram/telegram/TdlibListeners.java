@@ -273,6 +273,12 @@ public class TdlibListeners {
     }
   }
 
+  void notifySessionCanAcceptCallsChanged (long sessionId, boolean canAcceptCalls) {
+    for (SessionListener listener : sessionListeners) {
+      listener.onSessionCanAcceptCallsChanged(tdlib, sessionId, canAcceptCalls);
+    }
+  }
+
   void notifySessionListPossiblyChanged (boolean isWeakGuess) {
     for (SessionListener listener : sessionListeners) {
       listener.onSessionListChanged(tdlib, isWeakGuess);
@@ -1347,7 +1353,7 @@ public class TdlibListeners {
 
   void updateForumTopic (TdApi.UpdateForumTopic update) {
     runForumUpdate(update.chatId, update.forumTopicId, listener ->
-      listener.onForumTopicUpdated(update.chatId, update.forumTopicId, update.isPinned, update.lastReadInboxMessageId, update.lastReadOutboxMessageId, update.unreadMentionCount, update.unreadReactionCount, update.notificationSettings, update.draftMessage)
+      listener.onForumTopicUpdated(update)
     );
   }
 

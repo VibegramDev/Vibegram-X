@@ -103,33 +103,20 @@ public class ReactionsOverlayView extends ViewGroup {
     }
   }
 
-  /**
-   * Upper bound for one effect on screen. Effects without a position animation leave only when their lottie loops; if
-   * that never happens (playback frozen by a media viewer, file not loaded, actor dropped), the last frame stayed
-   * over the chat for good and scrolled with the messages.
-   */
-  private static final long MAX_EFFECT_DURATION_MS = 5000;
-
   public void addOverlay (ReactionInfo info) {
-    info.setRemoveListener(() -> this.removeOverlay(info));
+    info.removeRunnable = () -> this.removeOverlay(info);
     activePopups.add(info);
     info.attach();
-    postDelayed(() -> {
-      if (activePopups.contains(info)) {
-        info.finishNow();
-      }
-    }, MAX_EFFECT_DURATION_MS);
     invalidate();
   }
 
 
   public void removeOverlay (ReactionInfo info) {
-    if (!activePopups.remove(info)) {
-      return;
+    if (activePopups.remove(info)) {
+      info.detach();
+      info.performDestroy();
+      invalidate();
     }
-    info.detach();
-    info.performDestroy();
-    invalidate();
   }
 
 
@@ -143,7 +130,12 @@ public class ReactionsOverlayView extends ViewGroup {
 
 
   public static class ReactionInfo implements Destroyable, FactorAnimator.Target {
+    // A frozen or unloaded effect may never report its loop or animation end.
+    private static final long MAX_DURATION_MS = 5000;
+
     private final ReactionsOverlayView parentView;
+    private final Runnable finishRunnable = this::finish;
+    private boolean isFinished;
 
     private final ImageReceiver imageReceiver;
     private final GifReceiver gifReceiver;
@@ -295,27 +287,17 @@ public class ReactionsOverlayView extends ViewGroup {
       return this;
     }
 
-    private boolean finished;
-
-    private void finishNow () {
-      if (finished) {
-        return;
+    private void finish () {
+      if (!isFinished) {
+        isFinished = true;
+        try {
+          if (endAnimationListener != null) {
+            endAnimationListener.onAnimationFinish();
+          }
+        } finally {
+          removeRunnable.run();
+        }
       }
-      finished = true;
-      if (endAnimationListener != null) {
-        endAnimationListener.onAnimationFinish();
-      }
-      if (removeRunnable != null) {
-        removeRunnable.run();
-      }
-    }
-
-    private ReactionInfo setRemoveListener (Runnable listener) {
-      this.removeRunnable = listener;
-      if (animation != null && positionAnimator == null) {
-        animation.addLoopListener(this::finishNow);
-      }
-      return this;
     }
 
     public void draw (Canvas canvas) {
@@ -379,15 +361,21 @@ public class ReactionsOverlayView extends ViewGroup {
     public void attach () {
       imageReceiver.attach();
       gifReceiver.attach();
-      if (positionAnimator != null) {
-        positionAnimator.animateTo(1f);
-      }
       if (animatedEmojiEffect != null) {
         animatedEmojiEffect.setView(parentView);
+      }
+      parentView.postDelayed(finishRunnable, MAX_DURATION_MS);
+      if (positionAnimator != null) {
+        positionAnimator.animateTo(1f);
+      } else if (animation != null) {
+        // An already looped play-once GIF may invoke this immediately.
+        animation.addLoopListener(finishRunnable);
       }
     }
 
     public void detach () {
+      isFinished = true;
+      parentView.removeCallbacks(finishRunnable);
       imageReceiver.detach();
       gifReceiver.detach();
       if (positionAnimator != null) {
@@ -423,11 +411,7 @@ public class ReactionsOverlayView extends ViewGroup {
     @Override
     public void onFactorChangeFinished (int id, float finalFactor, FactorAnimator callee) {
       if (id == POSITION_ANIMATOR) {
-        if (endAnimationListener != null) {
-          endAnimationListener.onAnimationFinish();
-        }
-        removeRunnable.run();
-        parentView.invalidate();
+        finish();
       }
     }
 

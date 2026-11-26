@@ -15,6 +15,7 @@
 package org.thunderdog.challegram.navigation;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
@@ -37,6 +38,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import androidx.annotation.CheckResult;
 import androidx.annotation.ColorInt;
@@ -48,10 +50,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
 import tgx.td.Td;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.BuildConfig;
+import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.component.sticker.TGStickerObj;
@@ -69,6 +73,7 @@ import org.thunderdog.challegram.theme.M3;
 import org.thunderdog.challegram.theme.Theme;
 import org.thunderdog.challegram.tool.Drawables;
 import org.thunderdog.challegram.tool.Fonts;
+import org.thunderdog.challegram.tool.Icons;
 import org.thunderdog.challegram.tool.Paints;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
@@ -114,6 +119,12 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
   public static class Item {
     public final CharSequence string;
+    private @Nullable CharSequence accessibilityLabel;
+
+    public Item setAccessibilityLabel (CharSequence label) {
+      accessibilityLabel = label;
+      return this;
+    }
     public final boolean needFakeBold;
     public final @DrawableRes int iconRes;
     public ImageReceiver imageReceiver;
@@ -185,14 +196,6 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       this.counter = counter;
       this.provider = provider;
       this.hidden = hidden;
-    }
-
-    private Drawable icon;
-
-    public Drawable getIcon () {
-      if (icon == null && iconRes != 0)
-        icon = Drawables.get(iconRes);
-      return icon;
     }
 
     // Custom emoji support: when set, the label is laid out and drawn by Text
@@ -328,7 +331,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     @Override
     public boolean equals (Object obj) {
-      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && ((Item) obj).trailingIconRes == trailingIconRes && customEmojiEquals(((Item) obj).formattedString, formattedString) && Td.equalsTo(((Item) obj).avatarSender, avatarSender);
+      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && ((Item) obj).hidden == hidden && StringUtils.equalsOrBothEmpty(((Item) obj).accessibilityLabel, accessibilityLabel) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && ((Item) obj).trailingIconRes == trailingIconRes && customEmojiEquals(((Item) obj).formattedString, formattedString) && Td.equalsTo(((Item) obj).avatarSender, avatarSender);
     }
 
     private int width, contentWidth;
@@ -847,6 +850,8 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     backgroundView.setOnLongClickListener(this);
     backgroundView.setBoundView(this);
     backgroundView.setIndex(i);
+    backgroundView.setEnabled(!disabled);
+    backgroundView.bindAccessibility(items.get(i), i == Math.round(selectionFactor));
     return backgroundView;
   }
 
@@ -889,6 +894,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   public void setItemAt (int index, Item item, boolean animated) {
     Item oldItem = this.items.set(index, item);
     onUpdateItems();
+    updateTabAccessibility(index);
 
     measureItem(item, getItemTextPaint(item));
     relayout();
@@ -1011,6 +1017,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     // We already have backgroundView with insertion index, adding for the last one
     // (for which there is no backgroundView yet)
     addView(newBackgroundView(items.size() - 1));
+    updateTabsAccessibility();
     invalidate();
   }
 
@@ -1035,6 +1042,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     // Removing BackgroundView for the last item only, as other just update dimensions
     removeViewAt(getChildCount() - 1);
+    updateTabsAccessibility();
     // The removed tab no longer counts towards the cached widths (onMeasure checks them).
     relayout();
     invalidate();
@@ -1367,9 +1375,28 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     return this;
   }
 
+  private void updateTabsAccessibility () {
+    for (int i = 0; i < getChildCount(); i++) {
+      updateTabAccessibility(i);
+    }
+  }
+
+  private void updateTabAccessibility (int index) {
+    View child = getChildAt(index);
+    if (child instanceof BackgroundView) {
+      ((BackgroundView) child).bindAccessibility(items.get(index), index == Math.round(selectionFactor));
+    }
+  }
+
   public void setSelectionFactor (float factor) {
     if (this.selectionFactor != factor) {
+      int oldSelection = Math.round(this.selectionFactor);
       this.selectionFactor = factor;
+      int newSelection = Math.round(factor);
+      if (oldSelection != newSelection) {
+        updateTabAccessibility(oldSelection);
+        updateTabAccessibility(newSelection);
+      }
       if (toIndex != -1 && (int) factor == toIndex && factor % 1f == 0) {
         fromIndex = toIndex = -1; selectionChangeListener.resetUserInteraction();
       }
@@ -1573,8 +1600,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
                 drawItemAvatar(c, item, cx + horizontalPadding, viewHeight);
                 stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
               } else if (item.iconRes != 0) {
-                Drawable drawable = item.getIcon();
-                Drawables.draw(c, drawable, cx + horizontalPadding, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
+                drawIcon(c, item.iconRes, cx + horizontalPadding, viewHeight, color);
                 stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
               } else {
                 stringX = cx + horizontalPadding;
@@ -1590,8 +1616,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
               item.imageReceiver.drawScaled(c, item.imageReceiverScale);
               item.counter.draw(c, cx + size, viewHeight / 2f, Gravity.LEFT, textAlpha, backgroundAlpha, imageAlpha, item.provider, ColorId.NONE);
             } else if (item.iconRes != 0) {
-              Drawable drawable = item.getIcon();
-              Drawables.draw(c, drawable, cx + horizontalPadding, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
+              drawIcon(c, item.iconRes, cx + horizontalPadding, viewHeight, color);
               item.counter.draw(c, cx + itemWidth - horizontalPadding - item.counter.getWidth() / 2f, viewHeight / 2f, Gravity.CENTER, textAlpha, backgroundAlpha, imageAlpha, item.provider, ColorId.NONE);
               if (item.isAnimating() && item.oldItem != null && item.oldItem.hasLabel()) {
                 int stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
@@ -1609,8 +1634,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
               drawItemAvatar(c, item, cx + horizontalPadding, viewHeight);
               stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
             } else if (item.iconRes != 0) {
-              Drawable drawable = item.getIcon();
-              Drawables.draw(c, drawable, cx + horizontalPadding, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
+              drawIcon(c, item.iconRes, cx + horizontalPadding, viewHeight, color);
               stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
             } else {
               stringX = cx + itemWidth / 2 - contentWidth / 2;
@@ -1618,8 +1642,8 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
             int stringY = viewHeight / 2 - item.getLabelHeight() / 2;
             drawLabel(c, item, stringX, stringY, color, itemSelectionFactor);
           } else if (item.iconRes != 0) {
-            Drawable drawable = item.getIcon();
-            Drawables.draw(c, drawable, cx + itemWidth / 2 - drawable.getMinimumWidth() / 2, viewHeight / 2 - drawable.getMinimumHeight() / 2, Paints.getPorterDuffPaint(color));
+            int iconWidth = Icons.getBitmap(item.iconRes).getWidth();
+            drawIcon(c, item.iconRes, cx + itemWidth / 2 - iconWidth / 2, viewHeight, color);
             if (item.isAnimating() && item.oldItem != null && item.oldItem.hasLabel()) {
               int stringX = cx + horizontalPadding + Screen.dp(ICON_SIZE) + itemSpacing;
               int stringY = viewHeight / 2 - item.oldItem.getLabelHeight() / 2;
@@ -1687,6 +1711,18 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   {
     labelFadingEdgePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
     labelFadingEdgePaint.setShader(new LinearGradient(0, 0, 1, 0, Color.BLACK, Color.TRANSPARENT, Shader.TileMode.CLAMP));
+  }
+
+  @SuppressWarnings("deprecation")
+  private static void drawIcon (
+    Canvas c,
+    @DrawableRes int iconRes,
+    int x,
+    int viewHeight,
+    int color
+  ) {
+    Bitmap icon = Icons.getBitmap(iconRes);
+    c.drawBitmap(icon, x, viewHeight / 2 - icon.getHeight() / 2, Paints.getPorterDuffPaint(color));
   }
 
   private void drawLabel (Canvas c, Item item, float x, float y, int color, float itemSelectionFactor) {
@@ -1905,6 +1941,27 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       super(context);
 
       Views.setClickable(this);
+    }
+
+    void bindAccessibility (Item item, boolean selected) {
+      CharSequence label = item.accessibilityLabel != null ? item.accessibilityLabel : item.string;
+      if (item.hidden) {
+        label = null;
+      }
+      if (!android.text.TextUtils.equals(getContentDescription(), label)) {
+        setContentDescription(label);
+      }
+      setImportantForAccessibility(item.hidden ? IMPORTANT_FOR_ACCESSIBILITY_NO : IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+      if (label != null || item.hidden) {
+        setFocusable(!item.hidden);
+      }
+      setSelected(!item.hidden && selected);
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo (AccessibilityNodeInfo info) {
+      super.onInitializeAccessibilityNodeInfo(info);
+      AccessibilityNodeInfoCompat.wrap(info).setRoleDescription(Lang.getString(R.string.vg_AccessibilityTab));
     }
 
     private long touchDownTime;

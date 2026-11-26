@@ -16,7 +16,6 @@ package org.thunderdog.challegram.ui;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.net.Uri;
 import android.os.Build;
 import android.view.MotionEvent;
 import android.view.View;
@@ -79,55 +78,7 @@ public class WebkitController<T> extends ViewController<T> {
       CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
     }
 
-    if (hasSpecialProcessing()) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        webView.setWebViewClient(new WebViewClient() {
-          @Override
-          public void onPageFinished (WebView view, String url) {
-            Uri uri;
-            try {
-              uri = Uri.parse(url);
-            } catch (Throwable t) {
-              uri = null;
-            }
-            if (uri == null || !processSpecial(uri))
-              super.onPageFinished(view, url);
-          }
-
-          @Override
-          public boolean shouldOverrideUrlLoading (WebView view, android.webkit.WebResourceRequest request) {
-            return processSpecial(request.getUrl()) || super.shouldOverrideUrlLoading(view, request);
-          }
-        });
-      } else {
-        webView.setWebViewClient(new WebViewClient() {
-          @Override
-          public void onPageFinished (WebView view, String url) {
-            Uri uri;
-            try {
-              uri = Uri.parse(url);
-            } catch (Throwable t) {
-              uri = null;
-            }
-            if (uri == null || !processSpecial(uri))
-              super.onPageFinished(view, url);
-          }
-
-          @Override
-          public boolean shouldOverrideUrlLoading (WebView view, String url) {
-            Uri uri;
-            try {
-              uri = Uri.parse(url);
-            } catch (Throwable t) {
-              uri = null;
-            }
-            return (uri != null && processSpecial(uri)) || super.shouldOverrideUrlLoading(view, url);
-          }
-        });
-      }
-    } else {
-      webView.setWebViewClient(new WebViewClient());
-    }
+    webView.setWebViewClient(createWebViewClient(headerCell));
     webView.setWebChromeClient(new WebChromeClient() {
       @Override
       public void onProgressChanged (WebView view, int newProgress) {
@@ -179,11 +130,7 @@ public class WebkitController<T> extends ViewController<T> {
     return headerCell;
   }
 
-  protected boolean hasSpecialProcessing () {
-    return false;
-  }
-
-  protected boolean processSpecial (Uri url) {
-    return false; // override
+  protected WebViewClient createWebViewClient (DoubleHeaderView headerCell) {
+    return new WebViewClient();
   }
 }

@@ -36,8 +36,7 @@ import org.thunderdog.challegram.navigation.ViewPagerHeaderViewCompact;
 import org.thunderdog.challegram.navigation.ViewPagerTopView;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.support.ViewSupport;
-import org.thunderdog.challegram.telegram.ChatListener;
-import org.thunderdog.challegram.telegram.MessageListener;
+import org.thunderdog.challegram.telegram.ForumTopicList;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
@@ -60,7 +59,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import me.vkryl.android.widget.FrameLayoutFix;
-import me.vkryl.core.StringUtils;
 import me.vkryl.core.collection.IntList;
 import tgx.td.ChatId;
 
@@ -68,9 +66,9 @@ import tgx.td.ChatId;
  * Topics of a forum (or of a chat with a bot that has topics) as tabs above or beside the chat, as in the
  * official app: «All» with the whole chat, then one tab per topic. Each tab is a regular {@link MessagesController}
  * on the navigation stack, opened with {@link TdApi.MessageTopicForum} like any topic; picking another tab replaces it.
- * The loaded topics move to the next screen with the tabs.
+ * Topic pages are shared with the list layout through the account’s topic manager.
  */
-public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataChangeListener, ChatListener, MessageListener, ViewPagerTopView.OnItemClickListener {
+public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataChangeListener, ViewPagerTopView.OnItemClickListener {
   private static final String TOPIC_ICON_PLACEHOLDER = "\u2B50";
   private static final float SIDE_TAB_TEXT_SIZE = 10f;
   /** Custom emoji of a topic in a side tab is as large as the coloured letter icons. */
@@ -86,10 +84,9 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
   /** Tabs on the side instead of the header ({@link TdlibSettingsManager#FORUM_VIEW_SIDE_TABS}). */
   private final boolean isSideTabs;
 
-  private final List<TdApi.ForumTopic> topics = new ArrayList<>();
-  private boolean isLoading, hasMore;
-  private int nextOffsetDate, nextOffsetForumTopicId;
-  private long nextOffsetMessageId;
+  private final ForumTopicList topicList;
+  private List<TdApi.ForumTopic> topics;
+  private final Runnable topicListListener = this::scheduleTabsUpdate;
   private boolean knownIsForum = true;
   /** Topic to open once it's added: the one the user has just created. */
   private int pendingSelectTopicId;
@@ -100,8 +97,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
   /** Tabs by topic: a tab is built again only when its topic changes. */
   private final LongSparseArray<TopicSideTabsView.Tab> sideTabsCache = new LongSparseArray<>();
 
-  public ForumTopicTabs (MessagesController owner, TdApi.Chat chat, int forumTopicId, @Nullable ChatTopicTabs previousTabs) {
-    ForumTopicTabs previous = previousTabs instanceof ForumTopicTabs ? (ForumTopicTabs) previousTabs : null;
+  public ForumTopicTabs (MessagesController owner, TdApi.Chat chat, int forumTopicId) {
     this.owner = owner;
     this.tdlib = owner.tdlib();
     this.chat = chat;
@@ -116,28 +112,20 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     if (ChatId.isSupergroup(chatId)) {
       tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
     }
-    tdlib.listeners().subscribeToChatUpdates(chatId, this);
-    tdlib.listeners().subscribeToMessageUpdates(chatId, this);
-    if (previous != null && previous.chatId == chatId) {
-      topics.addAll(previous.topics);
-      hasMore = previous.hasMore;
-      nextOffsetDate = previous.nextOffsetDate;
-      nextOffsetMessageId = previous.nextOffsetMessageId;
-      nextOffsetForumTopicId = previous.nextOffsetForumTopicId;
-    } else {
-      loadTopics();
-    }
+    topicList = tdlib.topics().list(chatId);
+    topics = topicList.items();
+    topicList.addListener(topicListListener);
   }
 
   /** New screen of the chat with the tabs, showing the topic (null for «All»). */
-  public static MessagesController newController (ViewController<?> context, TdApi.Chat chat, @Nullable TdApi.ForumTopic topic, int forumTopicId, @Nullable ChatTopicTabs previous) {
+  public static MessagesController newController (ViewController<?> context, TdApi.Chat chat, @Nullable TdApi.ForumTopic topic, int forumTopicId) {
     MessagesController c = new MessagesController(context.context(), context.tdlib());
     MessagesController.Arguments args = new MessagesController.Arguments(context.tdlib(), null, chat, null,
       forumTopicId != 0 ? new TdApi.MessageTopicForum(forumTopicId) : null, null);
     if (topic != null) {
       args.setForumTopic(topic);
     }
-    c.setArguments(args.topicTabs(previous));
+    c.setArguments(args.topicTabs());
     return c;
   }
 
@@ -159,8 +147,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     if (ChatId.isSupergroup(chatId)) {
       tdlib.cache().unsubscribeFromSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
     }
-    tdlib.listeners().unsubscribeFromChatUpdates(chatId, this);
-    tdlib.listeners().unsubscribeFromMessageUpdates(chatId, this);
+    topicList.removeListener(topicListListener);
   }
 
   private boolean isActive () {
@@ -185,7 +172,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     Context context = owner.context();
     sideTabs = new TopicSideTabsView(context, this::openTab);
     sideTabs.setTabs(buildSideTabs());
-    sideTabs.setSelectedPosition(selectedPosition());
+    sideTabs.setSelectedId(forumTopicId);
 
     ImageView topButton = new ImageView(context);
     topButton.setScaleType(ImageView.ScaleType.CENTER);
@@ -193,6 +180,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     topButton.setColorFilter(Theme.getColor(ColorId.icon));
     owner.addThemeFilterListener(topButton, ColorId.icon);
     RippleSupport.setTransparentSelector(topButton);
+    topButton.setContentDescription(Lang.getString(R.string.TopicsLayoutTabs));
     topButton.setOnClickListener(v -> switchTabsLayout(TdlibSettingsManager.FORUM_VIEW_TABS));
 
     FrameLayoutFix column = TopicSideTabsView.wrap(context, sideTabs, topButton);
@@ -246,13 +234,12 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     }
     if (sideTabs != null) {
       sideTabs.setTabs(buildSideTabs());
-      sideTabs.setSelectedPosition(selectedPosition());
     }
   }
 
   private boolean tabsUpdatePending;
 
-  /** Counters change with every message: the tabs are rebuilt at most every 300 ms. */
+  /** Keep positions and their click targets on the same snapshot, even while batching updates. */
   private void scheduleTabsUpdate () {
     if (tabsUpdatePending) {
       return;
@@ -261,7 +248,9 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     owner.runOnUiThreadOptional(() -> {
       tabsUpdatePending = false;
       if (isActive()) {
+        topics = topicList.items();
         onTabsChanged();
+        selectPendingTopic();
       }
     }, null, 300);
   }
@@ -270,7 +259,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     List<ViewPagerTopView.Item> items = new ArrayList<>(1 + topics.size());
     if (isBotForum) {
       // As in the official app, the whole chat of a bot is the tab where new topics start
-      items.add(new ViewPagerTopView.Item(R.drawable.baseline_add_comment_24));
+      items.add(new ViewPagerTopView.Item(R.drawable.baseline_add_comment_24).setAccessibilityLabel(Lang.getString(R.string.NewTopic)));
     } else {
       items.add(new ViewPagerTopView.Item(Lang.getString(R.string.DirectMessagesAll)));
     }
@@ -296,16 +285,16 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       new TdApi.TextEntity(0, TOPIC_ICON_PLACEHOLDER.length(), new TdApi.TextEntityTypeCustomEmoji(customEmojiId))
     });
     boolean animate = !Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
-    return new ViewPagerTopView.Item(label, counter).setCustomEmojiText(tdlib, text, animate);
+    return new ViewPagerTopView.Item(label, counter).setCustomEmojiText(tdlib, text, animate).setAccessibilityLabel(topic.info.name);
   }
 
   private List<TopicSideTabsView.Tab> buildSideTabs () {
     List<TopicSideTabsView.Tab> tabs = new ArrayList<>(1 + topics.size());
     if (isBotForum) {
-      tabs.add(new TopicSideTabsView.Tab(0, null, null, null, 0, 0, R.drawable.baseline_add_comment_24, null, ""));
+      tabs.add(new TopicSideTabsView.Tab(0, Lang.getString(R.string.NewTopic), null, null, null, 0, 0, R.drawable.baseline_add_comment_24, null, ""));
     } else {
       String all = Lang.getString(R.string.DirectMessagesAll);
-      tabs.add(new TopicSideTabsView.Tab(0, newSideTabName(all), null, null, 0, 0, R.drawable.baseline_forum_24, null, all));
+      tabs.add(new TopicSideTabsView.Tab(0, all, newSideTabName(all), null, null, 0, 0, R.drawable.baseline_forum_24, null, all));
     }
     boolean noAnimations = Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
     TextPaint letterPaint = Paints.getMediumTextPaint(15f, Color.WHITE, false);
@@ -356,7 +345,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
         counter = new Counter.Builder().textSize(11f).backgroundPadding(3f).build();
         counter.setCount(topic.unreadCount, isMuted, false);
       }
-      TopicSideTabsView.Tab tab = new TopicSideTabsView.Tab(info.forumTopicId, newSideTabName(info.name), emoji, letter, letterWidth, color, 0, counter, contentKey);
+      TopicSideTabsView.Tab tab = new TopicSideTabsView.Tab(info.forumTopicId, info.name, newSideTabName(info.name), emoji, letter, letterWidth, color, 0, counter, contentKey);
       sideTabsCache.put(info.forumTopicId, tab);
       tabs.add(tab);
     }
@@ -386,8 +375,8 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       TdApi.ForumTopic topic = topics.get(position - 1);
       openTopic(topic, topic.info.forumTopicId);
     }
-    if (hasMore && !isLoading && position >= topics.size() - 3) {
-      loadMoreTopics();
+    if (position >= topics.size() - 3) {
+      topicList.loadMore();
     }
   }
 
@@ -395,7 +384,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     if (forumTopicId == this.forumTopicId || isSwitching || !isActive()) {
       return;
     }
-    MessagesController c = newController(owner, chat, topic, forumTopicId, this);
+    MessagesController c = newController(owner, chat, topic, forumTopicId);
     c.setOpenedAsTab();
     if (replaceOwner(c)) {
       isSwitching = true;
@@ -405,7 +394,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
         headerView.getTopView().setSelectionFactor(position);
       }
       if (sideTabs != null) {
-        sideTabs.setSelectedPosition(position);
+        sideTabs.setSelectedId(forumTopicId);
       }
     }
   }
@@ -419,7 +408,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     pendingSelectTopicId = forumTopicId;
     selectPendingTopic();
     if (pendingSelectTopicId != 0) {
-      loadTopics();
+      topicList.requestTopic(pendingSelectTopicId);
     }
   }
 
@@ -459,179 +448,11 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       listController.setArguments(new ForumTopicsController.Arguments(chat));
       c = listController;
     } else {
-      MessagesController messages = newController(owner, chat, getCurrentTopic(), forumTopicId, this);
+      MessagesController messages = newController(owner, chat, getCurrentTopic(), forumTopicId);
       messages.setOpenedAsTab();
       c = messages;
     }
     replaceOwner(c);
-  }
-
-  // Topics
-
-  private boolean isShownTopic (TdApi.ForumTopic topic) {
-    // Chats with bots don't show the General topic, as in the official app
-    return !(isBotForum && topic.info.isGeneral);
-  }
-
-  private void addShownTopics (TdApi.ForumTopic[] newTopics) {
-    for (TdApi.ForumTopic topic : newTopics) {
-      if (isShownTopic(topic)) {
-        topics.add(topic);
-      }
-    }
-  }
-
-  private void loadTopics () {
-    if (isLoading) {
-      return;
-    }
-    isLoading = true;
-    if (topics.isEmpty()) {
-      List<TdApi.ForumTopic> cachedTopics = tdlib.getCachedForumTopics(chatId);
-      if (cachedTopics != null && !cachedTopics.isEmpty()) {
-        addShownTopics(cachedTopics.toArray(new TdApi.ForumTopic[0]));
-        onTabsChanged();
-      }
-    }
-    tdlib.send(new TdApi.GetForumTopics(chatId, "", 0, 0L, 0, 100), (forumTopics, error) -> owner.runOnUiThreadOptional(() -> {
-      isLoading = false;
-      if (forumTopics == null || !isActive()) {
-        return;
-      }
-      topics.clear();
-      addShownTopics(forumTopics.topics);
-      setNextOffset(forumTopics);
-      tdlib.updateForumTopicsCache(chatId, topics);
-      onTabsChanged();
-      selectPendingTopic();
-    }));
-  }
-
-  private void loadMoreTopics () {
-    if (isLoading || !hasMore) {
-      return;
-    }
-    isLoading = true;
-    tdlib.send(new TdApi.GetForumTopics(chatId, "", nextOffsetDate, nextOffsetMessageId, nextOffsetForumTopicId, 50), (forumTopics, error) -> owner.runOnUiThreadOptional(() -> {
-      isLoading = false;
-      if (forumTopics == null || !isActive()) {
-        return;
-      }
-      for (TdApi.ForumTopic topic : forumTopics.topics) {
-        if (isShownTopic(topic) && indexOfTopic(topic.info.forumTopicId) == -1) {
-          topics.add(topic);
-        }
-      }
-      setNextOffset(forumTopics);
-      onTabsChanged();
-    }));
-  }
-
-  private void setNextOffset (TdApi.ForumTopics forumTopics) {
-    nextOffsetDate = forumTopics.nextOffsetDate;
-    nextOffsetMessageId = forumTopics.nextOffsetMessageId;
-    nextOffsetForumTopicId = forumTopics.nextOffsetForumTopicId;
-    hasMore = forumTopics.topics.length > 0 && (nextOffsetDate != 0 || nextOffsetMessageId != 0 || nextOffsetForumTopicId != 0);
-  }
-
-  /** Read state of a topic changed: updateForumTopic has no unread count, so it's requested. */
-  @Override
-  public void onForumTopicUpdated (long chatId, long messageThreadId, boolean isPinned, long lastReadInboxMessageId, long lastReadOutboxMessageId, int unreadMentionCount, int unreadReactionCount, TdApi.ChatNotificationSettings notificationSettings, @Nullable TdApi.DraftMessage draftMessage) {
-    if (chatId != this.chatId) {
-      return;
-    }
-    final int forumTopicId = (int) messageThreadId;
-    owner.runOnUiThreadOptional(() -> {
-      int index = indexOfTopic(forumTopicId);
-      if (!isActive() || index == -1) {
-        return;
-      }
-      TdApi.ForumTopic topic = topics.get(index);
-      boolean readChanged = topic.lastReadInboxMessageId != lastReadInboxMessageId;
-      topic.lastReadInboxMessageId = lastReadInboxMessageId;
-      if (topic.isPinned != isPinned) {
-        // Pinned topics go first in the order of the server
-        loadTopics();
-      }
-      if (notificationSettings != null) {
-        // The counter turns grey in muted topics
-        topic.notificationSettings = notificationSettings;
-        scheduleTabsUpdate();
-      }
-      if (!readChanged || topic.unreadCount == 0) {
-        return;
-      }
-      if (topic.lastMessage != null && lastReadInboxMessageId >= topic.lastMessage.id) {
-        topic.unreadCount = 0;
-        scheduleTabsUpdate();
-        return;
-      }
-      tdlib.send(new TdApi.GetForumTopic(chatId, forumTopicId), (result, error) -> owner.runOnUiThreadOptional(() -> {
-        int freshIndex = indexOfTopic(forumTopicId);
-        if (result != null && isActive() && freshIndex != -1 && topics.get(freshIndex).unreadCount != result.unreadCount) {
-          topics.get(freshIndex).unreadCount = result.unreadCount;
-          scheduleTabsUpdate();
-        }
-      }));
-    });
-  }
-
-  /** Topics created after the tabs were loaded, and counters of the loaded ones. */
-  @Override
-  public void onNewMessage (TdApi.Message message) {
-    if (message.topicId == null || message.topicId.getConstructor() != TdApi.MessageTopicForum.CONSTRUCTOR) {
-      return;
-    }
-    int forumTopicId = ((TdApi.MessageTopicForum) message.topicId).forumTopicId;
-    owner.runOnUiThreadOptional(() -> {
-      if (!isActive()) {
-        return;
-      }
-      int index = indexOfTopic(forumTopicId);
-      if (index != -1) {
-        TdApi.ForumTopic topic = topics.get(index);
-        topic.lastMessage = message;
-        if (!message.isOutgoing && message.id > topic.lastReadInboxMessageId) {
-          topic.unreadCount++;
-          scheduleTabsUpdate();
-        }
-        return;
-      }
-      tdlib.send(new TdApi.GetForumTopic(chatId, forumTopicId), (topic, error) -> owner.runOnUiThreadOptional(() -> {
-        if (topic == null || !isActive() || indexOfTopic(forumTopicId) != -1 || !isShownTopic(topic)) {
-          return;
-        }
-        // The topic has the newest message: it goes right after the pinned ones
-        int insertIndex = 0;
-        while (insertIndex < topics.size() && topics.get(insertIndex).isPinned) {
-          insertIndex++;
-        }
-        topics.add(insertIndex, topic);
-        tdlib.updateForumTopicsCache(chatId, topics);
-        onTabsChanged();
-        selectPendingTopic();
-      }));
-    });
-  }
-
-  /** Tab titles follow renamed topics. */
-  @Override
-  public void onForumTopicInfoChanged (TdApi.ForumTopicInfo info) {
-    if (info.chatId != chatId) {
-      return;
-    }
-    owner.runOnUiThreadOptional(() -> {
-      int index = isActive() ? indexOfTopic(info.forumTopicId) : -1;
-      if (index != -1) {
-        TdApi.ForumTopic topic = topics.get(index);
-        boolean changed = !StringUtils.equalsOrBothEmpty(topic.info.name, info.name) ||
-          (topic.info.icon != null ? topic.info.icon.customEmojiId : 0) != (info.icon != null ? info.icon.customEmojiId : 0);
-        topic.info = info;
-        if (changed) {
-          onTabsChanged();
-        }
-      }
-    });
   }
 
   @Override
@@ -691,6 +512,12 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     IntList ids = new IntList(10);
     IntList icons = new IntList(10);
     StringList strings = new StringList(10);
+
+    if (topicList.hasLoadError()) {
+      ids.append(R.id.btn_retry);
+      icons.append(R.drawable.baseline_sync_problem_24);
+      strings.append(R.string.vg_RetryLoadingTopics);
+    }
 
     ids.append(R.id.btn_search);
     icons.append(R.drawable.baseline_search_24);
@@ -761,6 +588,10 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
 
   @Override
   public boolean onMoreItemPressed (int id) {
+    if (id == R.id.btn_retry) {
+      topicList.retry();
+      return true;
+    }
     TdApi.ForumTopic topic = getCurrentTopic();
     if (id == R.id.btn_createTopic) {
       showCreateTopicDialog();
@@ -803,15 +634,9 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
           UI.showError(error);
           return;
         }
-        int index = indexOfTopic(topic.info.forumTopicId);
-        if (isActive() && index != -1) {
-          topics.remove(index);
-          tdlib.updateForumTopicsCache(chatId, topics);
-          if (topic.info.forumTopicId == forumTopicId) {
-            openTopic(null, 0);
-          } else {
-            onTabsChanged();
-          }
+        topicList.remove(topic.info.forumTopicId);
+        if (topic.info.forumTopicId == forumTopicId) {
+          openTopic(null, 0);
         }
       }))
     );

@@ -110,6 +110,7 @@ import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.player.RecordAudioVideoController;
 import org.thunderdog.challegram.player.RoundVideoController;
 import org.thunderdog.challegram.player.TGPlayerController;
+import org.thunderdog.challegram.service.TGCallService;
 import org.thunderdog.challegram.telegram.TGLegacyManager;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibManager;
@@ -140,7 +141,6 @@ import org.thunderdog.challegram.util.ActivityPermissionResult;
 import org.thunderdog.challegram.util.AppUpdater;
 import org.thunderdog.challegram.util.KonfettiBuilder;
 import org.thunderdog.challegram.util.Permissions;
-import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.widget.BaseRootLayout;
 import org.thunderdog.challegram.widget.DragDropLayout;
 import org.thunderdog.challegram.widget.ForceTouchView;
@@ -246,6 +246,8 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
           return new ClickBait(0, true);
         case Tdlib.ResolvableProblem.NOTIFICATIONS:
           return new ClickBait(R.drawable.baseline_notification_important_14, true);
+        case Tdlib.ResolvableProblem.CALLS:
+          return new ClickBait(R.drawable.baseline_call_alert_14, true);
         case Tdlib.ResolvableProblem.CHECK_PASSWORD:
           return new ClickBait(R.drawable.baseline_gpp_maybe_14, true);
         case Tdlib.ResolvableProblem.CHECK_PHONE_NUMBER:
@@ -406,6 +408,9 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   private void runEmulatorChecksImpl (boolean force, @Nullable RunnableData<Settings.EmulatorDetectionResult> after) {
+    if (tdlib == null) {
+      return;
+    }
     if (ranEmulatorChecks) {
       addEmulatorChecksCallback(after);
       return;
@@ -747,6 +752,10 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   public static AlertDialog modifyAlert (Context context, AlertDialog dialog, ThemeDelegate theme) {
+    BaseActivity activity = UI.getContext(context);
+    if (activity != null) {
+      dialog.setOnKeyListener((d, keyCode, event) -> activity.silenceRingingByVolumeKey(event));
+    }
     View view;
 
     if (theme == null)
@@ -859,11 +868,41 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   private boolean backKeyDownReceived;
+  private int silencingVolumeKey = KeyEvent.KEYCODE_UNKNOWN;
+
+  public boolean silenceRingingByVolumeKey (KeyEvent event) {
+    int keyCode = event.getKeyCode();
+    if (keyCode != KeyEvent.KEYCODE_VOLUME_DOWN && keyCode != KeyEvent.KEYCODE_VOLUME_UP &&
+      keyCode != KeyEvent.KEYCODE_VOLUME_MUTE) {
+      return false;
+    }
+    if (event.getAction() == KeyEvent.ACTION_UP) {
+      boolean isSilencing = silencingVolumeKey == keyCode;
+      if (isSilencing) {
+        silencingVolumeKey = KeyEvent.KEYCODE_UNKNOWN;
+      }
+      return isSilencing;
+    }
+    if (event.getAction() != KeyEvent.ACTION_DOWN) {
+      return false;
+    }
+    if (silencingVolumeKey == keyCode && event.getRepeatCount() > 0) {
+      return true;
+    }
+    TGCallService service = TGCallService.currentInstance();
+    boolean isSilenced = service != null && service.silenceAppRinging();
+    // A window that took the key down may be gone before its key up
+    silencingVolumeKey = isSilenced ? keyCode : KeyEvent.KEYCODE_UNKNOWN;
+    return isSilenced;
+  }
 
   @Override
   public final boolean onKeyDown (int keyCode, KeyEvent event) {
     if (event.getKeyCode() == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_DOWN) {
       backKeyDownReceived = true;
+    }
+    if (silenceRingingByVolumeKey(event)) {
+      return true;
     }
     boolean handled = false;
     for (KeyEventListener listener : keyEventListeners) {
@@ -882,6 +921,9 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
         return true;
       }
       backKeyDownReceived = false;
+    }
+    if (silenceRingingByVolumeKey(event)) {
+      return true;
     }
     boolean handled = false;
     for (KeyEventListener listener : keyEventListeners) {
@@ -1180,8 +1222,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   @Override
   public void onResume () {
-    UI.cancel(stuckWatch);
-    UI.post(stuckWatch, StuckWatch.CHECK_INTERVAL_MS);
     boolean lockBefore = isPasscodeShowing;
     UI.setContext(this);
     setActivityState(UI.State.RESUMED);
@@ -1241,9 +1281,16 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
     }
   }
 
+  protected boolean needPasscode () {
+    return true;
+  }
+
   public final void checkPasscode (boolean byUserLock) {
     if (byUserLock) {
       // TODO FIXME
+      return;
+    }
+    if (!needPasscode()) {
       return;
     }
     if (Passcode.instance().isLocked()) {
@@ -1253,7 +1300,18 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
         Log.e("TODO", t);
       }
     } else {
+      hidePasscode();
       Passcode.instance().trackUserActivity(false);
+    }
+  }
+
+  @Override
+  protected void onStop () {
+    super.onStop();
+    // The dialog of the request only pauses the activity, so it's left once stopped, e.g. by Home
+    if (isRequestingMicForCall) {
+      isRequestingMicForCall = false;
+      TGCallService.checkIncomingNotification();
     }
   }
 
@@ -1428,7 +1486,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   private final OnBackPressedCallback backPressedCallback = new OnBackPressedCallback(false) {
     @Override
     public void handleOnBackPressed () {
-      StuckWatch.event("back pressed, target=" + backPressTarget + ", " + stuckState());
       boolean handled = false;
       if (backPressTarget != null) {
         handled = backPressTarget.onSystemBackPressed();
@@ -1452,7 +1509,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
     @Override
     public void handleOnBackStarted (@NonNull BackEventCompat backEvent) {
-      StuckWatch.event("back started, edge=" + backEvent.getSwipeEdge() + ", mode=" + backPressMode);
       if (cancelBackPressTarget()) {
         Log.i("System didn't dispatch onBackCancelled / onBackPressed!");
       }
@@ -1482,7 +1538,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
     @Override
     public void handleOnBackCancelled () {
-      StuckWatch.event("back cancelled, target=" + backPressTarget);
       cancelBackPressTarget();
     }
 
@@ -1802,6 +1857,7 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       for (int i = size - 1; i >= 0; i--) {
         passcodeListeners.get(i).onPasscodeShowing(this, isShowing);
       }
+      TGCallService.checkIncomingNotification();
     }
   }
 
@@ -2544,7 +2600,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       }
 
       if (exit) {
-        StuckWatch.event("popup dropped (activity busy): " + window.stuckName());
         window.onActivityDestroy();
         return;
       }
@@ -2553,7 +2608,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       hideContextualPopups(false);
     }
     windows.add(window);
-    StuckWatch.event("popup show: " + window.stuckName() + ", windows=" + windows.size());
     checkDisallowScreenshots();
     window.showBoundWindow(rootView);
     notifyBackPressAvailabilityChanged();
@@ -2578,7 +2632,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   public void removeWindowFromList (PopupLayout window) {
-    StuckWatch.event("popup removed: " + window.stuckName());
     if (!windows.remove(window)) {
       completelyForgetThisWindow(window);
     }
@@ -2739,10 +2792,16 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }*/
 
   private ActivityPermissionResult requestMicPermissionCallback;
+  private boolean isRequestingMicForCall;
+
+  public boolean isRequestingMicForCall () {
+    return isRequestingMicForCall;
+  }
 
   public void requestMicPermissionForCall (@Nullable ActivityPermissionResult after) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
       this.requestMicPermissionCallback = after;
+      this.isRequestingMicForCall = true;
       requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, REQUEST_USE_MIC_CALL);
     }
   }
@@ -2832,6 +2891,9 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   @Override
   public void onRequestPermissionsResult (int requestCode, @NonNull String[] permissions, @NonNull  int[] grantResults) {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    if (requestCode == REQUEST_USE_MIC_CALL) {
+      isRequestingMicForCall = false;
+    }
     if (grantResults.length == 0) {
       return;
     }
@@ -2956,7 +3018,10 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   private void setDisallowScreenshots (boolean disallow) {
-    setWindowFlags(disallow ? WindowManager.LayoutParams.FLAG_SECURE : 0, WindowManager.LayoutParams.FLAG_SECURE);
+    int flag = WindowManager.LayoutParams.FLAG_SECURE;
+    if (BitwiseUtils.hasFlag(getWindow().getAttributes().flags, flag) != disallow) {
+      setWindowFlags(disallow ? flag : 0, flag);
+    }
   }
 
   public interface ActivityListener {
@@ -3048,46 +3113,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   public boolean isActivityBusyWithSomething () {
     return isCameraOpen || isCameraDragging || isNavigationBusy();
-  }
-
-  // Diagnostics: the app stays "busy" (taps on chats and sharing to the app do nothing) until Back is pressed.
-  private int stuckTicks;
-  private final Runnable stuckWatch = new Runnable() {
-    @Override
-    public void run () {
-      UI.cancel(this);
-      if (activityState != UI.State.RESUMED) {
-        return;
-      }
-      if (isNavigationBusy()) {
-        stuckTicks++;
-        if (stuckTicks == StuckWatch.STUCK_AFTER_TICKS) {
-          StuckWatch.report("BUSY for " + stuckTicks + "s", stuckState(), true);
-        } else if (stuckTicks % 60 == 0) {
-          StuckWatch.report("still BUSY for " + stuckTicks + "s", stuckState(), false);
-        }
-      } else {
-        if (stuckTicks >= StuckWatch.STUCK_AFTER_TICKS) {
-          StuckWatch.report("FREE after " + stuckTicks + "s", stuckState(), true);
-        }
-        stuckTicks = 0;
-      }
-      UI.post(this, StuckWatch.CHECK_INTERVAL_MS);
-    }
-  };
-
-  public String stuckState () {
-    StringBuilder b = new StringBuilder();
-    b.append("recorder: ").append(recordAudioVideoController.stuckState());
-    b.append("\nnavigation: animating=").append(navigation.isAnimating()).append(' ').append(navigation.stuckState());
-    b.append("\nheader: animating=").append(navigation.getHeaderView().isAnimating());
-    b.append("\nstack locked=").append(navigation.getStack().isLocked()).append(", progress=").append(isProgressShowing).append(", camera=").append(isCameraOpen);
-    b.append("\nwindows (").append(windows.size()).append("):");
-    for (PopupLayout window : windows) {
-      b.append("\n  ").append(window.stuckState());
-    }
-    b.append("\nforgotten windows: ").append(forgottenWindows.size());
-    return b.toString();
   }
 
   public boolean isNavigationBusy () {

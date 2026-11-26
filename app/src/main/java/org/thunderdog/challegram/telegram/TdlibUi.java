@@ -118,6 +118,7 @@ import org.thunderdog.challegram.ui.ProfileController;
 import org.thunderdog.challegram.ui.RequestController;
 import org.thunderdog.challegram.ui.SettingHolder;
 import org.thunderdog.challegram.ui.Settings2FAController;
+import org.thunderdog.challegram.ui.SettingsCacheController;
 import org.thunderdog.challegram.ui.SettingsController;
 import org.thunderdog.challegram.ui.SettingsDataController;
 import org.thunderdog.challegram.ui.SettingsFoldersController;
@@ -143,7 +144,6 @@ import org.thunderdog.challegram.util.CustomTypefaceSpan;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.util.OptionDelegate;
 import org.thunderdog.challegram.util.StringList;
-import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.voip.VoIPLogs;
 import org.thunderdog.challegram.webapp.WebApp;
@@ -335,18 +335,30 @@ public class TdlibUi extends Handler {
 
     final String name = tdlib.senderName(senderId, true);
     final CharSequence text = Lang.pluralBold(R.string.QDeleteXMessagesFromY, deletingMessages.length, name);
+    final int banString = senderId.getConstructor() == TdApi.MessageSenderUser.CONSTRUCTOR ?
+      R.string.RestrictUser :
+      tdlib.isChannel(Td.getSenderId(senderId)) ? R.string.BanChannel : R.string.BanChat;
 
     SettingsWrap wrap = context.showSettings(new SettingsWrapBuilder(R.id.btn_deleteSupergroupMessages).setHeaderItem(
       new ListItem(ListItem.TYPE_INFO, R.id.text_title, 0, text, false)).setRawItems(
       new ListItem[] {
-        new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_banMember, 0, senderId.getConstructor() == TdApi.MessageSenderUser.CONSTRUCTOR ? R.string.RestrictUser : tdlib.isChannel(((TdApi.MessageSenderChat) senderId).chatId) ? R.string.BanChannel : R.string.BanChat, false),
+        new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_banMember, 0, banString, false),
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_reportSpam, 0, R.string.ReportSpam, false),
         new ListItem(ListItem.TYPE_CHECKBOX_OPTION, R.id.btn_deleteAll, 0, Lang.getStringBold(R.string.DeleteAllFrom, name), false)
+      }).setOnSettingItemClick((view, settingsId, item, doneButton, adapter, window) -> {
+        boolean blockForever = adapter.getCheckIntResults().get(R.id.btn_reportSpam) != 0 &&
+          adapter.getCheckIntResults().get(R.id.btn_deleteAll) != 0;
+        int banIndex = adapter.indexOfViewById(R.id.btn_banMember);
+        int banLabel = blockForever ? R.string.BlockForever : banString;
+        if (banIndex != -1 && adapter.getItem(banIndex).setStringIfChanged(banLabel)) {
+          adapter.updateValuedSettingByPosition(banIndex);
+        }
       }).setIntDelegate((id, result) -> {
         if (id == R.id.btn_deleteSupergroupMessages) {
           boolean banUser = result.get(R.id.btn_banMember) != 0;
           boolean reportSpam = result.get(R.id.btn_reportSpam) != 0;
           boolean deleteAll = result.get(R.id.btn_deleteAll) != 0;
+          boolean blockForever = reportSpam && deleteAll;
 
           final long[] messageIds = TdExt.toMessageIdsMap(deletingMessages).valueAt(0);
 
@@ -354,6 +366,19 @@ public class TdlibUi extends Handler {
             tdlib.send(new TdApi.GetChatMember(chatId, senderId), (member, error) -> {
               if (error != null) {
                 UI.showError(error);
+              } else if (blockForever) {
+                TdApi.ChatMemberStatus bannedForever = new TdApi.ChatMemberStatusBanned();
+                tdlib.setChatMemberStatus(
+                  chatId,
+                  senderId,
+                  bannedForever,
+                  member.status,
+                  (isBanned, banError, failedToAddMember) -> {
+                    if (banError != null) {
+                      UI.showError(banError);
+                    }
+                  }
+                );
               } else {
                 context.runOnUiThreadOptional(() -> {
                   TdApi.ChatMemberStatus myStatus = tdlib.chatStatus(chatId);
@@ -1805,6 +1830,8 @@ public class TdlibUi extends Handler {
   private static final int CHAT_OPTION_SCHEDULED_MESSAGES = 1 << 6;
   private static final int CHAT_OPTION_OPEN_PROFILE_IF_DUPLICATE = 1 << 7;
   private static final int CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT = 1 << 8;
+  private static final int CHAT_OPTION_START_CALL = 1 << 9;
+  private static final int CHAT_OPTION_OPEN_FORUM_CHAT = 1 << 10;
 
   public static class ChatOpenParameters {
     public int options;
@@ -1959,6 +1986,17 @@ public class TdlibUi extends Handler {
 
     public ChatOpenParameters openDirectMessagesChat () {
       this.options |= CHAT_OPTION_OPEN_DIRECT_MESSAGES_CHAT;
+      return this;
+    }
+
+    public ChatOpenParameters startCall () {
+      this.options |= CHAT_OPTION_START_CALL;
+      return this;
+    }
+
+    /** Open the forum's message screen without changing its saved layout. */
+    public ChatOpenParameters openForumChat () {
+      this.options |= CHAT_OPTION_OPEN_FORUM_CHAT;
       return this;
     }
 
@@ -2226,7 +2264,7 @@ public class TdlibUi extends Handler {
     final boolean openForumTabs;
     if ((isBotForum || (tdlib.isForum(chat.id) && chat.viewAsTopics)) && messageThread == null && messageTopicId == null && !onlyScheduled) {
       boolean needChat = shareItem != null || forceDraft != null || voiceChatInvitation != null ||
-        (params != null && params.highlightMessageId != null) || (options & CHAT_OPTION_NO_OPEN) != 0;
+        (params != null && params.highlightMessageId != null) || (options & (CHAT_OPTION_NO_OPEN | CHAT_OPTION_OPEN_FORUM_CHAT)) != 0;
       if (!needChat && !tdlib.settings().isForumViewTabs(chat.id, isBotForum)) {
         ForumTopicsController listController = new ForumTopicsController(context.context(), context.tdlib());
         listController.setArguments(new ForumTopicsController.Arguments(chat));
@@ -2412,18 +2450,18 @@ public class TdlibUi extends Handler {
       arguments = new MessagesController.Arguments(tdlib, chatList, chat, messageThread, messageTopicId, filter);
     }
     if (openForumTabs || openDirectMessagesTabs) {
-      arguments.topicTabs(null);
+      arguments.topicTabs();
     }
     controller.setArguments(arguments
       .setScheduled(onlyScheduled)
       .referrer(referrer)
       .voiceChatInvitation(voiceChatInvitation)
       .fillDraft(forceDraft)
+      .startCall(BitwiseUtils.hasFlag(options, CHAT_OPTION_START_CALL))
     );
 
     View view = controller.getValue();
     if (controller.context().isNavigationBusy()) {
-      StuckWatch.event("openChat ignored: busy");
       if (params != null) {
         params.onDone();
       }
@@ -2484,7 +2522,6 @@ public class TdlibUi extends Handler {
       return;
     }
     if (context.context().isNavigationBusy()) {
-      StuckWatch.event("openChatProfile ignored: busy");
       return;
     }
     NavigationController navigation = context.context().navigation();
@@ -3574,6 +3611,10 @@ public class TdlibUi extends Handler {
   }
 
   public void openTelegramUrl (final TdlibDelegate context, final String rawUrl, @Nullable UrlOpenParameters openParameters, @Nullable RunnableBool after) {
+    openTelegramUrl(context, rawUrl, openParameters, after, null);
+  }
+
+  public void openTelegramUrl (final TdlibDelegate context, final String rawUrl, @Nullable UrlOpenParameters openParameters, @Nullable RunnableBool after, @Nullable FutureBool canOpenMiniApp) {
     if (StringUtils.isEmpty(rawUrl) || tdlib.context().inRecoveryMode()) {
       if (after != null)
         after.runWithBool(false);
@@ -3596,6 +3637,7 @@ public class TdlibUi extends Handler {
       });
       return;
     }
+    final long linkOwnerUserId = context.tdlib().myUserId(true);
     AtomicReference<String> url = new AtomicReference<>(preProcessTelegramUrl(rawUrl));
     tdlib.send(new TdApi.GetInternalLinkType(url.get()), new Tdlib.ResultHandler<>() {
       @Override
@@ -3621,9 +3663,19 @@ public class TdlibUi extends Handler {
           }
           return;
         }
-        post(() ->
-          openInternalLinkType(context, currentUrl, linkType, openParameters, after)
-        );
+        post(() -> {
+          if ((linkType instanceof TdApi.InternalLinkTypeWebApp ||
+               linkType instanceof TdApi.InternalLinkTypeMainWebApp ||
+               linkType instanceof TdApi.InternalLinkTypeAttachmentMenuBot) &&
+              ((linkOwnerUserId != 0 && context.tdlib().myUserId(true) != linkOwnerUserId) ||
+               (canOpenMiniApp != null && !canOpenMiniApp.getBoolValue()))) {
+            if (after != null) {
+              after.runWithBool(false);
+            }
+            return;
+          }
+          openInternalLinkType(context, currentUrl, linkType, openParameters, after);
+        });
       }
     });
   }
@@ -4128,6 +4180,7 @@ public class TdlibUi extends Handler {
               break;
             }
             case TdApi.SettingsSectionNotifications.CONSTRUCTOR: {
+              result = new SettingsNotificationController(context.context(), context.tdlib());
               break;
             }
             case TdApi.SettingsSectionEditProfile.CONSTRUCTOR: {
@@ -4163,7 +4216,14 @@ public class TdlibUi extends Handler {
               break;
             }
             case TdApi.SettingsSectionDataAndStorage.CONSTRUCTOR: {
-              result = new SettingsDataController(context.context(), context.tdlib());
+              // region @MadeByLLM("gpt-6", id = "storage-usage-settings-link")
+              String subsection = ((TdApi.SettingsSectionDataAndStorage) section).subsection;
+              if (subsection != null && (subsection.equals("storage") || subsection.startsWith("storage/"))) {
+                result = new SettingsCacheController(context.context(), context.tdlib());
+              } else {
+                result = new SettingsDataController(context.context(), context.tdlib());
+              }
+              // endregion
               break;
             }
             case TdApi.SettingsSectionMyStars.CONSTRUCTOR: {
@@ -4261,6 +4321,7 @@ public class TdlibUi extends Handler {
       case TdApi.InternalLinkTypePremiumFeaturesPage.CONSTRUCTOR:
       case TdApi.InternalLinkTypePremiumGiftPurchase.CONSTRUCTOR:
       case TdApi.InternalLinkTypeRequestManagedBot.CONSTRUCTOR:
+      case TdApi.InternalLinkTypeBotInvite.CONSTRUCTOR:
       case TdApi.InternalLinkTypeSavedMessages.CONSTRUCTOR:
       case TdApi.InternalLinkTypeSearch.CONSTRUCTOR:
       case TdApi.InternalLinkTypeTextCompositionStyle.CONSTRUCTOR:
@@ -4399,7 +4460,7 @@ public class TdlibUi extends Handler {
         return; // async
       }
       default: {
-        Td.assertInternalLinkType_c232a5d5();
+        Td.assertInternalLinkType_166bd314();
         throw Td.unsupported(linkType);
       }
     }
@@ -4467,7 +4528,7 @@ public class TdlibUi extends Handler {
     StringBuilder desc = new StringBuilder("<b>");
     desc.append(Lang.getString(R.string.UseProxyServer));
     desc.append(":</b> ");
-    desc.append(server);
+    desc.append(TextUtils.htmlEncode(server));
     desc.append("<br/><b>");
     desc.append(Lang.getString(R.string.UseProxyPort));
     desc.append(":</b> ");
@@ -4702,6 +4763,16 @@ public class TdlibUi extends Handler {
     c.setArguments(args);
     context.context().navigation().navigateTo(c);
     return true;
+  }
+
+  // Calls
+
+  public void openCallSettings (ViewController<?> context) {
+    SettingsNotificationController c = new SettingsNotificationController(context.context(), tdlib);
+    c.setArguments(new SettingsNotificationController.Args(
+      SettingsNotificationController.Section.CALLS, 0
+    ));
+    context.navigateTo(c);
   }
 
   // Proxy

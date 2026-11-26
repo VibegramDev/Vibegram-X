@@ -42,8 +42,11 @@ import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.data.TD;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.theme.ColorId;
+import org.thunderdog.challegram.theme.ColorState;
 import org.thunderdog.challegram.theme.M3;
+import org.thunderdog.challegram.theme.ThemeChangeListener;
 import org.thunderdog.challegram.theme.ThemeDelegate;
+import org.thunderdog.challegram.theme.ThemeManager;
 import org.thunderdog.challegram.tool.Fonts;
 import org.thunderdog.challegram.tool.Screen;
 import org.thunderdog.challegram.tool.Views;
@@ -52,6 +55,11 @@ import org.thunderdog.challegram.widget.CustomTextView;
 import org.thunderdog.challegram.widget.M3StateLayerDrawable;
 import org.thunderdog.challegram.widget.NoScrollTextView;
 import org.thunderdog.challegram.widget.RootFrameLayout;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import me.vkryl.android.ViewUtils;
 import me.vkryl.android.widget.FrameLayoutFix;
@@ -66,13 +74,12 @@ import me.vkryl.core.StringUtils;
  * confirming action closest to the edge, 8dp between buttons, Level3 elevation. Headline and buttons stay pinned while
  * the supporting text / content scrolls.
  */
-public class DialogLayout extends LinearLayout implements RootFrameLayout.MarginModifier {
+public class DialogLayout extends LinearLayout implements RootFrameLayout.MarginModifier, ThemeChangeListener {
   public static final int MIN_WIDTH = 280, MAX_WIDTH = 560;
   /** Window margin on narrow screens (312dp dialog on a 360dp phone). */
   public static final int WINDOW_MARGIN = 24;
   public static final int PADDING = 24;
 
-  private final @Nullable ViewController<?> parent;
   private final @Nullable ThemeDelegate forcedTheme;
   private final TextView headlineView;
   private final ScrollView scrollView;
@@ -81,10 +88,11 @@ public class DialogLayout extends LinearLayout implements RootFrameLayout.Margin
   private final LinearLayout contentLayout;
   private final CustomTextView textView;
   private final LinearLayout buttonsLayout;
+  private final List<TextView> messageViews = new ArrayList<>();
+  private final Map<TextView, Integer> buttonRoles = new LinkedHashMap<>();
 
   public DialogLayout (Context context, @Nullable ViewController<?> parent, @Nullable ThemeDelegate forcedTheme) {
     super(context);
-    this.parent = parent;
     this.forcedTheme = forcedTheme;
 
     setOrientation(VERTICAL);
@@ -138,10 +146,42 @@ public class DialogLayout extends LinearLayout implements RootFrameLayout.Margin
 
     if (forcedTheme != null) {
       textView.setForcedTheme(forcedTheme);
-    } else if (parent != null) {
-      parent.addThemeInvalidateListener(this);
-      parent.addThemeInvalidateListener(textView);
     }
+  }
+
+  @Override
+  protected void onAttachedToWindow () {
+    super.onAttachedToWindow();
+    if (forcedTheme == null) {
+      ThemeManager.instance().addThemeListener(this);
+      onThemeColorsChanged(false, null);
+    }
+  }
+
+  @Override
+  protected void onDetachedFromWindow () {
+    if (forcedTheme == null) {
+      ThemeManager.instance().removeThemeListener(this);
+    }
+    super.onDetachedFromWindow();
+  }
+
+  @Override
+  public boolean needsTempUpdates () {
+    return true;
+  }
+
+  @Override
+  public void onThemeColorsChanged (boolean areTemp, @Nullable ColorState state) {
+    headlineView.setTextColor(role(M3.ON_SURFACE));
+    for (TextView message : messageViews) {
+      updateMessageColors(message);
+    }
+    for (Map.Entry<TextView, Integer> entry : buttonRoles.entrySet()) {
+      updateButtonColors(entry.getKey(), entry.getValue());
+    }
+    textView.invalidate();
+    invalidate();
   }
 
   private @ColorInt int role (int role) {
@@ -178,13 +218,18 @@ public class DialogLayout extends LinearLayout implements RootFrameLayout.Margin
     TextView view = new NoScrollTextView(getContext());
     view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
     view.setLineSpacing(Screen.dp(20f) - view.getPaint().getFontMetricsInt(null), 1f);
-    view.setTextColor(role(M3.ON_SURFACE_VARIANT));
-    view.setLinkTextColor(role(M3.PRIMARY));
+    updateMessageColors(view);
     view.setGravity(Lang.gravity());
     view.setPadding(Screen.dp(PADDING), 0, Screen.dp(PADDING), 0);
     view.setText(text);
+    messageViews.add(view);
     contentLayout.addView(view, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     return view;
+  }
+
+  private void updateMessageColors (TextView view) {
+    view.setTextColor(role(M3.ON_SURFACE_VARIANT));
+    view.setLinkTextColor(role(M3.PRIMARY));
   }
 
   /** Content that does not scroll (a text field, a wheel picker): between the supporting text and the actions. */
@@ -233,25 +278,30 @@ public class DialogLayout extends LinearLayout implements RootFrameLayout.Margin
 
   /** A destructive action («Delete»): the error role for its label and its pressed state layer. */
   public void setButtonDestructive (TextView button) {
-    destructiveButtons.add(button);
-    button.setTextColor(role(M3.ERROR));
-    ViewUtils.setBackground(button, new M3StateLayerDrawable(null, new RoundMask(Screen.dp(20f)), ColorUtils.alphaColor(M3.STATE_PRESSED, role(M3.ERROR))));
+    buttonRoles.put(button, M3.ERROR);
+    updateButtonColors(button, M3.ERROR);
   }
 
   /** Disabled text button: label onSurface 38% (M3 disabled state), no touches. */
   public void setButtonEnabled (TextView button, boolean isEnabled) {
     button.setEnabled(isEnabled);
-    button.setTextColor(isEnabled ? role(destructiveButtons.contains(button) ? M3.ERROR : M3.PRIMARY) : ColorUtils.alphaColor(.38f, role(M3.ON_SURFACE)));
+    Integer colorRole = buttonRoles.get(button);
+    updateButtonColors(button, colorRole != null ? colorRole : M3.PRIMARY);
   }
 
-  private final java.util.Set<TextView> destructiveButtons = new java.util.HashSet<>();
+  private void updateButtonColors (TextView button, int colorRole) {
+    int color = role(colorRole);
+    button.setTextColor(button.isEnabled() ? color : ColorUtils.alphaColor(.38f, role(M3.ON_SURFACE)));
+    if (button.getBackground() instanceof M3StateLayerDrawable) {
+      ((M3StateLayerDrawable) button.getBackground()).setColor(ColorUtils.alphaColor(M3.STATE_PRESSED, color));
+    }
+  }
 
   private TextView newButton (int id, CharSequence text, View.OnClickListener onClickListener) {
     TextView button = new NoScrollTextView(getContext());
     button.setId(id);
     button.setTypeface(Fonts.getRobotoMedium());
     button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-    button.setTextColor(role(M3.PRIMARY));
     button.setText(text);
     button.setSingleLine(true);
     button.setEllipsize(TextUtils.TruncateAt.END);
@@ -262,11 +312,13 @@ public class DialogLayout extends LinearLayout implements RootFrameLayout.Margin
     button.setOnClickListener(onClickListener);
     Views.setClickable(button);
     // Pressed state layer: primary 10% in a full-rounded (20dp) button shape.
-    ViewUtils.setBackground(button, new M3StateLayerDrawable(null, new RoundMask(Screen.dp(20f)), ColorUtils.alphaColor(M3.STATE_PRESSED, role(M3.PRIMARY))));
+    ViewUtils.setBackground(button, new M3StateLayerDrawable(null, new RoundMask(Screen.dp(20f)), 0));
+    buttonRoles.put(button, M3.PRIMARY);
+    updateButtonColors(button, M3.PRIMARY);
     return button;
   }
 
-  private final java.util.List<TextView> buttons = new java.util.ArrayList<>();
+  private final List<TextView> buttons = new ArrayList<>();
   private @Nullable Boolean stackedButtons;
 
   /**

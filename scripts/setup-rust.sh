@@ -1,11 +1,15 @@
 #!/bin/bash
-# Installs Rust of version.rust of version.properties with its targets of Android by rustup, which
-# builds tlottie, and prints the value of rust.dir for local.properties. Run it again after a bump
-# of version.rust to install the new version.
+# Installs Rust of version.rust of version.properties with its targets of Android and its sources,
+# from which tlottie builds core and alloc for arm64, by rustup, and prints the value of rust.dir
+# for local.properties. Run it again after a bump of version.rust to install the new version.
 set -e
 # shellcheck source=set-env.sh
 IGNORE_SDK=1 source "$(dirname "$0")"/set-env.sh
 
+if [ "$PLATFORM" = windows ] && ! command -v rustup > /dev/null; then
+  # MSYS2 doesn't inherit PATH of Windows, where rustup-init adds its folder
+  PATH="$(cygpath -u "${CARGO_HOME:-$USERPROFILE/.cargo}")/bin:$PATH"
+fi
 if ! command -v rustup > /dev/null; then
   echo -e "${STYLE_ERROR}rustup not found, e.g. on Ubuntu: # apt install rustup${STYLE_END}" >&2
   exit 1
@@ -14,9 +18,13 @@ fi
 RUST_VERSION=$(scripts/./read-property.sh version.properties version.rust)
 TARGETS=aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGETS"
+rustup toolchain install "$RUST_VERSION" --profile minimal --component rust-src --target "$TARGETS"
 
 RUST_DIR=$(rustup show home)
+if [ "$PLATFORM" = windows ]; then
+  # local.properties takes / as a separator
+  RUST_DIR=$(cygpath -m "$RUST_DIR")
+fi
 TOOLCHAIN=$(find "$RUST_DIR/toolchains" -maxdepth 1 -name "$RUST_VERSION-*" | head -n 1)
 if [ -z "$TOOLCHAIN" ]; then
   echo -e "${STYLE_ERROR}Rust $RUST_VERSION not found in $RUST_DIR/toolchains${STYLE_END}" >&2
@@ -33,6 +41,10 @@ for TARGET in ${TARGETS//,/ }; do
     exit 1
   }
 done
+test -d "$TOOLCHAIN/lib/rustlib/src/rust/library" || {
+  echo -e "${STYLE_ERROR}rust-src not found in $TOOLCHAIN${STYLE_END}" >&2
+  exit 1
+}
 
 echo "Rust $RUST_VERSION is installed with targets $TARGETS"
 echo -e "${STYLE_INFO}rust.dir=$RUST_DIR${STYLE_END}"

@@ -79,6 +79,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   /** Collapsible blocks the user has toggled (value = expanded). Survives rebuilds. */
   private final IdentityHashMap<Object, Boolean> expandedState = new IdentityHashMap<>();
 
+  private final IdentityHashMap<Object, InteractionScope> interactionScopes = new IdentityHashMap<>();
+  private @Nullable InteractionScope parsingScope;
+
   private int contentWidth, contentHeight;
   private TGInlineKeyboard inlineButtonHost;
 
@@ -150,18 +153,47 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     tables.clear();
     mediaWrappers.clear();
     mediaCaptions.clear();
+    interactionScopes.clear();
     if (richMessage != null && richMessage.blocks != null) {
       parseBlocks(richMessage.blocks, blocks);
     }
   }
 
-  private void parseBlocks (TdApi.PageBlock[] in, List<Block> out) {
+  private void parseBlocks (@Nullable TdApi.PageBlock[] in, List<Block> out) {
+    if (in == null) {
+      return;
+    }
     for (TdApi.PageBlock block : in) {
       Block parsed = parseBlock(block);
       if (parsed != null) {
         out.add(parsed);
       }
     }
+  }
+
+  private static final class InteractionScope {
+    final @Nullable InteractionScope parent;
+    boolean enabled, drawn;
+
+    InteractionScope (@Nullable InteractionScope parent) {
+      this.parent = parent;
+    }
+  }
+
+  private void registerInteraction (Object target) {
+    if (parsingScope != null) {
+      interactionScopes.put(target, parsingScope);
+    }
+  }
+
+  private boolean canInteract (Object target) {
+    // A canvas clip does not clear the hit coordinates cached by the child renderers.
+    for (InteractionScope scope = interactionScopes.get(target); scope != null; scope = scope.parent) {
+      if (!scope.enabled || !scope.drawn) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static final SparseArray<TextStyleProvider> providers = new SparseArray<>();
@@ -195,6 +227,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       wrapper.addTextFlags(Text.FLAG_ADJUST_TO_CURRENT_WIDTH);
     }
     texts.add(wrapper);
+    registerInteraction(wrapper);
     return wrapper;
   }
 
@@ -346,11 +379,20 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       }
       case TdApi.PageBlockExpandableBlockQuote.CONSTRUCTOR: {
         TdApi.PageBlockExpandableBlockQuote quote = (TdApi.PageBlockExpandableBlockQuote) block;
-        TextWrapper text = newText(quote.text, 0f, textColors);
-        if (text == null) {
+        ArrayList<Block> children = new ArrayList<>();
+        InteractionScope scope = new InteractionScope(parsingScope);
+        TextWrapper credit;
+        parsingScope = scope;
+        try {
+          parseBlocks(quote.blocks, children);
+          credit = newText(quote.credit, -2f, decentColors);
+        } finally {
+          parsingScope = scope.parent;
+        }
+        if (children.isEmpty() && credit == null) {
           return null;
         }
-        return new ExpandableQuoteBlock(quote, text, newText(quote.credit, -2f, decentColors));
+        return new ExpandableQuoteBlock(quote, new StackBlock(children, 0, StackBlock.STYLE_PLAIN, Screen.dp(4f)), credit, scope);
       }
       case TdApi.PageBlockList.CONSTRUCTOR:
         return parseList((TdApi.PageBlockList) block);
@@ -358,14 +400,20 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         TdApi.PageBlockDetails details = (TdApi.PageBlockDetails) block;
         TextWrapper header = newText(bold(details.header), 0f, textColors);
         ArrayList<Block> children = new ArrayList<>();
-        parseBlocks(details.blocks, children);
+        InteractionScope scope = new InteractionScope(parsingScope);
+        parsingScope = scope;
+        try {
+          parseBlocks(details.blocks, children);
+        } finally {
+          parsingScope = scope.parent;
+        }
         if (header == null && children.isEmpty()) {
           return null;
         }
         if (header == null) {
           header = newText(plain(Lang.getString(org.thunderdog.challegram.R.string.RichMessageDetails)), 0f, textColors);
         }
-        return new DetailsBlock(details, header, new StackBlock(children, 0, StackBlock.STYLE_PLAIN, Screen.dp(BLOCK_SPACING)));
+        return new DetailsBlock(details, header, new StackBlock(children, 0, StackBlock.STYLE_PLAIN, Screen.dp(BLOCK_SPACING)), scope);
       }
       case TdApi.PageBlockTable.CONSTRUCTOR:
         return parseTable((TdApi.PageBlockTable) block);
@@ -454,6 +502,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         component.setViewProvider(currentViews);
         FileBlock fileBlock = new FileBlock(component, files.size());
         files.add(fileBlock);
+        registerInteraction(fileBlock);
         return withCaption(fileBlock, document.caption);
       }
       case TdApi.PageBlockAudio.CONSTRUCTOR: {
@@ -491,6 +540,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         }
         ButtonsBlock buttonsBlock = new ButtonsBlock(new TdApi.ReplyMarkupInlineKeyboard(new TdApi.InlineKeyboardButton[][] {buttons}, false));
         buttonRows.add(buttonsBlock);
+        registerInteraction(buttonsBlock);
         return buttonsBlock;
       }
       case TdApi.PageBlockMap.CONSTRUCTOR: {
@@ -591,6 +641,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       wrapper.setViewProvider(currentViews);
       wrapper.setOnClickListener(this);
       mediaWrappers.add(wrapper);
+      registerInteraction(wrapper);
       if (mosaic == null) {
         mosaic = new MosaicWrapper(wrapper, this);
       } else {
@@ -600,6 +651,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     mediaCaptions.addAll(itemCaptions);
     mosaic.setViewProvider(currentViews);
     mosaics.add(mosaic);
+    registerInteraction(mosaic);
     return withCaption(new MediaBlock(mosaic), caption);
   }
 
@@ -653,6 +705,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     }
     TableBlock tableBlock = new TableBlock(table, cells, columnCount);
     tables.add(tableBlock);
+    registerInteraction(tableBlock);
     return withCaption(tableBlock, table.caption != null ? new TdApi.PageBlockCaption(table.caption, null) : null);
   }
 
@@ -822,7 +875,7 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
 
   private @Nullable TableBlock findScrollableTable (float x, float y) {
     for (TableBlock table : tables) {
-      if (table.isVisible && table.getMaxScrollX() > 0 &&
+      if (table.isVisible && canInteract(table) && table.getMaxScrollX() > 0 &&
         x >= table.drawX && x < table.drawX + table.width &&
         y >= table.drawY && y < table.drawY + table.height) {
         return table;
@@ -993,22 +1046,22 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       }
     }
     for (TextWrapper text : texts) {
-      if (text.onTouchEvent(view, e)) {
+      if (canInteract(text) && text.onTouchEvent(view, e)) {
         return true;
       }
     }
     for (MosaicWrapper mosaic : mosaics) {
-      if (mosaic.onTouchEvent(view, e)) {
+      if (canInteract(mosaic) && mosaic.onTouchEvent(view, e)) {
         return true;
       }
     }
     for (FileBlock file : files) {
-      if (file.component.onTouchEvent(view, e)) {
+      if (canInteract(file) && file.component.onTouchEvent(view, e)) {
         return true;
       }
     }
     for (ButtonsBlock row : buttonRows) {
-      if (row.keyboard != null && row.keyboard.onTouchEvent(view, e)) {
+      if (row.keyboard != null && canInteract(row) && row.keyboard.onTouchEvent(view, e)) {
         return true;
       }
     }
@@ -1019,12 +1072,12 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
   public boolean performLongPress (View view, float x, float y) {
     boolean result = super.performLongPress(view, x, y);
     for (TextWrapper text : texts) {
-      if (text.performLongPress(view)) {
+      if (canInteract(text) && text.performLongPress(view)) {
         return true;
       }
     }
     for (ButtonsBlock row : buttonRows) {
-      if (row.keyboard != null && row.keyboard.performLongPress(view)) {
+      if (row.keyboard != null && canInteract(row) && row.keyboard.performLongPress(view)) {
         return true;
       }
     }
@@ -1063,6 +1116,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     int foundIndex = -1;
     for (int i = 0; i < mediaWrappers.size(); i++) {
       MediaWrapper wrapper = mediaWrappers.get(i);
+      if (!canInteract(wrapper)) {
+        continue;
+      }
       TdApi.PageBlockCaption caption = i < mediaCaptions.size() ? mediaCaptions.get(i) : null;
       String captionString = caption != null && caption.text != null ? TD.getText(caption.text) : null;
       TdApi.FormattedText captionText = !StringUtils.isEmpty(captionString) ? new TdApi.FormattedText(captionString, null) : null;
@@ -1225,7 +1281,14 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
         rect.set(x, y, x + Screen.dp(3f), y + height);
         c.drawRoundRect(rect, Screen.dp(1.5f), Screen.dp(1.5f), Paints.fillingPaint(color));
       }
+      drawChildren(view, c, x, y, receiver, textMediaReceiver, height);
+    }
+
+    void drawChildren (MessageView view, Canvas c, int x, int y, ComplexReceiver receiver, ComplexReceiver textMediaReceiver, int visibleHeight) {
       for (Block child : children) {
+        if (child.y >= visibleHeight) {
+          break;
+        }
         child.draw(view, c, x + indent, y + child.y, receiver, textMediaReceiver);
       }
     }
@@ -1320,43 +1383,46 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
 
   private final class ExpandableQuoteBlock extends Block {
     static final int COLLAPSED_LINES = 3;
-
     final Object key;
-    final TextWrapper text;
+    final StackBlock content;
     final @Nullable TextWrapper credit;
-    boolean canExpand;
-    int measuredWidth, measuredTextSizePx;
+    final InteractionScope scope;
+    boolean canExpand, collapsed;
+    int bodyWidth, bodyHeight;
 
-    ExpandableQuoteBlock (Object key, TextWrapper text, @Nullable TextWrapper credit) {
+    ExpandableQuoteBlock (Object key, StackBlock content, @Nullable TextWrapper credit, InteractionScope scope) {
       this.key = key;
-      this.text = text;
+      this.content = content;
       this.credit = credit;
+      this.scope = scope;
+    }
+
+    private int collapseStripHeight () {
+      return Screen.dp(24f);
     }
 
     @Override
     void layout (int maxWidth) {
-      int textWidth = Math.max(Screen.dp(40f), maxWidth - Screen.dp(QUOTE_PADDING) - Screen.dp(8f) - Screen.dp(20f));
-      boolean expanded = isExpanded(key, false);
-      int textSizePx = text.getTextStyleProvider().getTextSizeInPixels();
-      if (measuredWidth != textWidth || measuredTextSizePx != textSizePx) {
-        text.setMaxLines(-1);
-        text.prepare(textWidth);
-        canExpand = text.getLineCount() > COLLAPSED_LINES;
-        measuredWidth = textWidth;
-        measuredTextSizePx = textSizePx;
+      int padding = Screen.dp(QUOTE_PADDING) + Screen.dp(8f);
+      int chevronSpace = Screen.dp(20f);
+      bodyWidth = Math.max(Screen.dp(40f), maxWidth - padding - chevronSpace);
+      content.layout(bodyWidth);
+      int previewHeight = COLLAPSED_LINES * Text.getLineHeight(provider(0f), true);
+      canExpand = content.height > previewHeight;
+      collapsed = canExpand && !isExpanded(key, false);
+      scope.enabled = !collapsed;
+      scope.drawn = false;
+      bodyHeight = collapsed ? previewHeight : content.height;
+      int w = content.width;
+      int h = Screen.dp(6f) + bodyHeight;
+      if (credit != null && !collapsed) {
+        credit.prepare(bodyWidth);
+        h += (bodyHeight > 0 ? Screen.dp(4f) : 0) + credit.getHeight();
+        w = Math.max(w, credit.getWidth());
       }
-      text.setMaxLines(canExpand && !expanded ? COLLAPSED_LINES : -1);
-      text.prepare(textWidth);
-      int h = Screen.dp(6f) + text.getHeight();
-      if (credit != null && (expanded || !canExpand)) {
-        credit.prepare(textWidth);
-        h += Screen.dp(4f) + credit.getHeight();
-      }
-      height = h + Screen.dp(6f);
-      width = Math.min(maxWidth, Screen.dp(QUOTE_PADDING) + text.getWidth() + Screen.dp(8f) + (canExpand ? Screen.dp(20f) : 0));
-      if (canExpand) {
-        width = maxWidth;
-      }
+      // Reserve the collapse strip so it never overlaps child controls or the credit.
+      height = h + (canExpand && !collapsed ? collapseStripHeight() : Screen.dp(6f));
+      width = canExpand ? maxWidth : Math.min(maxWidth, w + padding);
     }
 
     @Override
@@ -1369,22 +1435,32 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       c.drawRoundRect(rect, Screen.dp(1.5f), Screen.dp(1.5f), Paints.fillingPaint(color));
       int textX = x + Screen.dp(QUOTE_PADDING);
       int textY = y + Screen.dp(6f);
-      text.draw(c, textX, textY, null, 1f, textMediaReceiver);
-      boolean expanded = isExpanded(key, false);
-      if (credit != null && (expanded || !canExpand)) {
-        credit.draw(c, textX, textY + text.getHeight() + Screen.dp(4f), null, 1f, textMediaReceiver);
+      if (collapsed) {
+        int saveCount = c.save();
+        if (c.clipRect(textX, textY, Math.min(textX + bodyWidth, x + width - Screen.dp(20f)), textY + bodyHeight)) {
+          content.drawChildren(view, c, textX, textY, receiver, textMediaReceiver, bodyHeight);
+        }
+        c.restoreToCount(saveCount);
+      } else {
+        content.draw(view, c, textX, textY, receiver, textMediaReceiver);
+        if (credit != null) {
+          credit.draw(c, textX, textY + bodyHeight + (bodyHeight > 0 ? Screen.dp(4f) : 0), null, 1f, textMediaReceiver);
+        }
+        scope.drawn = true;
       }
       if (canExpand) {
-        drawChevron(c, x + width - Screen.dp(14f), y + height - Screen.dp(12f), expanded, color);
+        drawChevron(c, x + width - Screen.dp(14f), y + height - Screen.dp(12f), !collapsed, color);
       }
     }
 
     @Override
     void collectToggles (int x, int y) {
       if (canExpand) {
-        // Collapsed: the whole quote expands it. Expanded: only the bottom strip collapses it, so links inside stay clickable.
-        int toggleTop = isExpanded(key, false) ? y + height - Screen.dp(24f) : y;
+        int toggleTop = collapsed ? y : y + height - collapseStripHeight();
         pendingToggles.add(new Toggle(x, toggleTop, x + width, y + height, key, false));
+      }
+      if (!collapsed) {
+        content.collectToggles(x + Screen.dp(QUOTE_PADDING), y + Screen.dp(6f));
       }
     }
   }
@@ -1393,12 +1469,14 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
     final TdApi.PageBlockDetails details;
     final TextWrapper header;
     final StackBlock content;
+    final InteractionScope scope;
     int headerHeight;
 
-    DetailsBlock (TdApi.PageBlockDetails details, TextWrapper header, StackBlock content) {
+    DetailsBlock (TdApi.PageBlockDetails details, TextWrapper header, StackBlock content, InteractionScope scope) {
       this.details = details;
       this.header = header;
       this.content = content;
+      this.scope = scope;
     }
 
     @Override
@@ -1408,7 +1486,9 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
       headerHeight = Math.max(header.getHeight(), Screen.dp(20f)) + Screen.dp(8f);
       int h = headerHeight;
       int w = header.getWidth() + chevronWidth;
-      if (isExpanded(details, details.isOpen)) {
+      scope.enabled = isExpanded(details, details.isOpen);
+      scope.drawn = false;
+      if (scope.enabled) {
         content.layout(maxWidth);
         h += Screen.dp(4f) + content.height;
         w = Math.max(w, content.width);
@@ -1419,20 +1499,21 @@ public class TGMessageRich extends TGMessage implements MediaWrapper.OnClickList
 
     @Override
     void draw (MessageView view, Canvas c, int x, int y, ComplexReceiver receiver, ComplexReceiver textMediaReceiver) {
-      boolean expanded = isExpanded(details, details.isOpen);
+      boolean expanded = scope.enabled;
       int textY = y + (headerHeight - header.getHeight()) / 2;
       drawChevron(c, x + Screen.dp(7f), y + headerHeight / 2, expanded, decentColor());
       header.draw(c, x + Screen.dp(22f), textY, null, 1f, textMediaReceiver);
       c.drawRect(x, y + headerHeight - Math.max(1, Screen.dp(.5f)), x + width, y + headerHeight, Paints.fillingPaint(ColorUtils.alphaColor(.2f, decentColor())));
       if (expanded) {
         content.draw(view, c, x, y + headerHeight + Screen.dp(4f), receiver, textMediaReceiver);
+        scope.drawn = true;
       }
     }
 
     @Override
     void collectToggles (int x, int y) {
       pendingToggles.add(new Toggle(x, y, x + width, y + headerHeight, details, details.isOpen));
-      if (isExpanded(details, details.isOpen)) {
+      if (scope.enabled) {
         content.collectToggles(x, y + headerHeight + Screen.dp(4f));
       }
     }

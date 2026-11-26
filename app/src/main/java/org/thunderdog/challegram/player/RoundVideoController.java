@@ -75,7 +75,6 @@ import org.thunderdog.challegram.v.MessagesRecyclerView;
 import org.thunderdog.challegram.widget.CircleFrameLayout;
 import org.thunderdog.challegram.widget.ImageReceiverView;
 import org.thunderdog.challegram.widget.RectFrameLayout;
-import org.thunderdog.challegram.util.RoundEchoWatch;
 
 import me.vkryl.android.AnimatorUtils;
 import me.vkryl.android.animator.BoolAnimator;
@@ -102,21 +101,8 @@ public class RoundVideoController extends BasePlaybackController implements
     isAttaching = true;
     TdlibManager.instance().player().addTrackChangeListener(this);
     isAttaching = false;
-    // Vibegram: temporary diagnostics of the round video echo (one controller per activity, each with its own player)
-    RoundEchoWatch.onControllerCreated(this, context);
   }
 
-  /** Vibegram: state line for {@link RoundEchoWatch}. */
-  public String describeForDiagnostics () {
-    return "activity=" + context.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(context)) +
-      " activityState=" + context.getActivityState() +
-      " activityDestroyed=" + (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && context.isDestroyed()) +
-      " finishing=" + context.isFinishing() +
-      " controllerDestroyed=" + isControllerDestroyed() +
-      " message=" + (object != null ? object.chatId + "/" + object.id : "none") +
-      " isPlaying=" + isPlaying +
-      " player=" + (exoPlayer != null ? Integer.toHexString(System.identityHashCode(exoPlayer)) : "none");
-  }
 
   /**
    * Entry section. At this point we receive triggers to process some video, or destroy it.
@@ -148,7 +134,6 @@ public class RoundVideoController extends BasePlaybackController implements
       currentProgress = visualProgress;
     }
 
-    RoundEchoWatch.onRoundStarted(this, message);
     if (pendingPositionMs >= 0 && (message.chatId != pendingChatId || message.id != pendingMessageId)) {
       pendingPositionMs = -1;
     }
@@ -1269,7 +1254,9 @@ public class RoundVideoController extends BasePlaybackController implements
             if (outSp.canAnimateScrollPosition) {
               smoothScrollBy((MessagesController) c, outSp.dy, outSp.duration);
             } else {
-              ((MessagesController) c).getManager().getLayoutManager().scrollToPositionWithOffset(outSp.index, outSp.offset);
+              final MessagesManager manager = ((MessagesController) c).getManager();
+              manager.messageResize().onListScrolled();
+              manager.getLayoutManager().scrollToPositionWithOffset(outSp.index, outSp.offset);
             }
 
             awaitingCurrentView = c.isFocused();
@@ -1599,7 +1586,6 @@ public class RoundVideoController extends BasePlaybackController implements
 
   @Override
   public void onActivityDestroy () {
-    RoundEchoWatch.onControllerDestroyed(this);
     destroy();
   }
 

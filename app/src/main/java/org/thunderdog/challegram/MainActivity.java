@@ -14,8 +14,10 @@
  */
 package org.thunderdog.challegram;
 
+import android.app.Notification;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -47,6 +49,7 @@ import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.sync.TemporaryNotification;
 import org.thunderdog.challegram.telegram.AccountSwitchReason;
+import org.thunderdog.challegram.telegram.CallProblems;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.GlobalCountersListener;
 import org.thunderdog.challegram.telegram.GlobalResolvableProblemListener;
@@ -56,6 +59,7 @@ import org.thunderdog.challegram.telegram.TdlibAccount;
 import org.thunderdog.challegram.telegram.TdlibBadgeCounter;
 import org.thunderdog.challegram.telegram.TdlibContext;
 import org.thunderdog.challegram.telegram.TdlibManager;
+import org.thunderdog.challegram.telegram.TdlibNotificationChannelGroup;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
@@ -93,9 +97,9 @@ import org.thunderdog.challegram.ui.SettingsPrivacyController;
 import org.thunderdog.challegram.ui.SettingsPrivacyKeyController;
 import org.thunderdog.challegram.ui.SettingsThemeController;
 import org.thunderdog.challegram.ui.WaitForPremiumController;
+import org.thunderdog.challegram.unsorted.Passcode;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.Crash;
-import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.webapp.WebApp;
 import org.thunderdog.challegram.webapp.WebAppTabs;
 import org.thunderdog.challegram.widget.GearView;
@@ -115,6 +119,7 @@ import me.vkryl.core.ArrayUtils;
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.CancellableRunnable;
 import me.vkryl.core.lambda.RunnableData;
+import tgx.td.ChatId;
 import tgx.td.MessageId;
 import tgx.td.Td;
 
@@ -138,12 +143,23 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
 
     handler = new Handler(Looper.getMainLooper());
 
+    addPasscodeListener((context, isShowing) -> {
+      if (!isShowing) {
+        openRingingCall();
+      }
+    });
+
     TdlibManager.instance().global().addAccountListener(this);
     TdlibManager.instance().global().addCountersListener(this);
     TdlibManager.instance().global().addResolvableProblemAvailabilityListener(this);
     reloadTdlib();
 
     tempSavedInstanceState = savedInstanceState;
+    Intent intent = getIntent();
+    if (intent != null && (savedInstanceState != null ||
+      (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0)) {
+      Intents.removeCallBackToken(intent);
+    }
 
     Crash crash = TdlibManager.instance().getRecoveryCrashInfo();
     if (crash != null) {
@@ -309,11 +325,14 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
   }
 
+  private long accountSwitchGeneration;
+
   @Override
   public void onAccountSwitched (final TdlibAccount newAccount, TdApi.User profile, @AccountSwitchReason int reason, TdlibAccount oldAccount) {
     if (this.account.id == newAccount.id) {
       return;
     }
+    accountSwitchGeneration++;
 
     updateCounter();
 
@@ -469,6 +488,7 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
   protected void onTdlibChanged () {
     Tdlib tdlib = currentTdlib();
     setShowOptimizing(tdlib.isOptimizing());
+    CallProblems.refresh(tdlib);
     tdlib.context().global().notifyResolvableProblemAvailabilityMightHaveChanged();
     updateCounter();
   }
@@ -723,7 +743,11 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
   }
 
   private void insertMainController () {
-    MainController c = new MainController(this, account.tdlib());
+    insertMainController(account.tdlib());
+  }
+
+  private void insertMainController (Tdlib tdlib) {
+    MainController c = new MainController(this, tdlib);
     c.getValue();
     navigation.insertController(c, 0);
   }
@@ -756,9 +780,8 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
       pendingIntent = intent;
       pendingIntentAttempts = 0;
     }
-    // No transition lasts this long (1.5 s): a flag got stuck. Showing the share sheet anyway is better than nothing.
+    // After 1.5 s a busy flag may be stuck. Keep the existing best-effort fallback for intent dispatch.
     final boolean force = ++pendingIntentAttempts >= PENDING_INTENT_MAX_ATTEMPTS;
-    StuckWatch.event("intent postponed: " + actionRaw + ", attempt=" + pendingIntentAttempts);
     handler.postDelayed(() -> {
       if (pendingIntent == intent && !isFinishing()) {
         forceIntent = force;
@@ -771,19 +794,62 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }, PENDING_INTENT_DELAY_MS);
   }
 
+  private void runIntentNavigation (Runnable open, Runnable onAborted, int attempts) {
+    if (!isFinishing() && !navigation.isDestroyed()) {
+      if (!isActivityBusyWithSomething()) {
+        open.run();
+        return;
+      }
+      if (attempts > 0) {
+        handler.postDelayed(() -> runIntentNavigation(open, onAborted, attempts - 1), PENDING_INTENT_DELAY_MS);
+        return;
+      }
+    }
+    onAborted.run();
+  }
+
+  /** Wait for the account switch to install its navigation controller before handling a Mini App link. */
+  public void withMiniAppLinkAccount (Tdlib owner, long userId, RunnableData<ViewController<?>> callback) {
+    if (isFinishing() || navigation.isDestroyed() || isPasscodeShowing() || !hasTdlib() ||
+        userId == 0 || !owner.isAuthorized() || owner.myUserId(true) != userId) {
+      callback.runWithData(null);
+      return;
+    }
+    if (currentTdlib() == owner) {
+      awaitMiniAppLinkController(owner, userId, callback, PENDING_INTENT_MAX_ATTEMPTS);
+    } else {
+      owner.context().changePreferredAccountId(owner.id(), TdlibManager.SWITCH_REASON_NAVIGATION, switched ->
+        handler.post(() -> awaitMiniAppLinkController(owner, userId, callback, PENDING_INTENT_MAX_ATTEMPTS)));
+    }
+  }
+
+  private void awaitMiniAppLinkController (Tdlib owner, long userId, RunnableData<ViewController<?>> callback, int attempts) {
+    if (!isFinishing() && !navigation.isDestroyed() && !isPasscodeShowing() &&
+        currentTdlib() == owner && owner.isAuthorized() && owner.myUserId(true) == userId) {
+      ViewController<?> current = navigation.getCurrentStackItem();
+      if (current != null && current.tdlib() == owner && !current.isDestroyed() && !isActivityBusyWithSomething()) {
+        callback.runWithData(current);
+        return;
+      }
+      if (attempts > 0) {
+        handler.postDelayed(() -> awaitMiniAppLinkController(owner, userId, callback, attempts - 1), PENDING_INTENT_DELAY_MS);
+        return;
+      }
+    }
+    callback.runWithData(null);
+  }
+
   private boolean handleIntent (String actionRaw, final Intent intent, boolean fromCreate) {
     final String action = Intents.getCleanAction(actionRaw);
 
-    if (StringUtils.isEmpty(action) || StringUtils.equalsOrBothEmpty(action, Intent.ACTION_MAIN) || TdlibManager.instance().inRecoveryMode()) {
+    if (StringUtils.isEmpty(action) ||
+      (Intent.ACTION_MAIN.equals(action) && !isNotificationSettingsIntent(intent)) ||
+      TdlibManager.instance().inRecoveryMode()) {
       return false;
     }
     if (!forceIntent && isNavigationBusy()) {
-      if (!fromCreate) {
-        // The intent came while a screen transition, a popup or the recorder was animating (for example the window
-        // resizing back from the other app on a tablet). It used to be dropped silently, and sharing to the app
-        // showed nothing; wait for the animation instead.
-        postponeIntent(actionRaw, intent);
-      }
+      // A valid intent may arrive while navigation or a popup is animating; retry instead of losing it.
+      postponeIntent(actionRaw, intent);
       return false;
     }
     pendingIntent = null;
@@ -791,6 +857,23 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
 
     intent.setAction("");
     setIntent(intent);
+
+    if (Intents.ACTION_OPEN_CALL.equals(action) &&
+      !intent.getBooleanExtra(Intents.KEY_OPEN_CHAT, false)) {
+      // Under the passcode, so that the call is there at once after it; the passcode shows here
+      // already, before onResume, so that the call opens without animation
+      checkPasscode(false);
+      if (isPasscodeShowing()) {
+        openCallController(false);
+        return true;
+      }
+    }
+
+    if (isNotificationSettingsIntent(intent)) {
+      // Under the passcode, so that its screen is there at once after it
+      checkPasscode(false);
+      return openNotificationSettings(intent);
+    }
 
     if (isPasscodeShowing()) {
       addPasscodeListener(new PasscodeListener() {
@@ -821,18 +904,18 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
         return false;
       }
       final Tdlib webAppTdlib = TdlibManager.instanceForAccountId(accountId).account(accountId).tdlib();
+      final long ownerUserId = webAppTdlib.myUserId(true);
       webAppTdlib.awaitInitialization(() -> {
         webAppTdlib.incrementUiReferenceCount();
-        handler.post(() -> {
-          openMainController(accountId);
-          handler.post(() -> {
-            ViewController<?> c = navigation.getCurrentStackItem();
-            if (c != null && !c.isDestroyed() && c.tdlib() != null && c.tdlib().id() == accountId) {
+        handler.post(() -> withMiniAppLinkAccount(webAppTdlib, ownerUserId, c -> {
+          try {
+            if (c != null) {
               WebApp.openFromShortcut(c, botUserId, isTrusted);
             }
+          } finally {
             webAppTdlib.decrementUiReferenceCount();
-          });
-        });
+          }
+        }));
       });
       return true;
     }
@@ -889,7 +972,7 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
 
     if (action.startsWith(Intents.ACTION_OPEN_CHAT)) {
-      int accountId = intent.getIntExtra("account_id", TdlibAccount.NO_ID);
+      int accountId = intent.getIntExtra(Intents.KEY_ACCOUNT_ID, TdlibAccount.NO_ID);
       long chatId = intent.getLongExtra("chat_id", 0);
       if (chatId == 0) {
         long localChatId = intent.getLongExtra("local_id", 0);
@@ -899,8 +982,8 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
       }
       long messageId = intent.getLongExtra("message_id", 0);
       long messageThreadId = intent.getLongExtra("message_thread_id", 0);
-      if (accountId != TdlibAccount.NO_ID && chatId != 0) {
-        openMessagesController(accountId, chatId, messageId, messageThreadId);
+      if (accountId != TdlibAccount.NO_ID && chatId != 0 && TdlibManager.instance().hasAccount(accountId)) {
+        openMessagesController(accountId, chatId, messageId, messageThreadId, false);
         return true;
       } else {
         Log.e("Cannot open chat, no information found: %s", intent);
@@ -929,7 +1012,15 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
 
     if (Intents.ACTION_OPEN_CALL.equals(action)) {
-      openCallController();
+      openCallController(intent.getBooleanExtra(Intents.KEY_OPEN_CHAT, false));
+      if (intent.getBooleanExtra(Intents.KEY_ANSWER_CALL, false)) {
+        // Only a resumed activity asks for the microphone, and an intent comes before onResume
+        if (getActivityState() == UI.State.RESUMED) {
+          answerIncomingCall(intent);
+        } else {
+          pendingAnswerIntent = intent;
+        }
+      }
       return true;
     }
 
@@ -950,6 +1041,21 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
         }
       });
       return false;
+    }
+
+    if (action.startsWith(Intents.ACTION_CALL_BACK)) {
+      int accountId = intent.getIntExtra(Intents.KEY_ACCOUNT_ID, TdlibAccount.NO_ID);
+      long userId = intent.getLongExtra(Intents.KEY_USER_ID, 0);
+      if (accountId == TdlibAccount.NO_ID || userId == 0 ||
+        !Intents.isCallBackTrusted(intent) || !TdlibManager.instance().hasAccount(accountId)) {
+        return false;
+      }
+      if (getActivityState() == UI.State.RESUMED) {
+        callBack(accountId, userId);
+      } else {
+        pendingCallBack = () -> callBack(accountId, userId);
+      }
+      return true;
     }
 
     // System shit
@@ -982,10 +1088,19 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
           initMainController(null, null, null);
         }
         consumer = account -> {
-          ViewController<?> context = navigation.getCurrentStackItem();
-          if (context != null) {
-            account.tdlib().awaitInitialization(() -> account.tdlib().ui().openTelegramUrl(new TdlibContext(MainActivity.this, tdlib), url, null, null));
-          }
+          Tdlib linkTdlib = account.tdlib();
+          long selectedUserId = linkTdlib.myUserId(true);
+          // The user can select an inactive account, but a later switch supersedes this launch.
+          long switchGeneration = accountSwitchGeneration;
+          linkTdlib.awaitInitialization(() -> handler.post(() ->
+            runIntentNavigation(() -> {
+              if (navigation.getCurrentStackItem() != null &&
+                  (selectedUserId == 0 || linkTdlib.myUserId(true) == selectedUserId)) {
+                linkTdlib.ui().openTelegramUrl(new TdlibContext(this, linkTdlib), url, null, null,
+                  () -> accountSwitchGeneration == switchGeneration);
+              }
+            }, () -> {}, PENDING_INTENT_MAX_ATTEMPTS)
+          ));
         };
         text = Lang.getString(R.string.OpenLinkAs);
         actionText = Lang.getString(R.string.Open);
@@ -1511,22 +1626,58 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
   }
 
-  private void openMessagesController (int accountId, long chatId, long specificMessageId, long messageThreadId) {
+  private void openMessagesController (int accountId, long chatId, long specificMessageId) {
+    openMessagesController(accountId, chatId, specificMessageId, 0, false);
+  }
+
+  private void openMessagesController (
+    int accountId,
+    long chatId,
+    long specificMessageId,
+    long messageThreadId,
+    boolean startCall
+  ) {
     final Tdlib tdlib = TdlibManager.instanceForAccountId(accountId).account(accountId).tdlib();
     tdlib.awaitInitialization(() -> {
       tdlib.incrementUiReferenceCount();
-      handler.post(() -> {
+      handler.post(() -> runIntentNavigation(() -> {
         final TdlibContext context = new TdlibContext(this, tdlib);
         final TdlibUi.ChatOpenParameters params = new TdlibUi.ChatOpenParameters().onDone(tdlib::decrementUiReferenceCount);
         if (specificMessageId != 0)
           params.highlightMessage(new MessageId(chatId, specificMessageId));
         // Handle forum topic opening
-        if (messageThreadId != 0) {
+        if (messageThreadId > 0 && messageThreadId <= Integer.MAX_VALUE) {
           params.messageTopic(new TdApi.MessageTopicForum((int) messageThreadId));
         }
+        if (startCall) {
+          params.startCall();
+        }
         tdlib.ui().openChat(context, chatId, params);
-      });
+      }, tdlib::decrementUiReferenceCount, PENDING_INTENT_MAX_ATTEMPTS));
     });
+  }
+
+  private void callBack (int accountId, long userId) {
+    if (isPasscodeShowing()) {
+      addPasscodeListener(new PasscodeListener() {
+        @Override
+        public void onPasscodeShowing (BaseActivity context, boolean isShowing) {
+          if (!isShowing) {
+            removePasscodeListener(this);
+            callBack(accountId, userId);
+          }
+        }
+      });
+      return;
+    }
+    long chatId = ChatId.fromUserId(userId);
+    ViewController<?> current = navigation.getCurrentStackItem();
+    if (current instanceof MessagesController && current.tdlibId() == accountId &&
+      ((MessagesController) current).compareChat(chatId)) {
+      current.tdlib().context().calls().makeCall(current, userId, null);
+    } else {
+      openMessagesController(accountId, chatId, 0, 0, true);
+    }
   }
 
   private void openPlayerController (int accountId) {
@@ -1547,11 +1698,154 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
   }
 
-  private void openCallController () {
+  private static boolean isNotificationSettingsIntent (Intent intent) {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP &&
+      intent.hasCategory(Notification.INTENT_CATEGORY_NOTIFICATION_PREFERENCES);
+  }
+
+  private boolean openNotificationSettings (Intent intent) {
+    int accountId = TdlibAccount.NO_ID;
+    String channelId = null;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      channelId = intent.getStringExtra(Notification.EXTRA_CHANNEL_ID);
+      String groupId = null;
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        groupId = intent.getStringExtra(Notification.EXTRA_CHANNEL_GROUP_ID);
+      }
+      if (groupId == null && channelId != null) {
+        groupId = TdlibNotificationChannelGroup.findGroupId(channelId);
+      }
+      if (groupId != null) {
+        accountId = TdlibNotificationChannelGroup.findAccountId(TdlibManager.instance(), groupId);
+      }
+    }
+    boolean isAppCallChannel = BuildConfig.CALLS_AVAILABLE &&
+      (U.CHANNEL_ID_INCOMING_CALLS_IN_APP.equals(channelId) ||
+        U.CHANNEL_ID_ONGOING_CALLS.equals(channelId));
+    if (accountId == TdlibAccount.NO_ID) {
+      TdlibAccount currentAccount = TdlibManager.instance().currentAccount();
+      if (currentAccount.isUnauthorized()) {
+        return false;
+      }
+      accountId = currentAccount.id;
+      channelId = null;
+    }
+    Tdlib tdlib = TdlibManager.getTdlib(accountId);
+    String accountChannelId = channelId;
+    tdlib.awaitInitialization(() -> {
+      SettingsNotificationController.Args args;
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && accountChannelId != null) {
+        args = TdlibNotificationChannelGroup.findSettings(tdlib, accountChannelId, true);
+      } else {
+        args = new SettingsNotificationController.Args(
+          isAppCallChannel ?
+            SettingsNotificationController.Section.CALLS :
+            SettingsNotificationController.Section.DEFAULT,
+          0
+        );
+      }
+      tdlib.incrementUiReferenceCount();
+      RunnableData<SettingsNotificationController.Args> open = resolvedArgs -> handler.post(() ->
+        runIntentNavigation(() -> {
+          try {
+            openNotificationSettings(tdlib, resolvedArgs);
+          } finally {
+            tdlib.decrementUiReferenceCount();
+          }
+        }, tdlib::decrementUiReferenceCount, PENDING_INTENT_MAX_ATTEMPTS)
+      );
+      if (args.chatId != 0) {
+        tdlib.chat(args.chatId, chat -> {
+          if (chat != null) {
+            open.runWithData(new SettingsNotificationController.Args(chat.id));
+            return;
+          }
+          SettingsNotificationController.Args ownArgs =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && accountChannelId != null ?
+              TdlibNotificationChannelGroup.findSettings(tdlib, accountChannelId, false) : null;
+          open.runWithData(ownArgs != null && ownArgs.chatId == 0 ?
+            ownArgs :
+            new SettingsNotificationController.Args(args.section, 0)
+          );
+        });
+      } else {
+        open.runWithData(args);
+      }
+    });
+    return true;
+  }
+
+  private void openNotificationSettings (Tdlib tdlib, SettingsNotificationController.Args args) {
+    if (navigation.isDestroyed()) {
+      return;
+    }
+    if (!navigation.isEmpty()) {
+      ViewController<?> current = navigation.getCurrentStackItem();
+      boolean isOpen = current instanceof SettingsNotificationController &&
+        current.isSameTdlib(tdlib) &&
+        ((SettingsNotificationController) current).compareArguments(args);
+      if (isOpen || isActivityBusyWithSomething()) {
+        return;
+      }
+    }
+    SettingsNotificationController c = new SettingsNotificationController(this, tdlib);
+    c.setArguments(args);
+    boolean isFirstScreen = navigation.isEmpty();
+    if (isFirstScreen) {
+      navigation.initController(c);
+      insertMainController(tdlib);
+    } else {
+      navigateToSafely(c);
+    }
+    tdlib.context().changePreferredAccountId(
+      tdlib.id(),
+      TdlibManager.SWITCH_REASON_CHAT_OPEN,
+      isSwitched -> {
+        if (isSwitched && !isFirstScreen) {
+          c.addOneShotFocusListener(() -> {
+            if (navigation.getCurrentStackItem() == c) {
+              navigation.getStack().destroyAllButSaveLast(1);
+              insertMainController(tdlib);
+            }
+          });
+        }
+      }
+    );
+  }
+
+  private @Nullable Intent pendingAnswerIntent;
+  private @Nullable Runnable pendingCallBack;
+
+  private void answerIncomingCall (Intent intent) {
+    if (Passcode.instance().isLockedForIncomingCalls()) {
+      return;
+    }
+    int accountId = intent.getIntExtra(Intents.KEY_ACCOUNT_ID, TdlibAccount.NO_ID);
+    int callId = intent.getIntExtra(Intents.KEY_CALL_ID, 0);
+    if (accountId == TdlibAccount.NO_ID || callId == 0) {
+      return;
+    }
+    Tdlib tdlib = TdlibManager.getTdlib(accountId);
+    TdApi.Call call = tdlib.cache().getCall(callId);
+    if (call != null && !call.isOutgoing &&
+      call.state.getConstructor() == TdApi.CallStatePending.CONSTRUCTOR) {
+      tdlib.context().calls().acceptCall(this, tdlib, call.id);
+    } else {
+      tdlib.context().calls().cancelIncomingCallWithoutService();
+    }
+  }
+
+  private void openCallController (boolean openChat) {
     TdApi.Call call = TdlibManager.instance().calls().getCurrentCall();
     Tdlib tdlib = TdlibManager.instance().calls().getCurrentCallTdlib();
 
-    if (call == null) {
+    if (call != null && openChat) {
+      openMessagesController(tdlib.id(), ChatId.fromUserId(call.userId), 0);
+      return;
+    }
+
+    // Also a call that ended while the passcode waited
+    if (call == null || TD.isFinished(call)) {
       if (navigation.isEmpty()) {
         initDefault(currentTdlib().id(), false);
       }
@@ -1567,8 +1861,16 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
 
     CallController controller = new CallController(this, tdlib);
     controller.setArguments(new CallController.Arguments(call));
-
     navigateToSafely(controller);
+  }
+
+  private void openRingingCall () {
+    TdApi.Call call = TdlibManager.instance().calls().getCurrentCall();
+    boolean isRinging = call != null && !call.isOutgoing &&
+      call.state.getConstructor() == TdApi.CallStatePending.CONSTRUCTOR;
+    if (isRinging && !(navigation.getCurrentStackItem() instanceof CallController)) {
+      openCallController(false);
+    }
   }
 
   public void navigateToSafely (@NonNull ViewController<?> c) {
@@ -1623,8 +1925,24 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
 
   @Override
   public void onResume () {
+    CallProblems.refresh(tdlib);
     super.onResume();
     Log.i("MainActivity.onResume");
+    if (pendingAnswerIntent != null) {
+      Intent intent = pendingAnswerIntent;
+      pendingAnswerIntent = null;
+      answerIncomingCall(intent);
+    }
+    if (pendingCallBack != null) {
+      Runnable callBack = pendingCallBack;
+      pendingCallBack = null;
+      callBack.run();
+    }
+    // CallManager can't show a call that came while the app was in background: it opens under
+    // the passcode, so that it's there at once after it
+    if (isPasscodeShowing()) {
+      openRingingCall();
+    }
     // Log.e("%s", Strings.getHexColor(U.compositeColor(Theme.headerColor(), Theme.getColor(ColorId.statusBar)), false));
     tdlib.contacts().makeSilentPermissionCheck(this);
     tdlib.context().global().notifyResolvableProblemAvailabilityMightHaveChanged();

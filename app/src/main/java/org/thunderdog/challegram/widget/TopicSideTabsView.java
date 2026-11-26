@@ -75,6 +75,7 @@ public class TopicSideTabsView extends RecyclerView {
   /** One tab. Everything is prepared once, so binding and drawing don't allocate. */
   public static final class Tab {
     final long id;
+    final String label;
     final @Nullable Text name;
     final @Nullable Text emoji;
     final @Nullable String letter;
@@ -85,10 +86,11 @@ public class TopicSideTabsView extends RecyclerView {
     /** Everything shown by the tab, to find tabs that changed. */
     public final String contentKey;
 
-    public Tab (long id, @Nullable Text name, @Nullable Text emoji, @Nullable String letter,
+    public Tab (long id, String label, @Nullable Text name, @Nullable Text emoji, @Nullable String letter,
       float letterWidth, int letterColor, @DrawableRes int iconRes, @Nullable Counter counter,
       String contentKey) {
       this.id = id;
+      this.label = label;
       this.name = name;
       this.emoji = emoji;
       this.letter = letter;
@@ -107,7 +109,7 @@ public class TopicSideTabsView extends RecyclerView {
   private final List<Tab> tabs = new ArrayList<>();
   private final TabsAdapter adapter;
   private final LinearLayoutManager manager;
-  private int selectedPosition;
+  private long selectedId = NO_ID;
 
   public TopicSideTabsView (Context context, Listener listener) {
     super(context);
@@ -121,6 +123,7 @@ public class TopicSideTabsView extends RecyclerView {
   }
 
   public void setTabs (List<Tab> newTabs) {
+    int oldSelectedPosition = indexOfTab(selectedId);
     List<Tab> oldTabs = new ArrayList<>(tabs);
     DiffUtil.DiffResult diff = DiffUtil.calculateDiff(new DiffUtil.Callback() {
       @Override
@@ -140,26 +143,49 @@ public class TopicSideTabsView extends RecyclerView {
 
       @Override
       public boolean areContentsTheSame (int oldItemPosition, int newItemPosition) {
-        String oldKey = oldTabs.get(oldItemPosition).contentKey;
-        return oldKey.equals(newTabs.get(newItemPosition).contentKey);
+        Tab oldTab = oldTabs.get(oldItemPosition);
+        Tab newTab = newTabs.get(newItemPosition);
+        return oldTab.contentKey.equals(newTab.contentKey) && oldTab.label.equals(newTab.label);
       }
     });
     tabs.clear();
     tabs.addAll(newTabs);
     diff.dispatchUpdatesTo(adapter);
+    int position = indexOfTab(selectedId);
+    if (position != oldSelectedPosition) {
+      scrollToSelectedPosition(position);
+    }
   }
 
-  public void setSelectedPosition (int position) {
-    if (selectedPosition == position) {
+  public void setSelectedId (long id) {
+    if (selectedId == id) {
       return;
     }
-    selectedPosition = position;
+    selectedId = id;
     for (int i = 0; i < getChildCount(); i++) {
-      getChildAt(i).invalidate();
+      ((TabView) getChildAt(i)).updateSelection();
     }
-    int first = manager.findFirstCompletelyVisibleItemPosition();
-    int last = manager.findLastCompletelyVisibleItemPosition();
-    if (first != NO_POSITION && (position < first || position > last)) {
+    scrollToSelectedPosition(indexOfTab(id));
+  }
+
+  private int indexOfTab (long id) {
+    for (int i = 0; i < tabs.size(); i++) {
+      if (tabs.get(i).id == id) {
+        return i;
+      }
+    }
+    return NO_POSITION;
+  }
+
+  private void scrollToSelectedPosition (int position) {
+    if (position == NO_POSITION) {
+      return;
+    }
+    int first = manager.findFirstVisibleItemPosition();
+    int last = manager.findLastVisibleItemPosition();
+    if (first == NO_POSITION) {
+      scrollToPosition(position);
+    } else if (position < first || position > last) {
       smoothScrollToPosition(position);
     }
   }
@@ -189,7 +215,7 @@ public class TopicSideTabsView extends RecyclerView {
 
     @Override
     public void onBindViewHolder (@NonNull TabHolder holder, int position) {
-      ((TabView) holder.itemView).setTab(parent.tabs.get(position), position);
+      ((TabView) holder.itemView).setTab(parent.tabs.get(position));
     }
 
     @Override
@@ -199,7 +225,9 @@ public class TopicSideTabsView extends RecyclerView {
 
     @Override
     public void onViewAttachedToWindow (@NonNull TabHolder holder) {
-      ((TabView) holder.itemView).receiver.attach();
+      TabView view = (TabView) holder.itemView;
+      view.updateSelection();
+      view.receiver.attach();
     }
 
     @Override
@@ -209,7 +237,7 @@ public class TopicSideTabsView extends RecyclerView {
 
     @Override
     public void onViewRecycled (@NonNull TabHolder holder) {
-      ((TabView) holder.itemView).receiver.clear();
+      ((TabView) holder.itemView).setTab(null);
     }
   }
 
@@ -225,7 +253,6 @@ public class TopicSideTabsView extends RecyclerView {
     private final ComplexReceiver receiver;
     private final RectF indicatorRect = new RectF();
     private @Nullable Tab tab;
-    private int position;
 
     TabView (Context context, TopicSideTabsView parent) {
       super(context);
@@ -237,12 +264,12 @@ public class TopicSideTabsView extends RecyclerView {
       ));
     }
 
-    void setTab (Tab tab, int position) {
-      this.position = position;
+    void setTab (@Nullable Tab tab) {
       if (this.tab != tab) {
-        boolean heightChanged = this.tab == null || getHeight(this.tab) != getHeight(tab);
+        boolean heightChanged = this.tab == null || tab == null || getHeight(this.tab) != getHeight(tab);
         this.tab = tab;
-        if (tab.emoji != null) {
+        setContentDescription(tab != null ? tab.label : null);
+        if (tab != null && tab.emoji != null) {
           tab.emoji.requestMedia(receiver);
         } else {
           receiver.clear();
@@ -251,7 +278,15 @@ public class TopicSideTabsView extends RecyclerView {
           requestLayout();
         }
       }
+      updateSelection();
       invalidate();
+    }
+
+    void updateSelection () {
+      boolean selected = tab != null && tab.id == parent.selectedId;
+      if (selected != isSelected()) {
+        setSelected(selected);
+      }
     }
 
     private static int getHeight (Tab tab) {
@@ -271,7 +306,7 @@ public class TopicSideTabsView extends RecyclerView {
       if (tab == null) {
         return;
       }
-      boolean isSelected = position == parent.selectedPosition;
+      boolean isSelected = isSelected();
       int width = getMeasuredWidth();
       float centerX = width / 2f;
       int accentColor = Theme.getColor(ColorId.textNeutral);

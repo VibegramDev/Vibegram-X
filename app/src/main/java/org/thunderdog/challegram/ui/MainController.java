@@ -2753,8 +2753,12 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       if (uri == null) {
         throw new IllegalArgumentException("uri == null");
       }
+      Uri card = Uri.parse(uri.toString());
+      if (U.isInternalUri(card)) {
+        throw new IllegalArgumentException("Tried to share internal file: " + uri);
+      }
       ContentResolver cr = UI.getContext().getContentResolver();
-      try (InputStream stream = cr.openInputStream(uri)) {
+      try (InputStream stream = cr.openInputStream(card)) {
         if (stream == null) {
           throw new IllegalArgumentException("stream == null (vcard)");
         }
@@ -2921,10 +2925,10 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
       return false;
     }
 
-    String filePath = U.tryResolveFilePath(uri);
+    String filePath = U.resolveSharedFilePath(uri);
 
-    if (StringUtils.isEmpty(filePath)) {
-      throw new IllegalArgumentException("filePath cannot be resolved for type " + mimeType + ", uri: " + uri);
+    if (filePath == null) {
+      throw new IllegalArgumentException("Tried to share internal file: " + uri);
     }
 
     if (mimeType.isEmpty()) {
@@ -3027,7 +3031,7 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
 
       ShareController.ShareProviderDelegate shareDelegate = new ShareController.ShareProviderDelegate() {
         @Override
-        public void generateFunctionsForChat (long chatId, TdApi.Chat chat, TdApi.MessageSendOptions sendOptions, ArrayList<TdApi.Function<?>> functions) {
+        public void generateFunctionsForChat (long chatId, @Nullable TdApi.MessageTopic topicId, TdApi.MessageSendOptions sendOptions, ArrayList<TdApi.Function<?>> functions) {
           List<TdApi.InputMessageContent> album = null;
           for (TdApi.InputMessageContent content : contents) {
             content = tdlib.filegen().createThumbnail(content, ChatId.isSecret(chatId));
@@ -3038,17 +3042,17 @@ public class MainController extends ViewPagerController<Void> implements Menu, M
                   album = new ArrayList<>();
                 album.add(content);
                 if (album.size() == TdConstants.MAX_MESSAGE_GROUP_SIZE)
-                  TD.processAlbum(tdlib, chatId, sendOptions, functions, album);
+                  TD.processAlbum(chatId, topicId, sendOptions, functions, album);
               } else {
-                TD.processAlbum(tdlib, chatId, sendOptions, functions, album);
-                TD.processSingle(tdlib, chatId, sendOptions, functions, content);
+                TD.processAlbum(chatId, topicId, sendOptions, functions, album);
+                TD.processSingle(chatId, topicId, sendOptions, functions, content);
               }
             } else {
-              TD.processSingle(tdlib, chatId, sendOptions, functions, content);
+              TD.processSingle(chatId, topicId, sendOptions, functions, content);
             }
           }
           if (mergeAlbum) {
-            TD.processAlbum(tdlib, chatId, sendOptions, functions, album);
+            TD.processAlbum(chatId, topicId, sendOptions, functions, album);
           }
         }
 

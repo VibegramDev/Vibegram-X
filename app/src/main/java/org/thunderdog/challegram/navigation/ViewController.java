@@ -2144,6 +2144,9 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
     if (!b.disableFooter) {
       settings.cancelButton = dialog.addButton(R.id.btn_cancel, b.cancelStr, onClickListener);
       settings.doneButton = dialog.addButton(R.id.btn_save, b.saveStr, onClickListener);
+      if (b.saveDestructive) {
+        dialog.setButtonDestructive(settings.doneButton);
+      }
     }
 
     popupLayout.addThemeListeners(this);
@@ -3701,6 +3704,10 @@ public abstract class ViewController<T> implements Future<View>, ThemeChangeList
 
   public boolean allowLayerTypeChanges () {
     return true;
+  }
+
+  public View getNavigationLayerView () {
+    return getValue();
   }
 
   public boolean preventRootInteractions () {

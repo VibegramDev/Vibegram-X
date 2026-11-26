@@ -109,6 +109,7 @@
   <string name="vg_PaymentCheckoutPay">PAY %1$s</string>
   <string name="vg_PaymentCheckoutPhoneNumber">Phone number</string>
   <string name="vg_PaymentCheckoutProvider">Payment provider</string>
+  <string name="vg_PaymentFormUnavailable">Payment form unavailable</string>
   <string name="vg_PaymentConnectionFailed">Unable to reach payment server. Please check your internet connection and try again.</string>
   <string name="vg_PaymentOrderInfoRequired">Please fill in the required information.</string>
   <string name="vg_PaymentPasswordRequired">Paying with a saved card requires 2-Step Verification. Add a new card or turn on the password in Privacy and Security.</string>

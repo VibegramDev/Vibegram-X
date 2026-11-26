@@ -23,10 +23,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
-import android.webkit.JavascriptInterface;
+import android.view.View;
 import android.webkit.WebView;
 
-import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
@@ -50,6 +49,7 @@ import org.thunderdog.challegram.stars.StarsPaymentSheet;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.ShareController;
+import org.thunderdog.challegram.widget.PopupLayout;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -92,7 +92,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
   private final long botUserId;
 
   private @Nullable String trustedOrigin;
-  private boolean isAttached, usesMessageListener;
+  private boolean isAttached;
 
   /**
    * Incremented on each navigation of the page. Events are stamped with it when they arrive, so
@@ -101,8 +101,9 @@ final class WebAppBridge implements WebAppSensors.Listener {
   private volatile int documentGeneration;
   private long lastUserGestureMs, lastHapticMs;
 
-  private boolean isDialogShown, isQrScannerShown, isInvoiceOpen, isDataSent,
+  private boolean isDialogShown, isQrScannerShown, isDataSent,
     isBiometryRequestPending, isLocationRequestPending;
+  private @Nullable InvoiceAttempt invoiceAttempt;
   private long lastDialogClosedMs, dialogCooldownUntilMs;
   private int rapidDialogCount;
 
@@ -126,25 +127,25 @@ final class WebAppBridge implements WebAppSensors.Listener {
   // addDocumentStartJavaScript is @RestrictTo only in androidx.webkit 1.4.0 of the legacy flavor,
   // the newer androidx.webkit of the other flavors has it as a public API.
   @SuppressLint("RestrictedApi")
-  void attachTo (WebView webView, @Nullable String trustedOrigin) {
+  boolean attachTo (WebView webView, @Nullable String trustedOrigin) {
     if (isAttached) {
-      return;
+      return true;
     }
-    isAttached = true;
     this.trustedOrigin = trustedOrigin;
     if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
       WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
       Set<String> rules = Collections.singleton(trustedOrigin != null ? trustedOrigin : "*");
       try {
         WebViewCompat.addWebMessageListener(webView, LISTENER_NAME, rules, this::onWebMessage);
+        isAttached = true;
         WebViewCompat.addDocumentStartJavaScript(webView, PROXY_SCRIPT, rules);
-        usesMessageListener = true;
-        return;
-      } catch (IllegalArgumentException e) {
-        Log.e("Mini app origin %s is not a valid origin rule", e, trustedOrigin);
+        return true;
+      } catch (IllegalArgumentException | UnsupportedOperationException e) {
+        detachFrom(webView);
+        Log.w("Cannot install the mini app message listener", e);
       }
     }
-    webView.addJavascriptInterface(this, INTERFACE_NAME);
+    return false;
   }
 
   // The document start script stays: its reference type differs between androidx.webkit versions
@@ -154,16 +155,14 @@ final class WebAppBridge implements WebAppSensors.Listener {
       return;
     }
     isAttached = false;
-    if (usesMessageListener) {
-      WebViewCompat.removeWebMessageListener(webView, LISTENER_NAME);
-      usesMessageListener = false;
-    } else {
-      webView.removeJavascriptInterface(INTERFACE_NAME);
-    }
+    WebViewCompat.removeWebMessageListener(webView, LISTENER_NAME);
   }
 
   void onPageStarted () {
     documentGeneration++;
+    if (invoiceAttempt != null && invoiceAttempt.loadingForm) {
+      invoiceAttempt = null;
+    }
     lastUserGestureMs = 0;
     if (sensors != null) {
       sensors.release();
@@ -194,6 +193,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   void release () {
     documentGeneration++;
+    invoiceAttempt = null;
     if (sensors != null) {
       sensors.release();
       sensors = null;
@@ -201,7 +201,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
   }
 
   boolean consumeUserGesture () {
-    if (SystemClock.uptimeMillis() - lastUserGestureMs > USER_GESTURE_TIMEOUT_MS) {
+    if (lastUserGestureMs == 0 || SystemClock.uptimeMillis() - lastUserGestureMs > USER_GESTURE_TIMEOUT_MS) {
       return false;
     }
     lastUserGestureMs = 0;
@@ -239,13 +239,6 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   // Incoming events
 
-  // Without the message listener only the page calls it, so R8 would remove it without @Keep.
-  @Keep
-  @JavascriptInterface
-  public void postEvent (final String eventType, final String eventData) {
-    onEvent(documentGeneration, eventType, eventData);
-  }
-
   @UiThread
   private void onWebMessage (
     @NonNull WebView view,
@@ -254,11 +247,11 @@ final class WebAppBridge implements WebAppSensors.Listener {
     boolean isMainFrame,
     @NonNull JavaScriptReplyProxy replyProxy
   ) {
-    if (!isMainFrame || (trustedOrigin != null && !trustedOrigin.equals(sourceOrigin.toString()))) {
+    if (!isAttached || !isMainFrame || (trustedOrigin != null && !trustedOrigin.equals(sourceOrigin.toString()))) {
       return;
     }
     final int generation = documentGeneration;
-    String data = message.getData();
+    String data = U.getWebMessageText(message);
     if (data == null) {
       return;
     }
@@ -294,7 +287,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
   }
 
   private boolean isInForeground () {
-    return !controller.isMinimized() &&
+    return !controller.isMinimized() && !controller.isCoveredByNativeScreen() &&
       controller.context().getActivityState() == UI.State.RESUMED;
   }
 
@@ -549,7 +542,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
         sendData(parse(eventData).optString("data", ""));
         break;
       case "web_app_switch_inline_query":
-        switchInlineQuery(parse(eventData));
+        switchInlineQuery(generation, parse(eventData));
         break;
       case "web_app_request_write_access":
         requestWriteAccess(generation);
@@ -864,20 +857,33 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   // Payments
 
+  private static final class InvoiceAttempt {
+    boolean loadingForm = true;
+  }
+
   private void openInvoice (int generation, String slug) {
     if (StringUtils.isEmpty(slug)) {
       return;
     }
-    if (isInvoiceOpen) {
+    if (invoiceAttempt != null || !controller.canPresentNativeUi()) {
       replyInvoice(generation, slug, "cancelled");
       return;
     }
-    isInvoiceOpen = true;
-    StarsPaymentSheet.open(controller, tdlib, new TdApi.InputInvoiceName(slug), null, null,
-      result -> {
-        isInvoiceOpen = false;
-        replyInvoice(generation, slug, invoiceStatus(result));
-      }
+    InvoiceAttempt attempt = new InvoiceAttempt();
+    invoiceAttempt = attempt;
+    StarsPaymentSheet.open(controller, tdlib, new TdApi.InputInvoiceName(slug), null,
+      () -> attempt.loadingForm = false,
+      result -> controller.afterNativeScreen(() -> {
+        if (invoiceAttempt == attempt) {
+          invoiceAttempt = null;
+          if (controller.hasActiveAccount()) {
+            replyInvoice(generation, slug, invoiceStatus(result));
+          }
+        }
+      }),
+      () -> invoiceAttempt == attempt && generation == documentGeneration &&
+        controller.isTrustedDocument() && controller.canPresentNativeUi(),
+      controller::navigateFromPopup
     );
   }
 
@@ -1081,10 +1087,14 @@ final class WebAppBridge implements WebAppSensors.Listener {
     controller.closeNow();
   }
 
-  private void switchInlineQuery (JSONObject data) throws JSONException {
+  private void switchInlineQuery (int generation, JSONObject data) throws JSONException {
     String query = data.getString("query");
     JSONArray chatTypes = data.optJSONArray("chat_types");
-    controller.switchInlineQuery(query, chatTypes != null ? parseChatTypes(chatTypes) : null);
+    TdApi.TargetChatTypes types = chatTypes != null ? parseChatTypes(chatTypes) : null;
+    if (chatTypes == null || chatTypes.length() == 0 || types != null) {
+      controller.switchInlineQuery(query, types,
+        () -> generation == documentGeneration && controller.isTrustedDocument());
+    }
   }
 
   /** {@code null} when the query is for the current chat. */
@@ -1344,36 +1354,79 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   // Prepared messages
 
+  private boolean isPreparedMessageRequesterCurrent (int generation, PopupLayout source) {
+    return generation == documentGeneration && controller.hasActiveAccount() &&
+      controller.isTrustedDocument() && source != null && source.getBoundController() == controller &&
+      !source.isWindowHidden() && !source.isDestroyed() && source.isBoundWindowShowing();
+  }
+
+  private void declinePreparedMessage (int generation, PopupLayout source) {
+    controller.afterNativeScreen(() -> {
+      if (isPreparedMessageRequesterCurrent(generation, source)) {
+        replyError(generation, "prepared_message_failed", "USER_DECLINED");
+      }
+    });
+  }
+
+  private boolean canSendPreparedMessage (int generation, PopupLayout source) {
+    // The share UI (or its confirmation) now owns the top of the popup stack, not the source.
+    return isPreparedMessageRequesterCurrent(generation, source) && isInForeground() &&
+      source.getVisibility() == View.VISIBLE && !controller.context().isPasscodeShowing();
+  }
+
   private void sendPreparedMessage (int generation, String preparedMessageId) {
+    PopupLayout source = controller.context().getCurrentPopupWindow();
+    if (!isPreparedMessageRequesterCurrent(generation, source)) {
+      return;
+    }
     if (StringUtils.isEmpty(preparedMessageId)) {
       replyError(generation, "prepared_message_failed", "MESSAGE_EXPIRED");
+      return;
+    }
+    if (!controller.canPresentNativeUi()) {
+      declinePreparedMessage(generation, source);
       return;
     }
     tdlib.send(new TdApi.GetPreparedInlineMessage(botUserId, preparedMessageId),
       (prepared, error) ->
       UI.post(() -> {
-        if (error != null || controller.isDestroyed()) {
+        if (!isPreparedMessageRequesterCurrent(generation, source)) {
+          return;
+        }
+        if (!controller.canPresentNativeUi()) {
+          declinePreparedMessage(generation, source);
+          return;
+        }
+        if (error != null || prepared == null) {
           replyError(generation, "prepared_message_failed", "MESSAGE_EXPIRED");
           return;
         }
-        sharePreparedMessage(generation, prepared);
+        sharePreparedMessage(generation, source, prepared);
       })
     );
   }
 
-  private void sharePreparedMessage (int generation, TdApi.PreparedInlineMessage prepared) {
+  private void sharePreparedMessage (int generation, PopupLayout source, TdApi.PreparedInlineMessage prepared) {
     final boolean[] isSent = new boolean[1];
+    final boolean[] isCheckingRecipient = new boolean[1];
     final TdApi.TargetChatTypes types = prepared.chatTypes;
-    ShareController c = new ShareController(controller.context(), tdlib);
+    ShareController c = new ShareController(controller.context(), tdlib) {
+      @Override
+      public boolean isDestroyed () {
+        // ShareController rechecks this after asynchronous Stars consent, just before dispatch.
+        // Limit the additional check to an interactive share, not its asynchronous initial layout.
+        return super.isDestroyed() || (isCheckingRecipient[0] && !canSendPreparedMessage(generation, source));
+      }
+    };
     c.setArguments(new ShareController.Args(new ShareController.ShareProviderDelegate() {
       @Override
       public void generateFunctionsForChat (
         long chatId,
-        TdApi.Chat chat,
+        @Nullable TdApi.MessageTopic topicId,
         TdApi.MessageSendOptions sendOptions,
         ArrayList<TdApi.Function<?>> functions
       ) {
-        functions.add(new TdApi.SendInlineQueryResultMessage(chatId, null, null, sendOptions,
+        functions.add(new TdApi.SendInlineQueryResultMessage(chatId, topicId, null, sendOptions,
           prepared.inlineQueryId,
           prepared.result != null ? WebApp.getInlineQueryResultId(prepared.result) : "",
           false));
@@ -1381,17 +1434,22 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
       @Override
       public CharSequence generateErrorMessageForChat (long chatId) {
-        return WebApp.isChatAllowed(tdlib, chatId, types) ? null :
+        isCheckingRecipient[0] = true;
+        return canSendPreparedMessage(generation, source) && WebApp.isChatAllowed(tdlib, chatId, types) ? null :
           Lang.getString(R.string.vg_BotCantSharePreparedMessage);
       }
     }).setAfter(() -> {
       // ShareController reports when the messages are handed to TDLib, not their delivery.
       isSent[0] = true;
-      UI.post(() -> reply(generation, "prepared_message_sent", null));
+      UI.post(() -> {
+        if (isPreparedMessageRequesterCurrent(generation, source)) {
+          reply(generation, "prepared_message_sent", null);
+        }
+      });
     }));
     c.addDestroyListener(() -> {
       if (!isSent[0]) {
-        replyError(generation, "prepared_message_failed", "USER_DECLINED");
+        declinePreparedMessage(generation, source);
       }
     });
     c.show();
@@ -1400,10 +1458,19 @@ final class WebAppBridge implements WebAppSensors.Listener {
   // Requested chats
 
   private void requestChat (int generation, String requestId) {
+    if (StringUtils.isEmpty(requestId) || !controller.canPresentNativeUi()) {
+      replyRequestId(generation, "requested_chat_failed", requestId);
+      return;
+    }
     tdlib.send(new TdApi.GetPreparedKeyboardButton(botUserId, requestId),
       (button, error) -> UI.post(() -> {
-      if (error != null || controller.isDestroyed()) {
-        if (error != null) {
+      if (generation != documentGeneration || !controller.hasActiveAccount() ||
+        !controller.isTrustedDocument()) {
+        return;
+      }
+      boolean canPresent = controller.canPresentNativeUi();
+      if (error != null || !canPresent) {
+        if (error != null && canPresent) {
           UI.showError(error);
         }
         replyRequestId(generation, "requested_chat_failed", requestId);
@@ -1411,9 +1478,13 @@ final class WebAppBridge implements WebAppSensors.Listener {
       }
       TdApi.KeyboardButtonSource source =
         new TdApi.KeyboardButtonSourceWebApp(botUserId, requestId);
-      boolean started = controller.openRequestedChatPicker(button, source, sent ->
-        replyRequestId(generation, sent ? "requested_chat_sent" : "requested_chat_failed",
-          requestId)
+      boolean started = controller.openRequestedChatPicker(button, source,
+        () -> generation == documentGeneration && controller.isTrustedDocument(),
+        sent -> controller.afterNativeScreen(() -> {
+          if (controller.hasActiveAccount()) {
+            replyRequestId(generation, sent ? "requested_chat_sent" : "requested_chat_failed", requestId);
+          }
+        })
       );
       if (!started) {
         replyRequestId(generation, "requested_chat_failed", requestId);
