@@ -30,6 +30,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -1248,6 +1249,24 @@ public class HeaderView extends FrameLayoutFix implements View.OnClickListener, 
     } else {
       Views.setTopMargin(view, headerOffset);
     }
+  }
+
+  /** Width reserved by visible actions in the title header. */
+  public static int getVisibleActionsWidth (View title, int menuId) {
+    ViewParent parent = title.getParent();
+    View menu = parent instanceof View ? ((View) parent).findViewById(menuId) : null;
+    if (!(menu instanceof ViewGroup) || menu.getVisibility() == View.GONE) {
+      return 0;
+    }
+    ViewGroup group = (ViewGroup) menu;
+    int width = 0;
+    for (int i = 0; i < group.getChildCount(); i++) {
+      View child = group.getChildAt(i);
+      if (child.getVisibility() != View.GONE && child.getLayoutParams() != null) {
+        width += Math.max(0, child.getLayoutParams().width);
+      }
+    }
+    return width;
   }
 
   /** Hidden buttons count too: they can appear without a new layout of the title. */

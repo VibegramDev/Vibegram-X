@@ -26,7 +26,6 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 
@@ -36,6 +35,7 @@ import androidx.annotation.NonNull;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.navigation.ViewController;
 import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.theme.M3;
@@ -99,27 +99,9 @@ public class M3SearchBarView extends FrameLayoutFix {
     themeProvider.addThemeInvalidateListener(barView);
   }
 
-  /** Width of the visible app bar actions (lock, search, compose buttons), they change visibility at runtime. */
-  private int getActionsWidth () {
-    ViewParent parent = getParent();
-    View menu = parent instanceof View ? ((View) parent).findViewById(menuId) : null;
-    if (!(menu instanceof ViewGroup) || menu.getVisibility() == View.GONE) {
-      return 0;
-    }
-    ViewGroup group = (ViewGroup) menu;
-    int width = 0;
-    for (int i = 0; i < group.getChildCount(); i++) {
-      View child = group.getChildAt(i);
-      if (child.getVisibility() != View.GONE && child.getLayoutParams() != null) {
-        width += Math.max(0, child.getLayoutParams().width);
-      }
-    }
-    return width;
-  }
-
   @Override
   protected void onMeasure (int widthMeasureSpec, int heightMeasureSpec) {
-    int width = Math.max(0, MeasureSpec.getSize(widthMeasureSpec) - getActionsWidth());
+    int width = Math.max(0, MeasureSpec.getSize(widthMeasureSpec) - HeaderView.getVisibleActionsWidth(this, menuId));
     super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), heightMeasureSpec);
   }
 

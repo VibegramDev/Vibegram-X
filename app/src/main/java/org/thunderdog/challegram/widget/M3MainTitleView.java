@@ -25,7 +25,6 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
 
 import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
@@ -37,6 +36,7 @@ import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.BuildConfig;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
+import org.thunderdog.challegram.navigation.HeaderView;
 import org.thunderdog.challegram.emoji.Emoji;
 import org.thunderdog.challegram.emoji.EmojiInfo;
 import org.thunderdog.challegram.navigation.ViewController;
@@ -196,23 +196,6 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
     return drawEmojiStatus() ? emojiStatusHelper.getWidth() : defaultEmoji != null ? emojiSize() : 0;
   }
 
-  private int getActionsWidth () {
-    ViewParent parent = getParent();
-    View menu = parent instanceof View ? ((View) parent).findViewById(menuId) : null;
-    if (!(menu instanceof ViewGroup) || menu.getVisibility() == View.GONE) {
-      return 0;
-    }
-    ViewGroup group = (ViewGroup) menu;
-    int width = 0;
-    for (int i = 0; i < group.getChildCount(); i++) {
-      View child = group.getChildAt(i);
-      if (child.getVisibility() != View.GONE && child.getLayoutParams() != null) {
-        width += Math.max(0, child.getLayoutParams().width);
-      }
-    }
-    return width;
-  }
-
   /** Whether the emoji fits next to the title in the current width (it is dropped first when space is short). */
   private boolean emojiFits (int width) {
     layoutTitle(width);
@@ -229,7 +212,7 @@ public class M3MainTitleView extends View implements Destroyable, TdlibCache.MyU
     int width = Screen.dp(START_PADDING) + (int) Math.ceil(fullTitleWidth()) + (emojiWidth > 0 ? Screen.dp(EMOJI_GAP) + emojiWidth : 0) + Screen.dp(END_PADDING);
     int maxWidth = MeasureSpec.getSize(widthMeasureSpec);
     if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED && maxWidth > 0) {
-      int availWidth = Math.max(0, maxWidth - getActionsWidth());
+      int availWidth = Math.max(0, maxWidth - HeaderView.getVisibleActionsWidth(this, menuId));
       width = Math.min(width, availWidth);
     }
     super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(Size.getHeaderPortraitSize(), MeasureSpec.EXACTLY));

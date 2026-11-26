@@ -185,7 +185,7 @@ public class MainNavigationBar extends FrameLayoutFix implements Destroyable {
     View.OnLongClickListener longClickListener = v -> {
       ItemView item = (ItemView) v;
       if (item.menu != null && item.menu.openMenu(v)) {
-        M3Tooltip.hideCurrent(true);
+        M3Tooltip.hideCurrent();
         // The finger keeps moving over the screen to pick an entry: no swipe back or scrolling.
         v.getParent().requestDisallowInterceptTouchEvent(true);
       } else if (!M3Tooltip.show(v, M3Tooltip.PLACEMENT_ABOVE, barBounds, item.label)) {

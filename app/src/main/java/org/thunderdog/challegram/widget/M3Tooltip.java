@@ -95,11 +95,6 @@ public final class M3Tooltip {
     return true;
   }
 
-  /** The tooltip manager always animates the hiding; kept for existing callers. */
-  public static void hideCurrent (boolean animated) {
-    hideCurrent();
-  }
-
   public static void hideCurrent () {
     TooltipOverlayView.TooltipInfo tooltip = current != null ? current.get() : null;
     current = null;
