@@ -13,7 +13,7 @@ assert 'MIXED_CONTENT_NEVER_ALLOW' in src
 assert 'Collections.singleton(expectedOrigin)' in src
 assert 'PaymentWebOrigin.accepts(expectedOrigin, sourceOrigin.toString(), isMainFrame)' in src
 assert src.index('WebViewCompat.addDocumentStartJavaScript') < src.index('loadUrl(args.url)')
-assert 'stringMessage = message.getData()' in src and 'catch (IllegalStateException ignored)' in src, 'ignore non-string WebView messages (including ArrayBuffers)'
+assert 'submitCredentials(U.getWebMessageText(message))' in src, 'checkout uses the text-only WebView decoder'
 
 assert 'boolean mainFrame = request.isForMainFrame()' in src
 assert 'PaymentWebOrigin.isVerificationReturn(uri.toString(), mainFrame)' in src

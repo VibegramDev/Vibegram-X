@@ -74,8 +74,12 @@ public class TdlibOutlineManager extends TdlibDataManager<String, TdApi.Outline,
 
   public void requestWebAppPlaceholder (long botUserId, Watcher watcher, boolean strongReference) {
     String key = new ParsedKey(ParsedKey.TYPE_WEB_APP_PLACEHOLDER, botUserId, 0).serializeToKey();
-    findOrPostponeRequest(key, watcher, strongReference);
-    performPostponedRequestsDelayed();
+    Entry cached = findOrPostponeRequest(key, watcher, strongReference);
+    if (cached == null) {
+      performPostponedRequestsDelayed();
+    } else if (watcher != null) {
+      watcher.onStickerOutlineLoaded(this, cached);
+    }
   }
 
   @Override

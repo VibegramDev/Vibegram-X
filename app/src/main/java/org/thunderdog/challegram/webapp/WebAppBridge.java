@@ -24,10 +24,8 @@ import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.View;
-import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
-import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
@@ -94,7 +92,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
   private final long botUserId;
 
   private @Nullable String trustedOrigin;
-  private boolean isAttached, usesMessageListener;
+  private boolean isAttached;
 
   /**
    * Incremented on each navigation of the page. Events are stamped with it when they arrive, so
@@ -129,25 +127,25 @@ final class WebAppBridge implements WebAppSensors.Listener {
   // addDocumentStartJavaScript is @RestrictTo only in androidx.webkit 1.4.0 of the legacy flavor,
   // the newer androidx.webkit of the other flavors has it as a public API.
   @SuppressLint("RestrictedApi")
-  void attachTo (WebView webView, @Nullable String trustedOrigin) {
+  boolean attachTo (WebView webView, @Nullable String trustedOrigin) {
     if (isAttached) {
-      return;
+      return true;
     }
-    isAttached = true;
     this.trustedOrigin = trustedOrigin;
     if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
       WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
       Set<String> rules = Collections.singleton(trustedOrigin != null ? trustedOrigin : "*");
       try {
         WebViewCompat.addWebMessageListener(webView, LISTENER_NAME, rules, this::onWebMessage);
+        isAttached = true;
         WebViewCompat.addDocumentStartJavaScript(webView, PROXY_SCRIPT, rules);
-        usesMessageListener = true;
-        return;
-      } catch (IllegalArgumentException e) {
-        Log.e("Mini app origin %s is not a valid origin rule", e, trustedOrigin);
+        return true;
+      } catch (IllegalArgumentException | UnsupportedOperationException e) {
+        detachFrom(webView);
+        Log.w("Cannot install the mini app message listener", e);
       }
     }
-    webView.addJavascriptInterface(this, INTERFACE_NAME);
+    return false;
   }
 
   // The document start script stays: its reference type differs between androidx.webkit versions
@@ -157,12 +155,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
       return;
     }
     isAttached = false;
-    if (usesMessageListener) {
-      WebViewCompat.removeWebMessageListener(webView, LISTENER_NAME);
-      usesMessageListener = false;
-    } else {
-      webView.removeJavascriptInterface(INTERFACE_NAME);
-    }
+    WebViewCompat.removeWebMessageListener(webView, LISTENER_NAME);
   }
 
   void onPageStarted () {
@@ -208,7 +201,7 @@ final class WebAppBridge implements WebAppSensors.Listener {
   }
 
   boolean consumeUserGesture () {
-    if (SystemClock.uptimeMillis() - lastUserGestureMs > USER_GESTURE_TIMEOUT_MS) {
+    if (lastUserGestureMs == 0 || SystemClock.uptimeMillis() - lastUserGestureMs > USER_GESTURE_TIMEOUT_MS) {
       return false;
     }
     lastUserGestureMs = 0;
@@ -246,13 +239,6 @@ final class WebAppBridge implements WebAppSensors.Listener {
 
   // Incoming events
 
-  // Without the message listener only the page calls it, so R8 would remove it without @Keep.
-  @Keep
-  @JavascriptInterface
-  public void postEvent (final String eventType, final String eventData) {
-    onEvent(documentGeneration, eventType, eventData);
-  }
-
   @UiThread
   private void onWebMessage (
     @NonNull WebView view,
@@ -261,11 +247,11 @@ final class WebAppBridge implements WebAppSensors.Listener {
     boolean isMainFrame,
     @NonNull JavaScriptReplyProxy replyProxy
   ) {
-    if (!isMainFrame || (trustedOrigin != null && !trustedOrigin.equals(sourceOrigin.toString()))) {
+    if (!isAttached || !isMainFrame || (trustedOrigin != null && !trustedOrigin.equals(sourceOrigin.toString()))) {
       return;
     }
     final int generation = documentGeneration;
-    String data = message.getData();
+    String data = U.getWebMessageText(message);
     if (data == null) {
       return;
     }

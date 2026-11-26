@@ -1142,17 +1142,21 @@ public class WebAppController extends ViewController<WebAppController.Args> impl
     }
     requireSameOrigin = url.requireSameOrigin;
     trustedOrigin = requireSameOrigin ? getOrigin(url.url) : null;
+    if ((requireSameOrigin && trustedOrigin == null) || !bridge.attachTo(webView, trustedOrigin)) {
+      UI.showToast(R.string.vg_BotWebViewNotAvailablePlaceholder, Toast.LENGTH_LONG);
+      closeNow();
+      return;
+    }
     loadPlaceholder();
-    bridge.attachTo(webView, trustedOrigin);
     webView.loadUrl(url.url);
   }
 
   private void loadPlaceholder () {
-    tdlib.send(new TdApi.GetWebAppPlaceholder(getBotUserId()), (outline, error) -> UI.post(() -> {
-      if (outline != null && !isDestroyed()) {
-        placeholderView.setOutline(outline);
+    tdlib.outline().requestWebAppPlaceholder(getBotUserId(), (manager, entry) -> UI.post(() -> {
+      if (entry.value != null && !isDestroyed() && !isClosing) {
+        placeholderView.setOutline(entry.value);
       }
-    }));
+    }), true);
   }
 
   void onPageReady () {

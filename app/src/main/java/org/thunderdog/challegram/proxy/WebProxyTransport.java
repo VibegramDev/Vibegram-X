@@ -43,6 +43,7 @@ import androidx.webkit.WebViewFeature;
 
 import org.json.JSONObject;
 import org.thunderdog.challegram.Log;
+import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.unsorted.AppContext;
 
@@ -603,7 +604,7 @@ public final class WebProxyTransport {
       || !isCurrentBridgeDocument(sourceView)) {
       return;
     }
-    final String data = message.getData();
+    final String data = U.getWebMessageText(message);
     if (data == null) {
       return;
     }

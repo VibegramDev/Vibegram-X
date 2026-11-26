@@ -75,6 +75,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.core.os.EnvironmentCompat;
+import androidx.webkit.WebMessageCompat;
 import androidx.exifinterface.media.ExifInterface;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
@@ -204,6 +205,14 @@ import tgx.td.data.HlsVideo;
 
 @SuppressWarnings({"JniMissingFunction", "ObsoleteSdkInt"})
 public class U {
+  public static @Nullable String getWebMessageText (@NonNull WebMessageCompat message) {
+    try {
+      return message.getData();
+    } catch (IllegalStateException ignored) {
+      // Binary messages are not text. Legacy WebKit has no getType().
+      return null;
+    }
+  }
 
   public static boolean blurBitmap (Bitmap bitmap, int radius, int unpin) {
     return U.isValidBitmap(bitmap) && N.blurBitmap(bitmap, radius, unpin, 0) == 0;

@@ -37,6 +37,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.thunderdog.challegram.R;
+import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.core.Lang;
 import org.thunderdog.challegram.navigation.DoubleHeaderView;
 import org.thunderdog.challegram.navigation.NavigationController;
@@ -129,14 +130,7 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
           (view, message, sourceOrigin, isMainFrame, replyProxy) -> {
             if (!isDestroyed() && !finished && PaymentWebOrigin.accepts(expectedOrigin, sourceOrigin.toString(), isMainFrame) &&
                 expectedOrigin.equals(PaymentWebOrigin.fromUrl(view.getUrl()))) {
-              final String stringMessage;
-              try {
-                stringMessage = message.getData();
-              } catch (IllegalStateException ignored) {
-                // New WebKit versions also accept binary messages; the provider API is text-only.
-                return;
-              }
-              submitCredentials(stringMessage);
+              submitCredentials(U.getWebMessageText(message));
             }
           });
         WebViewCompat.addDocumentStartJavaScript(webView, PROXY_SCRIPT, Collections.singleton(expectedOrigin));
