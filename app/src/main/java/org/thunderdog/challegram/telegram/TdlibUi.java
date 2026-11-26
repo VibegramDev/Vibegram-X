@@ -144,7 +144,6 @@ import org.thunderdog.challegram.util.CustomTypefaceSpan;
 import org.thunderdog.challegram.util.HapticMenuHelper;
 import org.thunderdog.challegram.util.OptionDelegate;
 import org.thunderdog.challegram.util.StringList;
-import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.util.text.Text;
 import org.thunderdog.challegram.voip.VoIPLogs;
 import org.thunderdog.challegram.webapp.WebApp;
@@ -2463,7 +2462,6 @@ public class TdlibUi extends Handler {
 
     View view = controller.getValue();
     if (controller.context().isNavigationBusy()) {
-      StuckWatch.event("openChat ignored: busy");
       if (params != null) {
         params.onDone();
       }
@@ -2524,7 +2522,6 @@ public class TdlibUi extends Handler {
       return;
     }
     if (context.context().isNavigationBusy()) {
-      StuckWatch.event("openChatProfile ignored: busy");
       return;
     }
     NavigationController navigation = context.context().navigation();

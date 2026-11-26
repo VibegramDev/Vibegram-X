@@ -141,7 +141,6 @@ import org.thunderdog.challegram.util.ActivityPermissionResult;
 import org.thunderdog.challegram.util.AppUpdater;
 import org.thunderdog.challegram.util.KonfettiBuilder;
 import org.thunderdog.challegram.util.Permissions;
-import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.widget.BaseRootLayout;
 import org.thunderdog.challegram.widget.DragDropLayout;
 import org.thunderdog.challegram.widget.ForceTouchView;
@@ -1223,8 +1222,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   @Override
   public void onResume () {
-    UI.cancel(stuckWatch);
-    UI.post(stuckWatch, StuckWatch.CHECK_INTERVAL_MS);
     boolean lockBefore = isPasscodeShowing;
     UI.setContext(this);
     setActivityState(UI.State.RESUMED);
@@ -1489,7 +1486,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   private final OnBackPressedCallback backPressedCallback = new OnBackPressedCallback(false) {
     @Override
     public void handleOnBackPressed () {
-      StuckWatch.event("back pressed, target=" + backPressTarget + ", " + stuckState());
       boolean handled = false;
       if (backPressTarget != null) {
         handled = backPressTarget.onSystemBackPressed();
@@ -1513,7 +1509,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
     @Override
     public void handleOnBackStarted (@NonNull BackEventCompat backEvent) {
-      StuckWatch.event("back started, edge=" + backEvent.getSwipeEdge() + ", mode=" + backPressMode);
       if (cancelBackPressTarget()) {
         Log.i("System didn't dispatch onBackCancelled / onBackPressed!");
       }
@@ -1543,7 +1538,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
     @Override
     public void handleOnBackCancelled () {
-      StuckWatch.event("back cancelled, target=" + backPressTarget);
       cancelBackPressTarget();
     }
 
@@ -2606,7 +2600,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       }
 
       if (exit) {
-        StuckWatch.event("popup dropped (activity busy): " + window.stuckName());
         window.onActivityDestroy();
         return;
       }
@@ -2615,7 +2608,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
       hideContextualPopups(false);
     }
     windows.add(window);
-    StuckWatch.event("popup show: " + window.stuckName() + ", windows=" + windows.size());
     checkDisallowScreenshots();
     window.showBoundWindow(rootView);
     notifyBackPressAvailabilityChanged();
@@ -2640,7 +2632,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
   }
 
   public void removeWindowFromList (PopupLayout window) {
-    StuckWatch.event("popup removed: " + window.stuckName());
     if (!windows.remove(window)) {
       completelyForgetThisWindow(window);
     }
@@ -3122,46 +3113,6 @@ public abstract class BaseActivity extends FragmentActivity implements View.OnTo
 
   public boolean isActivityBusyWithSomething () {
     return isCameraOpen || isCameraDragging || isNavigationBusy();
-  }
-
-  // Diagnostics: the app stays "busy" (taps on chats and sharing to the app do nothing) until Back is pressed.
-  private int stuckTicks;
-  private final Runnable stuckWatch = new Runnable() {
-    @Override
-    public void run () {
-      UI.cancel(this);
-      if (activityState != UI.State.RESUMED) {
-        return;
-      }
-      if (isNavigationBusy()) {
-        stuckTicks++;
-        if (stuckTicks == StuckWatch.STUCK_AFTER_TICKS) {
-          StuckWatch.report("BUSY for " + stuckTicks + "s", stuckState(), true);
-        } else if (stuckTicks % 60 == 0) {
-          StuckWatch.report("still BUSY for " + stuckTicks + "s", stuckState(), false);
-        }
-      } else {
-        if (stuckTicks >= StuckWatch.STUCK_AFTER_TICKS) {
-          StuckWatch.report("FREE after " + stuckTicks + "s", stuckState(), true);
-        }
-        stuckTicks = 0;
-      }
-      UI.post(this, StuckWatch.CHECK_INTERVAL_MS);
-    }
-  };
-
-  public String stuckState () {
-    StringBuilder b = new StringBuilder();
-    b.append("recorder: ").append(recordAudioVideoController.stuckState());
-    b.append("\nnavigation: animating=").append(navigation.isAnimating()).append(' ').append(navigation.stuckState());
-    b.append("\nheader: animating=").append(navigation.getHeaderView().isAnimating());
-    b.append("\nstack locked=").append(navigation.getStack().isLocked()).append(", progress=").append(isProgressShowing).append(", camera=").append(isCameraOpen);
-    b.append("\nwindows (").append(windows.size()).append("):");
-    for (PopupLayout window : windows) {
-      b.append("\n  ").append(window.stuckState());
-    }
-    b.append("\nforgotten windows: ").append(forgottenWindows.size());
-    return b.toString();
   }
 
   public boolean isNavigationBusy () {

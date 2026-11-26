@@ -100,7 +100,6 @@ import org.thunderdog.challegram.ui.WaitForPremiumController;
 import org.thunderdog.challegram.unsorted.Passcode;
 import org.thunderdog.challegram.unsorted.Settings;
 import org.thunderdog.challegram.util.Crash;
-import org.thunderdog.challegram.util.StuckWatch;
 import org.thunderdog.challegram.webapp.WebApp;
 import org.thunderdog.challegram.webapp.WebAppTabs;
 import org.thunderdog.challegram.widget.GearView;
@@ -783,7 +782,6 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
     }
     // After 1.5 s a busy flag may be stuck. Keep the existing best-effort fallback for intent dispatch.
     final boolean force = ++pendingIntentAttempts >= PENDING_INTENT_MAX_ATTEMPTS;
-    StuckWatch.event("intent postponed: " + actionRaw + ", attempt=" + pendingIntentAttempts);
     handler.postDelayed(() -> {
       if (pendingIntent == intent && !isFinishing()) {
         forceIntent = force;
@@ -806,7 +804,6 @@ public class MainActivity extends BaseActivity implements GlobalAccountListener,
         handler.postDelayed(() -> runIntentNavigation(open, onAborted, attempts - 1), PENDING_INTENT_DELAY_MS);
         return;
       }
-      StuckWatch.event("intent navigation timed out");
     }
     onAborted.run();
   }
