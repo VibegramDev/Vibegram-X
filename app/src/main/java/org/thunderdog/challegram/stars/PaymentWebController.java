@@ -20,12 +20,16 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.webkit.JavascriptInterface;
+import android.os.Build;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 
-import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.core.Lang;
@@ -36,13 +40,15 @@ import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.tool.UI;
 import org.thunderdog.challegram.ui.WebkitController;
 
+import java.util.Collections;
+
 import me.vkryl.core.StringUtils;
 import me.vkryl.core.lambda.RunnableBool;
 
 /**
  * Web pages of a payment, as in the official checkout: the provider's card form (providers without a native form:
  * the page posts «payment_form_submit» with the credentials through TelegramWebviewProxy; accepted only while the
- * provider's own page is open) and 3-D Secure verification (finished when the page redirects to t.me). Links to
+ * the message comes from the provider’s HTTPS origin in the main frame) and 3-D Secure verification (finished when the page redirects to t.me). Links to
  * other apps open only after the user confirms them.
  */
 public class PaymentWebController extends WebkitController<PaymentWebController.Args> {
@@ -91,10 +97,14 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     return R.id.controller_vgPaymentWeb;
   }
 
-  private boolean finished, isAskingExternal;
-  private WebView webView;
+  private static final String MESSAGE_LISTENER = "VibegramPaymentBridge";
+  private static final String PROXY_SCRIPT =
+    "(function(){var c=window." + MESSAGE_LISTENER + ";if(window.top!==window||!c)return;" +
+    "window.TelegramWebviewProxy={postEvent:function(t,d){c.postMessage(JSON.stringify([String(t),String(d)]));}};})();";
 
-  @SuppressLint({"AddJavascriptInterface", "JavascriptInterface"})
+  private boolean finished, isAskingExternal;
+
+  @SuppressLint("RestrictedApi") // DOCUMENT_START_SCRIPT is restricted in the legacy AndroidX WebKit.
   @Override
   protected void onCreateWebView (DoubleHeaderView headerCell, WebView webView) {
     Args args = getArgumentsStrict();
@@ -103,48 +113,61 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
     if (uri.getHost() != null) {
       headerCell.setSubtitle(uri.getHost());
     }
-    this.webView = webView;
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+      webView.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+    }
     if (!args.isVerification) {
-      webView.addJavascriptInterface(new TelegramWebviewProxy(), "TelegramWebviewProxy");
+      String expectedOrigin = PaymentWebOrigin.fromUrl(args.url);
+      if (expectedOrigin == null || !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
+          !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        headerCell.setSubtitle(Lang.getString(R.string.vg_PaymentFormUnavailable));
+        return;
+      }
+      try {
+        WebViewCompat.addWebMessageListener(webView, MESSAGE_LISTENER, Collections.singleton(expectedOrigin),
+          (view, message, sourceOrigin, isMainFrame, replyProxy) -> {
+            if (!isDestroyed() && !finished && PaymentWebOrigin.accepts(expectedOrigin, sourceOrigin.toString(), isMainFrame) &&
+                expectedOrigin.equals(PaymentWebOrigin.fromUrl(view.getUrl()))) {
+              final String stringMessage;
+              try {
+                stringMessage = message.getData();
+              } catch (IllegalStateException ignored) {
+                // New WebKit versions also accept binary messages; the provider API is text-only.
+                return;
+              }
+              submitCredentials(stringMessage);
+            }
+          });
+        WebViewCompat.addDocumentStartJavaScript(webView, PROXY_SCRIPT, Collections.singleton(expectedOrigin));
+      } catch (IllegalArgumentException | UnsupportedOperationException ignored) {
+        // Do not load the form with a partially installed or unscoped bridge.
+        headerCell.setSubtitle(Lang.getString(R.string.vg_PaymentFormUnavailable));
+        return;
+      }
     }
     loadUrl(args.url);
   }
 
-  private final class TelegramWebviewProxy {
-    @Keep
-    @JavascriptInterface
-    public void postEvent (final String eventName, final String eventData) {
-      UI.post(() -> {
-        if (isDestroyed() || finished || !"payment_form_submit".equals(eventName) || !isProviderPageOpen()) {
-          return;
-        }
-        String credentials, title;
-        try {
-          JSONObject json = new JSONObject(eventData);
-          credentials = json.getJSONObject("credentials").toString();
-          title = json.optString("title", "");
-        } catch (Throwable t) {
-          return;
-        }
-        finished = true;
-        Args args = getArgumentsStrict();
-        args.onCredentials.onCardTokenized(credentials, StringUtils.isEmpty(title) ? Lang.getString(R.string.vg_PaymentCardGeneric) : title, false);
-        navigateBack();
-      });
+  private void submitCredentials (String data) {
+    if (data == null) {
+      return;
     }
-  }
-
-  /** The bridge is visible to every page and frame: only the provider's page may submit the credentials. */
-  private boolean isProviderPageOpen () {
-    String expectedHost = Uri.parse(getArgumentsStrict().url).getHost();
-    String currentUrl = webView.getUrl();
-    String currentHost = currentUrl != null ? Uri.parse(currentUrl).getHost() : null;
-    if (StringUtils.isEmpty(expectedHost) || StringUtils.isEmpty(currentHost)) {
-      return false;
+    String credentials, title;
+    try {
+      JSONArray event = new JSONArray(data);
+      if (!"payment_form_submit".equals(event.getString(0))) {
+        return;
+      }
+      JSONObject json = new JSONObject(event.getString(1));
+      credentials = json.getJSONObject("credentials").toString();
+      title = json.optString("title", "");
+    } catch (JSONException ignored) {
+      return;
     }
-    expectedHost = expectedHost.toLowerCase(java.util.Locale.ROOT);
-    currentHost = currentHost.toLowerCase(java.util.Locale.ROOT);
-    return currentHost.equals(expectedHost) || currentHost.endsWith("." + expectedHost);
+    finished = true;
+    getArgumentsStrict().onCredentials.onCardTokenized(credentials,
+      StringUtils.isEmpty(title) ? Lang.getString(R.string.vg_PaymentCardGeneric) : title, false);
+    navigateBack();
   }
 
   @Override

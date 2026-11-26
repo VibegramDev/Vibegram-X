@@ -64,6 +64,7 @@
   <string name="vg_PaymentCheckoutPay">ЗАПЛАТИТЬ %1$s</string>
   <string name="vg_PaymentCheckoutPhoneNumber">Номер телефона</string>
   <string name="vg_PaymentCheckoutProvider">Платёжный провайдер</string>
+  <string name="vg_PaymentFormUnavailable">Платёжная форма недоступна</string>
   <string name="vg_PaymentConnectionFailed">Не удалось соединиться с платёжным сервером. Проверьте соединение с интернетом и попробуйте снова.</string>
   <string name="vg_PaymentOrderInfoRequired">Заполните обязательные поля.</string>
   <string name="vg_PaymentPasswordRequired">Для оплаты сохранённой картой нужен облачный пароль. Добавьте новую карту или включите пароль в разделе «Конфиденциальность».</string>
