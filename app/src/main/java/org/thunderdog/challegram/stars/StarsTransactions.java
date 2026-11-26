@@ -326,7 +326,7 @@ public final class StarsTransactions {
     private @Nullable Tdlib tdlib;
     private @Nullable TdApi.StarTransaction transaction;
     private boolean hasAvatar;
-    private @DrawableRes int iconRes;
+    private @Nullable Drawable icon;
     private String titleString = "", subtitleString = "", amountString = "";
     private @Nullable String statusString;
     private TextColorSet amountColors = INCOMING_COLORS;
@@ -351,7 +351,7 @@ public final class StarsTransactions {
       } else {
         avatarReceiver.clear();
       }
-      iconRes = info.iconRes;
+      icon = hasAvatar ? null : Drawables.get(getResources(), info.iconRes);
       titleString = info.title;
       String date = Lang.getModifiedTimestamp(transaction.date, TimeUnit.SECONDS);
       subtitleString = StringUtils.isEmpty(info.subtitle) ? date : info.subtitle + "\n" + date;
@@ -412,7 +412,6 @@ public final class StarsTransactions {
       } else {
         float radius = avatarSize / 2f;
         c.drawCircle(avatarLeft + radius, avatarTop + radius, radius, Paints.fillingPaint(M3.secondaryContainer()));
-        Drawable icon = Drawables.get(getResources(), iconRes);
         if (icon != null) {
           Drawables.drawCentered(c, icon, avatarLeft + radius, avatarTop + radius, Paints.getPorterDuffPaint(M3.onSecondaryContainer()));
         }

@@ -135,6 +135,8 @@ public final class MessageSeenMenu {
     private final Drawable icon;
     private final ArrayList<AvatarReceiver> avatars = new ArrayList<>(3);
     private String label;
+    private CharSequence displayLabel = "";
+    private float displayLabelWidth;
     private TdApi.MessageViewers viewers;
     private boolean isDestroyed;
 
@@ -162,7 +164,7 @@ public final class MessageSeenMenu {
       for (int i = 0; i < Math.min(3, count); i++) {
         AvatarReceiver receiver = new AvatarReceiver(this);
         receiver.requestMessageSender(tdlib, new TdApi.MessageSenderUser(viewers.viewers[i].userId), AvatarReceiver.Options.NONE);
-        if (isAttachedToWindow()) {
+        if (getWindowToken() != null) {
           receiver.attach();
         } else {
           receiver.detach();
@@ -170,7 +172,7 @@ public final class MessageSeenMenu {
         avatars.add(receiver);
       }
       setEnabled(count > 0);
-      layoutAvatars();
+      layoutContent();
       invalidate();
     }
 
@@ -185,7 +187,7 @@ public final class MessageSeenMenu {
         (avatarsWidth > 0 ? Screen.dp(8f) + avatarsWidth : 0) + Screen.dp(MenuMoreWrap.ITEM_PADDING);
     }
 
-    private void layoutAvatars () {
+    private void layoutContent () {
       int width = getMeasuredWidth(), height = getMeasuredHeight();
       if (width == 0 || height == 0) {
         return;
@@ -194,6 +196,10 @@ public final class MessageSeenMenu {
       int size = Screen.dp(AVATAR_SIZE);
       int top = (height - size) / 2;
       int end = width - Screen.dp(MenuMoreWrap.ITEM_PADDING);
+      int avatarsWidth = getAvatarsWidth();
+      int available = end - Screen.dp(MenuMoreWrap.ITEM_TEXT_START) - (avatarsWidth > 0 ? avatarsWidth + Screen.dp(8f) : 0);
+      displayLabel = available > 0 ? TextUtils.ellipsize(label, textPaint, available, TextUtils.TruncateAt.END) : "";
+      displayLabelWidth = textPaint.measureText(displayLabel, 0, displayLabel.length());
       for (int i = 0; i < count; i++) {
         // The first viewer is the leftmost one, drawn on top.
         int right = end - Screen.dp(AVATAR_STEP) * (count - 1 - i);
@@ -210,7 +216,7 @@ public final class MessageSeenMenu {
     @Override
     protected void onLayout (boolean changed, int left, int top, int right, int bottom) {
       super.onLayout(changed, left, top, right, bottom);
-      layoutAvatars();
+      layoutContent();
     }
 
     @Override
@@ -225,17 +231,12 @@ public final class MessageSeenMenu {
         }
         Drawables.draw(c, icon, iconX, (height - icon.getMinimumHeight()) / 2f, Paints.getPorterDuffPaint(iconColor));
       }
-      int avatarsWidth = getAvatarsWidth();
-      int textStart = Screen.dp(MenuMoreWrap.ITEM_TEXT_START);
-      int textAvail = width - textStart - Screen.dp(MenuMoreWrap.ITEM_PADDING) - (avatarsWidth > 0 ? avatarsWidth + Screen.dp(8f) : 0);
-      if (textAvail > 0) {
+      if (displayLabel.length() > 0) {
         textPaint.setColor(menu.getOnContainerColor());
-        CharSequence text = TextUtils.ellipsize(label, textPaint, textAvail, TextUtils.TruncateAt.END);
-        float textWidth = textPaint.measureText(text, 0, text.length());
-        float x = rtl ? width - textStart - textWidth : textStart;
-        Paint.FontMetrics fm = textPaint.getFontMetrics();
-        float baseline = height / 2f - (fm.ascent + fm.descent) / 2f;
-        c.drawText(text, 0, text.length(), x, baseline, textPaint);
+        int textStart = Screen.dp(MenuMoreWrap.ITEM_TEXT_START);
+        float x = rtl ? width - textStart - displayLabelWidth : textStart;
+        float baseline = (height - textPaint.ascent() - textPaint.descent()) / 2f;
+        c.drawText(displayLabel, 0, displayLabel.length(), x, baseline, textPaint);
       }
       if (!avatars.isEmpty()) {
         int saveCount = Views.save(c);
