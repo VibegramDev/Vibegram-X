@@ -1008,13 +1008,18 @@ public class NavigationController implements Future<View>, ThemeChangeListener, 
   }
 
   public @BackPressMode int performOnBackPressed (boolean fromTop, boolean commit) {
-    HeaderView masterHeader = isTabletSplit() ? tabletLayout.getMasterHeader() : null;
-    if (masterHeader != null && (masterHeader.inSelectMode() || masterHeader.inSearchMode())) {
+    HeaderView leftHeader = null;
+    if (isTabletSplit()) {
+      ViewController<?> section = tabletLayout.getSection();
+      leftHeader = getHeaderViewFor(section != null ? section : tabletLayout.getMain());
+    }
+    // The visible left pane keeps its own header even while a child is open on the right.
+    if (leftHeader != null && (leftHeader.inSelectMode() || leftHeader.inSearchMode())) {
       if (commit) {
-        if (masterHeader.inSelectMode()) {
-          masterHeader.closeSelectMode(true, true);
+        if (leftHeader.inSelectMode()) {
+          leftHeader.closeSelectMode(true, true);
         } else {
-          masterHeader.closeSearchMode(true, null);
+          leftHeader.closeSearchMode(true, null);
         }
       }
       return BackPressMode.CUSTOM_ACTION_PERFORMED;

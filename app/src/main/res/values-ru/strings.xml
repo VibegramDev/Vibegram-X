@@ -45,6 +45,8 @@
 
   <string name="Topics">Темы</string>
   <string name="NoTopics">Тем пока нет</string>
+  <string name="vg_RetryLoadingTopics">Повторить загрузку тем</string>
+  <string name="vg_AccessibilityTab">Вкладка</string>
   <string name="LoadingTopics">Загрузка тем…</string>
   <string name="PinTopic">Закрепить тему</string>
   <string name="UnpinTopic">Открепить тему</string>

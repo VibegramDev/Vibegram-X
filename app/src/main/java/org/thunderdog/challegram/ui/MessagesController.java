@@ -198,6 +198,7 @@ import org.thunderdog.challegram.support.RippleSupport;
 import org.thunderdog.challegram.support.ViewSupport;
 import org.thunderdog.challegram.telegram.ChatListener;
 import org.thunderdog.challegram.telegram.DateChangeListener;
+import org.thunderdog.challegram.telegram.ForumTopicState;
 import org.thunderdog.challegram.telegram.EmojiMediaType;
 import org.thunderdog.challegram.telegram.GlobalAccountListener;
 import org.thunderdog.challegram.telegram.ListManager;
@@ -13256,48 +13257,36 @@ public class MessagesController extends ViewController<MessagesController.Argume
   }
 
   @Override
-  public void onForumTopicUpdated (long chatId, long messageThreadId, boolean isPinned, long lastReadInboxMessageId, long lastReadOutboxMessageId, int unreadMentionCount, int unreadReactionCount, TdApi.ChatNotificationSettings notificationSettings, TdApi.DraftMessage draftMessage) {
+  public void onForumTopicUpdated (TdApi.UpdateForumTopic update) {
     tdlib.ui().post(() -> {
-      if (forumTopic == null || getChatId() != chatId || forumTopic.info.forumTopicId != messageThreadId) {
+      if (forumTopic == null || getChatId() != update.chatId || forumTopic.info.forumTopicId != update.forumTopicId) {
         return;
       }
-      // Update the forumTopic fields from the update
       long oldLastReadInboxMessageId = forumTopic.lastReadInboxMessageId;
-      forumTopic.isPinned = isPinned;
-      forumTopic.lastReadInboxMessageId = lastReadInboxMessageId;
-      forumTopic.lastReadOutboxMessageId = lastReadOutboxMessageId;
-      forumTopic.unreadMentionCount = unreadMentionCount;
-      forumTopic.unreadReactionCount = unreadReactionCount;
-      if (notificationSettings != null) {
-        forumTopic.notificationSettings = notificationSettings;
-      }
-      // Update draft message (topic-scoped)
-      forumTopic.draftMessage = draftMessage;
-      // Keep messageThread in sync so TGMessage.isUnread() works; read receipts reach MessagesManager
-      // through MessageThreadListener.onMessageThreadReadOutbox.
+      forumTopic = ForumTopicState.withUpdate(forumTopic, update);
+      // Keep the message thread's read markers in sync with the topic.
       if (messageThread != null) {
-        messageThread.updateReadInbox(lastReadInboxMessageId);
-        messageThread.updateReadOutbox(lastReadOutboxMessageId);
+        messageThread.updateReadInbox(update.lastReadInboxMessageId);
+        messageThread.updateReadOutbox(update.lastReadOutboxMessageId);
       }
-      if (lastReadInboxMessageId > oldLastReadInboxMessageId && forumTopic.unreadCount > 0) {
-        if (forumTopic.lastMessage != null && lastReadInboxMessageId >= forumTopic.lastMessage.id) {
-          forumTopic.unreadCount = 0;
-        } else {
-          // updateForumTopic has no unreadCount: request the exact one
-          final TdApi.ForumTopic requestedTopic = forumTopic;
-          tdlib.client().send(new TdApi.GetForumTopic(chatId, (int) messageThreadId), result -> {
-            if (result.getConstructor() != TdApi.ForumTopic.CONSTRUCTOR) {
-              return;
+      if (update.lastReadInboxMessageId > oldLastReadInboxMessageId && forumTopic.unreadCount > 0) {
+        final TdApi.ForumTopic requestedTopic = forumTopic;
+        tdlib.client().send(new TdApi.GetForumTopic(update.chatId, update.forumTopicId), result -> {
+          if (!(result instanceof TdApi.ForumTopic)) {
+            return;
+          }
+          TdApi.ForumTopic fresh = (TdApi.ForumTopic) result;
+          tdlib.ui().post(() -> {
+            if (!isDestroyed() && forumTopic != null && getChatId() == update.chatId &&
+                forumTopic.info.forumTopicId == update.forumTopicId &&
+                ForumTopicState.canApplyUnreadCount(requestedTopic, forumTopic, fresh)) {
+              TdApi.ForumTopic corrected = ForumTopicState.copyOf(forumTopic);
+              corrected.unreadCount = fresh.unreadCount;
+              forumTopic = corrected;
+              updateCounters(true);
             }
-            final int unreadCount = ((TdApi.ForumTopic) result).unreadCount;
-            tdlib.ui().post(() -> {
-              if (forumTopic == requestedTopic && !isDestroyed()) {
-                forumTopic.unreadCount = unreadCount;
-                updateCounters(true);
-              }
-            });
           });
-        }
+        });
       }
       updateCounters(true);
     });

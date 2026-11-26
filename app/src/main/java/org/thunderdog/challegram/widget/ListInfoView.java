@@ -97,11 +97,18 @@ public class ListInfoView extends FrameLayoutFix {
   }
 
   public void showInfo (CharSequence message) {
+    showInfo(message, null);
+  }
+
+  public void showInfo (CharSequence message, @Nullable OnClickListener action) {
     if (isEmptyView) {
       textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15f);
       isEmptyView = false;
     }
     setText(message);
+    textView.setOnClickListener(action);
+    textView.setClickable(action != null);
+    textView.setFocusable(action != null);
   }
 
   public void showEmpty (CharSequence empty) {
@@ -110,6 +117,9 @@ public class ListInfoView extends FrameLayoutFix {
       isEmptyView = true;
     }
     setText(empty);
+    textView.setOnClickListener(null);
+    textView.setClickable(false);
+    textView.setFocusable(false);
   }
 
   private void setText (CharSequence text) {

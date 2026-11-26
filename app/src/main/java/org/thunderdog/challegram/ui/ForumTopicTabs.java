@@ -259,7 +259,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     List<ViewPagerTopView.Item> items = new ArrayList<>(1 + topics.size());
     if (isBotForum) {
       // As in the official app, the whole chat of a bot is the tab where new topics start
-      items.add(new ViewPagerTopView.Item(R.drawable.baseline_add_comment_24));
+      items.add(new ViewPagerTopView.Item(R.drawable.baseline_add_comment_24).setAccessibilityLabel(Lang.getString(R.string.NewTopic)));
     } else {
       items.add(new ViewPagerTopView.Item(Lang.getString(R.string.DirectMessagesAll)));
     }
@@ -285,7 +285,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
       new TdApi.TextEntity(0, TOPIC_ICON_PLACEHOLDER.length(), new TdApi.TextEntityTypeCustomEmoji(customEmojiId))
     });
     boolean animate = !Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
-    return new ViewPagerTopView.Item(label, counter).setCustomEmojiText(tdlib, text, animate);
+    return new ViewPagerTopView.Item(label, counter).setCustomEmojiText(tdlib, text, animate).setAccessibilityLabel(topic.info.name);
   }
 
   private List<TopicSideTabsView.Tab> buildSideTabs () {
@@ -513,6 +513,12 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     IntList icons = new IntList(10);
     StringList strings = new StringList(10);
 
+    if (topicList.hasLoadError()) {
+      ids.append(R.id.btn_retry);
+      icons.append(R.drawable.baseline_sync_problem_24);
+      strings.append(R.string.vg_RetryLoadingTopics);
+    }
+
     ids.append(R.id.btn_search);
     icons.append(R.drawable.baseline_search_24);
     strings.append(R.string.Search);
@@ -582,6 +588,10 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
 
   @Override
   public boolean onMoreItemPressed (int id) {
+    if (id == R.id.btn_retry) {
+      topicList.retry();
+      return true;
+    }
     TdApi.ForumTopic topic = getCurrentTopic();
     if (id == R.id.btn_createTopic) {
       showCreateTopicDialog();

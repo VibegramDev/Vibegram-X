@@ -29,13 +29,16 @@ public final class ForumTopicList implements ChatListener, MessageListener {
   private final Map<Integer, Integer> pinnedOrder = new HashMap<>();
   private final Set<Integer> deletedTopics = new HashSet<>();
   private final Set<Integer> pendingTopics = new HashSet<>();
+  private final Set<Integer> refetchTopics = new HashSet<>();
   private final List<Runnable> listeners = new ArrayList<>();
   private List<TdApi.ForumTopic> snapshot = Collections.emptyList();
 
   private int offsetDate, offsetForumTopicId;
   private int pinnedOrderRevision;
   private long offsetMessageId;
-  private boolean hasMore, loading, loadedContinuation, refreshPending;
+  private boolean hasMore, loading, loadedContinuation, refreshPending, reopenPending;
+  private boolean loadFailed, failedFirstPage;
+  private @Nullable Map<Integer, TdApi.ForumTopic> unseenOnReopen;
   private volatile boolean destroyed;
   private volatile int clientGeneration;
 
@@ -49,18 +52,22 @@ public final class ForumTopicList implements ChatListener, MessageListener {
     if (destroyed || listeners.contains(listener)) {
       return;
     }
-    if (listeners.isEmpty()) {
+    boolean firstListener = listeners.isEmpty();
+    listeners.add(listener);
+    if (firstListener) {
       tdlib.listeners().subscribeToChatUpdates(chatId, this);
       tdlib.listeners().subscribeToMessageUpdates(chatId, this);
-      if (!loading) {
-        refresh();
+      if (loading) {
+        reopenPending = true;
+      } else {
+        reopen();
       }
     }
-    listeners.add(listener);
   }
 
   public void removeListener (Runnable listener) {
     if (listeners.remove(listener) && listeners.isEmpty()) {
+      reopenPending = false;
       unsubscribe();
     }
   }
@@ -78,7 +85,7 @@ public final class ForumTopicList implements ChatListener, MessageListener {
     clearItems();
     offsetDate = offsetForumTopicId = 0;
     offsetMessageId = 0;
-    hasMore = loading = loadedContinuation = refreshPending = false;
+    hasMore = loading = loadedContinuation = refreshPending = reopenPending = loadFailed = false;
     publish();
     tdlib.awaitInitialization(() -> UI.post(() -> {
       if (!isStale(generation) && hasListeners() && tdlib.isAuthorized()) {
@@ -105,6 +112,8 @@ public final class ForumTopicList implements ChatListener, MessageListener {
     pinnedOrder.clear();
     deletedTopics.clear();
     pendingTopics.clear();
+    refetchTopics.clear();
+    unseenOnReopen = null;
     snapshot = Collections.emptyList();
   }
 
@@ -121,6 +130,26 @@ public final class ForumTopicList implements ChatListener, MessageListener {
     return !destroyed && hasMore;
   }
 
+  public boolean isLoading () {
+    return loading;
+  }
+
+  public boolean hasLoadError () {
+    return loadFailed;
+  }
+
+  public void retry () {
+    if (!destroyed && loadFailed && !loading) {
+      loadPage(failedFirstPage);
+    }
+  }
+
+  private void reopen () {
+    unseenOnReopen = topics.isEmpty() ? null : new HashMap<>(topics);
+    loadedContinuation = false;
+    loadPage(true);
+  }
+
   public void refresh () {
     if (destroyed) {
       return;
@@ -133,7 +162,7 @@ public final class ForumTopicList implements ChatListener, MessageListener {
   }
 
   public void loadMore () {
-    if (canLoadMore() && !loading) {
+    if (canLoadMore() && !loading && !loadFailed) {
       loadPage(false);
     }
   }
@@ -145,7 +174,8 @@ public final class ForumTopicList implements ChatListener, MessageListener {
     final int orderRevision = pinnedOrderRevision;
     final int generation = clientGeneration;
     loading = true;
-    // Do not overwrite live changes (including changes to the name or pin) received while this request is pending.
+    loadFailed = false;
+    // Keep the state at request time for merging fields changed by live updates.
     final Map<Integer, TdApi.ForumTopic> requestedWith = new HashMap<>(topics);
     tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, date, messageId, topicId, PAGE_SIZE), result -> {
       final TdApi.ForumTopics page = result instanceof TdApi.ForumTopics ? (TdApi.ForumTopics) result : null;
@@ -168,9 +198,10 @@ public final class ForumTopicList implements ChatListener, MessageListener {
           }
           for (TdApi.ForumTopic topic : page.topics) {
             int id = topic.info.forumTopicId;
-            if (topics.get(id) == requestedWith.get(id)) {
-              put(topic);
+            if (unseenOnReopen != null) {
+              unseenOnReopen.remove(id);
             }
+            put(ForumTopicState.mergeReply(requestedWith.get(id), topics.get(id), topic));
           }
           // A pin refresh fetches the head, not a replacement for previously loaded pages.
           if (!firstPage || !loadedContinuation) {
@@ -180,18 +211,40 @@ public final class ForumTopicList implements ChatListener, MessageListener {
             hasMore = page.topics.length > 0 && (offsetDate != 0 || offsetMessageId != 0 || offsetForumTopicId != 0) &&
               (offsetDate != date || offsetMessageId != messageId || offsetForumTopicId != topicId);
             loadedContinuation |= !firstPage;
+            if (!hasMore && unseenOnReopen != null) {
+              // A repeated cursor stops pagination, but does not prove absence.
+              if (page.topics.length == 0 || (offsetDate == 0 && offsetMessageId == 0 && offsetForumTopicId == 0)) {
+                for (Map.Entry<Integer, TdApi.ForumTopic> unseen : unseenOnReopen.entrySet()) {
+                  int id = unseen.getKey();
+                  if (topics.get(id) == unseen.getValue()) {
+                    topics.remove(id);
+                    pinnedOrder.remove(id);
+                  }
+                }
+              }
+              unseenOnReopen = null;
+            }
           }
+        } else {
+          loadFailed = true;
+          failedFirstPage = firstPage;
         }
-        if (refreshPending) {
+        if (reopenPending && hasListeners()) {
+          reopenPending = refreshPending = false;
+          reopen();
+        } else if (refreshPending) {
           refreshPending = false;
           refresh();
-        } else if (page != null && topics.isEmpty() && !listeners.isEmpty()) {
-          // A bot's first page can consist only of its hidden General topic. Never retry errors here.
+        } else if (page != null && hasListeners() && (topics.isEmpty() ||
+                   (firstPage && !loadedContinuation && unseenOnReopen != null && !unseenOnReopen.isEmpty()))) {
+          // A bot's first page may only contain hidden General. Also check one continuation
+          // after reopening so ordinary single-page forums can reconcile without scrolling.
           loadMore();
         }
         publish();
       });
     });
+    publish();
   }
 
   private void put (TdApi.ForumTopic topic) {
@@ -232,10 +285,6 @@ public final class ForumTopicList implements ChatListener, MessageListener {
     return index != null ? index : Integer.MAX_VALUE;
   }
 
-  private static long order (TdApi.ForumTopic topic) {
-    return Math.max(topic.order, Math.max(TdlibForumTopicManager.messageOrder(topic.lastMessage), TdlibForumTopicManager.draftOrder(topic.draftMessage)));
-  }
-
   private void publish () {
     List<TdApi.ForumTopic> ordered = new ArrayList<>(topics.values());
     Collections.sort(ordered, (a, b) -> {
@@ -248,7 +297,7 @@ public final class ForumTopicList implements ChatListener, MessageListener {
           return comparison;
         }
       }
-      return Long.compare(order(b), order(a));
+      return Long.compare(b.order, a.order);
     });
     snapshot = Collections.unmodifiableList(ordered);
     for (Runnable listener : new ArrayList<>(listeners)) {
@@ -259,7 +308,15 @@ public final class ForumTopicList implements ChatListener, MessageListener {
   }
 
   public void requestTopic (int id) {
-    if (destroyed || deletedTopics.contains(id) || !pendingTopics.add(id)) {
+    requestTopic(id, true);
+  }
+
+  private void requestTopic (int id, boolean retryOnConflict) {
+    if (destroyed || deletedTopics.contains(id)) {
+      return;
+    }
+    if (!pendingTopics.add(id)) {
+      refetchTopics.add(id);
       return;
     }
     TdApi.ForumTopic before = topics.get(id);
@@ -274,9 +331,20 @@ public final class ForumTopicList implements ChatListener, MessageListener {
           return;
         }
         pendingTopics.remove(id);
-        if (fresh != null && topics.get(id) == before && !deletedTopics.contains(id)) {
-          put(fresh);
-          publish();
+        boolean retry = false;
+        if (fresh != null && !deletedTopics.contains(id)) {
+          TdApi.ForumTopic current = topics.get(id);
+          if (current != null || before == null) {
+            TdApi.ForumTopic merged = ForumTopicState.mergeReply(before, current, fresh);
+            retry = retryOnConflict && merged.unreadCount > 0 && !ForumTopicState.matchesUnreadCount(merged, fresh);
+            put(merged);
+            publish();
+          }
+        }
+        if (refetchTopics.remove(id)) {
+          requestTopic(id);
+        } else if (retry && hasListeners()) {
+          requestTopic(id, false);
         }
       });
     });
@@ -290,54 +358,40 @@ public final class ForumTopicList implements ChatListener, MessageListener {
     UI.post(() -> {
       TdApi.ForumTopic previous = topics.get(info.forumTopicId);
       if (previous != null) {
-        TdApi.ForumTopic topic = TdlibForumTopicManager.copyOf(previous);
-        topic.info = info;
-        put(topic);
+        put(ForumTopicState.withInfo(previous, info));
         publish();
       }
     });
   }
 
   @Override
-  public void onForumTopicUpdated (long chatId, long messageThreadId, boolean isPinned, long lastReadInboxMessageId, long lastReadOutboxMessageId,
-                                   int unreadMentionCount, int unreadReactionCount, TdApi.ChatNotificationSettings settings, @Nullable TdApi.DraftMessage draft) {
-    if (chatId != this.chatId) {
+  public void onForumTopicUpdated (TdApi.UpdateForumTopic update) {
+    if (update.chatId != chatId) {
       return;
     }
-    int id = (int) messageThreadId;
     UI.post(() -> {
       if (destroyed) {
         return;
       }
+      int id = update.forumTopicId;
       TdApi.ForumTopic previous = topics.get(id);
       if (previous == null) {
-        if (isPinned) {
+        if (update.isPinned && !deletedTopics.contains(id)) {
           refresh();
         }
         return;
       }
-      TdApi.ForumTopic topic = TdlibForumTopicManager.copyOf(previous);
-      topic.isPinned = isPinned;
-      topic.lastReadInboxMessageId = lastReadInboxMessageId;
-      topic.lastReadOutboxMessageId = lastReadOutboxMessageId;
-      topic.unreadMentionCount = unreadMentionCount;
-      topic.unreadReactionCount = unreadReactionCount;
-      if (settings != null) {
-        topic.notificationSettings = settings;
-      }
-      topic.draftMessage = draft;
-      if (topic.lastMessage != null && lastReadInboxMessageId >= topic.lastMessage.id) {
-        topic.unreadCount = 0;
-      }
+      TdApi.ForumTopic topic = ForumTopicState.withUpdate(previous, update);
       put(topic);
-      if (previous.isPinned != isPinned) {
-        if (!isPinned) {
+      if (previous.isPinned != topic.isPinned) {
+        if (!topic.isPinned) {
           pinnedOrder.remove(id);
         }
         refresh();
       }
       publish();
-      if (topic.unreadCount > 0 && previous.lastReadInboxMessageId != lastReadInboxMessageId) {
+      if ((topic.unreadCount > 0 && previous.lastReadInboxMessageId != topic.lastReadInboxMessageId) ||
+          (previous.lastMessage == null && previous.order > topic.order)) {
         requestTopic(id);
       }
     });
@@ -364,13 +418,8 @@ public final class ForumTopicList implements ChatListener, MessageListener {
         requestTopic(id);
         return;
       }
-      boolean wasPending = oldMessageId != 0 && previous.lastMessage != null && previous.lastMessage.id == oldMessageId;
-      if (wasPending || previous.lastMessage == null || previous.lastMessage.id < message.id) {
-        TdApi.ForumTopic topic = TdlibForumTopicManager.copyOf(previous);
-        topic.lastMessage = message;
-        if (!wasPending && !message.isOutgoing && message.id > previous.lastReadInboxMessageId) {
-          topic.unreadCount++;
-        }
+      TdApi.ForumTopic topic = ForumTopicState.withMessage(previous, message, oldMessageId);
+      if (topic != previous) {
         put(topic);
         publish();
       }

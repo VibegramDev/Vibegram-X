@@ -28,6 +28,19 @@ final class PaymentWebOrigin {
     }
   }
 
+  static boolean isVerificationReturn (String url, boolean isMainFrame) {
+    if (!isMainFrame) {
+      return false;
+    }
+    String origin = fromUrl(url);
+    return "https://t.me".equals(origin) || "https://telegram.me".equals(origin);
+  }
+
+  static String committedHost (String callbackUrl, String currentUrl) {
+    String origin = fromUrl(callbackUrl);
+    return origin != null && origin.equals(fromUrl(currentUrl)) ? origin.substring("https://".length()) : null;
+  }
+
   static boolean accepts (String expectedOrigin, String sourceOrigin, boolean isMainFrame) {
     return isMainFrame && expectedOrigin != null && expectedOrigin.equals(sourceOrigin);
   }

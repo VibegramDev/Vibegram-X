@@ -211,6 +211,12 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       IntList icons = new IntList(2);
       StringList strings = new StringList(2);
 
+      if (topicList != null && topicList.hasLoadError()) {
+        ids.append(R.id.btn_retry);
+        icons.append(R.drawable.baseline_sync_problem_24);
+        strings.append(R.string.vg_RetryLoadingTopics);
+      }
+
       // View as tabs option
       ids.append(R.id.btn_viewAsTabs);
       icons.append(R.drawable.baseline_swap_horiz_24);
@@ -599,8 +605,8 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     emptyView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     emptyView.showInfo(Lang.getString(R.string.LoadingTopics));
 
-    contentView.addView(emptyView);
     contentView.addView(recyclerView);
+    contentView.addView(emptyView);
 
     // Create topic FAB button
     int padding = Screen.dp(4f);
@@ -649,9 +655,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     }
     topicList = tdlib.topics().list(chatId);
     topicList.addListener(topicListListener);
-    if (!topicList.items().isEmpty()) {
-      onTopicListChanged();
-    }
+    onTopicListChanged();
 
     return contentView;
   }
@@ -682,7 +686,9 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
   @Override
   public void onMoreItemPressed (int id) {
-    if (id == R.id.btn_viewAsTabs) {
+    if (id == R.id.btn_retry) {
+      topicList.retry();
+    } else if (id == R.id.btn_viewAsTabs) {
       // Save preference for tabs view
       tdlib.settings().setForumViewPreference(chatId, TdlibSettingsManager.FORUM_VIEW_TABS);
       MessagesController tabsController = ForumTopicTabs.newController(this, chat, null, 0);
@@ -812,7 +818,12 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   private void updateEmptyView () {
     if (topics.isEmpty()) {
       emptyView.setVisibility(View.VISIBLE);
-      emptyView.showInfo(Lang.getString(R.string.NoTopics));
+      if (isShowingAllTopics() && topicList != null && topicList.hasLoadError()) {
+        emptyView.showInfo(Lang.getString(R.string.vg_RetryLoadingTopics), v -> topicList.retry());
+      } else {
+        emptyView.showInfo(Lang.getString(isShowingAllTopics() && topicList != null && topicList.isLoading() ?
+          R.string.LoadingTopics : R.string.NoTopics));
+      }
     } else {
       emptyView.setVisibility(View.GONE);
     }

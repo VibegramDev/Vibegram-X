@@ -38,6 +38,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import androidx.annotation.CheckResult;
 import androidx.annotation.ColorInt;
@@ -49,10 +50,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.Px;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
 import tgx.td.Td;
 import org.thunderdog.challegram.loader.AvatarReceiver;
 import org.thunderdog.challegram.BuildConfig;
+import org.thunderdog.challegram.R;
 import org.thunderdog.challegram.U;
 import org.drinkless.tdlib.TdApi;
 import org.thunderdog.challegram.component.sticker.TGStickerObj;
@@ -116,6 +119,12 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
   public static class Item {
     public final CharSequence string;
+    private @Nullable CharSequence accessibilityLabel;
+
+    public Item setAccessibilityLabel (CharSequence label) {
+      accessibilityLabel = label;
+      return this;
+    }
     public final boolean needFakeBold;
     public final @DrawableRes int iconRes;
     public ImageReceiver imageReceiver;
@@ -322,7 +331,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     @Override
     public boolean equals (Object obj) {
-      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && ((Item) obj).trailingIconRes == trailingIconRes && customEmojiEquals(((Item) obj).formattedString, formattedString) && Td.equalsTo(((Item) obj).avatarSender, avatarSender);
+      return obj instanceof Item && ((Item) obj).iconRes == iconRes && StringUtils.equalsOrBothEmpty(((Item) obj).string, string) && ((Item) obj).hidden == hidden && StringUtils.equalsOrBothEmpty(((Item) obj).accessibilityLabel, accessibilityLabel) && (((Item) obj).counter == counter) && ((Item) obj).animateCustomEmoji == animateCustomEmoji && ((Item) obj).trailingIconRes == trailingIconRes && customEmojiEquals(((Item) obj).formattedString, formattedString) && Td.equalsTo(((Item) obj).avatarSender, avatarSender);
     }
 
     private int width, contentWidth;
@@ -841,6 +850,8 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     backgroundView.setOnLongClickListener(this);
     backgroundView.setBoundView(this);
     backgroundView.setIndex(i);
+    backgroundView.setEnabled(!disabled);
+    backgroundView.bindAccessibility(items.get(i), i == Math.round(selectionFactor));
     return backgroundView;
   }
 
@@ -883,6 +894,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
   public void setItemAt (int index, Item item, boolean animated) {
     Item oldItem = this.items.set(index, item);
     onUpdateItems();
+    updateTabAccessibility(index);
 
     measureItem(item, getItemTextPaint(item));
     relayout();
@@ -1005,6 +1017,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     // We already have backgroundView with insertion index, adding for the last one
     // (for which there is no backgroundView yet)
     addView(newBackgroundView(items.size() - 1));
+    updateTabsAccessibility();
     invalidate();
   }
 
@@ -1029,6 +1042,7 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
 
     // Removing BackgroundView for the last item only, as other just update dimensions
     removeViewAt(getChildCount() - 1);
+    updateTabsAccessibility();
     // The removed tab no longer counts towards the cached widths (onMeasure checks them).
     relayout();
     invalidate();
@@ -1361,9 +1375,28 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
     return this;
   }
 
+  private void updateTabsAccessibility () {
+    for (int i = 0; i < getChildCount(); i++) {
+      updateTabAccessibility(i);
+    }
+  }
+
+  private void updateTabAccessibility (int index) {
+    View child = getChildAt(index);
+    if (child instanceof BackgroundView) {
+      ((BackgroundView) child).bindAccessibility(items.get(index), index == Math.round(selectionFactor));
+    }
+  }
+
   public void setSelectionFactor (float factor) {
     if (this.selectionFactor != factor) {
+      int oldSelection = Math.round(this.selectionFactor);
       this.selectionFactor = factor;
+      int newSelection = Math.round(factor);
+      if (oldSelection != newSelection) {
+        updateTabAccessibility(oldSelection);
+        updateTabAccessibility(newSelection);
+      }
       if (toIndex != -1 && (int) factor == toIndex && factor % 1f == 0) {
         fromIndex = toIndex = -1; selectionChangeListener.resetUserInteraction();
       }
@@ -1908,6 +1941,27 @@ public class ViewPagerTopView extends FrameLayoutFix implements RtlCheckListener
       super(context);
 
       Views.setClickable(this);
+    }
+
+    void bindAccessibility (Item item, boolean selected) {
+      CharSequence label = item.accessibilityLabel != null ? item.accessibilityLabel : item.string;
+      if (item.hidden) {
+        label = null;
+      }
+      if (!android.text.TextUtils.equals(getContentDescription(), label)) {
+        setContentDescription(label);
+      }
+      setImportantForAccessibility(item.hidden ? IMPORTANT_FOR_ACCESSIBILITY_NO : IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+      if (label != null || item.hidden) {
+        setFocusable(!item.hidden);
+      }
+      setSelected(!item.hidden && selected);
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo (AccessibilityNodeInfo info) {
+      super.onInitializeAccessibilityNodeInfo(info);
+      AccessibilityNodeInfoCompat.wrap(info).setRoleDescription(Lang.getString(R.string.vg_AccessibilityTab));
     }
 
     private long touchDownTime;

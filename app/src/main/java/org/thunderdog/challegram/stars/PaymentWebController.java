@@ -19,10 +19,15 @@ package org.thunderdog.challegram.stars;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
+
+import androidx.annotation.RequiresApi;
 
 import androidx.annotation.NonNull;
 import androidx.webkit.WebViewCompat;
@@ -48,7 +53,7 @@ import me.vkryl.core.lambda.RunnableBool;
 /**
  * Web pages of a payment, as in the official checkout: the provider's card form (providers without a native form:
  * the page posts «payment_form_submit» with the credentials through TelegramWebviewProxy; accepted only while the
- * the message comes from the provider’s HTTPS origin in the main frame) and 3-D Secure verification (finished when the page redirects to t.me). Links to
+ * message comes from the provider’s HTTPS origin in the main frame) and 3-D Secure verification. Links to
  * other apps open only after the user confirms them.
  */
 public class PaymentWebController extends WebkitController<PaymentWebController.Args> {
@@ -109,10 +114,6 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
   protected void onCreateWebView (DoubleHeaderView headerCell, WebView webView) {
     Args args = getArgumentsStrict();
     headerCell.setTitle(args.title);
-    Uri uri = Uri.parse(args.url);
-    if (uri.getHost() != null) {
-      headerCell.setSubtitle(uri.getHost());
-    }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       webView.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
     }
@@ -171,34 +172,84 @@ public class PaymentWebController extends WebkitController<PaymentWebController.
   }
 
   @Override
-  protected boolean hasSpecialProcessing () {
-    return true;
+  protected WebViewClient createWebViewClient (DoubleHeaderView headerCell) {
+    return new WebViewClient() {
+      @Override
+      public void onPageStarted (WebView view, String url, Bitmap favicon) {
+        headerCell.setSubtitle("");
+      }
+
+      @Override
+      public void onPageCommitVisible (WebView view, String url) {
+        updateCommittedDocument(view, url);
+      }
+
+      @Override
+      public void onPageFinished (WebView view, String url) {
+        // Older WebViews have no commit callback. This callback is also restricted to the main frame.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+          updateCommittedDocument(view, url);
+        }
+      }
+
+      private void updateCommittedDocument (WebView view, String url) {
+        if (isDestroyed() || finished) {
+          return;
+        }
+        String host = PaymentWebOrigin.committedHost(url, view.getUrl());
+        if (host != null) {
+          headerCell.setSubtitle(host);
+          if (getArgumentsStrict().isVerification && PaymentWebOrigin.isVerificationReturn(url, true)) {
+            finishVerification();
+          }
+        }
+      }
+
+      @RequiresApi(Build.VERSION_CODES.N)
+      @Override
+      public boolean shouldOverrideUrlLoading (WebView view, WebResourceRequest request) {
+        Uri uri = request.getUrl();
+        boolean mainFrame = request.isForMainFrame();
+        if (PaymentWebOrigin.isVerificationReturn(uri.toString(), mainFrame)) {
+          if (getArgumentsStrict().isVerification) {
+            finishVerification();
+          }
+          return true;
+        }
+        if (isExternal(uri)) {
+          if (mainFrame) {
+            confirmExternal(uri);
+          }
+          return true;
+        }
+        return false;
+      }
+
+      @Override
+      public boolean shouldOverrideUrlLoading (WebView view, String url) {
+        // No frame information: neither finish verification nor open an app from here.
+        return isExternal(Uri.parse(url));
+      }
+    };
   }
 
-  @Override
-  protected boolean processSpecial (Uri uri) {
-    Args args = getArgumentsStrict();
-    if ("t.me".equals(uri.getHost()) || "telegram.me".equals(uri.getHost())) {
-      if (args.isVerification) {
-        finishVerification();
-      }
-      return true;
-    }
+  private static boolean isExternal (Uri uri) {
     String scheme = uri.getScheme();
-    if (scheme != null && !"http".equals(scheme) && !"https".equals(scheme) && !"about".equals(scheme)) {
-      // Bank apps of 3-D Secure and payment pages (deep links): a page can't start other apps by itself.
-      if (!isAskingExternal && !isDestroyed()) {
-        isAskingExternal = true;
-        StarsUi.confirm(this, Lang.getString(R.string.OpenInExternalApp), Lang.getString(R.string.OpenThisLink, uri.toString()), Lang.getString(R.string.Open), 0, false, confirmed -> {
-          isAskingExternal = false;
-          if (confirmed && !isDestroyed()) {
-            openExternal(uri);
-          }
-        });
-      }
-      return true;
+    return scheme != null && !"http".equalsIgnoreCase(scheme) &&
+      !"https".equalsIgnoreCase(scheme) && !"about".equalsIgnoreCase(scheme);
+  }
+
+  private void confirmExternal (Uri uri) {
+    // Bank apps and provider deep links must not open without user consent.
+    if (!isAskingExternal && !isDestroyed() && !finished) {
+      isAskingExternal = true;
+      StarsUi.confirm(this, Lang.getString(R.string.OpenInExternalApp), Lang.getString(R.string.OpenThisLink, uri.toString()), Lang.getString(R.string.Open), 0, false, confirmed -> {
+        isAskingExternal = false;
+        if (confirmed && !isDestroyed() && !finished) {
+          openExternal(uri);
+        }
+      });
     }
-    return false;
   }
 
   private void openExternal (Uri uri) {

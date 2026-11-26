@@ -102,7 +102,7 @@ class TdlibForumTopicManager(
   fun putTopic(chatId: Long, topic: ForumTopic) {
     val key = Key(chatId, topic.info.forumTopicId)
     setMuteEndTime(key, topic.notificationSettings)
-    putValue(key, copyOf(topic))
+    putValue(key, ForumTopicState.copyOf(topic))
   }
 
   @TdlibThread
@@ -158,27 +158,8 @@ class TdlibForumTopicManager(
       update.forumTopicId
     )
     setMuteEndTime(key, update.notificationSettings)
-    val isUpdated = replaceExisting(key) { prevValue, _ ->
-      if (prevValue != null) {
-        val prevLastMessage = prevValue.lastMessage
-        val isRead = prevLastMessage != null && update.lastReadInboxMessageId >= prevLastMessage.id
-        ForumTopic(
-          prevValue.info,
-          prevValue.lastMessage,
-          maxOf(prevValue.order, draftOrder(update.draftMessage)),
-          update.isPinned,
-          if (isRead) 0 else prevValue.unreadCount,
-          update.lastReadInboxMessageId,
-          update.lastReadOutboxMessageId,
-          update.unreadMentionCount,
-          update.unreadReactionCount,
-          update.unreadPollVoteCount,
-          update.notificationSettings,
-          update.draftMessage
-        )
-      } else {
-        null
-      }
+    val isUpdated = replaceExisting(key) { previous, _ ->
+      previous?.let { ForumTopicState.withUpdate(it, update) }
     }
     if (isUpdated) {
       observers.iterate(key) { observer ->
@@ -193,25 +174,8 @@ class TdlibForumTopicManager(
       update.info.chatId,
       update.info.forumTopicId
     )
-    val isUpdated = replaceExisting(key) { prevValue, _ ->
-      if (prevValue != null) {
-        ForumTopic(
-          update.info,
-          prevValue.lastMessage,
-          prevValue.order,
-          prevValue.isPinned,
-          prevValue.unreadCount,
-          prevValue.lastReadInboxMessageId,
-          prevValue.lastReadOutboxMessageId,
-          prevValue.unreadMentionCount,
-          prevValue.unreadReactionCount,
-          prevValue.unreadPollVoteCount,
-          prevValue.notificationSettings,
-          prevValue.draftMessage
-        )
-      } else {
-        null
-      }
+    val isUpdated = replaceExisting(key) { previous, _ ->
+      previous?.let { ForumTopicState.withInfo(it, update.info) }
     }
     if (isUpdated) {
       observers.iterate(key) { observer ->
@@ -226,26 +190,8 @@ class TdlibForumTopicManager(
     if (topicId !is MessageTopicForum) {
       return
     }
-    replaceExisting(Key(message.chatId, topicId.forumTopicId)) { prevValue, _ ->
-      if (prevValue != null && (prevValue.lastMessage?.let { it.id < message.id } ?: true)) {
-        val isUnread = !message.isOutgoing && message.id > prevValue.lastReadInboxMessageId
-        ForumTopic(
-          prevValue.info,
-          message,
-          maxOf(prevValue.order, messageOrder(message)),
-          prevValue.isPinned,
-          prevValue.unreadCount + (if (isUnread) 1 else 0),
-          prevValue.lastReadInboxMessageId,
-          prevValue.lastReadOutboxMessageId,
-          prevValue.unreadMentionCount,
-          prevValue.unreadReactionCount,
-          prevValue.unreadPollVoteCount,
-          prevValue.notificationSettings,
-          prevValue.draftMessage
-        )
-      } else {
-        null
-      }
+    replaceExisting(Key(message.chatId, topicId.forumTopicId)) { previous, _ ->
+      previous?.let { ForumTopicState.withMessage(it, message, 0).takeUnless { next -> next === previous } }
     }
   }
 
@@ -264,30 +210,4 @@ class TdlibForumTopicManager(
     observers.remove(key, observer)
   }
 
-  companion object {
-    /** ForumTopic.order of TDLib: date of the last message or draft in the high bits, server message id in the low ones. */
-    @JvmStatic
-    fun messageOrder(message: Message?): Long =
-      if (message != null) (message.date.toLong() shl 32) + (message.id shr 20) else 0L
-
-    @JvmStatic
-    fun draftOrder(draftMessage: DraftMessage?): Long =
-      if (draftMessage != null) draftMessage.date.toLong() shl 32 else 0L
-
-    @JvmStatic
-    fun copyOf(topic: ForumTopic): ForumTopic = ForumTopic(
-      topic.info,
-      topic.lastMessage,
-      topic.order,
-      topic.isPinned,
-      topic.unreadCount,
-      topic.lastReadInboxMessageId,
-      topic.lastReadOutboxMessageId,
-      topic.unreadMentionCount,
-      topic.unreadReactionCount,
-      topic.unreadPollVoteCount,
-      topic.notificationSettings,
-      topic.draftMessage
-    )
-  }
 }

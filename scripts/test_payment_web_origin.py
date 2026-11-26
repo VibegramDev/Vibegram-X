@@ -15,6 +15,14 @@ assert 'PaymentWebOrigin.accepts(expectedOrigin, sourceOrigin.toString(), isMain
 assert src.index('WebViewCompat.addDocumentStartJavaScript') < src.index('loadUrl(args.url)')
 assert 'stringMessage = message.getData()' in src and 'catch (IllegalStateException ignored)' in src, 'ignore non-string WebView messages (including ArrayBuffers)'
 
+assert 'boolean mainFrame = request.isForMainFrame()' in src
+assert 'PaymentWebOrigin.isVerificationReturn(uri.toString(), mainFrame)' in src
+legacy = src.split('shouldOverrideUrlLoading (WebView view, String url)', 1)[1].split('    };', 1)[0]
+assert 'finishVerification(' not in legacy and 'confirmExternal(' not in legacy
+assert 'onPageCommitVisible (WebView view, String url)' in src
+assert 'PaymentWebOrigin.committedHost(url, view.getUrl())' in src
+assert 'headerCell.setSubtitle("")' in src.split('onPageStarted', 1)[1].split('onPageCommitVisible', 1)[0]
+
 probe = '''package org.thunderdog.challegram.stars;
 class OriginProbe {
   static void check(boolean pass, String name) { if (!pass) throw new AssertionError(name); }
@@ -31,7 +39,16 @@ class OriginProbe {
     check(PaymentWebOrigin.fromUrl("https://user@pay.example/card") == null, "user info rejected");
     check(PaymentWebOrigin.fromUrl("https://pay.example:99999/card") == null, "invalid port rejected");
     check("https://pay.example:8443".equals(PaymentWebOrigin.fromUrl("https://pay.example:8443/card")), "explicit port preserved");
-    System.out.println("PASS payment HTTPS origin and main-frame policy (11 cases)");
+    check(PaymentWebOrigin.isVerificationReturn("https://t.me/", true), "known HTTPS return in main frame");
+    check(PaymentWebOrigin.isVerificationReturn("https://telegram.me/", true), "second known HTTPS return");
+    check(!PaymentWebOrigin.isVerificationReturn("https://t.me/", false), "return checks frame scope");
+    check(!PaymentWebOrigin.isVerificationReturn("http://t.me/", true), "return requires TLS");
+    check(!PaymentWebOrigin.isVerificationReturn("https://t.me:8443/", true), "return uses the known port");
+    check(!PaymentWebOrigin.isVerificationReturn("https://bank.example/", true), "bank navigation is not a return");
+    check("bank.example".equals(PaymentWebOrigin.committedHost("https://bank.example/new", "https://bank.example/new")), "header reflects committed bank origin");
+    check(PaymentWebOrigin.committedHost("https://pay.example/old", "https://bank.example/new") == null, "old callback cannot label a different bank page");
+    check(PaymentWebOrigin.committedHost("about:blank", "about:blank") == null, "no label for a non-HTTPS page");
+    System.out.println("PASS payment origin, verified return policy and committed header (20 cases)");
   }
 }
 '''
