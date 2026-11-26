@@ -75,8 +75,11 @@ public class SettingsStickersController extends ViewPagerController<SettingsCont
   private ArrayList<TGStickerSetInfo> cachedInstalledSets;
 
   @Override
-  public void setArguments (SettingsController args) {
+  public void setArguments (@Nullable SettingsController args) {
     super.setArguments(args);
+    if (args == null) {
+      return;
+    }
     ArrayList<TGStickerSetInfo> stickerSets = args.getStickerSets(isEmoji());
     if (stickerSets == null) {
       args.addStickerSetListener(isEmoji(), this);
@@ -183,7 +186,7 @@ public class SettingsStickersController extends ViewPagerController<SettingsCont
     switch (position) {
       case STICKERS_POSITION: {
         StickersController c = new StickersController(this.context, this.tdlib);
-        c.setArguments(new StickersController.Args(StickersController.MODE_STICKERS, isEmoji(), true).setStickerSets(cachedInstalledSets));
+        c.setArguments(new StickersController.Args(StickersController.MODE_STICKERS, isEmoji(), getArguments() != null).setStickerSets(cachedInstalledSets));
         c.search(searchRequest);
         return c;
       }
