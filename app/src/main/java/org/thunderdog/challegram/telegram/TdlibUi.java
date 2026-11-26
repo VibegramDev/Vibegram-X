@@ -4180,6 +4180,7 @@ public class TdlibUi extends Handler {
               break;
             }
             case TdApi.SettingsSectionNotifications.CONSTRUCTOR: {
+              result = new SettingsNotificationController(context.context(), context.tdlib());
               break;
             }
             case TdApi.SettingsSectionEditProfile.CONSTRUCTOR: {
