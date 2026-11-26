@@ -2714,7 +2714,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
   private void openTopicsInstead (boolean asTabs) {
     ViewController<?> forumController;
     if (asTabs) {
-      forumController = ForumTopicTabs.newController(this, chat, null, 0, null);
+      forumController = ForumTopicTabs.newController(this, chat, null, 0);
     } else {
       ForumTopicsController listController = new ForumTopicsController(context, tdlib);
       listController.setArguments(new ForumTopicsController.Arguments(chat));
@@ -2962,7 +2962,6 @@ public class MessagesController extends ViewController<MessagesController.Argume
     public final @Nullable TdApi.MessageTopic messageTopicId;
     public @Nullable TdApi.ForumTopic forumTopic;
     public boolean topicTabs;
-    public @Nullable ChatTopicTabs previousTopicTabs;
 
     public Referrer referrer;
     public TdApi.InternalLinkTypeVideoChat videoChatOrLiveStreamInvitation;
@@ -3082,9 +3081,8 @@ public class MessagesController extends ViewController<MessagesController.Argume
     }
 
     /** The chat with its topics as tabs, see {@link ChatTopicTabs}. */
-    public Arguments topicTabs (@Nullable ChatTopicTabs previous) {
+    public Arguments topicTabs () {
       this.topicTabs = true;
-      this.previousTopicTabs = previous;
       return this;
     }
 
@@ -3213,7 +3211,7 @@ public class MessagesController extends ViewController<MessagesController.Argume
         topicTabs = new DirectMessagesTabs(this, args.chat, topicId);
       } else {
         int forumTopicId = args.messageTopicId != null && args.messageTopicId.getConstructor() == TdApi.MessageTopicForum.CONSTRUCTOR ? ((TdApi.MessageTopicForum) args.messageTopicId).forumTopicId : 0;
-        topicTabs = new ForumTopicTabs(this, args.chat, forumTopicId, args.previousTopicTabs);
+        topicTabs = new ForumTopicTabs(this, args.chat, forumTopicId);
       }
     }
     this.knownSupergroupIsForum = args.chat != null && tdlib.isForum(args.chat.id);

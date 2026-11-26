@@ -68,7 +68,7 @@ public class DirectMessagesTabs implements ChatTopicTabs, ChatListener, ViewPage
   public static MessagesController newController (ViewController<?> context, TdApi.Chat chat, long topicId) {
     MessagesController c = new MessagesController(context.context(), context.tdlib());
     c.setArguments(new MessagesController.Arguments(context.tdlib(), null, chat, null,
-      topicId != 0 ? new TdApi.MessageTopicDirectMessages(topicId) : null, null).topicTabs(null));
+      topicId != 0 ? new TdApi.MessageTopicDirectMessages(topicId) : null, null).topicTabs());
     return c;
   }
 

@@ -41,13 +41,10 @@ import org.thunderdog.challegram.navigation.Menu;
 import org.thunderdog.challegram.navigation.MoreDelegate;
 import org.thunderdog.challegram.navigation.TelegramViewController;
 import org.thunderdog.challegram.support.ViewSupport;
-import me.vkryl.core.lambda.RunnableData;
 import tgx.td.ChatId;
-import org.thunderdog.challegram.telegram.ChatListener;
-import org.thunderdog.challegram.telegram.MessageListener;
 import org.thunderdog.challegram.telegram.Tdlib;
 import org.thunderdog.challegram.telegram.TdlibCache;
-import org.thunderdog.challegram.telegram.TdlibForumTopicManager;
+import org.thunderdog.challegram.telegram.ForumTopicList;
 import org.thunderdog.challegram.telegram.TdlibSettingsManager;
 import org.thunderdog.challegram.telegram.TdlibUi;
 import org.thunderdog.challegram.theme.ColorId;
@@ -76,7 +73,7 @@ import tgx.td.MessageId;
 
 public class ForumTopicsController extends TelegramViewController<ForumTopicsController.Arguments> implements
   Menu, MoreDelegate, View.OnClickListener, View.OnLongClickListener,
-  ChatListener, MessageListener, TdlibCache.SupergroupDataChangeListener, ChatHeaderView.Callback {
+  TdlibCache.SupergroupDataChangeListener, ChatHeaderView.Callback {
 
   public static class Arguments {
     public final long chatId;
@@ -112,16 +109,9 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
   private List<TdApi.ForumTopic> topics;
   private List<TdApi.ForumTopic> allTopics; // For restoring after search
-  private boolean hasLoadedTopics, isLoadingFirstPage, isLoadingMore;
-  private int topicsRequestId;
-  private boolean canLoadMore;
-  /** Position of pinned topics as returned by the server: pinned topics are listed in the order set by admins. */
-  private final HashMap<Integer, Integer> pinnedOrder = new HashMap<>();
-  private int nextOffsetDate, nextOffsetForumTopicId;
-  private long nextOffsetMessageId;
-  /** Topics requested with GetForumTopic after a message in a topic missing from the loaded list. */
-  private final java.util.Set<Integer> requestedMissingTopicIds = new java.util.HashSet<>();
-  private boolean isSubscribedToUpdates;
+  private ForumTopicList topicList;
+  private final Runnable topicListListener = this::onTopicListChanged;
+  private boolean reorderingPins;
   private boolean knownIsForum = true;
   private String currentSearchQuery;
   private boolean searchInMessages = true; // Toggle between topic name search and message search (default: messages)
@@ -330,7 +320,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     adapter.setTopics(topics, query);
     updateEmptyView();
 
-    if (!canLoadMore) {
+    if (!topicList.canLoadMore()) {
       return;
     }
     tdlib.client().send(new TdApi.GetForumTopics(chatId, query, 0L, false, false, 0, 0, 0, TOPICS_PAGE_SIZE), result -> {
@@ -341,7 +331,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
         }
         int startIndex = topics.size();
         for (TdApi.ForumTopic topic : found.topics) {
-          if (isShownTopic(topic) && indexOfTopic(topics, topic.info.forumTopicId) == -1) {
+          if (isShownTopic(topic) && !topicList.isRemoved(topic.info.forumTopicId) && indexOfTopic(topics, topic.info.forumTopicId) == -1) {
             int index = indexOfTopic(allTopics, topic.info.forumTopicId);
             topics.add(index != -1 ? allTopics.get(index) : topic);
           }
@@ -575,6 +565,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
     topics = new ArrayList<>();
     adapter = new ForumTopicsAdapter(this);
+    adapter.setTopics(topics, null);
 
     recyclerView = new CustomRecyclerView(context);
     recyclerView.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -598,8 +589,8 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
           if (canLoadMoreMessages && !isSearchingMessages && lastVisible >= messageSearchResults.size() - 5) {
             loadMoreMessages();
           }
-        } else if (canLoadMore && !isLoadingFirstPage && !isLoadingMore && lastVisible >= topics.size() - 5) {
-          loadMoreTopics();
+        } else if (topicList != null && lastVisible >= 0 && lastVisible >= topics.size() - 5) {
+          topicList.loadMore();
         }
       }
     });
@@ -649,7 +640,18 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     // Initially hidden - show only during message search mode
     filterTopicButton.setVisibility(View.GONE);
 
-    loadTopics();
+    TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chatId);
+    if (supergroup != null) {
+      knownIsForum = supergroup.isForum;
+    }
+    if (ChatId.isSupergroup(chatId)) {
+      tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
+    }
+    topicList = tdlib.topics().list(chatId);
+    topicList.addListener(topicListListener);
+    if (!topicList.items().isEmpty()) {
+      onTopicListChanged();
+    }
 
     return contentView;
   }
@@ -670,13 +672,11 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       }
     }
     Views.destroyRecyclerView(recyclerView);
-    if (isSubscribedToUpdates) {
-      tdlib.listeners().unsubscribeFromChatUpdates(chatId, this);
-      tdlib.listeners().unsubscribeFromMessageUpdates(chatId, this);
+    if (topicList != null) {
+      topicList.removeListener(topicListListener);
       if (ChatId.isSupergroup(chatId)) {
         tdlib.cache().unsubscribeFromSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
       }
-      isSubscribedToUpdates = false;
     }
   }
 
@@ -685,7 +685,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     if (id == R.id.btn_viewAsTabs) {
       // Save preference for tabs view
       tdlib.settings().setForumViewPreference(chatId, TdlibSettingsManager.FORUM_VIEW_TABS);
-      MessagesController tabsController = ForumTopicTabs.newController(this, chat, null, 0, null);
+      MessagesController tabsController = ForumTopicTabs.newController(this, chat, null, 0);
       tabsController.addOneShotFocusListener(() -> {
         tabsController.destroyStackItemAt(tabsController.stackSize() - 2);
       });
@@ -736,125 +736,21 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
   private static final int TOPICS_PAGE_SIZE = 100;
 
-  private void loadTopics () {
-    if (!isSubscribedToUpdates) {
-      tdlib.listeners().subscribeToChatUpdates(chatId, this);
-      tdlib.listeners().subscribeToMessageUpdates(chatId, this);
-      TdApi.Supergroup supergroup = tdlib.chatToSupergroup(chatId);
-      if (supergroup != null) {
-        knownIsForum = supergroup.isForum;
-      }
-      if (ChatId.isSupergroup(chatId)) {
-        tdlib.cache().subscribeToSupergroupUpdates(ChatId.toSupergroupId(chatId), this);
-      }
-      isSubscribedToUpdates = true;
-    }
-
-    if (allTopics == null) {
-      List<TdApi.ForumTopic> cachedTopics = tdlib.getCachedForumTopics(chatId);
-      if (cachedTopics != null && !cachedTopics.isEmpty()) {
-        setPinnedOrder(cachedTopics.toArray(new TdApi.ForumTopic[0]));
-        setAllTopics(cachedTopics);
-      }
-    }
-
-    final int requestId = ++topicsRequestId;
-    isLoadingFirstPage = true;
-    isLoadingMore = false;
-    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, 0, 0, 0, TOPICS_PAGE_SIZE), result -> {
-      final TdApi.ForumTopics forumTopics = result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR ? (TdApi.ForumTopics) result : null;
-      if (forumTopics != null) {
-        tdlib.topics().putTopics(chatId, forumTopics.topics);
-      }
-      runOnUiThreadOptional(() -> {
-        if (requestId != topicsRequestId) {
-          return;
-        }
-        isLoadingFirstPage = false;
-        if (forumTopics == null) {
-          updateEmptyView();
-          return;
-        }
-        setPinnedOrder(forumTopics.topics);
-        if (hasLoadedTopics) {
-          mergeTopics(forumTopics.topics);
-        } else {
-          hasLoadedTopics = true;
-          setNextOffset(forumTopics);
-          setAllTopics(java.util.Arrays.asList(forumTopics.topics));
-        }
-        tdlib.updateForumTopicsCache(chatId, allTopics);
-      });
-    });
-  }
-
-  private void pinOnTop (int forumTopicId) {
-    int topIndex = 0;
-    for (Integer index : pinnedOrder.values()) {
-      topIndex = Math.min(topIndex, index);
-    }
-    pinnedOrder.put(forumTopicId, topIndex - 1);
-  }
-
-  private void setPinnedOrder (TdApi.ForumTopic[] firstPage) {
-    pinnedOrder.clear();
-    for (TdApi.ForumTopic topic : firstPage) {
-      if (topic.isPinned) {
-        pinnedOrder.put(topic.info.forumTopicId, pinnedOrder.size());
-      }
-    }
-  }
-
-  /** Applies a fresh first page to the loaded topics, keeping the pages loaded after it. */
-  private void mergeTopics (TdApi.ForumTopic[] firstPage) {
-    for (TdApi.ForumTopic topic : firstPage) {
-      if (!isShownTopic(topic)) {
-        continue;
-      }
-      int index = indexOfTopic(allTopics, topic.info.forumTopicId);
-      if (index != -1) {
-        allTopics.set(index, topic);
-      } else {
-        allTopics.add(topic);
-      }
-    }
-    applyTopicOrder();
-  }
-
-  private void setNextOffset (TdApi.ForumTopics forumTopics) {
-    nextOffsetDate = forumTopics.nextOffsetDate;
-    nextOffsetMessageId = forumTopics.nextOffsetMessageId;
-    nextOffsetForumTopicId = forumTopics.nextOffsetForumTopicId;
-    canLoadMore = forumTopics.topics.length > 0 && (nextOffsetDate != 0 || nextOffsetMessageId != 0 || nextOffsetForumTopicId != 0);
-  }
-
   /** The topic list is shown as is: no topic name search, no message search. */
   private boolean isShowingAllTopics () {
     return adapter != null && !adapter.isMessageSearchMode && StringUtils.isEmpty(adapter.highlightQuery);
   }
 
-  private void setAllTopics (List<TdApi.ForumTopic> newTopics) {
-    allTopics = new ArrayList<>(newTopics.size());
-    for (TdApi.ForumTopic topic : newTopics) {
-      if (isShownTopic(topic)) {
-        allTopics.add(topic);
-      }
-    }
-    resortTopics(allTopics);
-    showTopicsForCurrentQuery();
-  }
-
-  /** Puts the loaded topics in order after a change of pins, drafts or last messages, and moves the shown rows. */
-  private void applyTopicOrder () {
-    if (allTopics == null) {
+  private void onTopicListChanged () {
+    if (isDestroyed() || reorderingPins) {
       return;
     }
-    resortTopics(allTopics);
+    allTopics = topicList.items();
     if (adapter == null || adapter.isMessageSearchMode) {
       return;
     }
     if (!isShowingAllTopics()) {
-      showTopicsForCurrentQuery();
+      updateTopicSearchFromList();
       return;
     }
     final List<TdApi.ForumTopic> oldTopics = new ArrayList<>(topics);
@@ -889,52 +785,28 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     return !(isBotForum && topic.info.isGeneral);
   }
 
-  /** Rebuilds the displayed list from allTopics, keeping the current topic name search. */
-  private void showTopicsForCurrentQuery () {
-    if (adapter != null && adapter.isMessageSearchMode) {
-      // Message search results are on screen: the topic list is shown again when the search is closed
+  /** Refresh local matches without issuing a new remote search on every unread-count change. */
+  private void updateTopicSearchFromList () {
+    String query = adapter.highlightQuery;
+    if (StringUtils.isEmpty(query)) {
       return;
     }
-    if (adapter != null && !StringUtils.isEmpty(adapter.highlightQuery)) {
-      searchTopics(adapter.highlightQuery);
-      return;
-    }
+    String lowerQuery = query.toLowerCase();
+    List<TdApi.ForumTopic> oldResults = new ArrayList<>(topics);
     topics.clear();
-    topics.addAll(allTopics);
-    adapter.setTopics(topics, null);
-    updateEmptyView();
-  }
-
-  private void loadMoreTopics () {
-    if (isLoadingFirstPage || isLoadingMore || !canLoadMore || allTopics == null || allTopics.isEmpty()) return;
-    isLoadingMore = true;
-    final int requestId = topicsRequestId;
-    tdlib.client().send(new TdApi.GetForumTopics(chatId, "", 0L, false, false, nextOffsetDate, nextOffsetMessageId, nextOffsetForumTopicId, TOPICS_PAGE_SIZE), result -> {
-      final TdApi.ForumTopics forumTopics = result.getConstructor() == TdApi.ForumTopics.CONSTRUCTOR ? (TdApi.ForumTopics) result : null;
-      if (forumTopics != null) {
-        tdlib.topics().putTopics(chatId, forumTopics.topics);
+    for (TdApi.ForumTopic topic : allTopics) {
+      if (topic.info.name.toLowerCase().contains(lowerQuery)) {
+        topics.add(topic);
       }
-      runOnUiThreadOptional(() -> {
-        if (requestId != topicsRequestId) {
-          return;
-        }
-        isLoadingMore = false;
-        if (forumTopics == null) {
-          return;
-        }
-        setNextOffset(forumTopics);
-        boolean added = false;
-        for (TdApi.ForumTopic topic : forumTopics.topics) {
-          if (isShownTopic(topic) && indexOfTopic(allTopics, topic.info.forumTopicId) == -1) {
-            allTopics.add(topic);
-            added = true;
-          }
-        }
-        if (added) {
-          applyTopicOrder();
-        }
-      });
-    });
+    }
+    for (TdApi.ForumTopic topic : oldResults) {
+      int id = topic.info.forumTopicId;
+      if (!topicList.isRemoved(id) && indexOfTopic(allTopics, id) == -1) {
+        topics.add(topic);
+      }
+    }
+    adapter.setTopics(topics, query);
+    updateEmptyView();
   }
 
   private void updateEmptyView () {
@@ -1261,19 +1133,14 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
         if (result.getConstructor() == TdApi.Ok.CONSTRUCTOR) {
           // Remove from local list immediately
           UI.post(() -> {
-            if (isDestroyed()) return;
-            int allIndex = allTopics != null ? indexOfTopic(allTopics, topic.info.forumTopicId) : -1;
-            if (allIndex != -1) {
-              allTopics.remove(allIndex);
-              tdlib.updateForumTopicsCache(chatId, allTopics);
-            }
-            int index = indexOfTopic(topics, topic.info.forumTopicId);
-            if (index != -1) {
-              topics.remove(index);
-              if (!adapter.isMessageSearchMode) {
+            topicList.remove(topic.info.forumTopicId);
+            if (!isDestroyed() && !adapter.isMessageSearchMode) {
+              int index = indexOfTopic(topics, topic.info.forumTopicId);
+              if (index != -1) {
+                topics.remove(index);
                 adapter.notifyItemRemoved(index);
+                updateEmptyView();
               }
-              updateEmptyView();
             }
           });
         } else if (result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
@@ -1462,112 +1329,10 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     tdlib.client().send(new TdApi.CreateForumTopic(chatId, name, false, icon), result -> {
       UI.post(() -> {
         if (result.getConstructor() == TdApi.ForumTopicInfo.CONSTRUCTOR) {
-          requestMissingTopic(((TdApi.ForumTopicInfo) result).forumTopicId);
+          topicList.requestTopic(((TdApi.ForumTopicInfo) result).forumTopicId);
         } else if (result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
           UI.showError(result);
         }
-      });
-    });
-  }
-
-  // ChatListener (ForumTopicInfoListener) implementation
-
-  /**
-   * Applies a change to the topic with the given id. Called on the UI thread only: the lists are not thread-safe.
-   * allTopics and topics share topic instances, each instance is changed once.
-   */
-  private boolean updateTopic (int forumTopicId, RunnableData<TdApi.ForumTopic> act) {
-    if (isDestroyed() || allTopics == null) {
-      return false;
-    }
-    int allIndex = indexOfTopic(allTopics, forumTopicId);
-    int index = topics != null ? indexOfTopic(topics, forumTopicId) : -1;
-    if (allIndex == -1 && index == -1) {
-      return false;
-    }
-    TdApi.ForumTopic topic = allIndex != -1 ? allTopics.get(allIndex) : null;
-    if (topic != null) {
-      act.runWithData(topic);
-    }
-    if (index != -1) {
-      TdApi.ForumTopic displayedTopic = topics.get(index);
-      if (displayedTopic != topic) {
-        act.runWithData(displayedTopic);
-      }
-      if (adapter != null && !adapter.isMessageSearchMode) {
-        adapter.notifyItemChanged(index);
-      }
-    }
-    return true;
-  }
-
-  @Override
-  public void onForumTopicInfoChanged (TdApi.ForumTopicInfo info) {
-    if (info.chatId != chatId) return;
-    UI.post(() -> updateTopic(info.forumTopicId, topic -> topic.info = info));
-  }
-
-  @Override
-  public void onForumTopicUpdated (long chatId, long messageThreadId, boolean isPinned, long lastReadInboxMessageId, long lastReadOutboxMessageId, int unreadMentionCount, int unreadReactionCount, TdApi.ChatNotificationSettings notificationSettings, TdApi.DraftMessage draftMessage) {
-    if (chatId != this.chatId) return;
-    final int forumTopicId = (int) messageThreadId;
-    UI.post(() -> {
-      final boolean[] readInboxChanged = new boolean[1];
-      final boolean[] orderChanged = new boolean[1];
-      final boolean[] pinChanged = new boolean[1];
-      boolean found = updateTopic(forumTopicId, topic -> {
-        if (topic.isPinned != isPinned) {
-          pinChanged[0] = true;
-        }
-        if ((topic.draftMessage != null ? topic.draftMessage.date : 0) != (draftMessage != null ? draftMessage.date : 0)) {
-          orderChanged[0] = true;
-        }
-        if (topic.lastReadInboxMessageId != lastReadInboxMessageId) {
-          readInboxChanged[0] = true;
-          if (topic.lastMessage != null && lastReadInboxMessageId >= topic.lastMessage.id) {
-            topic.unreadCount = 0;
-          }
-        }
-        topic.isPinned = isPinned;
-        topic.lastReadInboxMessageId = lastReadInboxMessageId;
-        topic.lastReadOutboxMessageId = lastReadOutboxMessageId;
-        topic.unreadMentionCount = unreadMentionCount;
-        topic.unreadReactionCount = unreadReactionCount;
-        if (notificationSettings != null) {
-          topic.notificationSettings = notificationSettings;
-        }
-        topic.draftMessage = draftMessage;
-      });
-      if (!found && isPinned && !isDestroyed() && allTopics != null) {
-        pinOnTop(forumTopicId);
-        requestMissingTopic(forumTopicId);
-      } else if (pinChanged[0]) {
-        if (isPinned) {
-          pinOnTop(forumTopicId);
-        } else {
-          pinnedOrder.remove(forumTopicId);
-        }
-        applyTopicOrder();
-        loadTopics();
-      } else if (orderChanged[0]) {
-        applyTopicOrder();
-      }
-      if (!found || !readInboxChanged[0]) {
-        return;
-      }
-      // updateForumTopic has no unreadCount: request the exact one, keeping the rest of the local state
-      tdlib.client().send(new TdApi.GetForumTopic(chatId, forumTopicId), result -> {
-        if (result.getConstructor() != TdApi.ForumTopic.CONSTRUCTOR) {
-          return;
-        }
-        TdApi.ForumTopic freshTopic = (TdApi.ForumTopic) result;
-        UI.post(() -> updateTopic(forumTopicId, topic -> {
-          if (topic.lastReadInboxMessageId <= freshTopic.lastReadInboxMessageId) {
-            topic.unreadCount = freshTopic.unreadCount;
-            topic.unreadMentionCount = freshTopic.unreadMentionCount;
-            topic.unreadReactionCount = freshTopic.unreadReactionCount;
-          }
-        }));
       });
     });
   }
@@ -1612,7 +1377,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
 
   // ---- Pinned topic drag-reorder (#845) ----
 
-  // Pinned topics form a contiguous prefix of `topics` (see resortTopics()).
+  // Pinned topics form a contiguous prefix of `topics`.
   private int pinnedTopicCount () {
     if (topics == null) return 0;
     int count = 0;
@@ -1643,21 +1408,20 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     int[] orderedTopicIds = new int[pinnedCount];
     for (int i = 0; i < pinnedCount; i++) {
       orderedTopicIds[i] = topics.get(i).info.forumTopicId;
-      pinnedOrder.put(orderedTopicIds[i], i);
     }
+    topicList.setPinnedOrder(orderedTopicIds);
     tdlib.client().send(new TdApi.SetPinnedForumTopics(chatId, orderedTopicIds), result -> {
       if (result.getConstructor() == TdApi.Error.CONSTRUCTOR) {
         UI.post(() -> {
           if (isDestroyed()) return;
           UI.showError(result);
-          loadTopics();
+          topicList.refresh();
         });
       }
     });
   }
 
-  // Reorders a pinned topic within the pinned prefix, keeping `topics` and
-  // `allTopics` consistent. Returns true if a move was applied.
+  // Reorders visible rows while dragging; the shared order changes only on drop.
   private boolean movePinnedTopic (int fromPosition, int toPosition) {
     int pinnedCount = pinnedTopicCount();
     if (fromPosition < 0 || toPosition < 0 ||
@@ -1667,15 +1431,6 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     }
     TdApi.ForumTopic moved = topics.remove(fromPosition);
     topics.add(toPosition, moved);
-    // Mirror the new order into allTopics so leaving/re-entering search keeps it.
-    if (allTopics != null) {
-      int allFrom = indexOfTopic(allTopics, moved.info.forumTopicId);
-      if (allFrom != -1) {
-        allTopics.remove(allFrom);
-        int allTo = Math.min(toPosition, allTopics.size());
-        allTopics.add(allTo, moved);
-      }
-    }
     return true;
   }
 
@@ -1724,6 +1479,7 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
       int fromPosition = viewHolder.getBindingAdapterPosition();
       int toPosition = target.getBindingAdapterPosition();
       if (movePinnedTopic(fromPosition, toPosition)) {
+        reorderingPins = true;
         if (dragFrom == -1) {
           dragFrom = fromPosition;
         }
@@ -1742,10 +1498,12 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
     @Override
     public void clearView (@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
       super.clearView(recyclerView, viewHolder);
-      if (dragFrom != -1 && dragTo != -1 && dragFrom != dragTo) {
-        if (!isDestroyed()) {
+      reorderingPins = false;
+      if (!isDestroyed() && dragFrom != -1 && dragTo != -1) {
+        if (dragFrom != dragTo) {
           sendPinnedTopicsOrder();
-          tdlib.updateForumTopicsCache(chatId, allTopics);
+        } else {
+          onTopicListChanged();
         }
       }
       dragFrom = dragTo = -1;
@@ -1777,143 +1535,6 @@ public class ForumTopicsController extends TelegramViewController<ForumTopicsCon
   @Override
   public void onSupergroupFullUpdated (long supergroupId, TdApi.SupergroupFullInfo newSupergroupFull) {
     // Not used
-  }
-
-  // MessageListener implementation
-  @Override
-  public void onNewMessage (TdApi.Message message) {
-    onTopicMessage(message, 0);
-  }
-
-  private void onTopicMessage (TdApi.Message message, long oldMessageId) {
-    if (message.chatId != chatId || !(message.topicId instanceof TdApi.MessageTopicForum)) return;
-    final int topicId = ((TdApi.MessageTopicForum) message.topicId).forumTopicId;
-    UI.post(() -> {
-      if (isDestroyed() || allTopics == null) return;
-      boolean found = updateTopic(topicId, topic -> {
-        boolean isSent = oldMessageId != 0 && topic.lastMessage != null && topic.lastMessage.id == oldMessageId;
-        if (!isSent && topic.lastMessage != null && topic.lastMessage.id >= message.id) {
-          return;
-        }
-        topic.lastMessage = message;
-        if (!isSent && !message.isOutgoing && message.id > topic.lastReadInboxMessageId) {
-          topic.unreadCount++;
-        }
-      });
-      if (found) {
-        applyTopicOrder();
-      } else {
-        requestMissingTopic(topicId);
-      }
-    });
-  }
-
-  /** A topic with a new message goes to the top, so it's requested even when not all pages are loaded. */
-  private void requestMissingTopic (int topicId) {
-    if (!requestedMissingTopicIds.add(topicId)) {
-      return;
-    }
-    tdlib.client().send(new TdApi.GetForumTopic(chatId, topicId), result -> {
-      final TdApi.ForumTopic newTopic = result.getConstructor() == TdApi.ForumTopic.CONSTRUCTOR ? (TdApi.ForumTopic) result : null;
-      UI.post(() -> {
-        requestedMissingTopicIds.remove(topicId);
-        if (newTopic == null || isDestroyed() || allTopics == null || indexOfTopic(allTopics, topicId) != -1 || !isShownTopic(newTopic)) {
-          return;
-        }
-        allTopics.add(newTopic);
-        applyTopicOrder();
-        tdlib.updateForumTopicsCache(chatId, allTopics);
-      });
-    });
-  }
-
-  @Override
-  public void onMessageSendSucceeded (TdApi.Message message, long oldMessageId) {
-    onTopicMessage(message, oldMessageId);
-  }
-
-  @Override
-  public void onMessageContentChanged (long chatId, long messageId, TdApi.MessageContent newContent) {
-    if (chatId != this.chatId) return;
-
-    UI.post(() -> {
-      if (topics == null) return;
-
-      // Find topic with this message as lastMessage
-      for (int i = 0; i < topics.size(); i++) {
-        TdApi.ForumTopic topic = topics.get(i);
-        if (topic.lastMessage != null && topic.lastMessage.id == messageId) {
-          topic.lastMessage.content = newContent;
-          if (adapter != null) {
-            adapter.notifyItemChanged(i);
-          }
-          break;
-        }
-      }
-    });
-  }
-
-  @Override
-  public void onMessagesDeleted (long chatId, long[] messageIds) {
-    if (chatId != this.chatId) return;
-
-    UI.post(() -> {
-      if (topics == null) return;
-
-      // Check if any topic's lastMessage was deleted
-      for (int i = 0; i < topics.size(); i++) {
-        TdApi.ForumTopic topic = topics.get(i);
-        if (topic.lastMessage != null) {
-          for (long deletedId : messageIds) {
-            if (topic.lastMessage.id == deletedId) {
-              // Last message deleted - need to fetch fresh topic data
-              final int topicIdInt = topic.info.forumTopicId;
-              tdlib.client().send(new TdApi.GetForumTopic(chatId, topicIdInt), result -> {
-                if (result.getConstructor() == TdApi.ForumTopic.CONSTRUCTOR) {
-                  TdApi.ForumTopic freshTopic = (TdApi.ForumTopic) result;
-                  UI.post(() -> {
-                    if (updateTopic(topicIdInt, target -> {
-                      target.lastMessage = freshTopic.lastMessage;
-                      target.order = freshTopic.order;
-                      target.unreadCount = freshTopic.unreadCount;
-                      target.lastReadInboxMessageId = freshTopic.lastReadInboxMessageId;
-                    })) {
-                      applyTopicOrder();
-                    }
-                  });
-                }
-              });
-              break;
-            }
-          }
-        }
-      }
-    });
-  }
-
-  private void resortTopics (@Nullable List<TdApi.ForumTopic> topics) {
-    if (topics == null || topics.size() < 2) return;
-    java.util.Collections.sort(topics, (a, b) -> {
-      if (a.isPinned != b.isPinned) {
-        return a.isPinned ? -1 : 1;
-      }
-      if (a.isPinned) {
-        int pinnedIndexA = pinnedIndex(a), pinnedIndexB = pinnedIndex(b);
-        if (pinnedIndexA != pinnedIndexB) {
-          return Integer.compare(pinnedIndexA, pinnedIndexB);
-        }
-      }
-      return Long.compare(topicOrder(b), topicOrder(a));
-    });
-  }
-
-  private int pinnedIndex (TdApi.ForumTopic topic) {
-    Integer index = pinnedOrder.get(topic.info.forumTopicId);
-    return index != null ? index : Integer.MAX_VALUE;
-  }
-
-  private static long topicOrder (TdApi.ForumTopic topic) {
-    return Math.max(topic.order, Math.max(TdlibForumTopicManager.messageOrder(topic.lastMessage), TdlibForumTopicManager.draftOrder(topic.draftMessage)));
   }
 
   // Message search result data class

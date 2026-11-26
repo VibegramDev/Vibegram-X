@@ -2450,7 +2450,7 @@ public class TdlibUi extends Handler {
       arguments = new MessagesController.Arguments(tdlib, chatList, chat, messageThread, messageTopicId, filter);
     }
     if (openForumTabs || openDirectMessagesTabs) {
-      arguments.topicTabs(null);
+      arguments.topicTabs();
     }
     controller.setArguments(arguments
       .setScheduled(onlyScheduled)

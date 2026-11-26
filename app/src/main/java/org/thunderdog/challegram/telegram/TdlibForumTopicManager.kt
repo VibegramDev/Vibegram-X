@@ -1,9 +1,11 @@
 package org.thunderdog.challegram.telegram
 
 import android.os.SystemClock
+import androidx.annotation.UiThread
 import me.vkryl.core.reference.ReferenceMap
 import org.drinkless.tdlib.TdApi.*
 import org.thunderdog.challegram.data.TD
+import org.thunderdog.challegram.tool.UI
 
 class TdlibForumTopicManager(
   tdlib: Tdlib
@@ -47,7 +49,7 @@ class TdlibForumTopicManager(
   }
 
   private val listLock = Any()
-  private val topicLists = HashMap<Long, IntArray>()
+  private val topicLists = LinkedHashMap<Long, ForumTopicList>(16, 0.75f, true)
   private val muteEndTimes = HashMap<Key, Long>()
 
   private fun setMuteEndTime(key: Key, settings: ChatNotificationSettings?) {
@@ -110,40 +112,36 @@ class TdlibForumTopicManager(
     }
   }
 
-  /** Remembers the order of the topic list last shown for the chat. Known topics are kept: updates keep them fresh. */
-  fun setTopicList(chatId: Long, topics: List<ForumTopic>) {
-    val ids = IntArray(topics.size)
-    for ((index, topic) in topics.withIndex()) {
-      ids[index] = topic.info.forumTopicId
-      val key = Key(chatId, topic.info.forumTopicId)
-      if (find(key)?.value == null) {
-        setMuteEndTime(key, topic.notificationSettings)
-        putValue(key, copyOf(topic))
+  @UiThread
+  fun list(chatId: Long): ForumTopicList {
+    topicLists[chatId]?.let { return it }
+    if (topicLists.size >= 8) {
+      val iterator = topicLists.values.iterator()
+      while (iterator.hasNext() && topicLists.size >= 8) {
+        val list = iterator.next()
+        if (list.isIdle) {
+          list.destroy()
+          iterator.remove()
+        }
       }
     }
-    synchronized(listLock) {
-      topicLists[chatId] = ids
-    }
+    return ForumTopicList(tdlib, chatId).also { topicLists[chatId] = it }
   }
 
-  /** Copies of the topics last shown for the chat, to show them right away while the list is loaded. */
-  fun getTopicList(chatId: Long): List<ForumTopic>? {
-    val ids = synchronized(listLock) {
-      topicLists[chatId]
-    } ?: return null
-    val topics = ArrayList<ForumTopic>(ids.size)
-    for (forumTopicId in ids) {
-      find(Key(chatId, forumTopicId))?.value?.let {
-        topics.add(copyOf(it))
-      }
-    }
-    return topics
-  }
-
+  @TdlibThread
   fun clearTopicLists() {
-    synchronized(listLock) {
-      topicLists.clear()
-      muteEndTimes.clear()
+    synchronized(listLock) { muteEndTimes.clear() }
+    UI.post {
+      val iterator = topicLists.values.iterator()
+      while (iterator.hasNext()) {
+        val list = iterator.next()
+        if (list.hasListeners()) {
+          list.resetAfterClientRestart()
+        } else {
+          list.destroy()
+          iterator.remove()
+        }
+      }
     }
   }
 

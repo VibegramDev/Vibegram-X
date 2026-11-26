@@ -3865,15 +3865,6 @@ public class Tdlib implements TdlibProvider, Settings.SettingsChangeListener, Da
     notifyForumUnreadTopicCount(chatId);
   }
 
-  /** Topics to show right away while the topic list of a forum is being loaded. Copies: callers modify their topics. */
-  public @Nullable List<TdApi.ForumTopic> getCachedForumTopics (long chatId) {
-    return topics.getTopicList(chatId);
-  }
-
-  public void updateForumTopicsCache (long chatId, List<TdApi.ForumTopic> topics) {
-    this.topics.setTopicList(chatId, topics);
-  }
-
   public @Nullable TdApi.BlockList chatBlockList (TdApi.Chat chat) {
     return chat != null ? chatBlockList(chat.id) : null;
   }
