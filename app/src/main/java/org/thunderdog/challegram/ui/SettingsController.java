@@ -402,7 +402,7 @@ public class SettingsController extends ViewController<Void> implements
     headerTitleWrap.setLayoutParams(FrameLayoutFix.newParams(ViewGroup.LayoutParams.MATCH_PARENT, Size.getHeaderPortraitSize()));
     headerTitleWrap.addView(headerTitleView);
 
-    initMyUser();
+    setPhoneNumber(tdlib.myUser());
 
     this.contentView = new RecyclerView(context);
     Views.applyBottomInset(contentView, extraBottomInset);
@@ -588,15 +588,6 @@ public class SettingsController extends ViewController<Void> implements
             view.setData(R.string.SetBirthdate);
           } else {
             view.setData(Lang.getBirthdate(userFull.birthdate, true, true));
-          }
-        } else if (itemId == R.id.btn_username) {
-          if (myUsernames == null) {
-            view.setData(R.string.LoadingUsername);
-          } else if (StringUtils.isEmpty(myUsernames.editableUsername)) {
-            view.setData(R.string.SetUpUsername);
-          } else {
-            int collectibleCount = Td.secondaryUsernamesCount(myUsernames);
-            view.setData("@" + myUsernames.editableUsername + (collectibleCount != 0 ? " + " + Lang.pluralBold(R.string.xOtherUsernames, collectibleCount) : "")); // TODO multi-username support
           }
         } else if (itemId == R.id.btn_peer_id) {
           view.setData(Strings.buildCounter(tdlib.myUserId(true)));
@@ -1015,11 +1006,11 @@ public class SettingsController extends ViewController<Void> implements
     if (!StringUtils.isEmpty(myPhone)) {
       subtitle.append(myPhone);
     }
-    if (myUsernames != null && !StringUtils.isEmpty(myUsernames.editableUsername)) {
+    if (user != null && user.usernames != null && !StringUtils.isEmpty(user.usernames.editableUsername)) {
       if (subtitle.length() > 0) {
         subtitle.append(" \u2022 ");
       }
-      subtitle.append('@').append(myUsernames.editableUsername);
+      subtitle.append('@').append(user.usernames.editableUsername);
     }
     profileView.setUser(user, name, subtitle.toString());
   }
@@ -1121,7 +1112,6 @@ public class SettingsController extends ViewController<Void> implements
     }
     runOnUiThreadOptional(() -> {
       setMyUserId(myUser.id);
-      setUsername(myUser);
       if (setPhoneNumber(myUser)) {
         adapter.updateValuedSettingById(R.id.btn_changePhoneNumber);
       }
@@ -1134,27 +1124,8 @@ public class SettingsController extends ViewController<Void> implements
     setBio(newBio);
   }
 
-  private @Nullable TdApi.Usernames myUsernames;
   private String myPhone, originalPhoneNumber;
   private @Nullable TdApi.FormattedText about;
-
-  private void initMyUser () {
-    TdApi.User user = tdlib.myUser();
-    setUsername(user);
-    setPhoneNumber(user);
-  }
-
-  private boolean setUsername (@Nullable TdApi.User myUser) {
-    TdApi.Usernames usernames = myUser != null ? myUser.usernames : null;
-    if (myUser != null && usernames == null) {
-      usernames = new TdApi.Usernames(new String[0], new String[0], "", new String[0], "");
-    }
-    if ((myUsernames == null && usernames != null) || (myUsernames != null && !Td.equalsTo(myUsernames, usernames))) {
-      this.myUsernames = usernames;
-      return true;
-    }
-    return false;
-  }
 
   private boolean setPhoneNumber (@Nullable TdApi.User user) {
     String displayPhoneNumber;
