@@ -185,7 +185,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     Context context = owner.context();
     sideTabs = new TopicSideTabsView(context, this::openTab);
     sideTabs.setTabs(buildSideTabs());
-    sideTabs.setSelectedPosition(selectedPosition());
+    sideTabs.setSelectedId(forumTopicId);
 
     ImageView topButton = new ImageView(context);
     topButton.setScaleType(ImageView.ScaleType.CENTER);
@@ -193,6 +193,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     topButton.setColorFilter(Theme.getColor(ColorId.icon));
     owner.addThemeFilterListener(topButton, ColorId.icon);
     RippleSupport.setTransparentSelector(topButton);
+    topButton.setContentDescription(Lang.getString(R.string.TopicsLayoutTabs));
     topButton.setOnClickListener(v -> switchTabsLayout(TdlibSettingsManager.FORUM_VIEW_TABS));
 
     FrameLayoutFix column = TopicSideTabsView.wrap(context, sideTabs, topButton);
@@ -246,7 +247,6 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
     }
     if (sideTabs != null) {
       sideTabs.setTabs(buildSideTabs());
-      sideTabs.setSelectedPosition(selectedPosition());
     }
   }
 
@@ -302,10 +302,10 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
   private List<TopicSideTabsView.Tab> buildSideTabs () {
     List<TopicSideTabsView.Tab> tabs = new ArrayList<>(1 + topics.size());
     if (isBotForum) {
-      tabs.add(new TopicSideTabsView.Tab(0, null, null, null, 0, 0, R.drawable.baseline_add_comment_24, null, ""));
+      tabs.add(new TopicSideTabsView.Tab(0, Lang.getString(R.string.NewTopic), null, null, null, 0, 0, R.drawable.baseline_add_comment_24, null, ""));
     } else {
       String all = Lang.getString(R.string.DirectMessagesAll);
-      tabs.add(new TopicSideTabsView.Tab(0, newSideTabName(all), null, null, 0, 0, R.drawable.baseline_forum_24, null, all));
+      tabs.add(new TopicSideTabsView.Tab(0, all, newSideTabName(all), null, null, 0, 0, R.drawable.baseline_forum_24, null, all));
     }
     boolean noAnimations = Settings.instance().getNewSetting(Settings.SETTING_FLAG_NO_ANIMATED_EMOJI);
     TextPaint letterPaint = Paints.getMediumTextPaint(15f, Color.WHITE, false);
@@ -356,7 +356,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
         counter = new Counter.Builder().textSize(11f).backgroundPadding(3f).build();
         counter.setCount(topic.unreadCount, isMuted, false);
       }
-      TopicSideTabsView.Tab tab = new TopicSideTabsView.Tab(info.forumTopicId, newSideTabName(info.name), emoji, letter, letterWidth, color, 0, counter, contentKey);
+      TopicSideTabsView.Tab tab = new TopicSideTabsView.Tab(info.forumTopicId, info.name, newSideTabName(info.name), emoji, letter, letterWidth, color, 0, counter, contentKey);
       sideTabsCache.put(info.forumTopicId, tab);
       tabs.add(tab);
     }
@@ -405,7 +405,7 @@ public class ForumTopicTabs implements ChatTopicTabs, TdlibCache.SupergroupDataC
         headerView.getTopView().setSelectionFactor(position);
       }
       if (sideTabs != null) {
-        sideTabs.setSelectedPosition(position);
+        sideTabs.setSelectedId(forumTopicId);
       }
     }
   }
