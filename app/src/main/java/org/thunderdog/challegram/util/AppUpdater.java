@@ -60,6 +60,9 @@ import me.vkryl.core.reference.ReferenceList;
 import tgx.td.Td;
 
 public class AppUpdater implements InstallStateUpdatedListener, FileUpdateListener, ConnectionListener {
+  // The upstream update feeds do not distribute Vibegram builds.
+  public static final boolean ENABLED = false;
+
   public interface Listener {
     void onAppUpdateStateChanged (@State int state, @State int oldState, boolean isApk);
     default void onAppUpdateDownloadProgress (long bytesDownloaded, long totalBytesToDownload) { }
@@ -122,7 +125,7 @@ public class AppUpdater implements InstallStateUpdatedListener, FileUpdateListen
     this.context = context;
     this.listeners = new ReferenceList<>();
     AppUpdateManager appUpdateManager = null;
-    if (AppInstallationUtil.allowInAppGooglePlayUpdates(context)) {
+    if (ENABLED && AppInstallationUtil.allowInAppGooglePlayUpdates(context)) {
       try {
         appUpdateManager = AppUpdateManagerFactory.create(context);
       } catch (Throwable t) {
@@ -169,6 +172,7 @@ public class AppUpdater implements InstallStateUpdatedListener, FileUpdateListen
   }
 
   public void checkForUpdates () {
+    if (!ENABLED) return;
     if (state == State.NONE) {
       if (preferTelegramChannelFlow()) {
         checkForTelegramChannelUpdates();
@@ -284,6 +288,7 @@ public class AppUpdater implements InstallStateUpdatedListener, FileUpdateListen
   }
 
   public void onGooglePlayFlowActivityResult (int resultCode, Intent data) {
+    if (!ENABLED) return;
     switch (resultCode) {
       case BaseActivity.RESULT_OK: {
         try {
